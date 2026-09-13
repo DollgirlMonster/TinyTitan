@@ -66,13 +66,17 @@ re-verifying would be a false claim.
   ### Checksum
 
   `nvmai-X.Y-macos-arm64.tar.gz` sha256: `SHA256_PENDING`
+  `nvmai-X.Y-macos-arm64.tar.gz` size: `ARCHIVE_BYTES_PENDING` bytes
   ```
 
-`SHA256_PENDING` is not a placeholder to forget: `release.sh --publish`
-substitutes it with the archive it just built, and **refuses to publish if the
-notes neither carry it nor quote the real digest**. A release whose notes quote
-the wrong digest is worse than one quoting none — 3.7 shipped that way for a
-few minutes.
+Neither placeholder is one to forget: `release.sh --publish` substitutes both
+with the archive it just built, and **refuses to publish unless the notes carry
+the placeholder or quote the real value** for each. A release whose notes quote
+the wrong digest is worse than one quoting none — 3.7 shipped that way for a few
+minutes — and a size copied out of a dry run is wrong for the same reason, because
+the publish pass rebuilds from scratch and the archive differs. 5.4's notes
+quoted the dry run's 24,770,128 bytes for an archive that published at
+24,770,200, which is why the size has a placeholder too.
 
 The last two sections are a claim about what was verified. Do not write a gate
 result you have not seen; add it after the dry run if you want it in the notes.
@@ -190,9 +194,12 @@ says out loud which ones it could not check:
 
 **A missing install is never resolved by downloading, converting, repacking or
 re-installing a model.** No release step fetches a model: `release.sh`
-fingerprints every `verified-install.json` before the golden phase and fails if
-the phase changed `models/` at all, so a gate cannot quietly install one to go
-green. A release that would need a model the machine does not have waits for the
+fingerprints the install set under `models/` — every top-level entry by name,
+type, size and mtime, plus every receipt's bytes — before the golden phase and
+fails if any of it changed, so a gate cannot quietly install one to go green.
+(That is deliberately not a payload hash: hashing 461 GB is not a gate, and the
+receipt the runtime verifies is what attests the payload.) A release that would
+need a model the machine does not have waits for the
 operator to install it deliberately — that is the
 [adding-a-model](adding-a-model.md) runbook, and it is a decision, not a
 side-effect of cutting a release.
@@ -275,7 +282,9 @@ machine it was measured on, and leave previous releases' tables alone.
 - [ ] Wiki `Changelog.md` has the new section, pushed
 - [ ] No release callout added to the README — the Changelog section **is** the
       announcement, and the README changed only if a fact in it changed
-- [ ] `docs/release-notes-vX.Y.md` ends with a `SHA256_PENDING` checksum block
+- [ ] `docs/release-notes-vX.Y.md` ends with a checksum block carrying
+      `SHA256_PENDING` **and** `ARCHIVE_BYTES_PENDING` — never a size copied out
+      of a dry run
 - [ ] Tree clean, `git tag -a vX.Y`, tag pushed, `release.sh` preconditions pass
 - [ ] A release build exists (`.build/arm64-apple-macosx/release/NVMAICLI`) and
       `models/` holds exactly the installs you intend to verify

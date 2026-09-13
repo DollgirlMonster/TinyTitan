@@ -62,12 +62,20 @@ How these were measured, and what they are not:
 
 ### Supported LLMs
 
-Qwen3.8-Flash-Next 125B-A6B · KAT-Coder-V2.5-Dev 35B-A3B · Qwen-AgentWorld
-35B-A3B · Ornith 1.5 35B-A3B · Qwen 3.6 35B-A3B · Qwen 3.5 2B / 4B / 9B
+Sorted by size, largest first. Every model installs at **4-bit and 8-bit**
+(6-bit was withdrawn in 3.9).
 
-Every model installs at **4-bit and 8-bit**; 6-bit was withdrawn in 3.9. The
-dense Qwen 3.5 models run on either engine and the rest stream experts on the
-GPU path, and Ornith 1.5 8-bit is the default install. Install commands,
+- **Qwen3.8-Flash-Next 125B-A6B**
+- **KAT-Coder-V2.5-Dev 35B-A3B**
+- **Qwen-AgentWorld 35B-A3B**
+- **Ornith 1.5 35B-A3B**
+- **Qwen 3.6 35B-A3B**
+- **Qwen 3.5 9B**
+- **Qwen 3.5 4B**
+- **Qwen 3.5 2B**
+
+The dense Qwen 3.5 models run on either engine and the rest stream experts on
+the GPU path, and Ornith 1.5 8-bit is the default install. Install commands,
 per-model notes and the sampling each checkpoint asks for are in
 [Getting Started](https://github.com/Pummelchen/NVMAI/wiki/Getting-Started) and
 [Runtime Controls](https://github.com/Pummelchen/NVMAI/wiki/Runtime-Controls).

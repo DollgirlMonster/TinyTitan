@@ -154,7 +154,7 @@ on — macOS 26.6.2, Swift 6.3.3, Apple M3, 24 GB.
   `.bundle` resources staged (the Metal shader library among them).
 - **Golden baselines, byte-identical**: **qwen38-4**, **qwen38-8**,
   **katcoder-4** and **katcoder-8**. These are the four targets installed on the
-  machine; the archive is 24,770,128 bytes.
+  machine; the archive is `ARCHIVE_BYTES_PENDING` bytes.
 
 The gate verifies every golden target that has an install under `models/` and
 reports the rest. Six targets have no install here and are **not checked**:
@@ -162,7 +162,10 @@ reports the rest. Six targets have no install here and are **not checked**:
 **agentworld-8**. They are absent because the operator deleted those installs to
 save disk. They were **not** downloaded to satisfy this gate, and they must not
 be: `release.sh` names every unchecked target, refuses to publish unless these
-notes repeat the list, and fails if the golden phase changed `models/` at all.
+notes repeat the list, and fails if the golden phase changed the install set
+under `models/` — a different install, a removed one, or a stray file left
+behind. (It is not a payload hash: the receipt the runtime verifies attests the
+payload.)
 
 **The six dense Qwen 3.5 installs are not golden-checked at all.** There has
 never been a stored baseline for 2B/4B/9B at either width — `benchmark/golden/`
@@ -180,3 +183,4 @@ GPU-versus-CPU rows are quoted from the wiki page; see `### Performance` above.
 ### Checksum
 
 `nvmai-5.4-macos-arm64.tar.gz` sha256: `SHA256_PENDING`
+`nvmai-5.4-macos-arm64.tar.gz` size: `ARCHIVE_BYTES_PENDING` bytes

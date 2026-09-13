@@ -142,12 +142,23 @@ NON_GOLDEN_INSTALLS="
 "
 NON_GOLDEN_SET=" $(printf '%s' "$NON_GOLDEN_INSTALLS" | tr -s '[:space:]' ' ') "
 
-# The gate must not change the machine to pass. Fingerprint the install set and
-# every receipt's bytes before the golden phase and require the same after, so
-# installing, removing or rewriting a model inside the gate is a failure rather
-# than a way through it. Receipts are small; this reads none of the payload.
+# The gate must not change the machine to pass. Fingerprint what `models/`
+# contains before the golden phase and require the same after, so installing,
+# removing, renaming or leaving junk behind inside the gate is a failure rather
+# than a way through it:
+#
+#   * every top-level entry -- an install, a sidecar, a stray lock file -- by
+#     name, type, size and mtime. A receipt-only fingerprint missed exactly this:
+#     an aborted install left `ornith-1.5_35B_A3B_8Bit.install.lock` in models/
+#     and the guard could not see it.
+#   * every install receipt's bytes, which is what catches a rewritten receipt.
+#
+# Neither is a payload hash: hashing 461 GB is not a gate, and the receipt the
+# runtime verifies is what attests the payload.
 install_fingerprint() {
   [ -d "$ROOT/models" ] || return 0
+  find "$ROOT/models" -mindepth 1 -maxdepth 1 \
+    -exec stat -f '%N %HT %z %m' {} \; | LC_ALL=C sort
   find "$ROOT/models" -maxdepth 2 -name verified-install.json \
     | LC_ALL=C sort | while IFS= read -r f; do
         printf '%s  %s\n' "$(shasum -a 256 "$f" | awk '{print $1}')" "${f#"$ROOT"/}"
@@ -203,7 +214,7 @@ done
 
 INSTALLS_AFTER="$(install_fingerprint)"
 [ "$INSTALLS_BEFORE" = "$INSTALLS_AFTER" ] \
-  || die "the golden phase changed models/; a gate verifies what is installed and never installs, removes or rewrites a model"
+  || die "the golden phase changed the install set under models/; a gate verifies what is installed and never installs, removes or rewrites a model"
 
 if [ "$GOLDENS_CHECKED" = 0 ]; then
   echo "  no golden baseline could be checked on this machine (state this in the notes)"
@@ -278,7 +289,8 @@ step "package"
 ( cd "$STAGE_ROOT" && tar czf "$ARCHIVE" "$(basename "$STAGE")" )
 shasum -a 256 "$ARCHIVE" | sed "s|$STAGE_ROOT/||" > "$ARCHIVE.sha256"
 SHA="$(awk '{print $1}' "$ARCHIVE.sha256")"
-echo "  $(basename "$ARCHIVE")  $(wc -c < "$ARCHIVE" | tr -d ' ') bytes"
+BYTES="$(wc -c < "$ARCHIVE" | tr -d ' ')"
+echo "  $(basename "$ARCHIVE")  $BYTES bytes"
 echo "  sha256 $SHA"
 
 # --- publish ----------------------------------------------------------------
@@ -301,26 +313,25 @@ for notchecked in $GOLDEN_SKIPPED $GOLDEN_ABSENT; do
     || die "notes do not mention the unchecked baseline $notchecked; every baseline that was not checked must be named in the notes"
 done
 
-# A release whose notes quote the wrong SHA-256 is worse than one quoting none:
-# it tells a careful user their download is corrupt. 3.7 shipped that way for a
-# few minutes, which is why this is enforced.
+# Two values in the notes are only knowable here. --publish rebuilds from
+# scratch, so the binaries carry fresh mtimes and the archive both hashes and
+# weighs differently from any dry run; a number copied out of a dry run is a
+# false claim waiting to be published. (5.4's notes quoted the dry run's
+# 24,770,128 bytes for an archive that published at 24,770,200.) So the notes
+# carry SHA256_PENDING and ARCHIVE_BYTES_PENDING and both are filled in here,
+# which makes the invariant hold by construction.
 #
-# But the notes cannot hard-code the digest either. --publish rebuilds from
-# scratch, so the binaries carry fresh mtimes and the archive hashes differently
-# than any dry run -- the value is unknowable when the notes are written. So the
-# notes carry the literal SHA256_PENDING and it is filled in here, which makes
-# the invariant hold by construction instead of by a check nothing can satisfy.
+# A wrong digest is worse than none: it tells a careful user their download is
+# corrupt, which is how 3.7 shipped for a few minutes. Both are enforced.
 RENDERED_NOTES="$STAGE_ROOT/notes-rendered.md"
-if grep -q 'SHA256_PENDING' "$NOTES"; then
-  sed "s/SHA256_PENDING/$SHA/g" "$NOTES" > "$RENDERED_NOTES" \
-    || die "failed to render notes"
-  echo "  filled SHA256_PENDING with $SHA"
-else
-  cp "$NOTES" "$RENDERED_NOTES"
-fi
-if ! grep -q "$SHA" "$RENDERED_NOTES"; then
-  die "the notes neither contain SHA256_PENDING nor quote this archive's sha256 ($SHA)"
-fi
+sed -e "s/SHA256_PENDING/$SHA/g" -e "s/ARCHIVE_BYTES_PENDING/$BYTES/g" "$NOTES" > "$RENDERED_NOTES" \
+  || die "failed to render notes"
+grep -q 'SHA256_PENDING' "$NOTES" && echo "  filled SHA256_PENDING with $SHA"
+grep -q 'ARCHIVE_BYTES_PENDING' "$NOTES" && echo "  filled ARCHIVE_BYTES_PENDING with $BYTES"
+grep -q "$SHA" "$RENDERED_NOTES" \
+  || die "the notes neither contain SHA256_PENDING nor quote this archive's sha256 ($SHA)"
+grep -q "$BYTES" "$RENDERED_NOTES" \
+  || die "the notes neither contain ARCHIVE_BYTES_PENDING nor quote this archive's size ($BYTES bytes)"
 
 step "publish"
 gh release create "$TAG" "$ARCHIVE" "$ARCHIVE.sha256" \

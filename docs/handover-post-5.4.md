@@ -38,8 +38,11 @@ installed there** and says what it could not check. `tools/release.sh`
 implements it: absence is reported and collected; `--publish` requires the notes
 to name every unchecked target; an installed model that no `check_golden` line
 covers is a hard error unless declared in `NON_GOLDEN_INSTALLS` with a reason;
-and the phase fingerprints every receipt before and after and **fails if
-`models/` changed at all**. `docs/release-process.md` §5 is the prose.
+and the phase fingerprints the install set under `models/` — every top-level
+entry by name, type, size and mtime, plus every receipt's bytes — before and
+after, and **fails if any of it changed**. `docs/release-process.md` §5 is the
+prose. Note what that does *not* claim: it is not a payload hash, and the receipt
+the runtime verifies is what attests the payload.
 
 **A release announcement lives in the wiki `Changelog.md`, not the README.** The
 README was reworked on 2026-09-14: one merged GPU/CPU benchmark table, a
@@ -95,4 +98,20 @@ and section 6 the things closed by measurement that must not be re-proposed.
   a per-target "mismatch".
 - **`release.sh --publish` re-runs every gate**, including all goldens and the
   clean build. Budget two full passes.
+- **A release note value that is only known at publish time must be a
+  placeholder.** `--publish` rebuilds from scratch, so the archive differs from
+  any dry run: 5.4's notes quoted the dry run's 24,770,128 bytes for an archive
+  that shipped at 24,770,200. Both the digest (`SHA256_PENDING`) and the size
+  (`ARCHIVE_BYTES_PENDING`) are now filled in by `--publish`, which refuses to
+  publish unless the notes carry the placeholder or the real value.
+- **Say what a guard actually reads.** The immutability guard was described as
+  catching any change to `models/` while it only hashed receipts; a stray
+  `*.install.lock` left by an aborted install sat inside that blind spot. It now
+  fingerprints the top-level entries too. When you describe a gate, describe its
+  scope, not its intent.
+- **Another session may be working in this checkout.** During 5.4 three upstream
+  commits landed (badges, `NOTICE`, a traffic workflow), each forcing a fetch +
+  rebase + tag move, and an installer was invoked against a pruned model (it
+  aborted with no bytes fetched, leaving a stale lock). `git fetch` before
+  tagging, and do not assume `models/` is yours alone.
 - Report measurements, not assurances.
