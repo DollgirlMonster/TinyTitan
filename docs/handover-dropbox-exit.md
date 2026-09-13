@@ -13,12 +13,13 @@
 
 ## Where the work stands
 
-Pushed and in sync before this handover: repo `main` at `8d3055f`, wiki `master`
-at `223c088`; the handover commit (this document) and the tracker's pointer to it
-sit directly on top, so read `git log` for the exact pair rather than trusting
-these two hashes. Tag `v5.3` → `8d3055f`. **No GitHub Release exists**, and none
-should be created until the gate record in `docs/release-notes-v5.3.md` can be
-completed.
+Pushed and in sync: tag `v5.3` → `8d3055f`, which is the commit the release is
+cut from. `main` and the wiki's `master` sit a few commits ahead of it with
+documentation only — this handover, the wiki tracker's pointer to it, and the
+release notes' corrected verification paragraph — so `git log --oneline
+v5.3..main` shows no code change and `HEAD is not v5.3` is expected until you
+check the tag out. **No GitHub Release exists**, and none should be created until
+the gate record in `docs/release-notes-v5.3.md` can be completed.
 
 Nothing was left running: no server, no CLI, no conversion, no hydration retry,
 no stray `cat`. Disk at handover: 398 GB checkout, 143 GB free; machine macOS
