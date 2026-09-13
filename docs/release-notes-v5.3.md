@@ -119,23 +119,36 @@ above them.
 
 ### Verification
 
-The release gates ran on the tagged commit and all passed: `tools/lint.sh`
-clean; `swift test --no-parallel` **1470 tests in 228 suites passed**; **nine of
-the ten golden baselines byte-identical**; and a clean scratch release build
-with no compiler warnings. The archive is NNN bytes.
+**Incomplete — the release has not been cut.** The dry run reached the golden
+phase on the tagged commit: `tools/lint.sh` clean, `swift test --no-parallel`
+**1470 tests in 228 suites passed** (122.6 s), and the first baseline checked
+(Ornith 1.5 8-bit) was byte-identical. The phase then stopped on `ornith-4`:
 
-**One baseline was not re-checked: `qwen38-8` (Qwen3.8-Flash-Next 125B-A6B
-8-bit).** Before the golden phase, Dropbox had left seven of the installs
-*online-only* — `fileproviderctl evaluate` reported `isDownloaded = 0`, and
-every expert read failed with `parallel expert read failed: Operation timed
-out`. Reading such a file outside NVMAI reproduces it (`cat` on one exits 1
-after 12 s with the same error), so the cause was the storage provider, not the
-runtime. Six of the seven installs were materialized, 24 GB in total. The 125B
-8-bit install needs **134 GB** materialized, the gate loads every install in one
-run, and the volume had 123 GB free — so it could not be made local without
-deleting other data, which was not done. The nine baselines that did run include
-both widths of this release's new install (KAT-Coder-V2.5-Dev) and every family
-the runtime supports, and each came back byte-identical.
+```
+  FAILED (exit 1)
+  error: parallel expert read failed: Operation timed out
+error: golden baseline mismatch (4)
+```
+
+**That is the storage provider, not the runtime.** Dropbox had left seven of the
+ten installs *online-only*: `fileproviderctl evaluate <path>` reported
+`isDownloaded = 0`, and reading one outside NVMAI reproduces the failure (`cat`
+exits 1 with `Operation timed out`) — so the error the streaming pool reports is
+a refused read, not a defect it found. Six of the seven installs were
+materialized (24 GB, at 2–15 MB/s). The seventh needs **134 GB** materialized,
+the gate loads every install in one run, and the volume had 123 GB free; it was
+not made local by deleting other data, and the provider then paused downloads
+outright (`FP -1004 "Sync paused" … domain: serverUnreachable`), with Dropbox's
+own `speculative disk management` the mechanism that evicted the files in the
+first place.
+
+The skip is named and reason-carrying rather than deleted from the gate's list
+(`NVMAI_RELEASE_SKIP_GOLDENS`, enforced by `--publish` to appear in these
+notes), and it is *not* an approval to publish: the golden phase — 9 of 10
+baselines, `qwen38-8` skipped — the clean scratch build, and the staged archive
+still have to run before this section can state a result. What follows is what
+it must say once they have: the counts, the archive size, and this paragraph
+with the outcome filled in.
 
 ### Checksum
 
