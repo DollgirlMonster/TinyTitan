@@ -60,6 +60,11 @@ git ls-remote --tags origin 2>/dev/null | grep -q "refs/tags/$TAG$" \
   || die "$TAG is not pushed to origin; run: git push origin $TAG"
 gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 \
   && die "a Release for $TAG already exists on $REPO"
+# A skipped baseline needs its reason before anything expensive starts, so a
+# forgotten NVMAI_RELEASE_SKIP_GOLDENS_REASON fails here and not an hour later.
+if [ -n "${NVMAI_RELEASE_SKIP_GOLDENS:-}" ] && [ -z "${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}" ]; then
+  die "NVMAI_RELEASE_SKIP_GOLDENS=${NVMAI_RELEASE_SKIP_GOLDENS} without NVMAI_RELEASE_SKIP_GOLDENS_REASON; a skipped baseline must record why"
+fi
 echo "  tag $TAG at $(git rev-parse --short HEAD), tree clean, no existing Release"
 
 rm -rf "$STAGE_ROOT"
@@ -95,9 +100,6 @@ GOLDENS_CHECKED=0
 GOLDEN_SKIPPED=""
 SKIP_GOLDENS="${NVMAI_RELEASE_SKIP_GOLDENS:-}"
 SKIP_GOLDENS_REASON="${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}"
-if [ -n "$SKIP_GOLDENS" ] && [ -z "$SKIP_GOLDENS_REASON" ]; then
-  die "NVMAI_RELEASE_SKIP_GOLDENS=$SKIP_GOLDENS without NVMAI_RELEASE_SKIP_GOLDENS_REASON; a skipped baseline must record why"
-fi
 check_golden() {  # <install dir> <golden target>
   if [ -f "$ROOT/models/$1/verified-install.json" ]; then
     case " $SKIP_GOLDENS " in
