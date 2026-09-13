@@ -126,9 +126,21 @@ SKIP_GOLDENS_REASON="${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}"
 #     `.gturbo`-versus-snapshot equivalence is covered by the opt-in
 #     NVMAI_DENSE_EQUIV tests instead. Capturing real dense baselines is an open
 #     item in the wiki tracker.
-NON_GOLDEN_INSTALLS=" qwen3.8-flash-next_125B_A6B_MTP_4Bit
-  qwen3.5_2B_4Bit qwen3.5_2B_8Bit qwen3.5_4B_4Bit qwen3.5_4B_8Bit
-  qwen3.5_9B_4Bit qwen3.5_9B_8Bit "
+# The names may be laid out one per line for readability; NON_GOLDEN_SET folds
+# the whitespace to single spaces first, because the match below is a
+# space-delimited substring test and a name that ends a line has no trailing
+# space to match on. That bug survived a full dry run once -- the names are
+# wrapped, not guessed at.
+NON_GOLDEN_INSTALLS="
+  qwen3.8-flash-next_125B_A6B_MTP_4Bit
+  qwen3.5_2B_4Bit
+  qwen3.5_2B_8Bit
+  qwen3.5_4B_4Bit
+  qwen3.5_4B_8Bit
+  qwen3.5_9B_4Bit
+  qwen3.5_9B_8Bit
+"
+NON_GOLDEN_SET=" $(printf '%s' "$NON_GOLDEN_INSTALLS" | tr -s '[:space:]' ' ') "
 
 # The gate must not change the machine to pass. Fingerprint the install set and
 # every receipt's bytes before the golden phase and require the same after, so
@@ -183,7 +195,7 @@ check_golden kat-coder-v2.5_35B_A3B_8Bit katcoder-8
 for dir in "$ROOT"/models/*/; do
   [ -f "$dir/verified-install.json" ] || continue
   name="$(basename "$dir")"
-  case " $GOLDEN_DECLARED $NON_GOLDEN_INSTALLS " in
+  case " $GOLDEN_DECLARED $NON_GOLDEN_SET " in
     *" $name "*) continue ;;
   esac
   die "installed model $name has no golden target; add it to check_golden, or declare it in NON_GOLDEN_INSTALLS with a reason"
