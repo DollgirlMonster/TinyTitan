@@ -229,3 +229,7 @@ The Qwen 3.6 integration was created by
 mode is derived from the
 [Nail-Qwen3.6-35B-A3B](https://huggingface.co/peculiar-ragdoll/Nail-Qwen3.6-35B-A3B-MLX)
 chat template by [peculiar-ragdoll](https://huggingface.co/peculiar-ragdoll).
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright (c) 2026 André Borchert.
