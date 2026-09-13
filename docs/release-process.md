@@ -18,6 +18,8 @@ release notes are `docs/release-notes-vX.Y.md`.
 | Memory | `memory_pressure -Q` | The golden baselines load real models |
 | **No model process** | `pgrep -fl 'NVMAIServer\|NVMAIMac\|NVMAIDecodeService\|NVMAICLI\|NVMAIPackageTests\|swiftpm-testing-helper\|mlx_lm\|mlx-lm'` | The golden gate refuses to run beside one; see §5 |
 | `gh` authenticated | `gh auth status` | Publishing uses it; it must be the repo owner's account |
+| A release build exists | `ls .build/arm64-apple-macosx/release/NVMAICLI` | The golden gate drives that binary and runs *before* the clean scratch build; `release.sh` refuses to start without it |
+| The installs to verify | `ls models/*/verified-install.json` | The gate verifies only what is installed, and never fetches a model; see §5 |
 | Clean tree, HEAD on the tag | `git status --porcelain` | `release.sh` enforces both |
 
 Never terminate a process you did not start. If one of these is alive and not
@@ -168,6 +170,39 @@ attempt:
 for i in $(seq 1 6); do pgrep -f 'swiftpm-testing-help[e]r' >/dev/null && echo busy || echo quiet; sleep 30; done
 ```
 
+### Only the installs already in `models/` are verified
+
+`models/` is deliberately kept below the full supported set — it is hundreds of
+gigabytes and the operator prunes it to save disk. The golden phase therefore
+verifies **every golden target that has an install there, and nothing else**, and
+says out loud which ones it could not check:
+
+```
+  -- NOT CHECKED golden baseline ornith-4 (ornith-1.5_35B_A3B_4Bit): no install under models/
+  4 golden baseline(s) identical
+  NOT CHECKED — no install in models/, and none may be fetched to fix that: ornith-8 ornith-4 qwen36-4 qwen36-8 agentworld-4 agentworld-8
+  the release notes must name every baseline that was not checked
+```
+
+**A missing install is never resolved by downloading, converting, repacking or
+re-installing a model.** No release step fetches a model: `release.sh`
+fingerprints every `verified-install.json` before the golden phase and fails if
+the phase changed `models/` at all, so a gate cannot quietly install one to go
+green. A release that would need a model the machine does not have waits for the
+operator to install it deliberately — that is the
+[adding-a-model](adding-a-model.md) runbook, and it is a decision, not a
+side-effect of cutting a release.
+
+`--publish` refuses unless the notes name **every** target that was not checked,
+absent ones included. That is the whole point: a reader of the Release learns
+what was and was not re-verified, and "not checked, no install" is a different
+sentence from "checked and byte-identical".
+
+An installed model that no `check_golden` line covers is a hard error rather than
+a silent omission, so a model cannot join the fleet unchecked. A genuine sidecar
+— the MTP draft head, which a covered target's baseline already exercises — is
+named in `AUXILIARY_INSTALLS` in `tools/release.sh` instead.
+
 ### A baseline the host cannot check at all (a documented skip)
 
 Some installs live in a synced folder and the provider can leave them
@@ -233,10 +268,16 @@ machine it was measured on, and leave previous releases' tables alone.
 - [ ] README has `## New in X.Y`, replacing the previous callout
 - [ ] `docs/release-notes-vX.Y.md` ends with a `SHA256_PENDING` checksum block
 - [ ] Tree clean, `git tag -a vX.Y`, tag pushed, `release.sh` preconditions pass
+- [ ] A release build exists (`.build/arm64-apple-macosx/release/NVMAICLI`) and
+      `models/` holds exactly the installs you intend to verify
 - [ ] Dry run green: lint, the serial suite, **every installed golden**, a
       warning-free clean build
-- [ ] Any golden skipped via `NVMAI_RELEASE_SKIP_GOLDENS` is named with its
-      reason in `### Verification` (`release.sh --publish` enforces this)
+- [ ] **No model was downloaded, converted, repacked or re-installed** to make a
+      check run; the golden phase left `models/` byte-identical (`release.sh`
+      enforces this)
+- [ ] Every baseline that was not checked is named in `### Verification` — both
+      the ones absent from `models/` and any skipped via
+      `NVMAI_RELEASE_SKIP_GOLDENS` (`release.sh --publish` enforces this)
 - [ ] Staged archive inspected (six executables, bundles, licence, notices)
 - [ ] `--publish --notes docs/release-notes-vX.Y.md`, then `gh release view`
 - [ ] No model process left running afterwards

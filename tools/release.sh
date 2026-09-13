@@ -53,6 +53,12 @@ cd "$ROOT"
 # --- preconditions ----------------------------------------------------------
 step "preconditions"
 [ -z "$(git status --porcelain)" ] || die "working tree is dirty; commit or stash first"
+# The golden gate runs before the clean scratch build and drives the release CLI
+# in .build (golden-baseline.sh exits 2 without it), so a missing release build
+# used to surface as per-target "golden baseline mismatch" lines. Demand it
+# first, where the message can say what to actually run.
+[ -x "$ROOT/.build/arm64-apple-macosx/release/NVMAICLI" ] \
+  || die "no release build at .build/arm64-apple-macosx/release/NVMAICLI; run: swift build -c release (the golden gate drives that binary)"
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || die "tag $TAG does not exist locally"
 [ "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)" ] \
   || die "HEAD is not $TAG; check out the tagged commit before releasing"
@@ -78,40 +84,68 @@ swift test --no-parallel 2>&1 | tee "$STAGE_ROOT.testlog" 2>/dev/null | grep -E 
 grep -q 'Test run with .* passed' "$STAGE_ROOT.testlog" 2>/dev/null \
   || die "swift test did not report a passing run"
 
-# The golden baseline is the only check that exercises real inference. Skip it
-# only when no model is installed — never to make a mismatch go away.
-# Every installed golden target is checked; the gate used to demand the
-# Ornith 8-bit install specifically and refused a machine that only has
-# Qwen3.8 installed, which is the machine 5.0 was cut on.
+# The golden baseline is the only check that exercises real inference.
 #
-# A baseline the host cannot check is a *documented exception*, not a silent
-# one. The install may be unreadable for a reason that is neither a mismatch nor
-# a runtime failure -- 5.3 was cut on a machine where Dropbox had left seven
-# installs online-only and the disk could not hold the 134 GB the largest one
-# needed to materialize. Deleting the target from the list below would hide that
-# from every future reader of this file, so the skip is explicit, carries a
-# mandatory reason, prints it beside the skip, and must be repeated in the
-# release notes -- --publish refuses when it is not:
+# VERIFICATION USES ONLY THE MODELS ALREADY INSTALLED UNDER models/. That
+# directory is deliberately kept below the full supported set to save disk, so a
+# target with no install is *reported as not checked* -- here and in the release
+# notes -- and is never resolved by downloading, converting, repacking or
+# re-installing a model. Nothing in this script fetches a model, and the guard
+# below re-checks that the golden phase left models/ exactly as it found it.
+#
+# A baseline the host can see but cannot *read* is a different case and stays a
+# documented exception with a mandatory reason. 5.3 was cut on a machine where
+# Dropbox had left seven installs online-only and the disk could not hold the
+# 134 GB the largest one needed to materialize: every expert read failed, which
+# this phase reports as `mismatch (4)` and which has nothing to do with the
+# runtime. Deleting a target from the list below would hide that from every
+# future reader of this file, so the skip is explicit, carries a reason, prints
+# it beside the skip, and must be repeated in the release notes -- --publish
+# refuses when it is not:
 #
 #   NVMAI_RELEASE_SKIP_GOLDENS=qwen38-8 \
 #   NVMAI_RELEASE_SKIP_GOLDENS_REASON="install is Dropbox online-only; 134 GB
 #     needed, 123 GB free" tools/release.sh v5.3
 GOLDENS_CHECKED=0
 GOLDEN_SKIPPED=""
+GOLDEN_ABSENT=""
+GOLDEN_DECLARED=""
 SKIP_GOLDENS="${NVMAI_RELEASE_SKIP_GOLDENS:-}"
 SKIP_GOLDENS_REASON="${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}"
+
+# An install that is deliberately not a golden target: the MTP draft head is a
+# sidecar to a target whose own baseline already covers it, not a served model.
+AUXILIARY_INSTALLS=" qwen3.8-flash-next_125B_A6B_MTP_4Bit "
+
+# The gate must not change the machine to pass. Fingerprint the install set and
+# every receipt's bytes before the golden phase and require the same after, so
+# installing, removing or rewriting a model inside the gate is a failure rather
+# than a way through it. Receipts are small; this reads none of the payload.
+install_fingerprint() {
+  [ -d "$ROOT/models" ] || return 0
+  find "$ROOT/models" -maxdepth 2 -name verified-install.json \
+    | LC_ALL=C sort | while IFS= read -r f; do
+        printf '%s  %s\n' "$(shasum -a 256 "$f" | awk '{print $1}')" "${f#"$ROOT"/}"
+      done
+}
+INSTALLS_BEFORE="$(install_fingerprint)"
+
 check_golden() {  # <install dir> <golden target>
-  if [ -f "$ROOT/models/$1/verified-install.json" ]; then
-    case " $SKIP_GOLDENS " in
-      *" $2 "*)
-        echo "  !! SKIPPED golden baseline $2 ($1)"
-        echo "  !! reason: $SKIP_GOLDENS_REASON"
-        GOLDEN_SKIPPED="$GOLDEN_SKIPPED $2"
-        return 0 ;;
-    esac
-    "$SCRIPT_DIR/golden-baseline.sh" --check "$2" || die "golden baseline mismatch ($2)"
-    GOLDENS_CHECKED=$((GOLDENS_CHECKED + 1))
+  GOLDEN_DECLARED="$GOLDEN_DECLARED $1"
+  if [ ! -f "$ROOT/models/$1/verified-install.json" ]; then
+    echo "  -- NOT CHECKED golden baseline $2 ($1): no install under models/"
+    GOLDEN_ABSENT="$GOLDEN_ABSENT $2"
+    return 0
   fi
+  case " $SKIP_GOLDENS " in
+    *" $2 "*)
+      echo "  !! SKIPPED golden baseline $2 ($1)"
+      echo "  !! reason: $SKIP_GOLDENS_REASON"
+      GOLDEN_SKIPPED="$GOLDEN_SKIPPED $2"
+      return 0 ;;
+  esac
+  "$SCRIPT_DIR/golden-baseline.sh" --check "$2" || die "golden baseline mismatch ($2)"
+  GOLDENS_CHECKED=$((GOLDENS_CHECKED + 1))
 }
 check_golden ornith-1.5_35B_A3B_8Bit 8
 check_golden ornith-1.5_35B_A3B_4Bit 4
@@ -121,21 +155,40 @@ check_golden qwen3.8-flash-next_125B_A6B_4Bit qwen38-4
 check_golden qwen3.8-flash-next_125B_A6B_8Bit qwen38-8
 check_golden qwen-agentworld_35B_A3B_4Bit agentworld-4
 check_golden qwen-agentworld_35B_A3B_8Bit agentworld-8
-# KAT-Coder-V2.5-Dev. Declared here before its install exists so that the
-# release that first ships it cannot pass without its baseline: an installed
-# model missing from this list would be silently unchecked.
+# KAT-Coder-V2.5-Dev. Declared before its install existed so the first release
+# that ships it cannot pass without its baseline.
 check_golden kat-coder-v2.5_35B_A3B_4Bit katcoder-4
 check_golden kat-coder-v2.5_35B_A3B_8Bit katcoder-8
+
+# An installed model that no check_golden line covers would be silently
+# unchecked. The old guard caught that only when *no* baseline had been checked
+# at all, so it could not see a straggler beside a passing target.
+for dir in "$ROOT"/models/*/; do
+  [ -f "$dir/verified-install.json" ] || continue
+  name="$(basename "$dir")"
+  case " $GOLDEN_DECLARED $AUXILIARY_INSTALLS " in
+    *" $name "*) continue ;;
+  esac
+  die "installed model $name has no golden target; add it to check_golden, or to AUXILIARY_INSTALLS when it is a sidecar"
+done
+
+INSTALLS_AFTER="$(install_fingerprint)"
+[ "$INSTALLS_BEFORE" = "$INSTALLS_AFTER" ] \
+  || die "the golden phase changed models/; a gate verifies what is installed and never installs, removes or rewrites a model"
+
 if [ "$GOLDENS_CHECKED" = 0 ]; then
-  if compgen -G "$ROOT/models/*/verified-install.json" >/dev/null; then
-    die "an installed model has no golden target; add it to golden-baseline.sh"
-  fi
-  echo "  no installed model; skipping golden baseline (state this in the notes)"
+  echo "  no golden baseline could be checked on this machine (state this in the notes)"
 else
   echo "  $GOLDENS_CHECKED golden baseline(s) identical"
 fi
+if [ -n "$GOLDEN_ABSENT" ]; then
+  echo "  NOT CHECKED — no install in models/, and none may be fetched to fix that:$GOLDEN_ABSENT"
+fi
 if [ -n "$GOLDEN_SKIPPED" ]; then
-  echo "  NOT CHECKED:$GOLDEN_SKIPPED — the release notes must say so"
+  echo "  NOT CHECKED — documented skip:$GOLDEN_SKIPPED"
+fi
+if [ -n "$GOLDEN_ABSENT$GOLDEN_SKIPPED" ]; then
+  echo "  the release notes must name every baseline that was not checked"
 fi
 
 # --- clean build ------------------------------------------------------------
@@ -205,11 +258,13 @@ fi
 [ -n "$NOTES" ] || die "--publish needs --notes <file> (see the previous release for the shape)"
 [ -f "$NOTES" ] || die "notes file not found: $NOTES"
 
-# A skipped baseline is only acceptable when the notes name it: the point of the
-# exception is that a reader of the Release learns what was not re-checked.
-for skipped in $GOLDEN_SKIPPED; do
-  grep -q "$skipped" "$NOTES" \
-    || die "notes do not mention the skipped baseline $skipped; a skipped baseline must be documented in the notes"
+# A baseline that was not checked -- skipped by name, or absent because its
+# model is not installed under models/ -- is only acceptable when the notes name
+# it: the point is that a reader of the Release learns what was not re-checked.
+# Naming an absent target never means fetching it; the model stays absent.
+for notchecked in $GOLDEN_SKIPPED $GOLDEN_ABSENT; do
+  grep -q "$notchecked" "$NOTES" \
+    || die "notes do not mention the unchecked baseline $notchecked; every baseline that was not checked must be named in the notes"
 done
 
 # A release whose notes quote the wrong SHA-256 is worse than one quoting none:

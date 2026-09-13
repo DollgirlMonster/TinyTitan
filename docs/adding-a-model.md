@@ -202,11 +202,13 @@ The project's bar, in this order:
 2. **A golden baseline**, added to `tools/golden-baseline.sh` (target table) and
    to `release.sh`'s `check_golden` list, captured only for a deliberate
    numerics change — never re-captured to make a mismatch go away. Declare both
-   **before** the install exists: the check skips a target with no
-   `verified-install.json`, so the release gate stays green on a machine that
-   has not installed it, and demands the baseline on the machine that has. Until
-   the baseline is captured, `--check <target>` fails closed with "no verified
-   install" or "no baseline", which is the guard working.
+   **before** the install exists: `release.sh` verifies only the targets that
+   have an install under `models/`, reports every one it could not check, and
+   `--publish` requires the notes to name them — so the gate neither fails on a
+   machine that has not installed the model nor lets that pass unrecorded, and
+   it never downloads the model to close the gap. Until the baseline is
+   captured, a direct `--check <target>` fails closed with "no verified install"
+   or "no baseline", which is the guard working.
 3. **The receipt**: `NVMAIRepack --verify-install --input-gturbo <dir>` passes,
    and the manifest's `sourceSnapshotHash` matches the snapshot that produced
    it.

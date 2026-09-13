@@ -21,30 +21,44 @@ swift test --no-parallel
 ```
 
 CI runs the same three, so a green run here is a green run there. `tools/lint.sh`
-enforces two things the compiler cannot:
+enforces four things the compiler cannot:
 
 - **force-cast** — no `as!` / `try!` under `sources/`. To keep one, put
   `lint:allow-force <reason>` in the comment block directly above it; a marker
   without a reason fails exactly like no marker.
-- **func-length** — a ratchet, not a limit. Functions already over 120 lines are
-  listed in `tools/func-length-baseline.txt`; the gate fails on *new* ones. If
-  you shrink a baselined function below the limit, drop its row — the gate
-  fails on stale exemptions so they cannot be reused later.
+- **func-length** — a ratchet, not a limit: no function over 120 lines without an
+  inline `lint:allow-long <reason>` above it. The ratchet file
+  `tools/func-length-baseline.txt` is currently **empty** — the baseline exists
+  so a large refactor can carry a temporary exemption, not because any function
+  needs one today. If you ever add a row, drop it once the function shrinks: the
+  gate fails on a stale exemption so it cannot be reused later.
+- **unchecked-sendable** — every `@unchecked Sendable` under `sources/` must
+  carry an `unchecked-invariant: <what makes this safe>` note above it.
+- **converter** — feeds routed experts to the converter in shuffled order and
+  fails unless each lands at its own index. This catches a class of bug that
+  produces installs which load, pass every byte check, and answer from the wrong
+  weights; no Swift test can see it, which is why it lives here.
+
+`tools/lint.sh <mode>` runs a single gate.
 
 These checks do not download or load the model. For a change to the runtime or
 the model-load path, also run the golden baseline, which is the only check that
 exercises real inference:
 
 ```bash
-tools/golden-baseline.sh --check 4        # or: 4 6 8
+tools/golden-baseline.sh --check 8        # Ornith 1.5 8-bit, the default target
+tools/golden-baseline.sh --check 4        # Ornith 1.5 4-bit
 ```
 
 It compares greedy, fixed-seed output against `benchmark/golden/`. A baseline is
 valid for one (machine, build, model) triple — capture your own with
-`tools/golden-baseline.sh 4` before making changes, and re-capture only for a
-deliberate numerics change. For a real-model change also report the prompt,
-generated token count, output, timing footer, Mac model, memory, macOS version,
-Swift version, and any protocol change.
+`tools/golden-baseline.sh 8` before making changes, and re-capture only for a
+deliberate numerics change. **Only models already installed under `models/` can
+be checked.** That directory is deliberately kept below the full supported set to
+save disk: a target with no install is reported as *not checked*, and it is never
+resolved by downloading, converting or re-installing the model. For a real-model
+change also report the prompt, generated token count, output, timing footer, Mac
+model, memory, macOS version, Swift version, and any protocol change.
 
 ## Benchmark reports
 
@@ -85,8 +99,10 @@ What the script enforces, and why each check is there:
 - **Clean tree, HEAD on the tag, tag pushed, no existing Release.** Cheap
   guards against releasing something other than what you think you tagged.
 - **`tools/lint.sh`, the full serial suite, and the golden baseline.** The
-  baseline is skipped only when no model is installed, and the notes should say
-  so when it was — never skip it to make a mismatch go away.
+  baseline runs against every golden target that has an install under `models/`;
+  a target with no install is reported as *not checked* and named in the release
+  notes. It is never resolved by downloading a model — the gate verifies what is
+  on the machine, and never changes what is on the machine to pass.
 - **A clean scratch build.** An incremental `swift build` compiles nothing when
   the tree is unchanged, so scanning its output for warnings passes vacuously.
   The shipped binaries are always built fresh from the tagged commit.

@@ -1,9 +1,12 @@
 # NVMAI
 
-Swift and Metal inference for compatible Qwen3.5-MoE 35B-A3B text models on
-Apple Silicon. Pinned installers support Ornith 1.5 and Qwen 3.6 in 4-bit and
-8-bit; Ornith 1.5 4-bit is the default baseline and 6-bit is a withdrawn
-legacy format.
+Swift and Metal inference for Qwen-family MoE and dense text models on Apple
+Silicon, streaming routed experts from SSD so a model larger than RAM still
+runs. Supported at 4-bit and 8-bit: Qwen3.8-Flash-Next 125B-A6B,
+KAT-Coder-V2.5-Dev 35B-A3B, Qwen-AgentWorld 35B-A3B, Ornith 1.5 35B-A3B and
+Qwen 3.6 35B-A3B, plus the dense Qwen 3.5 2B/4B/9B on either engine. Ornith 1.5
+8-bit is the default install and the default golden target; 6-bit is a
+withdrawn legacy format.
 
 ## Scope
 
@@ -11,25 +14,39 @@ This checkout is for running and reporting existing behavior. Do not edit source
 
 ## Layout and commands
 
-`sources/NVMAI/` is the runtime; `sources/NVMAIRepack/`,
-`sources/NVMAICLI/`, `sources/NVMAIServer/`, and
-`sources/NVMAIApp/` contain the installer, CLI, loopback server, and
-Mac app.
-`tests/` contains focused public tests. User and engineering documentation lives in the
-[GitHub Wiki](https://github.com/Pummelchen/NVMAI/wiki).
+`sources/` holds one directory per SwiftPM target. `sources/NVMAI/` is the
+runtime and `sources/NVMAIFormat/` plus `sources/NVMAIKernelsC/` are its format
+types and C kernels. `sources/NVMAIRepack/`, `sources/NVMAICLI/`,
+`sources/NVMAIServer/` and `sources/NVMAIApp/` hold the installer, CLI, loopback
+server and Mac app; the app's `sources/NVMAIDecodeService/` and
+`sources/NVMAIDecodeProtocol/` are the out-of-process decode helper and its IPC
+contract. `sources/NVMAIMemory/` and `sources/ContinuityCore/` are persistent
+agent memory, `sources/NVMAIMemoryTool/` inspects it, and
+`sources/NVMAIBench/` plus `sources/NVMAIValidation/` are the benchmark driver
+and the validation/reference target. An executable target keeps its top-level
+or `@main` entry in `Command/`; `docs/repository-layout.md` has the conventions.
+
+`tests/` mirrors `sources/` path for path and never loads a model. User and
+engineering documentation lives in the
+[GitHub Wiki](https://github.com/Pummelchen/NVMAI/wiki); `docs/` holds the
+runbooks, the profiles and the audit register.
 
 ```bash
-swift run -c release NVMAIRepack --output models/ornith-1.5_35B_A3B_4Bit
-swift run -c release NVMAIRepack --model ornith15 --output models/ornith-1.5_35B_A3B_4Bit --resume
 swift build -c release
 .build/release/NVMAIMac
 swift run -c release NVMAICLI \
-  --model models/ornith-1.5_35B_A3B_4Bit \
+  --model models/kat-coder-v2.5_35B_A3B_4Bit \
   --prompt "The capital of France is" \
   --max-new 64
+
+# Installing is a separate, operator-requested job: it downloads 19.5 GB
+# (4-bit) or 36.9 GB (8-bit), and this checkout deliberately does not hold
+# every supported model. Never run it to satisfy a check.
+swift run -c release NVMAIRepack --model ornith15-8bit --output models/ornith-1.5_35B_A3B_8Bit
+swift run -c release NVMAIRepack --model ornith15-8bit --output models/ornith-1.5_35B_A3B_8Bit --resume
 ```
 
-The installer streams the pinned model without staging the full source checkpoint. Set `HF_TOKEN` only if requested. The 4-bit download is about 19.5 GB; 6-bit and 8-bit require more. Cancellation preserves verified completed ranges; continue them with `--resume` or remove them with `--discard-partial --output <model.gturbo>`.
+The installer streams the pinned model without staging the full source checkpoint. Set `HF_TOKEN` only if requested. The 4-bit download is about 19.5 GB and the 8-bit about 36.9 GB; 6-bit is withdrawn. Cancellation preserves verified completed ranges; continue them with `--resume` or remove them with `--discard-partial --output <model.gturbo>`. Run the installer only when the human asks for a model to be added — never to make a verification pass.
 
 An installed model's `verified-install.json` receipt is bound to the absolute
 path it was installed to, so **moving or renaming a model directory makes it
@@ -39,7 +56,7 @@ place (re-hashes the payload against the manifest and rebinds it to the
 current path):
 
 ```bash
-swift run -c release NVMAIRepack --verify-install --input-gturbo models/ornith-1.5_35B_A3B_4Bit
+swift run -c release NVMAIRepack --verify-install --input-gturbo models/kat-coder-v2.5_35B_A3B_4Bit
 ```
 
 Never hand-edit the receipt to match the new path: the path binding is what
@@ -66,20 +83,32 @@ Run package tests serially (`swift test --no-parallel`), passing any extra
 arguments like `--filter` through. Run only one app, CLI, or model-using test
 at a time.
 
-`tools/lint.sh` runs the two gates CI enforces beyond the compiler: no `as!` /
-`try!` under `sources/` without a `lint:allow-force <reason>` comment above it,
-and no new function over 120 lines (existing ones are listed in
-`tools/func-length-baseline.txt`; drop a row when its function shrinks below
-the limit, or the gate fails on the stale exemption).
+`tools/lint.sh` runs the four gates CI enforces beyond the compiler: no `as!` /
+`try!` under `sources/` without a `lint:allow-force <reason>` comment above it;
+no function over 120 lines without an inline `lint:allow-long <reason>` — the
+ratchet file `tools/func-length-baseline.txt` is currently **empty**, because
+every long function carries its own justification, and the gate fails on a
+stale exemption row as well as on a new offender; every `@unchecked Sendable`
+carrying an `unchecked-invariant:` note; and a `converter` probe that files
+routed experts by index rather than arrival order. `tools/lint.sh <mode>` runs a
+single gate (`force-cast`, `func-length`, `sendable`, `converter`).
 
-`tools/golden-baseline.sh --check 4` compares greedy, fixed-seed Ornith 1.5
-4-bit generation against `benchmark/golden/`. It is the default real-model
-baseline and the only check that exercises real inference, so run it for any
-change to the runtime or the model-load path —
-the unit tests never load a model. It counts as a model run: apply the
+`tools/golden-baseline.sh --check <target>` compares greedy, fixed-seed
+generation against `benchmark/golden/`. It is the only check that exercises real
+inference, so run it for any change to the runtime or the model-load path — the
+unit tests never load a model. Ornith 1.5 8-bit (`8`) is the default target;
+bare `4` still means Ornith 1.5 4-bit. It counts as a model run: apply the
 preconditions above first. A baseline is valid for one (machine, build, model)
 triple; re-capture only for a deliberate numerics change, never to make a
 mismatch go away.
+
+**Verification uses only the models already installed under `models/`.**
+`models/` is deliberately kept smaller than the full supported set to save disk,
+so a golden target with no install there is *reported as not checked* — by
+`release.sh` and in the release notes — and never "fixed" by downloading,
+converting, repacking or re-installing it. No gate, benchmark or release step
+may fetch a model to satisfy itself. Adding a model is the separate runbook
+`docs/adding-a-model.md`, and it is the operator's decision, not a release's.
 
 For performance results, build release once and follow the [community benchmark guide](https://github.com/Pummelchen/NVMAI/wiki/Benchmarking-Guide) exactly. Do not enable experimental controls or profiling.
 
@@ -99,7 +128,7 @@ synced folder, so read it before installing, converting, or moving anything:
 a model file the sync provider has left *online-only* has no local content, and
 moving it out of the sync root loses it.
 
-Do not download a full checkpoint, duplicate the `.gturbo` model, create a worktree, or purge caches just to run tests.
+Do not download a full checkpoint, duplicate the `.gturbo` model, create a worktree, or purge caches just to run tests, a gate or a release.
 
 Report the commit, hardware and RAM, macOS, Swift version, exact command, exit code, complete timing footer or error, and every protocol deviation. Treat results as measurements, not performance ceilings.
 
@@ -107,8 +136,9 @@ Report the commit, hardware and RAM, macOS, Swift version, exact command, exit c
 
 The Mac app sends prompts through Qwen's ChatML format. It
 exposes context length, temperature, Top-K, Top-P, expert-cache slots, prefill,
-and RDADVISE. Temperature defaults to `0.6` for the Qwen 3.5/3.6 families and
-`1.0` for Qwen3.8-Flash-Next, per its model card; Top-K `20`, Top-P `0.95`,
+and RDADVISE. Temperature defaults to `0.6` for the Qwen 3.5/3.6 families,
+`1.0` for Qwen3.8-Flash-Next and `1.0` for KAT-Coder-V2.5-Dev (its own model
+card, not its Qwen 3.6 base's); Top-K `20`, Top-P `0.95`,
 and presence penalty `0.0` (the only currently supported presence-penalty value)
 are shared by all of them.
 Responses can use the context space left after formatting the prompt, and FP16
