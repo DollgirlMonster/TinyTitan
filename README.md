@@ -12,113 +12,65 @@
 
 NVMAI is the fastest SSD streamer for AI models on Mac - M1 to M6
 
-## New in 5.4
-
-This release first ships the 5.3 work to users, together with the release
-verification policy.
-
-- **KAT-Coder-V2.5-Dev 35B-A3B is supported**, at 4-bit and 8-bit. Kwaipilot's
-  agentic-coding fine-tune of Qwen 3.6 arrives with its own sampling
-  (temperature 1.0), three oracle continuations verified on the real install,
-  and a golden baseline per width. **17.86 tok/s** at 4-bit, **6.91** at 8-bit.
-- **Both widths of a model install from one download.**
-  `tools/install_models.sh <model> both` converts 4-bit and 8-bit in a single
-  pass over one ~70 GB checkpoint; asking for one width at a time fetches it
-  twice. A second width now reuses the snapshot a previous run left behind.
-- **The converter files routed experts by their index, not their arrival
-  order.** KAT's checkpoint is the first whose experts ship one tensor per
-  expert, and fusing them in arrival order silently paired each routing
-  decision with another expert's weights — an install that loaded, passed every
-  byte check, and answered nonsense. A `tools/lint.sh` gate now fails if the
-  order regresses.
-- **The downloader survives a link that truncates.** Shards are fetched in
-  length-verified 64 MiB ranges with a small connection pool, so a 5 GB
-  truncation costs one chunk instead of the whole shard.
-- **The tool scripts pick their own Python**, by capability (3.10+ with
-  `numpy`/`ml_dtypes`/`safetensors`) rather than by a pinned version, so they
-  work wherever the analysis stack lives.
-- **Release verification checks only the models you have installed.** The golden
-  gate names every target it could not check instead of skipping it silently,
-  refuses to publish unless the release notes repeat that list, and fails if the
-  phase changes `models/` at all — so a release is never made to pass by
-  downloading, converting or re-installing a model.
-- **A native NVMAI app icon**, replacing the upstream fork's bird.
-
-Fixed releases are tagged; the full history is in the
+What is new in each release lives in the
 [Changelog](https://github.com/Pummelchen/NVMAI/wiki/Changelog).
 
 ## Benchmarks
 
-Peak decode on a base 8-core M3 MacBook Pro with 24 GB.
-
-
-| Model | Quantization | Peak decode |
-| --- | --- | ---: |
-| Qwen-AgentWorld 35B-A3B | 4-bit | **21.74 tok/s** |
-| Ornith 1.5 35B-A3B | 4-bit | **21.65 tok/s** |
-| Qwen 3.6 35B-A3B | 4-bit | **21.41 tok/s** |
-| KAT-Coder-V2.5-Dev 35B-A3B | 4-bit | **17.86 tok/s** |
-| Qwen 3.6 35B-A3B | 8-bit | **12.37 tok/s** |
-| Qwen-AgentWorld 35B-A3B | 8-bit | **12.28 tok/s** |
-| Ornith 1.5 35B-A3B | 8-bit | **11.93 tok/s** |
-| KAT-Coder-V2.5-Dev 35B-A3B | 8-bit | **6.91 tok/s** |
-| Qwen3.8-Flash-Next 125B-A6B | 4-bit | **5.46 tok/s** |
-| Qwen3.8-Flash-Next 125B-A6B | 8-bit | **2.10 tok/s** |
-
-The two KAT rows are measured, not quoted: 512-token greedy generations through
-`benchmark/nvmai_maxthroughput.py`, taking the highest rate over its four
-prompts (KAT 4-bit ranged 11.34-17.86 tok/s, the 8-bit 1.00-6.91). Its 8-bit
-build streams 36.9 GB of experts from SSD, so its rate is the most
-expert-locality-sensitive of the 35B family, and the `count` prompt is the
-worst case in both widths.
-
-### The dense Qwen 3.5 models on both engines
-
-The 2B, 4B and 9B are the models that run on either engine, so they are the
-only ones worth tabling twice. These decode rates were measured on this machine
-by [One Prompt, Every Model](https://github.com/Pummelchen/NVMAI/wiki/Capital-of-Paris-Smartness),
-which ran each install on both engines:
+Peak decode on a base 8-core M3 MacBook Pro with 24 GB. `—` means the CPU engine
+does not serve that model: the MoE families stream their experts on the GPU path,
+and only the dense Qwen 3.5 models run on either engine.
 
 | Model | Quantization | GPU | CPU |
 | --- | --- | ---: | ---: |
-| Qwen 3.5 2B | 4-bit | **53.73 tok/s** | **15.42 tok/s** |
-| Qwen 3.5 2B | 8-bit | **32.77 tok/s** | **15.83 tok/s** |
-| Qwen 3.5 4B | 4-bit | **26.18 tok/s** | **7.71 tok/s** |
-| Qwen 3.5 4B | 8-bit | **16.14 tok/s** | **7.04 tok/s** |
-| Qwen 3.5 9B | 4-bit | **14.93 tok/s** | **4.07 tok/s** |
-| Qwen 3.5 9B | 8-bit | **8.90 tok/s** | **4.51 tok/s** |
+| Qwen 3.5 2B (dense) | 4-bit | **53.73 tok/s** | **15.42 tok/s** |
+| Qwen 3.5 2B (dense) | 8-bit | **32.77 tok/s** | **15.83 tok/s** |
+| Qwen 3.5 4B (dense) | 4-bit | **26.18 tok/s** | **7.71 tok/s** |
+| Qwen-AgentWorld 35B-A3B | 4-bit | **21.74 tok/s** | — |
+| Ornith 1.5 35B-A3B | 4-bit | **21.65 tok/s** | — |
+| Qwen 3.6 35B-A3B | 4-bit | **21.41 tok/s** | — |
+| KAT-Coder-V2.5-Dev 35B-A3B | 4-bit | **17.86 tok/s** | — |
+| Qwen 3.5 4B (dense) | 8-bit | **16.14 tok/s** | **7.04 tok/s** |
+| Qwen 3.5 9B (dense) | 4-bit | **14.93 tok/s** | **4.07 tok/s** |
+| Qwen 3.6 35B-A3B | 8-bit | **12.37 tok/s** | — |
+| Qwen-AgentWorld 35B-A3B | 8-bit | **12.28 tok/s** | — |
+| Ornith 1.5 35B-A3B | 8-bit | **11.93 tok/s** | — |
+| Qwen 3.5 9B (dense) | 8-bit | **8.90 tok/s** | **4.51 tok/s** |
+| KAT-Coder-V2.5-Dev 35B-A3B | 8-bit | **6.91 tok/s** | — |
+| Qwen3.8-Flash-Next 125B-A6B | 4-bit | **5.46 tok/s** | — |
+| Qwen3.8-Flash-Next 125B-A6B | 8-bit | **2.10 tok/s** | — |
 
-The CPU engine holds the model resident instead of streaming experts from SSD
-the way the GPU path does, so the 9B is the one to watch: at 8.9 GB of weights
-it can exceed the RAM of an 8 GB machine and spend its time paging. Prefer
-4-bit there, and the GPU wherever the model fits.
+How these were measured, and what they are not:
+
+- The 35B and 125B rows are 512-token greedy generations through
+  `benchmark/nvmai_maxthroughput.py`, taking the highest rate over its four
+  prompts. KAT is the most expert-locality-sensitive of the 35B family — its
+  8-bit build streams 36.9 GB of experts from SSD — and ranges 11.34–17.86 tok/s
+  at 4-bit and 1.00–6.91 at 8-bit depending on the prompt.
+- The dense Qwen 3.5 rows are **not** 512-token peaks: they are the
+  short-generation rates recorded by
+  [One Prompt, Every Model](https://github.com/Pummelchen/NVMAI/wiki/Capital-of-Paris-Smartness),
+  which ran each install on both engines. Read them against each other, not
+  against the rows above.
+- The CPU engine holds the model resident instead of streaming experts from SSD,
+  so the 9B is the one to watch: at 8.9 GB of weights it can exceed the RAM of
+  an 8 GB machine and spend its time paging. Prefer 4-bit there, and the GPU
+  wherever the model fits.
+- Everything here was measured on this project's base M3 with 24 GB, and these
+  are measurements of that machine and configuration rather than ceilings.
 
 
 ### Supported LLMs
 
-- **Qwen3.8-Flash-Next 125B-A6B**
-- **KAT-Coder-V2.5-Dev 35B-A3B** — Kwaipilot's agentic-coding fine-tune of
-  Qwen 3.6 35B-A3B, at 4-bit and 8-bit
-  (`tools/install_models.sh katcoder|katcoder-8bit`). Same geometry as Qwen 3.6,
-  with the checkpoint's own sampling (temperature 1.0) rather than the Qwen 3.6
-  series' 0.6. Verified on the real install at both widths: the three
-  continuations behave (`…France is` → ` Paris`, `Once upon a` → ` time`,
-  `…the lazy` → ` dog`), and each width has a stored golden baseline that
-  re-checks byte-identical.
-- **Qwen-AgentWorld 35B-A3B**
-- **Ornith 1.5 35B-A3B**
-- **Qwen 3.6 35B-A3B**
-- **Qwen 3.5 2B / 4B / 9B** — dense models at 4-bit and 8-bit, on either engine:
-  the GPU by default, the CPU on request (`--engine cpu`, or the `@cpu` model id
-  for one request). Converted from Qwen's own bf16 release by this project's
-  converter (`tools/install_models.sh qwen35-2b|qwen35-4b|qwen35-9b`). The 9B is
-  the vision-language build and is converted text-only, like every model here.
-  These install as `.gturbo` directories with the same manifest and
-  path-bound verification receipt as every other model here. They were affine
-  snapshots until the repacker learned the dense shape; the two formats are
-  verified equivalent rather than assumed to be, by a byte comparison of every
-  resident tensor and by an identical-logits check
-  (`tools/repack_dense.sh`, `docs/gturbo-format.md`).
+Qwen3.8-Flash-Next 125B-A6B · KAT-Coder-V2.5-Dev 35B-A3B · Qwen-AgentWorld
+35B-A3B · Ornith 1.5 35B-A3B · Qwen 3.6 35B-A3B · Qwen 3.5 2B / 4B / 9B
+
+Every model installs at **4-bit and 8-bit**; 6-bit was withdrawn in 3.9. The
+dense Qwen 3.5 models run on either engine and the rest stream experts on the
+GPU path, and Ornith 1.5 8-bit is the default install. Install commands,
+per-model notes and the sampling each checkpoint asks for are in
+[Getting Started](https://github.com/Pummelchen/NVMAI/wiki/Getting-Started) and
+[Runtime Controls](https://github.com/Pummelchen/NVMAI/wiki/Runtime-Controls).
 
 
 ### Usage

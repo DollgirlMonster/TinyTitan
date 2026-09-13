@@ -37,9 +37,13 @@ Three places, and only the first is a literal:
    section at the top, with `[Release vX.Y](https://github.com/Pummelchen/NVMAI/releases/tag/vX.Y)`
    and user-facing bullets. Keep it compact: what a *user* can do now that they
    could not before, and the numbers that back it.
-3. **`README.md`** — the `## New in X.Y` callout immediately after the intro
-   line, replacing the previous one. This is the release process's step 1 and
-   the first thing a visitor reads.
+3. **`README.md`** — **no release callout.** The README is the stable front
+   page: what NVMAI is, the benchmark table, the supported-model list and the
+   links. A version's announcement belongs in the wiki `Changelog.md` above, so a
+   reader finds it once instead of the README accumulating a section per release.
+   The README changes only when a fact it states changes — a new benchmark row, a
+   model joining or leaving the supported list — and the only version string in
+   the tree is the installer literal below.
 
 The dated `docs/site/*.md` articles say "at the time of writing" and are **not**
 bumped: they record when they were verified, and re-stamping them without
@@ -79,7 +83,7 @@ The annotated tag's message is the starting point for the notes, so make it the
 headline plus the lead paragraph.
 
 ```bash
-git add -A && git commit -m "Prepare X.Y: release notes, the README callout, and the app version"
+git add -A && git commit -m "Prepare X.Y: release notes, the changelog entry, and the app version"
 git push origin main
 git tag -a vX.Y -m "NVMAI X.Y — <headline>
 
@@ -269,7 +273,8 @@ machine it was measured on, and leave previous releases' tables alone.
 
 - [ ] Installer version bumped; no stale version literal left (`grep` for it)
 - [ ] Wiki `Changelog.md` has the new section, pushed
-- [ ] README has `## New in X.Y`, replacing the previous callout
+- [ ] No release callout added to the README — the Changelog section **is** the
+      announcement, and the README changed only if a fact in it changed
 - [ ] `docs/release-notes-vX.Y.md` ends with a `SHA256_PENDING` checksum block
 - [ ] Tree clean, `git tag -a vX.Y`, tag pushed, `release.sh` preconditions pass
 - [ ] A release build exists (`.build/arm64-apple-macosx/release/NVMAICLI`) and

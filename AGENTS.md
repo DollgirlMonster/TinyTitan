@@ -115,7 +115,7 @@ For performance results, build release once and follow the [community benchmark 
 Launch helpers live in `benchmark/`. Start the server before running any benchmark script.
 
 Cutting a release is a runbook, not improvisation: `docs/release-process.md`
-holds the order (notes, README callout, version, tag, dry run, publish), the
+holds the order (notes, changelog, version, tag, dry run, publish), the
 machine preconditions, and what `release.sh`'s failure messages actually mean —
 including a golden gate that reports a *refused* start as a "mismatch".
 Adding a model is the other runbook: `docs/adding-a-model.md` lists the eight

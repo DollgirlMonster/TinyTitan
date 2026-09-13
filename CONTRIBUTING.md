@@ -80,8 +80,8 @@ runbook, including the preconditions that stall it and what each failure message
 actually means, is [`docs/release-process.md`](docs/release-process.md).
 
 ```bash
-# 1. update the README callout ("New in X.Y", replacing the previous one)
-#    and promote the wiki Changelog's Unreleased section to the version
+# 1. add the release's section to the wiki Changelog — that is where a version is
+#    announced; the README carries no release callout
 git tag -a vX.Y -m "..."      # annotation is the starting point for the notes
 git push origin main vX.Y
 
