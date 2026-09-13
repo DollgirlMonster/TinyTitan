@@ -7,23 +7,28 @@
 
 NVMAI is the fastest SSD streamer for AI models on Mac - M1 to M6
 
-## New in 5.2
+## New in 5.3
 
-- **One server serves every installed model.** `--models-dir` puts the whole
-  catalogue on one port with one model resident at a time, and a request naming
-  another model switches to it. One launcher replaces the per-model start
-  scripts: pick the client (Codex, Claude Code, Qwen Code, OpenCode, Zed), the
-  model, the thinking level and the RAM limit.
-- **The dense Qwen 3.5 2B / 4B / 9B run on the GPU as well as the CPU**, with
-  the engine selectable per request — `<id>@cpu` or `<id>@gpu`. The GPU path was
-  accepted only after its logits matched the CPU engine's on the real install.
-- **Optional agent memory:** `NVMAI_MEMORY=1` gives a model facts that outlive a
-  conversation, scoped per repository, with nothing to install.
-- **Thinking arrives as `reasoning_content`**, apart from the answer, including
-  a thought a model opens when thinking is off — which is now split out and
-  logged instead of being streamed as the answer.
-- **A deep audit of the whole tree:** 89 code findings and 8 documentation
-  defects, 0 open (`docs/audit-2026-09-11-findings.md`).
+- **KAT-Coder-V2.5-Dev 35B-A3B is supported**, at 4-bit and 8-bit. Kwaipilot's
+  agentic-coding fine-tune of Qwen 3.6 arrives with its own sampling
+  (temperature 1.0), three oracle continuations verified on the real install,
+  and a golden baseline per width. **17.86 tok/s** at 4-bit, **6.91** at 8-bit.
+- **Both widths of a model install from one download.**
+  `tools/install_models.sh <model> both` converts 4-bit and 8-bit in a single
+  pass over one ~70 GB checkpoint; asking for one width at a time fetches it
+  twice. A second width now reuses the snapshot a previous run left behind.
+- **The converter files routed experts by their index, not their arrival
+  order.** KAT's checkpoint is the first whose experts ship one tensor per
+  expert, and fusing them in arrival order silently paired each routing
+  decision with another expert's weights — an install that loaded, passed every
+  byte check, and answered nonsense. A `tools/lint.sh` gate now fails if the
+  order regresses.
+- **The downloader survives a link that truncates.** Shards are fetched in
+  length-verified 64 MiB ranges with a small connection pool, so a 5 GB
+  truncation costs one chunk instead of the whole shard.
+- **The tool scripts pick their own Python**, by capability (3.10+ with
+  `numpy`/`ml_dtypes`/`safetensors`) rather than by a pinned version, so they
+  work wherever the analysis stack lives.
 
 Fixed releases are tagged; the full history is in the
 [Changelog](https://github.com/Pummelchen/NVMAI/wiki/Changelog).
