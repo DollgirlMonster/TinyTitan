@@ -88,8 +88,9 @@ golden gate now says so out loud instead of skipping silently:
 - `--publish` refuses unless the release notes name **every** target that was not
   checked, absent ones included;
 - an installed model that no `check_golden` line covers is a hard error, so a
-  model cannot join the fleet unchecked (the MTP draft head, a sidecar a covered
-  target's baseline already exercises, is declared in `AUXILIARY_INSTALLS`);
+  model cannot join the fleet unchecked; an intentional exception is declared in
+  `NON_GOLDEN_INSTALLS` with its reason — the MTP draft head, and the dense
+  Qwen 3.5 2B/4B/9B, which have no stored baseline at all;
 - the phase fingerprints every `verified-install.json` before and after and fails
   if `models/` changed at all.
 

@@ -113,9 +113,22 @@ GOLDEN_DECLARED=""
 SKIP_GOLDENS="${NVMAI_RELEASE_SKIP_GOLDENS:-}"
 SKIP_GOLDENS_REASON="${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}"
 
-# An install that is deliberately not a golden target: the MTP draft head is a
-# sidecar to a target whose own baseline already covers it, not a served model.
-AUXILIARY_INSTALLS=" qwen3.8-flash-next_125B_A6B_MTP_4Bit "
+# Installs that are deliberately NOT golden targets. The coverage guard below
+# errors on any installed model missing from check_golden, so this list is how
+# an intentional exception is declared instead of being silently unchecked. Two
+# kinds live here, and both are recorded rather than implied:
+#
+#   * the MTP draft head -- a sidecar to a target whose own baseline already
+#     exercises it, not a served model;
+#   * the dense Qwen 3.5 2B/4B/9B -- there is no stored baseline for them in
+#     benchmark/golden/ at all (the ten files there cover the five MoE
+#     families), so a release verifies them through neither path. Their
+#     `.gturbo`-versus-snapshot equivalence is covered by the opt-in
+#     NVMAI_DENSE_EQUIV tests instead. Capturing real dense baselines is an open
+#     item in the wiki tracker.
+NON_GOLDEN_INSTALLS=" qwen3.8-flash-next_125B_A6B_MTP_4Bit
+  qwen3.5_2B_4Bit qwen3.5_2B_8Bit qwen3.5_4B_4Bit qwen3.5_4B_8Bit
+  qwen3.5_9B_4Bit qwen3.5_9B_8Bit "
 
 # The gate must not change the machine to pass. Fingerprint the install set and
 # every receipt's bytes before the golden phase and require the same after, so
@@ -170,10 +183,10 @@ check_golden kat-coder-v2.5_35B_A3B_8Bit katcoder-8
 for dir in "$ROOT"/models/*/; do
   [ -f "$dir/verified-install.json" ] || continue
   name="$(basename "$dir")"
-  case " $GOLDEN_DECLARED $AUXILIARY_INSTALLS " in
+  case " $GOLDEN_DECLARED $NON_GOLDEN_INSTALLS " in
     *" $name "*) continue ;;
   esac
-  die "installed model $name has no golden target; add it to check_golden, or to AUXILIARY_INSTALLS when it is a sidecar"
+  die "installed model $name has no golden target; add it to check_golden, or declare it in NON_GOLDEN_INSTALLS with a reason"
 done
 
 INSTALLS_AFTER="$(install_fingerprint)"

@@ -199,9 +199,13 @@ what was and was not re-verified, and "not checked, no install" is a different
 sentence from "checked and byte-identical".
 
 An installed model that no `check_golden` line covers is a hard error rather than
-a silent omission, so a model cannot join the fleet unchecked. A genuine sidecar
-— the MTP draft head, which a covered target's baseline already exercises — is
-named in `AUXILIARY_INSTALLS` in `tools/release.sh` instead.
+a silent omission, so a model cannot join the fleet unchecked. An intentional
+exception is declared, with its reason, in `NON_GOLDEN_INSTALLS` in
+`tools/release.sh`: today that is the MTP draft head (a sidecar a covered
+target's baseline already exercises) and the dense Qwen 3.5 2B/4B/9B (which have
+no stored baseline in `benchmark/golden/` at all — capturing real ones is an open
+item in the wiki tracker). The guard exists to catch the *undeclared* case, so
+add to that list deliberately, not to silence it.
 
 ### A baseline the host cannot check at all (a documented skip)
 
