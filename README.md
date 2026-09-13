@@ -38,11 +38,41 @@ Peak decode on a base 8-core M3 MacBook Pro with 24 GB.
 | Qwen-AgentWorld 35B-A3B | 4-bit | **21.74 tok/s** |
 | Ornith 1.5 35B-A3B | 4-bit | **21.65 tok/s** |
 | Qwen 3.6 35B-A3B | 4-bit | **21.41 tok/s** |
+| KAT-Coder-V2.5-Dev 35B-A3B | 4-bit | **17.86 tok/s** |
 | Qwen 3.6 35B-A3B | 8-bit | **12.37 tok/s** |
 | Qwen-AgentWorld 35B-A3B | 8-bit | **12.28 tok/s** |
 | Ornith 1.5 35B-A3B | 8-bit | **11.93 tok/s** |
+| KAT-Coder-V2.5-Dev 35B-A3B | 8-bit | **6.91 tok/s** |
 | Qwen3.8-Flash-Next 125B-A6B | 4-bit | **5.46 tok/s** |
 | Qwen3.8-Flash-Next 125B-A6B | 8-bit | **2.10 tok/s** |
+
+The two KAT rows are measured, not quoted: 512-token greedy generations through
+`benchmark/nvmai_maxthroughput.py`, taking the highest rate over its four
+prompts (KAT 4-bit ranged 11.34-17.86 tok/s, the 8-bit 1.00-6.91). Its 8-bit
+build streams 36.9 GB of experts from SSD, so its rate is the most
+expert-locality-sensitive of the 35B family, and the `count` prompt is the
+worst case in both widths.
+
+### The dense Qwen 3.5 models on both engines
+
+The 2B, 4B and 9B are the models that run on either engine, so they are the
+only ones worth tabling twice. These decode rates were measured on this machine
+by [One Prompt, Every Model](https://github.com/Pummelchen/NVMAI/wiki/Capital-of-Paris-Smartness),
+which ran each install on both engines:
+
+| Model | Quantization | GPU | CPU |
+| --- | --- | ---: | ---: |
+| Qwen 3.5 2B | 4-bit | **53.73 tok/s** | **15.42 tok/s** |
+| Qwen 3.5 2B | 8-bit | **32.77 tok/s** | **15.83 tok/s** |
+| Qwen 3.5 4B | 4-bit | **26.18 tok/s** | **7.71 tok/s** |
+| Qwen 3.5 4B | 8-bit | **16.14 tok/s** | **7.04 tok/s** |
+| Qwen 3.5 9B | 4-bit | **14.93 tok/s** | **4.07 tok/s** |
+| Qwen 3.5 9B | 8-bit | **8.90 tok/s** | **4.51 tok/s** |
+
+The CPU engine holds the model resident instead of streaming experts from SSD
+the way the GPU path does, so the 9B is the one to watch: at 8.9 GB of weights
+it can exceed the RAM of an 8 GB machine and spend its time paging. Prefer
+4-bit there, and the GPU wherever the model fits.
 
 
 ### Supported LLMs

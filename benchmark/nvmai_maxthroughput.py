@@ -45,26 +45,42 @@ def main():
     # --mtp <dir> runs every model twice, once plain and once with the draft
     # head attached, so a speculative rate is compared against its own
     # non-speculative baseline on one machine state rather than across runs.
+    # --engine cpu selects the CPU engine, which is the only way to measure
+    # the dense Qwen 3.5 models and the only way to measure any install
+    # without the GPU. The label carries it so a CPU row cannot be mistaken
+    # for a GPU one in the results.
     args = sys.argv[1:]
     mtp = None
     if "--mtp" in args:
         i = args.index("--mtp")
         mtp = args[i + 1]
         del args[i:i + 2]
+    engine = "gpu"
+    if "--engine" in args:
+        i = args.index("--engine")
+        try:
+            engine = args[i + 1]
+        except IndexError:
+            raise SystemExit("--engine needs cpu or gpu")
+        del args[i:i + 2]
+    if engine not in ("cpu", "gpu"):
+        raise SystemExit(f"--engine must be cpu or gpu, not {engine}")
     models = args or [str(DEFAULT_MODEL_PATH)]
     for model in models:
         lowered = model.lower()
         label = "8bit" if "8bit" in lowered else "6bit" if "6bit" in lowered else "4bit"
-        run_quant(model, label)
+        if engine == "cpu":
+            label += "-cpu"
+        run_quant(model, label, mtp_model=mtp, engine=engine)
         if mtp:
-            run_quant(model, label + "-mtp", mtp_model=mtp)
+            run_quant(model, label + "-mtp", mtp_model=mtp, engine=engine)
 
 
-def run_quant(model, label, mtp_model=None):
+def run_quant(model, label, mtp_model=None, engine="gpu"):
     log_path = benchmark_log_path(f"maxtput_{label}.log")
     log = open(log_path, "w")
     proc = subprocess.Popen(
-        server_command(BIN, PORT, model=model, mtp_model=mtp_model),
+        server_command(BIN, PORT, model=model, mtp_model=mtp_model, engine=engine),
         env=server_environment(), stdout=log, stderr=subprocess.STDOUT)
     start = time.time()
     # A 125B install streams off SSD for minutes before it serves. The old 120s

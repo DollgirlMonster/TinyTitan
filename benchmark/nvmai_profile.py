@@ -70,18 +70,28 @@ def server_command(
     thinking_mode: str = DEFAULT_THINKING_MODE,
     ram_budget: str | None = DEFAULT_EXPERT_CACHE_BUDGET,
     mtp_model: str | os.PathLike[str] | None = None,
+    engine: str = "gpu",
 ) -> list[str]:
     """Build the standard native-context, cache-on command.
 
     `mtp_model` attaches a draft-head sidecar. It is the only way to reach
     the speculative path -- there is no CLI flag for it -- so a harness that
     cannot pass it cannot measure MTP at all.
+
+    `engine` selects the runtime the server loads into. The default is the
+    GPU, which is what every install but the dense Qwen 3.5 models uses; the
+    dense ones run on either engine, and `cpu` is the only way to measure one
+    without the GPU. `--cpu` also drops the expert-cache budget, which is a
+    GPU expert-streaming knob and means nothing to the CPU engine, so it is
+    omitted rather than passed and ignored.
     """
     prompt_cache_memory_mib = (
         DEFAULT_PROMPT_CACHE_MEMORY_MIB if cache_mode != "off" else 0
     )
     if thinking_mode not in SUPPORTED_THINKING_MODES:
         raise ValueError("thinking_mode must be off or on")
+    if engine not in ("cpu", "gpu"):
+        raise ValueError("engine must be cpu or gpu")
     command = [
         str(binary),
         "--port", str(port),
@@ -93,9 +103,11 @@ def server_command(
         "--kv-bits", str(DEFAULT_KV_BITS),
         "--thinking", thinking_mode,
     ]
+    if engine == "cpu":
+        command += ["--cpu"]
     if mtp_model is not None:
         command += ["--mtp-model", str(mtp_model)]
-    if ram_budget is not None:
+    if ram_budget is not None and engine == "gpu":
         command += ["--ram-budget", str(ram_budget)]
     return command
 
