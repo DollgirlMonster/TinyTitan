@@ -12,7 +12,10 @@
 
 NVMAI is the fastest SSD streamer for AI models on Mac - M1 to M6
 
-## New in 5.3
+## New in 5.4
+
+This release first ships the 5.3 work to users, together with the release
+verification policy.
 
 - **KAT-Coder-V2.5-Dev 35B-A3B is supported**, at 4-bit and 8-bit. Kwaipilot's
   agentic-coding fine-tune of Qwen 3.6 arrives with its own sampling
@@ -34,6 +37,12 @@ NVMAI is the fastest SSD streamer for AI models on Mac - M1 to M6
 - **The tool scripts pick their own Python**, by capability (3.10+ with
   `numpy`/`ml_dtypes`/`safetensors`) rather than by a pinned version, so they
   work wherever the analysis stack lives.
+- **Release verification checks only the models you have installed.** The golden
+  gate names every target it could not check instead of skipping it silently,
+  refuses to publish unless the release notes repeat that list, and fails if the
+  phase changes `models/` at all — so a release is never made to pass by
+  downloading, converting or re-installing a model.
+- **A native NVMAI app icon**, replacing the upstream fork's bird.
 
 Fixed releases are tagged; the full history is in the
 [Changelog](https://github.com/Pummelchen/NVMAI/wiki/Changelog).
