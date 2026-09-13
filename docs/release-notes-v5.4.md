@@ -143,18 +143,39 @@ short-generation rates, not 512-token peaks like the rows above them.
 
 ### Verification
 
-_To be completed from the dry run on the tagged commit before publishing._
+Cut on 2026-09-14 from tag `v5.4` on the base M3 with 24 GB this project measures
+on — macOS 26.6.2, Swift 6.3.3, Apple M3, 24 GB.
+
+- **`tools/lint.sh`** — all four gates clean: force-cast, func-length (0
+  baselined, 0 new, 2012 functions scanned), unchecked-Sendable, and the
+  converter expert-order probe.
+- **`swift test --no-parallel`** — **1470 tests in 228 suites passed** (118.3 s).
+- **Clean scratch release build** — warning-free, all six executables and the
+  `.bundle` resources staged (the Metal shader library among them).
+- **Golden baselines, byte-identical**: **qwen38-4**, **qwen38-8**,
+  **katcoder-4** and **katcoder-8**. These are the four targets installed on the
+  machine; the archive is 24,770,128 bytes.
 
 The gate verifies every golden target that has an install under `models/` and
-reports the rest. On the machine this was cut on, four targets are installed and
-six are not, and the six are named here because they are **not** checked and must
-not be assumed: **ornith-8**, **ornith-4**, **qwen36-4**, **qwen36-8**,
-**agentworld-4** and **agentworld-8**. They are absent because the operator
-deleted those installs to save disk; they were not downloaded to satisfy this
-gate, and they must not be.
+reports the rest. Six targets have no install here and are **not checked**:
+**ornith-8**, **ornith-4**, **qwen36-4**, **qwen36-8**, **agentworld-4** and
+**agentworld-8**. They are absent because the operator deleted those installs to
+save disk. They were **not** downloaded to satisfy this gate, and they must not
+be: `release.sh` names every unchecked target, refuses to publish unless these
+notes repeat the list, and fails if the golden phase changed `models/` at all.
 
-The four that are checked are **qwen38-4**, **qwen38-8**, **katcoder-4** and
-**katcoder-8**.
+**The six dense Qwen 3.5 installs are not golden-checked at all.** There has
+never been a stored baseline for 2B/4B/9B at either width — `benchmark/golden/`
+holds ten files, all for the MoE families. That is a pre-existing gap, not one
+this release introduced; it was surfaced by this release's new coverage guard,
+which had to be told they are intentional exceptions. Their equivalence is
+covered by the opt-in `NVMAI_DENSE_EQUIV` / `NVMAI_DENSE_GPU_EQUIV` tests, which
+the release gate does not run. Recorded in the wiki tracker with the plan to
+close it.
+
+**Not re-measured for this release:** every performance number in the README.
+KAT's rows were measured on this machine for the 5.3 work and the dense
+GPU-versus-CPU rows are quoted from the wiki page; see `### Performance` above.
 
 ### Checksum
 
