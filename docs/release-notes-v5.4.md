@@ -115,6 +115,9 @@ check pass. `docs/release-process.md` §5 states the policy and
 - **A native NVMAI app icon**, replacing the upstream fork's bird. It uses the
   wordmark's own palette and is reproducible with `tools/make_app_icon.py`
   (issue #5).
+- **The archive carries `NOTICE`.** The binary distribution now ships `LICENSE`,
+  `NOTICE` and `THIRD_PARTY_NOTICES.md`: Apache-2.0 requires the first two to
+  travel with the binaries, and the third carries the upstream attributions.
 - **The app recognizes both KAT widths**, with descriptors carrying each
   snapshot's own fingerprint, and the install table in
   `AppModelInstallTests` covers ten builds.
