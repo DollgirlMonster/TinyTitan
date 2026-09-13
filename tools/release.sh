@@ -78,9 +78,35 @@ grep -q 'Test run with .* passed' "$STAGE_ROOT.testlog" 2>/dev/null \
 # Every installed golden target is checked; the gate used to demand the
 # Ornith 8-bit install specifically and refused a machine that only has
 # Qwen3.8 installed, which is the machine 5.0 was cut on.
+#
+# A baseline the host cannot check is a *documented exception*, not a silent
+# one. The install may be unreadable for a reason that is neither a mismatch nor
+# a runtime failure -- 5.3 was cut on a machine where Dropbox had left seven
+# installs online-only and the disk could not hold the 134 GB the largest one
+# needed to materialize. Deleting the target from the list below would hide that
+# from every future reader of this file, so the skip is explicit, carries a
+# mandatory reason, prints it beside the skip, and must be repeated in the
+# release notes -- --publish refuses when it is not:
+#
+#   NVMAI_RELEASE_SKIP_GOLDENS=qwen38-8 \
+#   NVMAI_RELEASE_SKIP_GOLDENS_REASON="install is Dropbox online-only; 134 GB
+#     needed, 123 GB free" tools/release.sh v5.3
 GOLDENS_CHECKED=0
+GOLDEN_SKIPPED=""
+SKIP_GOLDENS="${NVMAI_RELEASE_SKIP_GOLDENS:-}"
+SKIP_GOLDENS_REASON="${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}"
+if [ -n "$SKIP_GOLDENS" ] && [ -z "$SKIP_GOLDENS_REASON" ]; then
+  die "NVMAI_RELEASE_SKIP_GOLDENS=$SKIP_GOLDENS without NVMAI_RELEASE_SKIP_GOLDENS_REASON; a skipped baseline must record why"
+fi
 check_golden() {  # <install dir> <golden target>
   if [ -f "$ROOT/models/$1/verified-install.json" ]; then
+    case " $SKIP_GOLDENS " in
+      *" $2 "*)
+        echo "  !! SKIPPED golden baseline $2 ($1)"
+        echo "  !! reason: $SKIP_GOLDENS_REASON"
+        GOLDEN_SKIPPED="$GOLDEN_SKIPPED $2"
+        return 0 ;;
+    esac
     "$SCRIPT_DIR/golden-baseline.sh" --check "$2" || die "golden baseline mismatch ($2)"
     GOLDENS_CHECKED=$((GOLDENS_CHECKED + 1))
   fi
@@ -105,6 +131,9 @@ if [ "$GOLDENS_CHECKED" = 0 ]; then
   echo "  no installed model; skipping golden baseline (state this in the notes)"
 else
   echo "  $GOLDENS_CHECKED golden baseline(s) identical"
+fi
+if [ -n "$GOLDEN_SKIPPED" ]; then
+  echo "  NOT CHECKED:$GOLDEN_SKIPPED — the release notes must say so"
 fi
 
 # --- clean build ------------------------------------------------------------
@@ -173,6 +202,13 @@ fi
 
 [ -n "$NOTES" ] || die "--publish needs --notes <file> (see the previous release for the shape)"
 [ -f "$NOTES" ] || die "notes file not found: $NOTES"
+
+# A skipped baseline is only acceptable when the notes name it: the point of the
+# exception is that a reader of the Release learns what was not re-checked.
+for skipped in $GOLDEN_SKIPPED; do
+  grep -q "$skipped" "$NOTES" \
+    || die "notes do not mention the skipped baseline $skipped; a skipped baseline must be documented in the notes"
+done
 
 # A release whose notes quote the wrong SHA-256 is worse than one quoting none:
 # it tells a careful user their download is corrupt. 3.7 shipped that way for a

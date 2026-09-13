@@ -119,9 +119,23 @@ above them.
 
 ### Verification
 
-To be filled in from the dry run: `tools/lint.sh`, the serial suite's test and
-suite counts, the number of installed golden baselines that came back identical,
-and the clean-build warning count.
+The release gates ran on the tagged commit and all passed: `tools/lint.sh`
+clean; `swift test --no-parallel` **1470 tests in 228 suites passed**; **nine of
+the ten golden baselines byte-identical**; and a clean scratch release build
+with no compiler warnings. The archive is NNN bytes.
+
+**One baseline was not re-checked: `qwen38-8` (Qwen3.8-Flash-Next 125B-A6B
+8-bit).** Before the golden phase, Dropbox had left seven of the installs
+*online-only* — `fileproviderctl evaluate` reported `isDownloaded = 0`, and
+every expert read failed with `parallel expert read failed: Operation timed
+out`. Reading such a file outside NVMAI reproduces it (`cat` on one exits 1
+after 12 s with the same error), so the cause was the storage provider, not the
+runtime. Six of the seven installs were materialized, 24 GB in total. The 125B
+8-bit install needs **134 GB** materialized, the gate loads every install in one
+run, and the volume had 123 GB free — so it could not be made local without
+deleting other data, which was not done. The nine baselines that did run include
+both widths of this release's new install (KAT-Coder-V2.5-Dev) and every family
+the runtime supports, and each came back byte-identical.
 
 ### Checksum
 

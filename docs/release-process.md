@@ -151,8 +151,8 @@ this go away — the baseline is valid for one (machine, build, model) triple.
 The common blocker on a shared machine is another project's
 `swiftpm-testing-helper` (a Dropbox-resident checkout, in this workspace). It
 can be a *loop* that respawns every couple of minutes; the guard is re-checked
-by **each** of the eight golden invocations, so a loop with a 40% duty cycle
-means the phase cannot complete. What to do:
+by **each** golden invocation, so a loop with a 40% duty cycle means the phase
+cannot complete. What to do:
 
 1. Tell the human which process is blocking, with its parent and how long it
    has been alive (`ps -o pid,ppid,etime,%cpu -p <pid>`).
@@ -160,12 +160,52 @@ means the phase cannot complete. What to do:
    and never `pkill` by pattern.
 3. When the machine has been quiet for ~90 s, re-run the dry run.
 
-Waiting for a *single* short gap is not enough: the gate must start cleanly
-eight times. Verify a real quiet window before spending another attempt:
+Waiting for a *single* short gap is not enough: the gate must start cleanly once
+for every golden in the list. Verify a real quiet window before spending another
+attempt:
 
 ```bash
 for i in $(seq 1 6); do pgrep -f 'swiftpm-testing-help[e]r' >/dev/null && echo busy || echo quiet; sleep 30; done
 ```
+
+### A baseline the host cannot check at all (a documented skip)
+
+Some installs live in a synced folder and the provider can leave them
+**online-only**: the file lists its full size with zero blocks allocated, and a
+read either blocks while it is fetched or fails outright. 5.3 hit this on a
+machine where Dropbox had made seven installs online-only; every expert read
+failed with
+
+```
+error: parallel expert read failed: Operation timed out
+```
+
+which surfaces through the gate as `mismatch (4)` and has nothing to do with
+the runtime — `cat` on the file reproduces it, and `fileproviderctl evaluate
+<path>` shows `isDownloaded = 0`. Materializing is the fix, but the largest
+install needs 134 GB and the disk must hold *every* checked install at once, so
+it can be impossible. Diagnose before concluding anything:
+
+```bash
+find models -type f -size +1M -exec stat -f "%b %z %N" {} \; |
+  awk '$1*512 < $2*0.9 {print $3, $2}'        # online-only files, by size
+```
+
+Never delete a target from `check_golden`'s list to get past this: the list is
+what stops a release from silently skipping an installed model. Name the target
+instead, with its reason, and `release.sh` prints it in the golden phase and
+**refuses to publish unless the notes repeat it**:
+
+```bash
+NVMAI_RELEASE_SKIP_GOLDENS=qwen38-8 \
+NVMAI_RELEASE_SKIP_GOLDENS_REASON="install is Dropbox online-only; 134 GB needed, 123 GB free" \
+  tools/release.sh v5.3
+```
+
+The env var is per-invocation and the reason is mandatory. The notes get a
+`### Verification` sentence naming the target, the reason, and what *was*
+checked — a release that says plainly which baseline went unverified is worth
+more than one that implies all of them ran.
 
 (Bracket the pattern — `help[e]r` — or `pgrep` matches the shell running it.)
 
@@ -195,6 +235,8 @@ machine it was measured on, and leave previous releases' tables alone.
 - [ ] Tree clean, `git tag -a vX.Y`, tag pushed, `release.sh` preconditions pass
 - [ ] Dry run green: lint, the serial suite, **every installed golden**, a
       warning-free clean build
+- [ ] Any golden skipped via `NVMAI_RELEASE_SKIP_GOLDENS` is named with its
+      reason in `### Verification` (`release.sh --publish` enforces this)
 - [ ] Staged archive inspected (six executables, bundles, licence, notices)
 - [ ] `--publish --notes docs/release-notes-vX.Y.md`, then `gh release view`
 - [ ] No model process left running afterwards
