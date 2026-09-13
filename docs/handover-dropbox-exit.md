@@ -1,5 +1,12 @@
 # Handover: leave Dropbox, then finish cutting 5.3
 
+> **Superseded, 2026-09-14.** The checkout left Dropbox, every install was
+> hydrated and its receipt re-issued, and 5.3's content shipped as 5.4 — the
+> release that was actually published. Keep this file as the record of the move
+> and its traps: the online-only failure mode, the receipt rebinding, and a
+> golden gate that reports a *refused* read as a mismatch. The current handover
+> is `docs/handover-post-5.4.md`.
+
 **Paste this into the next session:**
 
 > Continue the NVMAI work in this checkout, which is being moved out of the

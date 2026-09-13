@@ -122,11 +122,10 @@ Adding a model is the other runbook: `docs/adding-a-model.md` lists the eight
 places a new checkpoint has to be wired, the disk each width needs, the
 verification bar before it may be called supported, and how to re-issue install
 receipts after the checkout moves. Work in flight is handed over in
-`docs/handover-<name>.md`; `docs/handover-dropbox-exit.md` is the current one and
-starts with the prompt for the next session. It moves the checkout out of the
-synced folder, so read it before installing, converting, or moving anything:
-a model file the sync provider has left *online-only* has no local content, and
-moving it out of the sync root loses it.
+`docs/handover-<name>.md`; `docs/handover-post-5.4.md` is the current one and
+starts with the prompt for the next session. Read it before installing,
+converting or moving anything: it names what is open, and the traps that have
+already cost a session.
 
 Do not download a full checkpoint, duplicate the `.gturbo` model, create a worktree, or purge caches just to run tests, a gate or a release.
 

@@ -2,7 +2,7 @@
 
 > **Superseded, 2026-09-13.** KAT-Coder-V2.5-Dev is supported at both widths and
 > this work is closed; keep this file as the record of how it was added. The
-> current handover is `docs/handover-dropbox-exit.md`.
+> current handover is `docs/handover-post-5.4.md`.
 
 **Paste this into the next session:**
 
