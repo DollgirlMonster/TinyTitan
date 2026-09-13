@@ -14,9 +14,9 @@
 ## Where the work stands
 
 Pushed and in sync: tag `v5.3` → `8d3055f`, which is the commit the release is
-cut from. `main` and the wiki's `master` sit a few commits ahead of it with
-documentation only — this handover, the wiki tracker's pointer to it, and the
-release notes' corrected verification paragraph — so `git log --oneline
+cut from. `main` sits ahead of it with documentation only — this handover, the
+`AGENTS.md` pointer to it, and the KAT handover's superseded note; the wiki's
+`master` carries the tracker's pointer to this file — so `git log --oneline
 v5.3..main` shows no code change and `HEAD is not v5.3` is expected until you
 check the tag out. **No GitHub Release exists**, and none should be created until
 the gate record in `docs/release-notes-v5.3.md` can be completed.
