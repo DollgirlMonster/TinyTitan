@@ -20,6 +20,11 @@
   "engines": {
     "node": ">=22"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pummelchen/TinyTitan.git",
+    "directory": "plugins/dsh-tinytitan"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -30,8 +35,8 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-compaction-basic": "^0.1.5-rc.2",
-    "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.2"
+    "@deepseek-ai/dsh-compaction-basic": "^0.1.5-rc.2 || ^0.1.6-rc.1",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.2 || ^0.1.6-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-agent-presets": {

@@ -94,7 +94,7 @@ Then re-point the preset you keep at `@deepseek-ai/dsh-compaction-basic` (a
 cd plugins/dsh-tinytitan && node --test test/
 ```
 
-Nineteen tests, no harness packages required: the compaction seam is exercised
+Twenty tests, no harness packages required: the compaction seam is exercised
 against a stub base, the preset and settings surgery against temporary homes, and
 the route call against a stubbed runner. The `dsh-tinytitan/backend` import itself is
 resolved from the profile's own `node_modules` once installed.
