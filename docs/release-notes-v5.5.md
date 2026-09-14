@@ -182,7 +182,20 @@ golden baselines re-check rather than a benchmark.
 Cut from tag `v5.5` on the base M3 with 24 GB this project measures on —
 macOS 26.6.2, Swift 6.3.3, Apple M3, 24 GB.
 
-GATE_RESULTS_PENDING
+- **`tools/lint.sh`** — all four gates clean: force-cast, func-length (0
+  baselined, 0 new, 2059 functions scanned), unchecked-Sendable, and the
+  converter expert-order probe.
+- **`swift test --no-parallel`** — **1523 tests in 234 suites passed**
+  (119.6 s).
+- **Clean scratch release build** — warning-free, 107.9 s, staging the six
+  executables and the `.bundle` resources the runtime loads its kernels from.
+- **Golden baselines, byte-identical** — all ten targets installed here:
+  `katcoder-4`, `katcoder-8`, `qwen38-4`, `qwen38-8`, `qwen35-2b-4`,
+  `qwen35-2b-8`, `qwen35-4b-4`, `qwen35-4b-8`, `qwen35-9b-4` and `qwen35-9b-8`.
+
+Those results are from the dry run of this commit; `--publish` repeats every gate
+from scratch and rebuilds the archive, which is why the digest and size below are
+filled in only at publish time.
 
 `models/` holds eleven installs. The gate checked the ten that have a golden
 target: **katcoder-4**, **katcoder-8**, **qwen38-4**, **qwen38-8**,
