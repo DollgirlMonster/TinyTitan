@@ -10,7 +10,7 @@
 [![Last Commit](https://img.shields.io/github/last-commit/Pummelchen/NVMAI?style=flat-square&logo=git&label=Last%20Commit&color=2ea44f)](https://github.com/Pummelchen/NVMAI/commits/main)
 [![Contact](https://img.shields.io/badge/Contact-0xa0b1%40gmail.com-blue?style=flat-square&logo=gmail&logoColor=white)](mailto:0xa0b1@gmail.com)
 
-NVMAI is the fastest SSD streamer for AI models on Mac - M1 to M6
+NVMAI is the fastest SSD streamer for AI models on Mac.
 
 What is new in each release lives in the
 [Changelog](https://github.com/Pummelchen/NVMAI/wiki/Changelog).
