@@ -1,0 +1,70 @@
+name: CodeQL Swift
+
+# Swift on a schedule, not on every push.
+#
+# The repository's CodeQL *default setup* covers actions, c-cpp and python, but
+# not swift -- which is the language almost the whole product is written in
+# (about 5.1 MB of Swift against 0.8 MB of Python and 30 KB of C). CodeQL does
+# support Swift, so the gap is real, and enabling it in default setup does work:
+# a run was observed building the package on `macos-26-arm64`.
+#
+# It is deliberately not enabled there. A cold CodeQL Swift analysis builds the
+# whole package under the tracing extractor, which took more than 13 minutes and
+# had not finished, and default setup runs on *every* push. That competes for
+# the same macOS runner pool as `ci.yml`, where it delays the compile, lint,
+# test and link gates that actually gate a merge. So Swift is analysed by this
+# advanced-setup workflow instead, weekly and on demand, and the push path stays
+# fast.
+#
+# Why this is safe alongside default setup: default setup keeps analysing the
+# languages it already covers, and this workflow owns only `swift`. If default
+# setup ever stops reporting actions/c-cpp/python, that is a regression in the
+# repository's settings and not something this file can cause or fix -- check
+# the security settings page.
+#
+# Deliberately no `push` or `pull_request` trigger: adding one would put the
+# build back on every push, which is the trade this file exists to avoid.
+
+on:
+  schedule:
+    # Mondays, 04:17 UTC -- off the hour, so it does not queue behind the
+    # hourly jobs every other project schedules at :00.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  packages: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-swift:
+    name: Analyze (swift)
+    runs-on: macos-26
+    # Generous: the package plus its dependencies is a cold build under the
+    # extractor. 120 minutes is a ceiling, not an expectation.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: swift
+          # Manual, so the build is the same release build the project's own
+          # gate uses, and so a failure here is a build failure rather than an
+          # autobuild heuristic going wrong.
+          build-mode: manual
+
+      - name: Build the package
+        run: swift build -c release
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:swift"
