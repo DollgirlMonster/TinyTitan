@@ -262,14 +262,14 @@ LAUNCHER
     # SwiftPM writes resources to sibling *.bundle directories; Bundle.module
     # finds them beside the executable or in Contents/Resources.
     shopt -s nullglob
-    for bundle in "$BIN_DIR"/TINYTITAN_*.bundle; do
+    for bundle in "$BIN_DIR"/TinyTitan_*.bundle; do
       cp -R "$bundle" "$APP_PATH/Contents/Resources/"
     done
     shopt -u nullglob
 
     # Turn the shipped PNG into an .icns so the Dock shows a real icon.
     icon_png=""
-    for candidate in "$BIN_DIR"/TINYTITAN_TinyTitanMac.bundle/tinytitan-app-icon.png \
+    for candidate in "$BIN_DIR"/TinyTitan_TinyTitanMac.bundle/tinytitan-app-icon.png \
                      "$REPO_ROOT"/sources/TinyTitanApp/Mac/Resources/tinytitan-app-icon.png; do
       [[ -f "$candidate" ]] && { icon_png="$candidate"; break; }
     done
