@@ -82,10 +82,20 @@ misconfigured client believe it was talking to a model it was not.
   and truncate the summary, had the fix silently lost. llama.cpp's
   `reasoning_budget_tokens` is **accepted and not enforced** — this runtime
   bounds thinking by the level a template renders, not by a token count — and
-  the log says so. `thinking: {type: adaptive}` and `output_config.effort` are
-  accepted whatever the server runs (Claude Code sends the former on every
-  request). The model's thoughts are returned on the OpenAI surfaces
-  (`reasoning_content`) but not on the Messages API, so Anthropic's
+  the log says so. The Messages API asks for the level per request too, through
+  `thinking`: `disabled` is a real off, `enabled` maps its Anthropic
+  `budget_tokens` onto the same ladder (under 4k is `low`, under 16k `medium`,
+  else `xhigh`) and is refused only for the budget rules Anthropic itself
+  sets — required, at least 1024, below `max_tokens` — while
+  `thinking: {type: adaptive}` and `output_config.effort` are accepted whatever
+  the server runs (Claude Code sends the former on every request, meaning "you
+  decide", so it must not force a level). A client may therefore turn thinking
+  on, off or to another effort between turns of one session, whichever API it
+  speaks. The model's thoughts come back as `reasoning_content` on the OpenAI
+  surfaces and as a `thinking` block on the Messages API, carrying the empty
+  signature string: an Anthropic signature is an attestation this server cannot
+  produce, and a made-up token would only pretend to be verifiable. Thinking
+  blocks a client sends back are not rendered into the prompt, so Anthropic's
   `context_management` edits (clearing old thinking) are accepted and have
   nothing to do.
 - **Structured output** (`response_format`, `text.format: json_schema`,

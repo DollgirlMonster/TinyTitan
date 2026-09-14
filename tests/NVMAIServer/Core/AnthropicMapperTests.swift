@@ -8,9 +8,8 @@ import Testing
         try JSONDecoder().decode(AnthropicMessagesRequest.self, from: Data(json.utf8))
     }
 
-    private func map(_ json: String,
-                     profile: ServerReasoningProfile = .default) throws -> OpenAIChatRequest {
-        try AnthropicMapper.chatRequest(try decode(json), profile: profile)
+    private func map(_ json: String) throws -> OpenAIChatRequest {
+        try AnthropicMapper.chatRequest(try decode(json))
     }
 
     @Test func systemAndStringContentBecomeChatMessages() throws {
@@ -132,7 +131,7 @@ import Testing
 
     @Test func maxTokensIsClampedToTheContextWindow() throws {
         let request = try decode(#"{"model":"m","max_tokens":32000,"messages":[{"role":"user","content":"hi"}]}"#)
-        let chat = try AnthropicMapper.chatRequest(request, profile: .default, maxContext: 8192)
+        let chat = try AnthropicMapper.chatRequest(request, maxContext: 8192)
         #expect(chat.maxTokens == 8192)
     }
 
@@ -189,31 +188,67 @@ import Testing
         #expect(none.toolChoice == .string("none"))
     }
 
-    @Test func thinkingFollowsTheServerProfile() throws {
-        let body = """
-        {"model":"m","max_tokens":4096,"thinking":{"type":"enabled","budget_tokens":2048},
-         "messages":[{"role":"user","content":"hi"}]}
-        """
-        #expect(throws: ServerRequestError.self) { try map(body) }
-        // Adaptive leaves it to the model; Claude Code sends it always.
-        _ = try map("""
+    /// Thinking is a **per-request** control on this surface, as it is on the
+    /// OpenAI ones: the block's type and budget become the level the generation
+    /// runs at. The mapper takes no server profile at all now — it used to read
+    /// one to refuse `enabled` when the server had been started with thinking
+    /// off, which made the same harness behave two ways depending on the API a
+    /// client spoke. The HTTP-level test that the request really overrides the
+    /// loaded profile lives in `ReasoningSurfaceTests`.
+    @Test func thinkingComesFromTheRequestAlone() throws {
+        func effort(_ body: String) throws -> String? {
+            try map(body).reasoningEffort
+        }
+        let budgets: [(Int, String)] = [(2048, "low"), (8192, "medium"), (32768, "xhigh")]
+        for (budget, expected) in budgets {
+            #expect(try effort("""
+            {"model":"m","max_tokens":65536,
+             "thinking":{"type":"enabled","budget_tokens":\(budget)},
+             "messages":[{"role":"user","content":"hi"}]}
+            """) == expected)
+        }
+        // Adaptive leaves the server's own setting alone: Claude Code sends it
+        // on every request as "you decide", so it must not force a level.
+        #expect(try effort("""
         {"model":"m","max_tokens":4096,"thinking":{"type":"adaptive","display":"omitted"},
          "context_management":{"edits":[{"type":"clear_thinking_20251015","keep":"all"}]},
          "output_config":{"effort":"high"},
          "messages":[{"role":"user","content":"hi"}]}
-        """)
-        let on = ServerReasoningProfile(family: .qwen36, thinkingMode: .on, reasoningEffort: nil)
-        _ = try map(body, profile: on)
+        """) == nil)
+        // Disabled is a real request for off — the half that matters for a
+        // client that over-thinks a turn.
+        #expect(try effort("""
+        {"model":"m","max_tokens":8,"thinking":{"type":"disabled"},
+         "messages":[{"role":"user","content":"hi"}]}
+        """) == "off")
+        // An omitted block asks for nothing, so the loaded profile decides.
+        #expect(try effort("""
+        {"model":"m","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}
+        """) == nil)
+    }
+
+    /// The budget rules stay Anthropic's own: required when enabled, at least
+    /// 1024, and below max_tokens. A budget outside them is a malformed request,
+    /// not a mapping choice — this server renders levels, not token counts.
+    @Test func enabledWithoutAUsableBudgetIsRefused() throws {
+        #expect(throws: ServerRequestError.self) {
+            try map("""
+            {"model":"m","max_tokens":4096,"thinking":{"type":"enabled"},
+             "messages":[{"role":"user","content":"hi"}]}
+            """)
+        }
+        #expect(throws: ServerRequestError.self) {
+            try map("""
+            {"model":"m","max_tokens":4096,"thinking":{"type":"enabled","budget_tokens":512},
+             "messages":[{"role":"user","content":"hi"}]}
+            """)
+        }
         #expect(throws: ServerRequestError.self) {
             try map("""
             {"model":"m","max_tokens":1000,"thinking":{"type":"enabled","budget_tokens":2048},
              "messages":[{"role":"user","content":"hi"}]}
-            """, profile: on)
+            """)
         }
-        _ = try map("""
-        {"model":"m","max_tokens":8,"thinking":{"type":"disabled"},
-         "messages":[{"role":"user","content":"hi"}]}
-        """)
     }
 
     @Test func prefillAndStructuredOutputAreRefused() throws {
@@ -255,7 +290,7 @@ import Testing
         let request = try JSONDecoder().decode(AnthropicCountTokensRequest.self, from: Data("""
         {"model":"m","system":"s","messages":[{"role":"user","content":"hi"}]}
         """.utf8))
-        let chat = try AnthropicMapper.chatRequest(counting: request, profile: .default)
+        let chat = try AnthropicMapper.chatRequest(counting: request)
         #expect(chat.messages.map(\.role) == ["system", "user"])
         #expect(chat.maxTokens == 1)
     }

@@ -320,46 +320,68 @@ public enum AnthropicMapper {
         }
     }
 
-    /// Extended thinking is a load-time property of the served model, as it
-    /// is for reasoning_effort on the OpenAI path: a request may confirm the
-    /// active mode, never switch it. `adaptive` leaves the choice to the
-    /// model and is accepted whatever the server runs — Claude Code sends it
-    /// on every request — while `enabled` asks for thinking and is refused
-    /// when the server cannot render it.
-    static func validateThinking(_ thinking: JSONValue?, maxTokens: Int,
-                                 profile: ServerReasoningProfile) throws {
-        guard let thinking else { return }
+    /// The reasoning level a Messages `thinking` block asks for, or nil when the
+    /// request names none.
+    ///
+    /// Thinking is a **per-request** control here, exactly as `reasoning_effort`
+    /// is on the OpenAI surfaces: the level travels into generation, which
+    /// resolves a tokenizer for it, so a Messages client may turn thinking on,
+    /// off, or to another effort between turns of one session. That is also why
+    /// `chatRequest` takes no `ServerReasoningProfile`: nothing the server was
+    /// loaded with may contribute to this answer. The parameter it used to take
+    /// only read the loaded mode, to refuse an `enabled` request when thinking
+    /// was off; the validator still maps the resulting level onto what the
+    /// served model renders, on the same path a Chat Completions request takes.
+    ///
+    /// `adaptive` returns nil rather than a level: Claude Code sends it on every
+    /// request to mean "you decide", so it must leave the server's own setting
+    /// alone instead of forcing anything. `enabled` maps its `budget_tokens`
+    /// onto the one effort ladder — a token budget is not enforceable here, the
+    /// template renders levels — and the levels a model does not define are
+    /// mapped to the nearest by the same rule the OpenAI path uses.
+    ///
+    /// The *response* carries the thought as a `thinking` block whenever the
+    /// model produced one, signed with `AnthropicBuilder.thinkingSignature` —
+    /// the empty string, because an Anthropic signature is an attestation this
+    /// server cannot produce and a made-up token would only pretend to be
+    /// verifiable. Turning the level off is therefore what removes the block.
+    static func requestedThinking(_ thinking: JSONValue?, maxTokens: Int) throws -> ReasoningLevel? {
+        guard let thinking else { return nil }
         guard case .object(let dict) = thinking, case .string(let type)? = dict["type"] else {
             throw invalid("thinking must be an object with a type", "thinking")
         }
         switch type {
-        case "disabled", "adaptive":
-            return
+        case "disabled":
+            return .off
+        case "adaptive":
+            return nil
         case "enabled":
-            guard profile.thinkingMode == .on else {
-                throw unsupported("thinking is a load-time control; this server was started with thinking off. Restart with --thinking on",
-                                  "thinking.type")
+            guard case .integer(let budget)? = dict["budget_tokens"] else {
+                throw invalid("thinking.budget_tokens is required when thinking is enabled", "thinking.budget_tokens")
             }
-            do {
-                guard case .integer(let budget)? = dict["budget_tokens"] else {
-                    throw invalid("thinking.budget_tokens is required when thinking is enabled", "thinking.budget_tokens")
-                }
-                guard budget >= 1024 else {
-                    throw invalid("budget_tokens must be at least 1024", "thinking.budget_tokens")
-                }
-                guard budget < maxTokens else {
-                    throw invalid("budget_tokens must be less than max_tokens", "thinking.budget_tokens")
-                }
+            guard budget >= 1024 else {
+                throw invalid("budget_tokens must be at least 1024", "thinking.budget_tokens")
             }
+            guard budget < maxTokens else {
+                throw invalid("budget_tokens must be less than max_tokens", "thinking.budget_tokens")
+            }
+            // Three rungs, because the effort templates this project ships
+            // define exactly three (low|medium|xhigh) and the binary ones map
+            // any effort to "think". The boundaries are the published budgets
+            // Claude Code itself sends: 4k is its small setting, 16k its large.
+            if budget < 4096 { return .low }
+            if budget < 16384 { return .medium }
+            return .xhigh
         default:
             throw invalid("thinking type must be enabled, adaptive or disabled", "thinking.type")
         }
     }
 
     /// Build the chat-completions request for a Messages request, so the one
-    /// validator and the one generation path serve both APIs.
+    /// validator and the one generation path serve both APIs. No server profile
+    /// is taken: everything the served model contributes is applied by the
+    /// validator, and the reasoning level is the request's own.
     public static func chatRequest(_ request: AnthropicMessagesRequest,
-                                   profile: ServerReasoningProfile,
                                    maxContext: Int = Int.max) throws -> OpenAIChatRequest {
         guard let requestedMaxTokens = request.maxTokens else {
             throw invalid("field required", "max_tokens")
@@ -394,7 +416,12 @@ public enum AnthropicMapper {
         // thinking into a prompt and keeps every turn the client sends, so
         // the edits have nothing to do; accepting them keeps Claude Code,
         // which sends them always.
-        try validateThinking(request.thinking, maxTokens: maxTokens, profile: profile)
+        //
+        // The thinking block is the request's own reasoning level, on the same
+        // per-request path the OpenAI surfaces use: `disabled` is off,
+        // `enabled` maps its budget onto a rung, and `adaptive` (Claude Code's
+        // every-turn default) leaves the server's setting alone.
+        let thinkingLevel = try requestedThinking(request.thinking, maxTokens: maxTokens)
         guard !request.messages.isEmpty else {
             throw invalid("at least one message is required", "messages")
         }
@@ -462,12 +489,11 @@ public enum AnthropicMapper {
             logprobs: nil,
             presencePenalty: nil,
             frequencyPenalty: nil,
-            reasoningEffort: nil)
+            reasoningEffort: thinkingLevel?.rawValue)
     }
 
     /// The count_tokens body, as a Messages request without generation.
-    public static func chatRequest(counting request: AnthropicCountTokensRequest,
-                                   profile: ServerReasoningProfile) throws -> OpenAIChatRequest {
+    public static func chatRequest(counting request: AnthropicCountTokensRequest) throws -> OpenAIChatRequest {
         let full = AnthropicMessagesRequest(
             model: request.model, messages: request.messages, maxTokens: 1,
             system: request.system, metadata: nil, stopSequences: nil, stream: false,
@@ -475,7 +501,7 @@ public enum AnthropicMapper {
             toolChoice: request.toolChoice, thinking: nil, serviceTier: nil,
             outputConfig: nil, outputFormat: nil, container: nil, mcpServers: nil,
             contextManagement: nil)
-        return try chatRequest(full, profile: profile)
+        return try chatRequest(full)
     }
 }
 

@@ -78,8 +78,10 @@ private func object(_ data: Data) throws -> [String: Any] {
 }
 
 private func withServer<T>(_ backend: any ServerInferenceBackend,
+                           profile: ServerReasoningProfile = .default,
                            _ body: (Int) async throws -> T) async throws -> T {
-    let server = NVMAIHTTPServer(modelID: "test-model", queueLimit: 2, backend: backend)
+    let server = NVMAIHTTPServer(modelID: "test-model", queueLimit: 2,
+                                 backend: backend, reasoningProfile: profile)
     let channel = try await server.start(port: 0)
     let port = try #require(channel.localAddress?.port)
     do {
@@ -209,6 +211,40 @@ struct AnthropicReasoningTests {
             let (plain, _) = try await post(port, "/v1/messages", body + "}")
             let content = try #require(try object(plain)["content"] as? [[String: Any]])
             #expect(content.map { $0["type"] as? String } == ["text"])
+        }
+    }
+
+    /// The request's `thinking` block decides the level, not the mode the
+    /// server was loaded with: an `enabled` budget raises it to `xhigh` and a
+    /// `disabled` block turns thinking off on a server started thinking on.
+    /// The model is Qwen3.8-Flash-Next because it is the family whose template
+    /// really renders effort levels; the validator maps them, and what it
+    /// applied is what generation receives.
+    @Test func requestThinkingOverridesTheLoadedProfile() async throws {
+        let backend = ThinkingBackend()
+        let loaded = ServerReasoningProfile(family: .qwen38flash, thinkingMode: .on,
+                                            reasoningEffort: .low)
+        try await withServer(backend, profile: loaded) { port in
+            let asked = #"{"model":"test-model","max_tokens":65536,"messages":[{"role":"user","content":"hi"}]"#
+            let (_, plainStatus) = try await post(port, "/v1/messages", asked + "}")
+            #expect(plainStatus == 200)
+            #expect(backend.seen.all.last?.reasoning
+                        == RequestReasoning(thinkingMode: .on, effort: .low),
+                    "a request that names no level keeps the loaded one")
+
+            let (_, onStatus) = try await post(port, "/v1/messages", asked
+                + #","thinking":{"type":"enabled","budget_tokens":32768}}"#)
+            #expect(onStatus == 200)
+            #expect(backend.seen.all.last?.reasoning
+                        == RequestReasoning(thinkingMode: .on, effort: .xhigh),
+                    "an enabled budget raises the level above the loaded low")
+
+            let (_, offStatus) = try await post(port, "/v1/messages", asked
+                + #","thinking":{"type":"disabled"}}"#)
+            #expect(offStatus == 200)
+            #expect(backend.seen.all.last?.reasoning
+                        == RequestReasoning(thinkingMode: .off, effort: nil),
+                    "disabled is a real off on a server that was loaded thinking on")
         }
     }
 

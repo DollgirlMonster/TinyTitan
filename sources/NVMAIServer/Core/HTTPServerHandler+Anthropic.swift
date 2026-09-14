@@ -90,7 +90,7 @@ extension ServerHTTPHandler {
                 AnthropicMessagesRequest.self, from: Data(body.readableBytesView))
             let target = try servedModel(named: decoded.model)
             let chatRequest = try AnthropicMapper.chatRequest(
-                decoded, profile: target.reasoningProfile, maxContext: target.maximumContext)
+                decoded, maxContext: target.maximumContext)
             let request = try validate(chatRequest, for: target)
                 .withWorkspace(workspace)
             let messageID = AnthropicBuilder.messageID()
@@ -205,8 +205,7 @@ extension ServerHTTPHandler {
             let decoded = try JSONDecoder().decode(
                 AnthropicCountTokensRequest.self, from: Data(body.readableBytesView))
             let target = try servedModel(named: decoded.model)
-            let chatRequest = try AnthropicMapper.chatRequest(counting: decoded,
-                                                              profile: target.reasoningProfile)
+            let chatRequest = try AnthropicMapper.chatRequest(counting: decoded)
             let request = try validate(chatRequest, for: target)
             guard let counting = backend as? any PromptTokenCounting else {
                 throw ServerRequestError.unsupportedOperation("count_tokens")
