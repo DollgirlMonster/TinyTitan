@@ -1,5 +1,5 @@
 <p align="center">
-  NVMAI is now TinyTitan ! 🚀
+  ✨ NVMAI is now TinyTitan ! ✨
 </p>
 
 <p align="center">
