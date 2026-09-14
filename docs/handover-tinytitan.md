@@ -30,7 +30,7 @@ whose traps still bite and are folded in below.
 | `.build` | release rebuilt after the rename; the stale **debug** tree was removed and rebuilt during the 5.5 dry run |
 | Wiki | `.qwen/wiki`, remote renamed to `TinyTitan.wiki.git`, level with `origin/master` at the 5.5 Changelog and tracker commits |
 | DeepSeek Harness | `web` profile runs `dsh-tinytitan` from this checkout; route provider `tinytitan` (10 models); `qwen38` preset's compaction row points at `dsh-tinytitan/backend` |
-| CI | the `test` job is green on the release commits; **the `thread-sanitizer` job fails on a data race it reports at `HTTPServerSupport.swift:106`** — see below |
+| CI | the tagged commit's CI run is **green including `thread-sanitizer`**; the commit before it failed that job on an **intermittent** reported race at `HTTPServerSupport.swift:106` — see below |
 
 ## What this session landed
 
@@ -65,26 +65,28 @@ whose traps still bite and are folded in below.
 
 ## What is open
 
-1. **The `thread-sanitizer` CI job is red — a data race it reports in
-   `SSEOutbox.next()`.** The job's tests *pass* (`1523 tests in 234 suites`) and
-   the job fails on `ThreadSanitizer: reported 1 warnings`:
-   `SUMMARY: ThreadSanitizer: data race HTTPServerSupport.swift:106 in closure #1
-   in SSEOutbox.next()`, a write by a GCD worker racing a read by
-   `UnsafeContinuation.resume` on the NIO event loop, inside the `SSEOutbox`
-   allocated at `HTTPServerHandler+Responses.swift:107`. Three things are known:
-   the class's own state is **fully lock-guarded** (`frames`, `pendingDrain`,
-   `closed`, `overflowed`, `abandoned`, `closeAfterDrain`, `drainCancelled` are
-   only touched under `NSLock`); the read frame is compiler-generated/NIO, not
-   this project's code; and it **does not reproduce locally** — a targeted
-   `swift test --no-parallel --sanitize=thread --filter ResponsesAPIHTTPTests`
-   (9 tests) and the **full** instrumented suite (`1523 tests in 234 suites`,
-   392 s, exit 0) both come back clean on this M3. So it is either a
-   scheduler-sensitive interleaving on the CI runner or a Swift-concurrency
-   continuation false positive — not yet triaged. Nothing in 5.5 touched Swift,
-   and this job had never run to completion before (each earlier run was
-   cancelled by a later push). Decide between a real race, a documented
-   suppression, and a narrowed TSan scope; do not make CI green by deleting the
-   job.
+1. **The `thread-sanitizer` CI job is red on some commits and green on others —
+   an intermittent report in `SSEOutbox.next()`.** On `6f469e1` the job failed
+   with `ThreadSanitizer: reported 1 warnings` — `SUMMARY: ThreadSanitizer: data
+   race HTTPServerSupport.swift:106 in closure #1 in SSEOutbox.next()`, a write
+   by a GCD worker racing a read by `UnsafeContinuation.resume` on the NIO event
+   loop, on the `SSEOutbox` allocated at
+   `HTTPServerHandler+Responses.swift:107` — while its own tests passed
+   (`1523 tests in 234 suites`). On `a1ad1be`, which changes only
+   `docs/release-notes-v5.5.md`, **the same job passed** (17 min), and both local
+   instrumented runs are clean: `--filter ResponsesAPIHTTPTests` (9 tests) and
+   the full `swift test --no-parallel --sanitize=thread` (1523 tests, 392 s,
+   exit 0). So it is intermittent, not deterministic — which is what a real race
+   looks like, and also what a Swift-concurrency continuation artifact looks
+   like. **For benign:** `SSEOutbox`'s state is fully lock-guarded (`frames`,
+   `pendingDrain`, `closed`, `overflowed`, `abandoned`, `closeAfterDrain`,
+   `drainCancelled` are only touched under `NSLock`) and the read frame is
+   compiler-generated/NIO, not this project's code. **Against dismissing it:** an
+   intermittent race is exactly what the gate exists to catch, and a flaky gate
+   reddens unrelated pushes. Repeat the instrumented suite under load (or with
+   `TSAN_OPTIONS=halt_on_error=0` to collect every report) until it reproduces,
+   then decide between a fix, a documented suppression, and a narrowed scope. Do
+   not make CI green by deleting the job.
 2. **Publishing `plugins/dsh-tinytitan` to the harness catalogue** (still held,
    but the code half is now done). The route refresh **no longer needs a
    checkout**: `plugins/dsh-tinytitan/src/generate.js` builds the same block
