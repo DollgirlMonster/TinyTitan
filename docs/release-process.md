@@ -81,6 +81,31 @@ quoted the dry run's 24,770,128 bytes for an archive that published at
 The last two sections are a claim about what was verified. Do not write a gate
 result you have not seen; add it after the dry run if you want it in the notes.
 
+#### The Release page carries the compact form
+
+`release.sh` runs `tools/compact-release-notes.py` over the rendered notes and
+publishes the result, so the Release page is bullets — one sentence each, wrapped
+narrow — while `docs/release-notes-vX.Y.md` stays the full record of why each
+change exists and how it was checked.
+
+The compactor only re-lays-out; it never rewords, so **it cannot make a long
+draft short**. That is what the budget is for: the compact form must come in
+under `TINYTITAN_RELEASE_NOTES_MAX_CHARS` (default 12000) or the run stops. Write
+the notes compactly to begin with — bullets over paragraphs, the claim first and
+the elaboration only where it changes the claim.
+
+It also fails when compaction would drop a string `--publish` needs — every
+unchecked baseline, the digest, the byte count — which is the whole point of
+running it in the build rather than trusting the transformation: an omission is
+caught before the Release exists instead of after it is public.
+
+Both checks run whenever `--notes` is given, including the dry run, so a budget
+or coverage failure costs a notes edit rather than a full gate run.
+
+Note that the tag still holds whatever was committed at cut time. Editing the
+notes afterwards — to shorten them, say — moves `main` and the Release page, and
+cannot move the tag without rewriting it, which is not done.
+
 ## 3. Commit, tag, push
 
 The annotated tag's message is the starting point for the notes, so make it the
@@ -305,6 +330,9 @@ machine it was measured on, and leave previous releases' tables alone.
 - [ ] Every baseline that was not checked is named in `### Verification` — both
       the ones absent from `models/` and any skipped via
       `TINYTITAN_RELEASE_SKIP_GOLDENS` (`release.sh --publish` enforces this)
+- [ ] The notes are compact: the Release page is bullets, and the compact form is
+      under the `TINYTITAN_RELEASE_NOTES_MAX_CHARS` budget (`release.sh` compacts
+      and enforces this on any run that passes `--notes`)
 - [ ] Staged archive inspected (six executables, bundles, licence, notices)
 - [ ] `--publish --notes docs/release-notes-vX.Y.md`, then `gh release view`
 - [ ] No model process left running afterwards

@@ -295,51 +295,88 @@ BYTES="$(wc -c < "$ARCHIVE" | tr -d ' ')"
 echo "  $(basename "$ARCHIVE")  $BYTES bytes"
 echo "  sha256 $SHA"
 
+# --- notes ------------------------------------------------------------------
+# Checked whenever --notes is given, not only for --publish. Compaction and its
+# budget are cheap to check here and painful to discover after a full gate run.
+if [ -n "$NOTES" ]; then
+  [ -f "$NOTES" ] || die "notes file not found: $NOTES"
+
+  # A baseline that was not checked -- skipped by name, or absent because its
+  # model is not installed under models/ -- is only acceptable when the notes name
+  # it: the point is that a reader of the Release learns what was not re-checked.
+  # Naming an absent target never means fetching it; the model stays absent.
+  for notchecked in $GOLDEN_SKIPPED $GOLDEN_ABSENT; do
+    grep -q "$notchecked" "$NOTES" \
+      || die "notes do not mention the unchecked baseline $notchecked; every baseline that was not checked must be named in the notes"
+  done
+
+  # Two values in the notes are only knowable here. --publish rebuilds from
+  # scratch, so the binaries carry fresh mtimes and the archive both hashes and
+  # weighs differently from any dry run; a number copied out of a dry run is a
+  # false claim waiting to be published. (5.4's notes quoted the dry run's
+  # 24,770,128 bytes for an archive that published at 24,770,200.) So the notes
+  # carry SHA256_PENDING and ARCHIVE_BYTES_PENDING and both are filled in here,
+  # which makes the invariant hold by construction.
+  #
+  # A wrong digest is worse than none: it tells a careful user their download is
+  # corrupt, which is how 3.7 shipped for a few minutes. Both are enforced.
+  RENDERED_NOTES="$STAGE_ROOT/notes-rendered.md"
+  sed -e "s/SHA256_PENDING/$SHA/g" -e "s/ARCHIVE_BYTES_PENDING/$BYTES/g" "$NOTES" > "$RENDERED_NOTES" \
+    || die "failed to render notes"
+  grep -q 'SHA256_PENDING' "$NOTES" && echo "  filled SHA256_PENDING with $SHA"
+  grep -q 'ARCHIVE_BYTES_PENDING' "$NOTES" && echo "  filled ARCHIVE_BYTES_PENDING with $BYTES"
+  grep -q "$SHA" "$RENDERED_NOTES" \
+    || die "the notes neither contain SHA256_PENDING nor quote this archive's sha256 ($SHA)"
+  grep -q "$BYTES" "$RENDERED_NOTES" \
+    || die "the notes neither contain ARCHIVE_BYTES_PENDING nor quote this archive's size ($BYTES bytes)"
+
+  # The Release page gets the COMPACT form: the same claims as bullets, one
+  # sentence each, wrapped narrow. The full notes stay in the repo as the record
+  # of why each change exists and how it was verified.
+  #
+  # Two reasons this is a build step rather than a request to the author:
+  # compaction is mechanical (re-lay-out, never reword), so it should not depend
+  # on remembering; and every string the greps above rely on is passed back in as
+  # --require, so a compaction that would drop an unchecked baseline fails HERE,
+  # before the Release exists, rather than publishing one that is quietly
+  # missing a target.
+  #
+  # The character budget is the part that actually keeps notes short -- the
+  # compactor can only reformat, so a draft that says too much still says too
+  # much. Raise it deliberately with TINYTITAN_RELEASE_NOTES_MAX_CHARS.
+  COMPACT_NOTES="$STAGE_ROOT/notes-compact.md"
+  NOTES_MAX_CHARS="${TINYTITAN_RELEASE_NOTES_MAX_CHARS:-12000}"
+  REQUIRE_ARGS=()
+  for required in $GOLDEN_SKIPPED $GOLDEN_ABSENT "$SHA" "$BYTES"; do
+    REQUIRE_ARGS+=(--require "$required")
+  done
+  python3 "$SCRIPT_DIR/compact-release-notes.py" "$RENDERED_NOTES" \
+    --out "$COMPACT_NOTES" \
+    --max-chars "$NOTES_MAX_CHARS" \
+    "${REQUIRE_ARGS[@]}" \
+    || die "the notes did not survive compaction, or are over the ${NOTES_MAX_CHARS}-character budget (raise it with TINYTITAN_RELEASE_NOTES_MAX_CHARS)"
+fi
+
 # --- publish ----------------------------------------------------------------
 if [ "$PUBLISH" -ne 1 ]; then
   step "dry run complete"
   echo "  staged: $STAGE"
+  if [ -n "$NOTES" ]; then
+    echo "  release page: the compact form checked above is what --publish would carry"
+  else
+    echo "  (pass --notes docs/release-notes-vX.Y.md to check the notes here too)"
+  fi
   echo "  re-run with --publish to create the Release on $REPO"
   exit 0
 fi
 
 [ -n "$NOTES" ] || die "--publish needs --notes <file> (see the previous release for the shape)"
-[ -f "$NOTES" ] || die "notes file not found: $NOTES"
-
-# A baseline that was not checked -- skipped by name, or absent because its
-# model is not installed under models/ -- is only acceptable when the notes name
-# it: the point is that a reader of the Release learns what was not re-checked.
-# Naming an absent target never means fetching it; the model stays absent.
-for notchecked in $GOLDEN_SKIPPED $GOLDEN_ABSENT; do
-  grep -q "$notchecked" "$NOTES" \
-    || die "notes do not mention the unchecked baseline $notchecked; every baseline that was not checked must be named in the notes"
-done
-
-# Two values in the notes are only knowable here. --publish rebuilds from
-# scratch, so the binaries carry fresh mtimes and the archive both hashes and
-# weighs differently from any dry run; a number copied out of a dry run is a
-# false claim waiting to be published. (5.4's notes quoted the dry run's
-# 24,770,128 bytes for an archive that published at 24,770,200.) So the notes
-# carry SHA256_PENDING and ARCHIVE_BYTES_PENDING and both are filled in here,
-# which makes the invariant hold by construction.
-#
-# A wrong digest is worse than none: it tells a careful user their download is
-# corrupt, which is how 3.7 shipped for a few minutes. Both are enforced.
-RENDERED_NOTES="$STAGE_ROOT/notes-rendered.md"
-sed -e "s/SHA256_PENDING/$SHA/g" -e "s/ARCHIVE_BYTES_PENDING/$BYTES/g" "$NOTES" > "$RENDERED_NOTES" \
-  || die "failed to render notes"
-grep -q 'SHA256_PENDING' "$NOTES" && echo "  filled SHA256_PENDING with $SHA"
-grep -q 'ARCHIVE_BYTES_PENDING' "$NOTES" && echo "  filled ARCHIVE_BYTES_PENDING with $BYTES"
-grep -q "$SHA" "$RENDERED_NOTES" \
-  || die "the notes neither contain SHA256_PENDING nor quote this archive's sha256 ($SHA)"
-grep -q "$BYTES" "$RENDERED_NOTES" \
-  || die "the notes neither contain ARCHIVE_BYTES_PENDING nor quote this archive's size ($BYTES bytes)"
 
 step "publish"
 gh release create "$TAG" "$ARCHIVE" "$ARCHIVE.sha256" \
   --repo "$REPO" \
   --title "TinyTitan $VERSION" \
-  --notes-file "$RENDERED_NOTES" \
+  --notes-file "$COMPACT_NOTES" \
   --latest || die "gh release create failed"
 gh release view "$TAG" --repo "$REPO" --json url,assets \
   --jq '"  \(.url)\n  assets: \([.assets[].name] | join(", "))"'
