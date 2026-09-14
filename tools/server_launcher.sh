@@ -24,11 +24,11 @@
 #              models define the binary thinking switch, so their levels are
 #              exactly off|on -- off for a direct answer, on to reason first.
 #   <ram>      the routed-expert cache budget: 1, 2, 4, 8, 16 or 32 (GB).
-#              Anything over half of this Mac's physical memory is warned about
-#              in red and used anyway. Omit it to use the install's own
-#              measured profile, which the runtime holds to half of physical
-#              memory. The CPU engine has no expert cache, so it does not ask
-#              and the flag does not apply there.
+#              Anything over 40% of this Mac's physical memory is warned about
+#              in red and used anyway. Omit it to use the install's own measured
+#              profile, which the runtime holds to half of physical memory. The
+#              CPU engine has no expert cache, so it does not ask and the flag
+#              does not apply there.
 #
 # Flags (override the positional form, and work in any order):
 #
@@ -48,7 +48,7 @@
 #   --answers <default|concise>
 #   --thinking <level>
 #   --ram <1|2|4|8|16|32>   expert-cache budget in GB (GPU models only); over
-#              half of this Mac's physical memory is warned about, not refused
+#              40% of this Mac's physical memory is warned about, not refused
 #   --context <n|native|max> native 262144, or 524288/1048576 with --yarn
 #   --kv <4|8|16>   KV-cache precision (default 8)
 #   --yarn          enable YaRN context scaling
@@ -70,10 +70,11 @@
 # and MTP off. Everything tuned per model and quantization -- the expert-cache
 # budget, prefetch and its I/O tier, the prefill chunk, sampling -- comes from
 # the install's own ModelProfile row, so the launcher never overrides a measured
-# optimum. Half of physical memory is where the expert cache starts competing
-# with the rest of the machine -- the cache is wired and cannot be paged out --
-# so the runtime holds the profile's own value to it, and a --ram above it is
-# warned about in red and passed on as asked.
+# optimum. Past 40% of physical memory the expert cache starts competing with
+# the rest of the machine -- the cache is wired and cannot be paged out -- so
+# this launcher warns above that line and passes the size on as asked; the
+# runtime separately holds the *profile's* own value to half of physical memory
+# on the default path.
 # CPU models take none of the pinned flags: that backend has no prompt cache, no
 # quantized KV and no expert cache, so --kv, --context, --yarn and --ram are
 # reported as not applying rather than passed or dropped in silence.
@@ -668,17 +669,19 @@ ram_tier() {
   echo "$(( 10#$value ))"
 }
 
-# Half of physical memory: the point past which the expert cache starts
-# competing with the rest of the machine.
+# 40% of physical memory: the point past which this launcher recommends against
+# the expert cache, and warns.
 #
 # The slot cache is wired and cannot be paged out, so it is not the only
 # resident claim: the dense weights, the KV cache, the prompt cache, macOS and
-# whatever else the person is running all have to fit in what is left. Half of
-# physical memory is the ceiling `RuntimeConfiguration
-# .affordableExpertCacheBudget` applies to the install's own profile, so the
-# default path never crosses it. An explicit budget is passed straight through
-# as `--ram-budget`, which the runtime takes verbatim -- and that is the
-# person's call, not this script's: it warns in red and starts anyway.
+# whatever else the person is running all have to fit in what is left. Measured
+# on a 24 GB Mac with Qwen 3.8 4-bit, the install's own 12 GiB profile (half of
+# that machine) left 11% of memory free and glitched CoreAudio while the model
+# was merely loaded -- so this launcher's rule is the tighter one, 40%. It is a
+# recommendation, not a limit: the runtime clamps the *install's* profile to
+# half of physical memory on the default path, and an explicit budget is passed
+# through as `--ram-budget` and taken verbatim -- which is the person's call, so
+# this script warns in red and starts anyway.
 #
 # `NVMAI_PHYSICAL_RAM_BYTES` is the test seam: this mapping has to be checkable
 # on a machine of any size.
@@ -690,24 +693,27 @@ case "$physical_ram_bytes" in
   *[!0-9]*|"") physical_ram_bytes=0 ;;
 esac
 physical_ram_gb=$(( (physical_ram_bytes + 1073741823) / 1073741824 ))
-ram_ceiling_gb=$(( physical_ram_bytes / 2 / 1073741824 ))
+# Two fifths, floored to whole GB -- 4 on an 8 GB Mac, 8 on 16, 9 on 24, 12 on
+# 32, 25 on 64 -- because `--ram` names whole gigabytes.
+ram_rule_gb=$(( physical_ram_bytes * 2 / 5 / 1073741824 ))
 # An unreadable size means no warning rather than a warning at 1 GB: the same
 # thing the runtime's own guard does, and the launcher must not invent a limit
 # it cannot justify.
-(( physical_ram_bytes > 0 )) || ram_ceiling_gb=0
+(( physical_ram_bytes > 0 )) || ram_rule_gb=0
 
-ram_over_ceiling=0
-warn_ram_over_ceiling() {
-  # A budget past half of physical memory is allowed and warned about, never
+ram_over_rule=0
+warn_ram_over_rule() {
+  # A budget past this launcher's rule is allowed and warned about, never
   # reduced: the runtime takes an explicit --ram-budget verbatim, and this is
   # the operator's trade to make. What the warning has to be is unmissable and
   # specific -- swapping costs far more throughput than the extra slots buy.
-  (( ram_ceiling_gb > 0 )) || return 0
-  (( ram_gb > ram_ceiling_gb )) || return 0
-  ram_over_ceiling=1
-  warn_red "WARNING: the expert cache would use ${ram_gb} GB, more than half of this"
-  warn_red "         Mac's ${physical_ram_gb} GB of memory. It is wired, so it cannot be"
-  warn_red "         paged out and everything else has to fit beside it. Expect:"
+  (( ram_rule_gb > 0 )) || return 0
+  (( ram_gb > ram_rule_gb )) || return 0
+  ram_over_rule=1
+  warn_red "WARNING: the expert cache would use ${ram_gb} GB, more than the ${ram_rule_gb} GB"
+  warn_red "         this launcher recommends (40% of this Mac's ${physical_ram_gb} GB). The"
+  warn_red "         cache is wired, so it cannot be paged out and everything else"
+  warn_red "         has to fit beside it. Expect:"
   warn_red "           * system instability while the model is loaded"
   warn_red "           * heavy swapping, which stalls other apps (audio, calls)"
   warn_red "           * much slower generation: a paging cache loses more than the"
@@ -720,31 +726,34 @@ if [[ -n "$RAM_ARG" ]]; then
     echo "unknown RAM limit: $RAM_ARG (1, 2, 4, 8, 16 or 32 GB)" >&2
     exit 2
   fi
-  if [[ "$ENGINE" != "cpu" ]]; then warn_ram_over_ceiling; fi
+  if [[ "$ENGINE" != "cpu" ]]; then warn_ram_over_rule; fi
 elif [[ "$ENGINE" == "cpu" ]]; then
   # Nothing to ask: the CPU engine holds the whole model resident and has no
   # routed-expert cache, so a budget would be a number that changes nothing.
   ram_gb=""
 elif (( ! INTERACTIVE )); then
   # Unattended or dry run: keep the install's own measured profile, which the
-  # runtime holds to half of physical memory.
+  # runtime holds to half of physical memory. That measured profile is why this
+  # rule is a warning: on the machine it was tuned on it is the right number,
+  # and on a smaller one the runtime's own clamp already applies.
   ram_gb=""
 else
   echo ""
   echo "RAM limit for the expert cache?"
   echo "  More memory means fewer SSD reads and faster answers, and less"
   echo "  left for everything else on the Mac."
-  if (( ram_ceiling_gb > 0 )); then
-    echo "  It is wired, so it cannot be paged out. Half of this Mac's"
-    echo "  ${physical_ram_gb} GB is ${ram_ceiling_gb} GB: asking for more is allowed and"
-    echo "  warned about, because past that point the Mac starts swapping."
-    ceiling_hint="at most ${ram_ceiling_gb} GB without a warning"
+  if (( ram_rule_gb > 0 )); then
+    echo "  It is wired, so it cannot be paged out. This launcher recommends"
+    echo "  at most 40% of this Mac's ${physical_ram_gb} GB (${ram_rule_gb} GB): asking for"
+    echo "  more is allowed and warned about, because past that point the"
+    echo "  Mac starts swapping."
+    rule_hint="40% of this Mac is ${ram_rule_gb} GB"
   else
-    ceiling_hint="recommended"
+    rule_hint="recommended"
   fi
   echo "  1) 1 GB    2) 2 GB    3) 4 GB"
   echo "  4) 8 GB    5) 16 GB   6) 32 GB"
-  echo "  7) Model default (measured per install; ${ceiling_hint})"
+  echo "  7) Model default (measured per install; ${rule_hint})"
   printf "Choice [1-7] (default 7): "
   read -r ram_choice || exit 1
   case "${ram_choice:-7}" in
@@ -753,10 +762,10 @@ else
     7) ram_gb="" ;;
     *) echo "invalid choice: $ram_choice" >&2; exit 2 ;;
   esac
-  if [[ -n "$ram_gb" ]]; then warn_ram_over_ceiling; fi
+  if [[ -n "$ram_gb" ]]; then warn_ram_over_rule; fi
 fi
-if (( ram_ceiling_gb > 0 )); then
-  ram_note="model default (measured; at most ${ram_ceiling_gb} GB on this Mac)"
+if (( ram_rule_gb > 0 )); then
+  ram_note="model default (measured; 40% of this Mac is ${ram_rule_gb} GB)"
 else
   ram_note="model default (measured)"
 fi
@@ -765,8 +774,8 @@ if [[ -n "$ram_gb" ]]; then
   # The banner is the last thing printed before the model starts, so the
   # summary line carries the risk once more for anyone who scrolled past the
   # warning itself.
-  if (( ram_over_ceiling )); then
-    ram_note="${ram_gb} GB (your choice; ${ram_gb} > half this Mac's RAM)"
+  if (( ram_over_rule )); then
+    ram_note="${ram_gb} GB (your choice; over 40% of this Mac's RAM)"
   fi
 fi
 
@@ -947,9 +956,10 @@ print_setup() {
   echo ""
   echo "Model: $MODEL_DIR"
   echo "Thinking: $think_word | RAM: $ram_note | Port: $PORT | Ctrl-C to stop"
-  if (( ram_over_ceiling )); then
-    warn_red "WARNING: ${ram_gb} GB of expert cache is over half this Mac's ${physical_ram_gb} GB."
-    warn_red "         Expect swapping, a less stable system and slower tokens."
+  if (( ram_over_rule )); then
+    warn_red "WARNING: ${ram_gb} GB of expert cache is over the ${ram_rule_gb} GB this launcher"
+    warn_red "         recommends for this Mac (40%). Expect swapping, a less stable"
+    warn_red "         system and slower tokens."
   fi
   echo "============================================================"
   echo ""

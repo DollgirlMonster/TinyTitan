@@ -96,10 +96,13 @@ Everything below is in the wiki tracker; this is the short list.
 Closed since the first draft of this handover: the six dense installs now have
 baselines (`a5b9ae2`), so the gate checks ten targets here instead of four; the
 Chat Completions surface renders a `developer` message as the `system` turn it
-stands for, so the OpenAI role no longer answers 500; and the launcher's model
-menu offers only installs that are under `models/`, warns in red above half of
-physical memory instead of refusing the choice, and no longer needs a server
-build to list what is there.
+stands for, so the OpenAI role no longer answers 500; the launcher's model menu
+offers only installs that are under `models/` and no longer needs a server build
+to list what is there; and its expert-cache rule is 40% of physical memory —
+warned in red, not refused — with `benchmark/test_launcher_ram.py` pinning the
+arithmetic. One related item stays open below: the install's own measured
+profile is what the default still uses, so a machine where that profile is too
+large for comfort needs an explicit `--ram`.
 
 Section 3 of the tracker still lists the hardware blockers (validation on M1/M2/
 M4/M5/M6, ANE across generations, long-context parity past the exactness window),

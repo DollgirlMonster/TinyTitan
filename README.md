@@ -77,9 +77,9 @@ Every model installs at **4-bit and 8-bit**:
   provider config to the model the server advertises. It asks what to launch
   from one list of every installed model and quantization (GPU and CPU), the
   thinking level that model supports, and an optional RAM limit for the expert
-  cache (1/2/4/8/16/32 GB; anything over half of the Mac's physical memory is
+  cache (1/2/4/8/16/32 GB; anything over 40% of the Mac's physical memory is
   warned about in red and used anyway, and the default is the install's own
-  measured profile, which the runtime holds to that half).
+  measured profile, which the runtime holds to half of physical memory).
   It serves on `127.0.0.1:8080` (`NVMAI_PORT` overrides it), and every other
   installed model stays available by name through the API; the server switches
   on demand, keeping one model resident at a time.
@@ -129,10 +129,11 @@ tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
   the model's own expert stride and clamped to half of physical memory, so a
   smaller Mac is not handed a budget tuned on a larger one. It is wired, so it
   cannot be paged out and everything else the Mac is running has to fit beside
-  it: a `--ram` above that half is allowed — it is your machine — but the
-  launcher warns in red that it means swapping, a less stable system and slower
-  tokens, and the server's own `--ram-budget` takes exactly what it is given.
-  Model state, KV cache, and runtime scratch use additional memory.
+  it: the launcher recommends **40% of physical memory** and warns in red above
+  it — swapping, a less stable system and slower tokens — but a larger `--ram`
+  is your call and is passed on, and the server's own `--ram-budget` takes
+  exactly what it is given. Model state, KV cache, and runtime scratch use
+  additional memory.
 - **Long context:** Native RoPE supports up to 262K tokens, while optional YaRN
   extends the context to 512K or 1M tokens.
 - **Compressed KV cache:** Live attention state can use 16-bit, 8-bit, or 4-bit
