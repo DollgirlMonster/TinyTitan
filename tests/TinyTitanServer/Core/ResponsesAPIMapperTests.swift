@@ -57,6 +57,34 @@ import TinyTitan
         #expect(validated.generationConfig.presencePenalty == 0)
     }
 
+    /// The other half of C11: the *request* stays nil so the profile supplies
+    /// the value, but the *Response object* must report the number the server
+    /// actually sampled with. The schema marks all four required numbers, so a
+    /// null or an absent field fails every client's validation. The profile
+    /// here is deliberately not the house default, so the echo has to have
+    /// come from the resolved config rather than from the mapper or a constant.
+    @Test func responseEchoesTheResolvedSampling() throws {
+        let request = try decode("""
+        {"model": "m", "input": [{"role": "user", "content": "hi"}]}
+        """)
+        let chat = try ResponsesAPIMapper.chatRequest(request)
+        let validated = try OpenAIRequestValidator.validate(
+            chat, modelID: "m",
+            sampling: GenerationDefaults.Sampling(temperature: 1.0, topK: 20, topP: 0.8))
+
+        let echo = ResponsesAPIEcho(request: request, effectiveEffort: nil,
+                                    applied: validated.generationConfig)
+        let object = ResponsesAPIBuilder.responseObject(
+            id: "resp_1", created: 0, model: "m", status: "completed",
+            output: [], usage: nil, echo: echo)
+
+        // Numbers, not null and not absent.
+        #expect(object["temperature"] as? Float == 1.0)
+        #expect(object["top_p"] as? Float == 0.8)
+        #expect(object["presence_penalty"] as? Float == 0)
+        #expect(object["frequency_penalty"] as? Float == 0)
+    }
+
     @Test func instructionsAndDeveloperMergeIntoOneLeadingSystemMessage() throws {
         let request = try decode("""
         {

@@ -554,8 +554,9 @@ public final class ResponseStore: @unchecked Sendable {
 
 // MARK: - Response object builders
 
-/// Everything a response object echoes back from its request. Built once
-/// per request so the in_progress, completed and stored objects agree.
+/// Everything a response object echoes back: the request's own fields, plus the
+/// sampling the validator resolved from them and the served model's profile.
+/// Built once per request so the in_progress, completed and stored objects agree.
 public struct ResponsesAPIEcho: Sendable {
     public let instructions: String?
     public let maxOutputTokens: Int?
@@ -567,8 +568,16 @@ public struct ResponsesAPIEcho: Sendable {
     public let promptCacheKey: String?
     public let serviceTier: String
     public let truncation: String
-    public let temperature: Float?
-    public let topP: Float?
+    /// The sampling the server actually ran, resolved by the validator from the
+    /// request where the client named a value and from the served model's own
+    /// profile where it did not. These are numbers, never nil: the Response
+    /// schema requires them, and a client cannot otherwise see what was applied.
+    /// The *request-side* fields stay nil when the client named none (C11), so
+    /// the profile still supplies the value here rather than the echo doing it.
+    public let temperature: Float
+    public let topP: Float
+    public let presencePenalty: Float
+    public let frequencyPenalty: Float
     public let store: Bool
     public let tools: [ResponsesAPIRequest.Tool]
     public let namespaces: [String: String]
@@ -578,7 +587,9 @@ public struct ResponsesAPIEcho: Sendable {
     public let reasoningSummary: String?
     public let parallelToolCalls: Bool
 
-    public init(request: ResponsesAPIRequest, effectiveEffort: ModelReasoningEffort?) {
+    public init(request: ResponsesAPIRequest,
+                effectiveEffort: ModelReasoningEffort?,
+                applied: GenerationConfig) {
         instructions = request.instructions
         maxOutputTokens = request.maxOutputTokens
         maxToolCalls = request.maxToolCalls
@@ -589,8 +600,16 @@ public struct ResponsesAPIEcho: Sendable {
         promptCacheKey = request.promptCacheKey
         serviceTier = "default"
         truncation = request.truncation ?? "disabled"
-        temperature = request.temperature
-        topP = request.topP
+        // Echo what the sampler was handed, not the raw request. The mapper left
+        // an omitted field nil so validation could resolve it; by this point the
+        // validator has, exactly as the generation config below shows.
+        temperature = applied.temperature
+        topP = applied.topP ?? GenerationDefaults.topP
+        presencePenalty = applied.presencePenalty
+        // frequency_penalty has no runtime knob: the validator admits only the
+        // neutral value, so the number this server applied is always zero. The
+        // schema requires the field, so it is echoed as that zero.
+        frequencyPenalty = 0
         store = request.stores
         tools = request.tools ?? []
         namespaces = ResponsesAPIMapper.functionTools(request.tools).namespaces
@@ -676,12 +695,14 @@ public enum ResponsesAPIBuilder {
             "safety_identifier": echo.safetyIdentifier.map { $0 as Any } ?? NSNull(),
             "service_tier": echo.serviceTier,
             "store": echo.store,
-            "temperature": echo.temperature.map { $0 as Any } ?? NSNull(),
+            "temperature": echo.temperature,
             "text": ["format": ["type": "text"], "verbosity": echo.textVerbosity],
             "tool_choice": echo.toolChoice.foundationObject(),
             "tools": echo.tools.map(toolObject),
             "top_logprobs": 0,
-            "top_p": echo.topP.map { $0 as Any } ?? NSNull(),
+            "top_p": echo.topP,
+            "presence_penalty": echo.presencePenalty,
+            "frequency_penalty": echo.frequencyPenalty,
             "truncation": echo.truncation,
             "usage": NSNull(),
             "user": echo.user.map { $0 as Any } ?? NSNull(),

@@ -70,7 +70,8 @@ extension ServerHTTPHandler {
             let request = try validate(chatRequest, for: target)
                 .withWorkspace(workspace)
             let echo = ResponsesAPIEcho(request: decoded,
-                                        effectiveEffort: target.reasoningProfile.effectiveEffort)
+                                        effectiveEffort: target.reasoningProfile.effectiveEffort,
+                                        applied: request.generationConfig)
             let responseID = ResponsesAPIBuilder.responseID()
             let created = Int(Date().timeIntervalSince1970)
             let contextBox = SendableContext(context)
