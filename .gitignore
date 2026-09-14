@@ -46,7 +46,11 @@ tmp/
 __pycache__/
 *.pyc
 .venv/
+
 .qwen/
+
+# Node (plugins/dsh-nvmai)
+node_modules/
 
 # Standalone release binaries
 Binary/

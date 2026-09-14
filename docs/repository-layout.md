@@ -14,8 +14,15 @@ here was checked against the tree, and the counts are from that pass.
 | `docs/` | Engineering documentation: plans, profiles, the findings register, the user-facing `docs/site/` | yes |
 | `tools/` | Build, install, verification and conversion drivers (`*.sh`, `*.py`) | yes |
 | `benchmark/` | Benchmark scripts, the golden outputs the baseline compares against, launch helpers | yes |
+| `plugins/` | Client-side bundles for tools that drive the server; `plugins/dsh-nvmai/` is the DeepSeek Harness one | yes |
 | `assets/` | Brand assets (wordmark, slogans) | yes |
 | `.build/`, `models/` | SwiftPM's build directory and the installed models | **no** — ignored, and never a source of truth |
+
+`plugins/dsh-nvmai/` is a Node package (the DeepSeek Harness bundle), the one
+non-Swift, non-Python deliverable here: it ships a `cordis.patch.yml`, a plugin
+entry, a compaction backend and its own `node --test` suite, and it is installed
+into a DSH profile as a `file:` dependency. It is plain ESM JavaScript because
+that is what the harness loads.
 
 The two ignored directories are the only large ones (`models/` is the whole
 point of the project and is hundreds of GB; `.build/` is disposable). Nothing

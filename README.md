@@ -105,8 +105,10 @@ tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
   Code, OpenCode and the Zed editor against the local server; the coder benchmark
   scores the four that can be prompted (Claude Code through a loopback Anthropic
   shim) and checks every client's wiring without a model
-  (`--round clients`), and DeepSeek Harness reaches the server through its own
-  `llm-pi-ai` provider route, with no plugin — see
+  (`--round clients`); DeepSeek Harness reaches the server through its own
+  `llm-pi-ai` provider route, which `tools/dsh_route.sh` generates from the
+  installed models (and `plugins/dsh-nvmai` keeps current inside the harness,
+  adding a compaction backend that does not think) — see
   [Connect a client](https://github.com/Pummelchen/NVMAI/wiki/OpenAI-Compatible-Server#connect-a-client).
 - **Mac app and tools:** NVMAI also provides a native Mac app, direct CLI
   generation, streaming responses, and client-authorized function-tool calls.

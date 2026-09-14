@@ -24,7 +24,9 @@ contract. `sources/NVMAIMemory/` and `sources/ContinuityCore/` are persistent
 agent memory, `sources/NVMAIMemoryTool/` inspects it, and
 `sources/NVMAIBench/` plus `sources/NVMAIValidation/` are the benchmark driver
 and the validation/reference target. An executable target keeps its top-level
-or `@main` entry in `Command/`; `docs/repository-layout.md` has the conventions.
+or `@main` entry in `Command/`; `plugins/dsh-nvmai/` is the DeepSeek Harness
+bundle (route writer + quiet compaction) and `docs/repository-layout.md` has
+the conventions.
 
 `tests/` mirrors `sources/` path for path and never loads a model. User and
 engineering documentation lives in the
