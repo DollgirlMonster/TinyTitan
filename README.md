@@ -17,7 +17,8 @@ What is new in each release lives in the
 
 ## Benchmarks
 
-Peak decode on a base 8-core M3 MacBook Pro with 24 GB. `—` means the CPU engine
+Peak decode on a base 8-core M3 MacBook Pro with 24 GB. 
+`NA` means the CPU engine
 does not serve that model: the MoE families stream their experts on the GPU + ANE path,
 and only the dense Qwen 3.5 models run on either engine.
 
@@ -26,25 +27,25 @@ and only the dense Qwen 3.5 models run on either engine.
 | Qwen 3.5 2B (dense) | 4-bit | **53.73 tok/s** | **15.42 tok/s** |
 | Qwen 3.5 2B (dense) | 8-bit | **32.77 tok/s** | **15.83 tok/s** |
 | Qwen 3.5 4B (dense) | 4-bit | **26.18 tok/s** | **7.71 tok/s** |
-| Qwen-AgentWorld 35B-A3B | 4-bit | **21.74 tok/s** | — |
-| Ornith 1.5 35B-A3B | 4-bit | **21.65 tok/s** | — |
-| Qwen 3.6 35B-A3B | 4-bit | **21.41 tok/s** | — |
-| KAT-Coder-V2.5-Dev 35B-A3B | 4-bit | **17.86 tok/s** | — |
+| Qwen-AgentWorld 35B-A3B | 4-bit | **21.74 tok/s** | NA |
+| Ornith 1.5 35B-A3B | 4-bit | **21.65 tok/s** | NA |
+| Qwen 3.6 35B-A3B | 4-bit | **21.41 tok/s** | NA |
+| KAT-Coder-V2.5-Dev 35B-A3B | 4-bit | **17.86 tok/s** | NA |
 | Qwen 3.5 4B (dense) | 8-bit | **16.14 tok/s** | **7.04 tok/s** |
 | Qwen 3.5 9B (dense) | 4-bit | **14.93 tok/s** | **4.07 tok/s** |
-| Qwen 3.6 35B-A3B | 8-bit | **12.37 tok/s** | — |
-| Qwen-AgentWorld 35B-A3B | 8-bit | **12.28 tok/s** | — |
-| Ornith 1.5 35B-A3B | 8-bit | **11.93 tok/s** | — |
+| Qwen 3.6 35B-A3B | 8-bit | **12.37 tok/s** | NA |
+| Qwen-AgentWorld 35B-A3B | 8-bit | **12.28 tok/s** | NA |
+| Ornith 1.5 35B-A3B | 8-bit | **11.93 tok/s** | NA |
 | Qwen 3.5 9B (dense) | 8-bit | **8.90 tok/s** | **4.51 tok/s** |
-| KAT-Coder-V2.5-Dev 35B-A3B | 8-bit | **6.91 tok/s** | — |
-| Qwen3.8-Flash-Next 125B-A6B | 4-bit | **5.46 tok/s** | — |
-| Qwen3.8-Flash-Next 125B-A6B | 8-bit | **2.10 tok/s** | — |
+| KAT-Coder-V2.5-Dev 35B-A3B | 8-bit | **6.91 tok/s** | NA |
+| Qwen3.8-Flash-Next 125B-A6B | 4-bit | **5.46 tok/s** | NA |
+| Qwen3.8-Flash-Next 125B-A6B | 8-bit | **2.10 tok/s** | NA |
 
 
 
 ### Supported LLMs
 
-Every model installs at **4-bit and 8-bit**
+Every model installs at **4-bit and 8-bit**:
 
 - **Qwen3.8-Flash-Next 125B-A6B**
 - **KAT-Coder-V2.5-Dev 35B-A3B**
