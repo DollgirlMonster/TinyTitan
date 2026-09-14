@@ -87,19 +87,31 @@ whose traps still bite and are folded in below.
    `TSAN_OPTIONS=halt_on_error=0` to collect every report) until it reproduces,
    then decide between a fix, a documented suppression, and a narrowed scope. Do
    not make CI green by deleting the job.
-2. **Publishing `plugins/dsh-tinytitan` to the harness catalogue** (still held,
-   but the code half is now done). The route refresh **no longer needs a
-   checkout**: `plugins/dsh-tinytitan/src/generate.js` builds the same block
-   in-process by running the discovered `TinyTitanServer --catalog`, and its
-   output is pinned **byte-for-byte** to `tools/dsh_route.sh --print` by
-   `test/generate.test.js` against the real catalog (and a synthetic one). The
-   shell tool stays authoritative wherever a checkout exists; the generator is
-   used only when it is absent or `selfContained: true`. What remains is
-   operator-facing: **the catalogue file could not be located** in
-   `deepseek-ai/deepseek-harness` (a tree search found no catalogue, marketplace
-   or `screenshots.json`), **the licence is unsettled** (the package says MIT,
-   the repository Apache-2.0), and the two upstream asks in
-   `docs/dsh-upstream-asks.md` have not been posted.
+2. **Publishing `plugins/dsh-tinytitan`** (researched; what is left is the
+   operator's call, not code). The route refresh **no longer needs a checkout**:
+   `plugins/dsh-tinytitan/src/generate.js` builds the same block in-process by
+   running the discovered `TinyTitanServer --catalog`, and its output is pinned
+   **byte-for-byte** to `tools/dsh_route.sh --print` by `test/generate.test.js`
+   against the real catalog (and a synthetic one). The shell tool stays
+   authoritative wherever a checkout exists; the generator is used only when it
+   is absent or `selfContained: true`. **Where a plugin is published is now
+   known** — `docs/dsh-plugin-publication.md` is the research: upstream has **no**
+   registry or catalogue (a tree search of `deepseek-ai/deepseek-harness` at
+   `master` finds none) and `dsh plugin` merely forwards to pnpm in the profile,
+   so distribution is npm and discovery is the community list
+   [`awesome-dsh-plugin/awesome-dsh-plugin`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin),
+   whose whole submission is one data file (`data/plugins/<owner>__<repo>.yml`,
+   at most 3 entries per PR). That document carries the ready-to-copy entry for
+   this repository's subpackage and the checklist — `dsh.bundle` ✓, a `plugins/`
+   subpackage the CI reads ✓, the `repository` field ✓, real tested code ✓, a repo
+   older than a day ✓, the npm name `dsh-tinytitan` unclaimed — with two gaps:
+   the **`dsh-plugin` GitHub topic is not set** on this repository, and no entry
+   has been submitted. **The licence is settled: MIT on purpose**, because the
+   plugin is an independent work that talks to the server over its HTTP API and
+   copies nothing from the project's lineage; the plugin README says so, so it is
+   not "aligned" with the repository's Apache-2.0 later. Remaining, all
+   decisions: `npm publish`, add the topic, open the one-file PR. The two
+   upstream asks in `docs/dsh-upstream-asks.md` are still unposted.
 3. **The expert cache cannot be unwired on the models that wire it.**
    `TINYTITAN_KEEP_WIRED` can only turn it *on*, and the Qwen3.8/35B profile rows
    already set it, so on a 24 GB Mac the 12 GiB cache cannot be paged out
