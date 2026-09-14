@@ -96,7 +96,8 @@ bundle, and `create-dshx` scaffolds a plugin project.
 | Repository ≥ 1 day old | **yes** (created 2026-08-02) |
 | `repository` field pointing at the listed repo | **yes**, with `directory: plugins/dsh-tinytitan` |
 | `dsh-plugin` npm keyword | **yes** (added 2026-09-14, with `deepseek`) |
-| `dsh-plugin` **GitHub topic on the repo** | **no** — the repository has no topics at all |
+| `dsh-plugin` **GitHub topic on the repo** | **yes** — set 2026-09-14 (it was the only topic the repository had) |
+| Submitted to the catalogue | **yes** — [PR #5094](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5094), one file, +6/−0, mergeable |
 | Description, accurate, no superlatives | not written yet — §4 has a draft |
 | Licence | **MIT, deliberately** — see the plugin README; the repository is Apache-2.0 and this package is an independent work that talks to the server over its HTTP API |
 | npm name `dsh-tinytitan` | **unclaimed** (registry returns 404) |
@@ -129,26 +130,54 @@ generated preset.
    counts): `npm publish` from `plugins/dsh-tinytitan`. The package is plain ESM
    with no build step, so what is published is what was tested. Needs an npm
    account with 2FA; the name is unclaimed. The `repository` field is already
-   correct.
-2. **Add the `dsh-plugin` topic** to `Pummelchen/TinyTitan` — the catalogue's CI
-   requires it.
-3. **Open the one-file PR** against `awesome-dsh-plugin/awesome-dsh-plugin` with
-   the file from §4. Expect `awesome-lint`, the manifest fetch, the repo-age check
-   and the generated-README build to run; a maintainer then reads the repository.
+   correct. **Not done — it is the operator's account.**
+2. ~~**Add the `dsh-plugin` topic**~~ — **done 2026-09-14** on
+   `Pummelchen/TinyTitan`.
+3. ~~**Open the one-file PR**~~ — **done 2026-09-14**:
+   [PR #5094](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5094),
+   one file, +6/−0. Reviewed by that project's CI and a maintainer; nothing here
+   can hurry the merge.
 4. **Optionally add `screenshots.json`** to `plugins/dsh-tinytitan/` (1–8 images
    already in this repository) so the storefront shows the plugin rather than
    scraping the README.
 5. Keep the entry's `url` correct if the package ever moves; the npm↔repo link
    needs no entry change.
 
+### What was checked before submitting
+
+Run against a fork kept level with the catalogue's `main`, using the catalogue's
+own tooling:
+
+- `validateEntries()` over all 3,633 entries — no problems for this entry, and
+  the filename matches `slugFor(url)` (`Pummelchen__TinyTitan--plugins-dsh-tinytitan.yml`).
+- `node scripts/generate-readme.mjs` — regenerates into both READMEs; the entry
+  appears in `README.md` and `README.zh.md`, so locale parity holds.
+- `npx awesome-lint` — **79 warnings, 0 errors**, byte-identical warning count to
+  a pristine `main` checkout (all pre-existing; a first run in the fork clone
+  showed an extra `awesome-github` error that came from that clone's remote
+  layout, not the entry — it does not reproduce on a clean upstream clone).
+- `node --test scripts/added-dates.test.mjs` — 3 passed.
+- `SKIP_PUBLISH_CHECKS=1 node scripts/build-site.mjs` with the READMEs
+  regenerated the way `pr-check.yml` does it — **3,633 rows × 2 locales**, with
+  detail pages at `docs/p/Pummelchen/TinyTitan--plugins-dsh-tinytitan/` and
+  sitemap entries in both locales.
+
+One trap worth recording: `build-site.mjs` parses the **generated READMEs**, not
+`data/plugins/*.yml`. A yml-only submission therefore builds a site without its
+own entry locally unless the READMEs are regenerated first — which
+`pr-check.yml` does for exactly that reason. A local build that reports one row
+fewer than `readEntries()` is that, not a dropped entry.
+
 ## 6. What is a decision, not a task
 
 - **Publishing to npm** puts a package on a public registry under someone's
-  account, with 2FA and ownership consequences.
-- **The catalogue PR** is a public contribution to a third-party repository,
-  attributed to the account that opens it.
+  account, with 2FA and ownership consequences. Still open.
+- **The catalogue PR** was a public contribution to a third-party repository,
+  attributed to the account that opened it; it is opened and now belongs to that
+  project's review.
 - The two asks in [`dsh-upstream-asks.md`](dsh-upstream-asks.md) are upstream
-  *Discussions* (issues are disabled there), and are separate from listing.
+  *Discussions* (issues are disabled there), and are separate from listing. Still
+  unposted.
 
 ## Sources
 
