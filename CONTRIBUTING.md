@@ -5,7 +5,7 @@ benchmark reports from Apple Silicon Macs.
 
 ## Before opening a change
 
-- Keep the package compatible with macOS 26, Swift 6.3, and Metal 4.
+- Keep the package compatible with macOS 26, Swift 6.3.3, and Metal 4.
 - Preserve the bounded-memory model path. Never load a complete checkpoint,
   shard, or large model tensor into Swift heap memory.
 - Keep public runtime controls limited to those documented in
