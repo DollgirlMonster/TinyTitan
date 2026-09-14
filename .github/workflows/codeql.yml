@@ -10,12 +10,13 @@
 #
 # CodeQL for Swift supports only autobuild and manual (there is no "none" mode,
 # because the extractor has to observe a real compilation), so advanced setup is
-# the only way to choose a bounded build. The targets below cover the core
-# libraries and build in about a minute from a cold cache; the GUI and server
-# executables are left out deliberately, because building them is what made
-# autobuild time out.
+# the only way to control the build.
 #
-# Swift extraction is macOS-only.
+# --arch arm64 is required, not cosmetic. These sources are Apple-silicon code:
+# the kernels and attention paths use Float16, which Swift refuses to compile
+# for x86_64 with "'Float16' is unavailable in macOS". The macos-26-arm64 runner
+# still defaulted to an x86_64 target, which produced 2672 such errors and
+# failed the scan. Pinning the architecture makes the same build succeed.
 name: CodeQL
 
 on:
@@ -43,7 +44,7 @@ jobs:
   analyze:
     name: analyze swift
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -56,15 +57,20 @@ jobs:
           build-mode: manual
 
       # The build must really happen: this is what the extractor observes.
-      # Each target is built explicitly so the scan stays bounded.
+      # Each target is built explicitly so the scan stays bounded, and every
+      # one is pinned to arm64 (see the note at the top of this file).
       - name: Build for extraction
         run: |
-          swift build --target NVMAIFormat
-          swift build --target NVMAIKernelsC
-          swift build --target NVMAI
-          swift build --target ContinuityCore
-          swift build --target NVMAIRepackCore
-          swift build --target NVMAIDecodeProtocol
+          echo "--- toolchain ---"
+          swift --version
+          uname -m
+          echo "-----------------"
+          swift build --target NVMAIFormat --arch arm64
+          swift build --target NVMAIKernelsC --arch arm64
+          swift build --target NVMAI --arch arm64
+          swift build --target ContinuityCore --arch arm64
+          swift build --target NVMAIRepackCore --arch arm64
+          swift build --target NVMAIDecodeProtocol --arch arm64
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
