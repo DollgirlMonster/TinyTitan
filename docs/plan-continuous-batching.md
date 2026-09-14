@@ -299,36 +299,42 @@ not the common case.
 Still open: the token-wise stages are not fused across rows (Phase 2c), which is
 the throughput win rather than a correctness or safety gap.
 
-## Known bug: slots above one corrupt real-model output
+## Multi-slot output corruption: found and fixed
 
-**The batched width defaults to one again.** Measured on 2026-09-15 while
-trying to benchmark combined tok/s, width > 1 produces degenerate output on the
-real models, while width 1 is correct:
+Width > 1 produced degenerate output on the real models while width 1 was
+correct. Four bugs, found in this order, all now fixed:
 
-| Configuration | `The capital of France is` |
-| --- | --- |
-| 4B, width 1, cache off | `The capital of France is **Paris**. ...` |
-| 4B, width 1 (or CLI) | coherent |
-| 4B, width 4 | CJK/symbol gibberish |
-| 4B, width 4, fp16 KV | same gibberish (not the quantized path) |
-| 2B, width 4, single-model path | same gibberish |
-| CLI, chat template + logits head | coherent |
+1. **The catalog loader dropped `slots`**, so `--models-dir` sessions ran one
+   sequence while the coordinator admitted four (`dbbffff`).
+2. **The KV budget charged dense models for an expert cache** they never
+   allocate, clamping a width that fits (`dbbffff`).
+3. **Slots 1... fell back to sequential `.off` prefill.** Chunked prefill was
+   slot-0-only, so the other slots fed their prompt through the decode step,
+   which does not match the chunked path numerically — on 4-bit it diverges
+   badly ("The capital of France is" → `oriarianum.org …`). Chunked prefill is
+   now slot-aware: `prefillChunked(slot:)`, `executePrefillChunk(slot:)`,
+   `runPrefillLayer(slot:)`, `copyPrefillKVToCache(slot:)`, the GDN slot
+   offsets, and `encodeFullAttentionPrefill(slot:)` all carry the slot, and
+   `runRawCompletion` uses the chunked path for every slot.
+4. **The prefill encoders were called without the slot** in `runPrefillLayer`,
+   so `encodeFullAttentionPrefill` and `encodeLinearAttentionPrefill` defaulted
+   to 0 and the prefill attention read slot 0's KV for every slot. Also
+   `prefillAttention.encodeCausal` was never passed `kOffset`/`vOffset`, so it
+   read the KV buffers at their base.
 
-The shape of the failure locates it: slot 0 takes the **chunked** prefill path
-and is correct, slots 1... take the **sequential (`.off`) prefill** path and are
-not — with four concurrent clients, the slot-0 client produced the coherent text
-and the other three the gibberish. Width 1 with the prompt cache off is correct,
-so the cache is not the cause.
+Two concurrency defects surfaced once slots were live:
 
-The toy-runner test `batchedDecodeKeepsSlotsIndependent` passes for slots 0 and
-1, so the KV/GDN slot arithmetic is right for that graph; the real model's
-divergence is in a path the toy does not reach. That is the next thing to find:
-compare chunked prefill against the `.off` sequential prefill for a real model
-at a slot other than 0, then follow whichever differs.
+- `produce` checked the runner-wide `prefillChunkState` **before** taking the
+  step gate, so it saw another slot's in-flight prefill and returned 500
+  (`chunkedRunnerDirty`). The check moved inside the gate.
+- `runRawCompletion`'s `start == .reset` called `producer.reset()`, which wipes
+  **every** slot and the runner's transient state, outside the gate. Replaced
+  by a gated, slot-scoped `resetSequence(slot:)`.
 
-Until it is fixed `--max-concurrent-sequences` stays opt-in at 1, and the
-combined-tok/s numbers under width > 1 measure corrupt output (the timing is
-still representative of the compute, the text is not).
+Verified on `qwen3.5-2B_4Bit` at width 4: a single request that lands in slot 3
+and four concurrent distinct prompts all produce coherent text, and
+`chunkedPrefillFillsTheRequestedSlot` checks every slot 0...3 against a
+single-slot reference at 4-bit and 8-bit.
 
 ## Risks and open questions
 

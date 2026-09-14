@@ -3,12 +3,13 @@ import Foundation
 import Metal
 @testable import TinyTitan
 
-/// `runRawCompletion(slot:)` must carry the slot to the producer and keep the
-/// chunked prefill fast path for slot 0 only: chunked prefill writes slot 0's
-/// KV region, so a batched sequence prefills through the slot-aware decode step.
+/// `runRawCompletion(slot:)` must carry the slot to the producer on both the
+/// chunked prefill and the decode step. Non-zero slots used to fall back to
+/// sequential prefill, which does not match the chunked path numerically.
 extension RawCompletionLoopTests {
 
-    /// Records which produce overload the loop reached, and with which slot.
+    /// Records which prefill path and which produce overload the loop reached,
+    /// and with which slot.
     final class SlotRecordingProducer: LogitProducer, ChunkedPrefillRunner,
                                        @unchecked Sendable {
         let vocabSize: Int
@@ -16,6 +17,7 @@ extension RawCompletionLoopTests {
         private(set) var slotCalls: [Int] = []
         private(set) var legacyProduceCalls = 0
         private(set) var chunkedCalls = 0
+        private(set) var chunkedSlots: [Int] = []
 
         init(vocabSize: Int, nextToken: Int32) {
             self.vocabSize = vocabSize
@@ -26,6 +28,7 @@ extension RawCompletionLoopTests {
             slotCalls.removeAll()
             legacyProduceCalls = 0
             chunkedCalls = 0
+            chunkedSlots.removeAll()
         }
 
         func produce(token: Int32, position: Int, into logits: MTLBuffer) async throws {
@@ -45,7 +48,22 @@ extension RawCompletionLoopTests {
                             config: PrefillRuntimeConfig,
                             into logits: MTLBuffer,
                             onProgress: (Int) -> Void) async throws -> PrefillResult {
+            try await prefillChunked(tokens: tokens, startPosition: startPosition,
+                                     slot: 0, outputMode: outputMode, config: config,
+                                     into: logits, onProgress: onProgress)
+        }
+
+        /// The slot-aware overload is the one `runRawCompletion` calls, so this
+        /// is what records the slot a batched prefill actually landed in.
+        func prefillChunked(tokens: ArraySlice<Int32>,
+                            startPosition: Int,
+                            slot: Int,
+                            outputMode: PrefillOutputMode,
+                            config: PrefillRuntimeConfig,
+                            into logits: MTLBuffer,
+                            onProgress: (Int) -> Void) async throws -> PrefillResult {
             chunkedCalls += 1
+            chunkedSlots.append(slot)
             write(into: logits)
             onProgress(tokens.count)
             return PrefillResult(newPosition: startPosition + tokens.count,
@@ -59,7 +77,9 @@ extension RawCompletionLoopTests {
         }
     }
 
-    @Test func nonZeroSlotPrefillsThroughTheSlotAwareDecodeStep() async throws {
+    /// A non-zero slot takes the same chunked path as slot 0, and the slot
+    /// reaches both the prefill and the decode step.
+    @Test func nonZeroSlotUsesSlotAwareChunkedPrefill() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
         let tokenA = tokenizer.encode("a", addBOS: false).first!
@@ -79,15 +99,16 @@ extension RawCompletionLoopTests {
             slot: 2) { _ in }
 
         #expect(result.newTokens == 2)
-        #expect(producer.chunkedCalls == 0,
-                "slot 2 must not use slot-0 chunked prefill")
+        #expect(producer.chunkedCalls == 1,
+                "slot 2 must take the chunked prefill path")
+        #expect(producer.chunkedSlots == [2],
+                "the prefill must land in slot 2, got \(producer.chunkedSlots)")
         #expect(producer.legacyProduceCalls == 0,
                 "the slot-aware overload must be the one reached")
-        // The prompt's tokens plus one decode step: the first generated token is
-        // sampled from the last prefill row, so it does not produce again.
-        #expect(producer.slotCalls.count == promptIDs.count + 1)
-        #expect(producer.slotCalls.allSatisfy { $0 == 2 },
-                "every step must name slot 2, got \(producer.slotCalls)")
+        // Chunked prefill leaves the first row's logits, so only the second
+        // generated token costs a decode produce step.
+        #expect(producer.slotCalls == [2],
+                "the decoded step must name slot 2, got \(producer.slotCalls)")
     }
 
     @Test func slotZeroKeepsTheChunkedPrefillPath() async throws {
@@ -112,6 +133,8 @@ extension RawCompletionLoopTests {
         #expect(result.newTokens == 2)
         #expect(producer.chunkedCalls == 1,
                 "slot 0 must keep the chunked prefill fast path")
+        #expect(producer.chunkedSlots == [0],
+                "the prefill must land in slot 0, got \(producer.chunkedSlots)")
         // Chunked prefill leaves the first row's logits, so only the second
         // generated token costs a produce step.
         #expect(producer.slotCalls == [0],

@@ -176,7 +176,7 @@ public func runRawCompletion(producer: any LogitProducer,
     }
     switch start {
     case .reset:
-        producer.reset()
+        await producer.resetSequence(slot: slot)
     case .resume:
         // Re-derive the conformance rather than force-cast on the guard 30
         // lines above: a trap here would take down the server process, and the
@@ -195,7 +195,7 @@ public func runRawCompletion(producer: any LogitProducer,
     // (slot-aware chunked prefill is not implemented yet). Another slot prefills
     // by running its prompt through the decode step, which is slot-aware. Slot 0
     // keeps the chunked fast path, so the single-sequence behaviour is unchanged.
-    let prefillMode: PrefillRuntimeConfig.Mode = slot == 0 ? prefillConfig.mode : .off
+    let prefillMode: PrefillRuntimeConfig.Mode = prefillConfig.mode
     switch prefillMode {
     case .chunked where producer is any ChunkedPrefillRunner:
         // lint:allow-force the `where` clause one line above is the guard; a
@@ -204,6 +204,7 @@ public func runRawCompletion(producer: any LogitProducer,
         let mode: PrefillOutputMode = fusedGreedy ? .greedyIfAvailable : .logits
         let result = try await chunked.prefillChunked(tokens: prefillTokens,
                                                       startPosition: position,
+                                                      slot: slot,
                                                       outputMode: mode,
                                                       config: prefillConfig,
                                                       into: scratch.logits) { done in

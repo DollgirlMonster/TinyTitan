@@ -997,6 +997,22 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         gdnState?.reset(slot: slot)
     }
 
+    /// Clear one sequence's state under the step gate, for starting a batched
+    /// request. The KV and GDN regions are per-slot; the PLE latch and the
+    /// transient cursors are per-runner, and are cleared here because the gate
+    /// means no other step is in flight. The QSA indexer is per-sequence and
+    /// only slot 0 may reset it.
+    public func resetSequence(slot: Int) async {
+        // A cancelled start has nothing to reset; skip rather than trap.
+        do { try await forwardStepGate.acquire() } catch { return }
+        kv?.reset(slot: slot)
+        gdnState?.reset(slot: slot)
+        resetPLEState()
+        if slot == 0 { qsaIndexer?.reset() }
+        resetTransientState()
+        await forwardStepGate.release()
+    }
+
     public var continuationPosition: Int {
         kv?.position ?? 0
     }

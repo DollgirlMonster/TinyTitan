@@ -31,7 +31,7 @@ extension RealForwardRunner {
     /// unusably slow -- every token pays a full pass over the routed
     /// experts, where a chunk amortizes them -- so it is not the default.
     private func prefillSequentialHyperConnection(
-        tokens: ArraySlice<Int32>, startPosition: Int,
+        tokens: ArraySlice<Int32>, startPosition: Int, slot: Int,
         outputMode: PrefillOutputMode, into logits: MTLBuffer,
         onProgress: (Int) -> Void
     ) async throws -> PrefillResult {
@@ -40,7 +40,7 @@ extension RealForwardRunner {
             try Task.checkCancellation()
             try await produceToken(token: token,
                                    position: position,
-                                   slot: 0,
+                                   slot: slot,
                                    into: logits,
                                    emitHead: offset == tokens.count - 1,
                                    outputMode: outputMode)
@@ -77,7 +77,8 @@ extension RealForwardRunner {
 
     private func validateChunkedPrefill(tokens: ArraySlice<Int32>,
                                         startPosition: Int,
-                                        config: PrefillRuntimeConfig) throws {
+                                        config: PrefillRuntimeConfig,
+                                        slot: Int = 0) throws {
         guard config.mode == .chunked else {
             throw PrefillError.chunkedUnsupported(
                 "prefillChunked requires PrefillRuntimeConfig.mode == .chunked")
@@ -86,10 +87,10 @@ extension RealForwardRunner {
             throw PrefillError.chunkedUnsupported(
                 "chunked prefill startPosition must be non-negative")
         }
-        let kvPosition = kv?.position ?? 0
+        let kvPosition = kv?.position(slot: slot) ?? 0
         guard kvPosition == startPosition else {
             throw PrefillError.chunkedUnsupported(
-                "chunked prefill cursor \(kvPosition) != startPosition \(startPosition)")
+                "chunked prefill cursor \(kvPosition) != startPosition \(startPosition) for slot \(slot)")
         }
         guard tokens.count <= maxContext - startPosition else {
             throw PrefillError.chunkedUnsupported(
@@ -103,14 +104,30 @@ extension RealForwardRunner {
                                config: PrefillRuntimeConfig,
                                into logits: MTLBuffer,
                                onProgress: (Int) -> Void) async throws -> PrefillResult {
+        try await prefillChunked(tokens: tokens, startPosition: startPosition, slot: 0,
+                                 outputMode: outputMode, config: config, into: logits,
+                                 onProgress: onProgress)
+    }
+
+    /// Slot-aware chunked prefill: the chunk lands in `slot`'s KV and GDN
+    /// regions, so every sequence takes the same (golden) prefill path instead
+    /// of the numerically different decode-as-prefill fallback.
+    public func prefillChunked(tokens: ArraySlice<Int32>,
+                               startPosition: Int,
+                               slot: Int,
+                               outputMode: PrefillOutputMode,
+                               config: PrefillRuntimeConfig,
+                               into logits: MTLBuffer,
+                               onProgress: (Int) -> Void) async throws -> PrefillResult {
         // Prefill shares the runner's scratch with decode, so a batched slot
         // must not run a chunk while another slot is decoding. One gate covers
         // both; a prefill holds it for its whole burst.
         try await forwardStepGate.acquire()
         do {
             let result = try await runPrefillChunked(
-                tokens: tokens, startPosition: startPosition, outputMode: outputMode,
-                config: config, into: logits, onProgress: onProgress)
+                tokens: tokens, startPosition: startPosition, slot: slot,
+                outputMode: outputMode, config: config, into: logits,
+                onProgress: onProgress)
             await forwardStepGate.release()
             return result
         } catch {
@@ -121,6 +138,7 @@ extension RealForwardRunner {
 
     func runPrefillChunked(tokens: ArraySlice<Int32>,
                            startPosition: Int,
+                           slot: Int = 0,
                            outputMode: PrefillOutputMode,
                            config: PrefillRuntimeConfig,
                            into logits: MTLBuffer,
@@ -140,12 +158,12 @@ extension RealForwardRunner {
         // experts, where a chunk amortizes them -- so it is not the default.
         if cfg.hyperConnections.enabled && Self.sequentialHyperConnectionPrefill {
             return try await prefillSequentialHyperConnection(
-                tokens: tokens, startPosition: startPosition,
+                tokens: tokens, startPosition: startPosition, slot: slot,
                 outputMode: outputMode, into: logits, onProgress: onProgress)
         }
         releasePrefillCacheWiring()
         try validateChunkedPrefill(tokens: tokens, startPosition: startPosition,
-                                   config: config)
+                                   config: config, slot: slot)
         guard !tokens.isEmpty else {
             return PrefillResult(newPosition: startPosition, seed: .logitsWritten)
         }
@@ -183,6 +201,7 @@ extension RealForwardRunner {
                         try await executePrefillChunk(
                             tokens: tokens[lower..<upper],
                             startPosition: span.startPosition,
+                            slot: slot,
                             outputMode: outputMode,
                             logits: logits,
                             scratch: scratch,
@@ -204,6 +223,7 @@ extension RealForwardRunner {
                 try await executePrefillChunk(
                     tokens: tokens[lower..<upper],
                     startPosition: span.startPosition,
+                    slot: slot,
                     outputMode: outputMode,
                     logits: logits,
                     scratch: scratch,
@@ -245,6 +265,7 @@ extension RealForwardRunner {
     /// only hide the order the stages must run in.
     func executePrefillChunk(tokens: ArraySlice<Int32>,
                                      startPosition: Int,
+                                     slot: Int = 0,
                                      outputMode: PrefillOutputMode,
                                      logits: MTLBuffer,
                                      scratch: PrefillChunkScratchBuffers,
@@ -269,7 +290,7 @@ extension RealForwardRunner {
         guard kv != nil else {
             throw PrefillError.chunkedUnsupported("chunked prefill attention requires a KV cache")
         }
-        let kvPosition = kv?.position ?? 0
+        let kvPosition = kv?.position(slot: slot) ?? 0
         // Chunk-major advances the cursor per chunk, so it always equals this
         // chunk's start. Layer-major writes a whole band ahead of the cursor
         // and advances once at the end, so the cursor is at or behind the
@@ -282,7 +303,7 @@ extension RealForwardRunner {
         }
         // KV grows on demand rather than reserving maxContext, so make room for
         // this chunk before anything writes into it.
-        try kv?.reserve(tokens: startPosition + tokens.count)
+        try kv?.reserve(tokens: startPosition + tokens.count, slot: slot)
         guard startPosition >= 0, startPosition + tokens.count <= maxContext else {
             throw PrefillError.chunkedUnsupported(
                 "chunked prefill range [\(startPosition), \(startPosition + tokens.count)) exceeds maxContext \(maxContext)")
@@ -410,6 +431,7 @@ extension RealForwardRunner {
         // the rest of the request.
         let aneChunk: ANEPrefillAttention? = {
             guard let ane = anePrefill,
+                  slot == 0,
                   !snapshotGDNAfterFirstToken,
                   !useTwoRowProjection,
                   !pairRoutedMoE,
@@ -437,7 +459,8 @@ extension RealForwardRunner {
                 prefillRouteNanos: &prefillRouteNanos,
                 prefillTileNanos: &prefillTileNanos,
                 prefillTailNanos: &prefillTailNanos,
-                prefillActiveExperts: &prefillActiveExperts)
+                prefillActiveExperts: &prefillActiveExperts,
+                slot: slot)
         }
 
         if prefillProfile {
@@ -460,7 +483,7 @@ extension RealForwardRunner {
         if runEpilogue {
             aneChunk?.finishChunk(startPosition: startPosition,
                                   tokenCount: tokens.count)
-            kv?.advance(by: tokens.count)
+            kv?.advance(slot: slot, by: tokens.count)
             prefillChunkState.markCommitted()
         }
     }
@@ -633,6 +656,7 @@ extension RealForwardRunner {
                               layer: Int,
                               startPosition: Int,
                               tokenCount: Int,
+                              slot: Int = 0,
                               keySource: MTLBuffer,
                               valueSource: MTLBuffer,
                               bytesPerToken: Int) throws {
@@ -650,7 +674,7 @@ extension RealForwardRunner {
                 source: keySource,
                 sourceTokenStrideElements: elements,
                 destination: kv.keyRangeView(layer: layer, start: startPosition,
-                                             count: firstSpan),
+                                             count: firstSpan, slot: slot),
                 tokenCount: firstSpan,
                 elementCount: elements)
             try kvQuantizer.encode(
@@ -658,7 +682,7 @@ extension RealForwardRunner {
                 source: valueSource,
                 sourceTokenStrideElements: elements,
                 destination: kv.valueRangeView(layer: layer, start: startPosition,
-                                               count: firstSpan),
+                                               count: firstSpan, slot: slot),
                 tokenCount: firstSpan,
                 elementCount: elements)
             guard firstSpan < tokenCount else { return }
@@ -671,7 +695,7 @@ extension RealForwardRunner {
                 sourceOffset: sourceOffset,
                 sourceTokenStrideElements: elements,
                 destination: kv.keyRangeView(layer: layer, start: secondStart,
-                                             count: secondCount),
+                                             count: secondCount, slot: slot),
                 tokenCount: secondCount,
                 elementCount: elements)
             try kvQuantizer.encode(
@@ -680,7 +704,7 @@ extension RealForwardRunner {
                 sourceOffset: sourceOffset,
                 sourceTokenStrideElements: elements,
                 destination: kv.valueRangeView(layer: layer, start: secondStart,
-                                               count: secondCount),
+                                               count: secondCount, slot: slot),
                 tokenCount: secondCount,
                 elementCount: elements)
             return
@@ -688,8 +712,10 @@ extension RealForwardRunner {
         let capacity = kv.capacity(layer: layer)
         let physicalStart = startPosition % capacity
         let firstSpan = min(tokenCount, capacity - physicalStart)
-        let keyFirst = kv.kRange(layer: layer, start: startPosition, count: firstSpan)
-        let valueFirst = kv.vRange(layer: layer, start: startPosition, count: firstSpan)
+        let keyFirst = kv.kRange(layer: layer, start: startPosition, count: firstSpan,
+                                 slot: slot)
+        let valueFirst = kv.vRange(layer: layer, start: startPosition, count: firstSpan,
+                                   slot: slot)
         try copyPrefillKV(commandBuffer: commandBuffer,
                           source: keySource,
                           destination: keyFirst,
@@ -706,8 +732,10 @@ extension RealForwardRunner {
 
         let secondCount = tokenCount - firstSpan
         let secondStart = startPosition + firstSpan
-        let keySecond = kv.kRange(layer: layer, start: secondStart, count: secondCount)
-        let valueSecond = kv.vRange(layer: layer, start: secondStart, count: secondCount)
+        let keySecond = kv.kRange(layer: layer, start: secondStart, count: secondCount,
+                                  slot: slot)
+        let valueSecond = kv.vRange(layer: layer, start: secondStart, count: secondCount,
+                                    slot: slot)
         try copyPrefillKV(commandBuffer: commandBuffer,
                           source: keySource,
                           destination: keySecond,
@@ -763,7 +791,8 @@ extension RealForwardRunner {
         cb: MTLCommandBuffer, layer L: Int,
         views: LayerPrefillQKVViews, scratch: PrefillChunkScratchBuffers,
         tokenCount t: Int, hiddenSize D: Int,
-        snapshotGDNAfterFirstToken: Bool, useTwoRowProjection: Bool
+        snapshotGDNAfterFirstToken: Bool, useTwoRowProjection: Bool,
+        slot: Int = 0
     ) throws {
         // Gated-DeltaNet linear attention over the chunk: batched
         // projections, causal conv (+ tail carry), delta-rule
@@ -839,9 +868,9 @@ extension RealForwardRunner {
                              yStrideElements: la.numVHeads,
                              useTwoRowProjection: useTwoRowProjection)
         let convW = linConv
-        let tail = gdnState.convTailBuffer(layer: L)
+        let tail = gdnState.convTailSlot(layer: L, slot: slot)
         try gdn.encodeConvPrefill(commandBuffer: cb,
-                              tail: tail,
+                              tail: tail.buffer, tailOffset: tail.offset,
                               qkvRows: scratch.q,
                               convWeight: convW.buffer,
                               convWeightOffset: Int(convW.offset),
@@ -850,12 +879,12 @@ extension RealForwardRunner {
         if snapshotGDNAfterFirstToken {
             try gdn.encodeConvTailCheckpoint(
                 commandBuffer: cb,
-                tail: tail,
+                tail: tail.buffer, tailOffset: tail.offset,
                 qkvRows: scratch.q,
                 checkpoint: gdnState.speculativeConvTailBuffer(layer: L))
         }
         try gdn.encodeConvTailUpdate(commandBuffer: cb,
-                                 tail: tail,
+                                 tail: tail.buffer, tailOffset: tail.offset,
                                  qkvRows: scratch.q,
                                  rows: t)
         try gdn.encodeQKNorm(commandBuffer: cb,
@@ -863,6 +892,7 @@ extension RealForwardRunner {
                          rows: t)
         let aLog = linALog
         let dtBias = linDtBias
+        let state = gdnState.stateSlot(layer: L, slot: slot)
         try gdn.encodeDeltaStepPrefill(commandBuffer: cb,
                                    convOut: scratch.gdnConvOut,
                                    aProj: scratch.gdnA,
@@ -871,7 +901,7 @@ extension RealForwardRunner {
                                    aLogOffset: Int(aLog.offset),
                                    dtBias: dtBias.buffer,
                                    dtBiasOffset: Int(dtBias.offset),
-                                   state: gdnState.stateBuffer(layer: L),
+                                   state: state.buffer, stateOffset: state.offset,
                                    checkpointState: snapshotGDNAfterFirstToken
                                     ? gdnState.speculativeStateBuffer(layer: L) : nil,
                                    y: scratch.gdnY,
@@ -910,7 +940,8 @@ extension RealForwardRunner {
         isFull: Bool, headDim: Int, numKVHeads: Int,
         qDim: Int, kvDim: Int, rmsEps eps: Float,
         useTwoRowProjection: Bool,
-        keepMask: QSASelection? = nil
+        keepMask: QSASelection? = nil,
+        slot: Int = 0
     ) throws {
         let qProjRows = cfg.attnOutputGate ? 2 * qDim : qDim
         try encodeAffineProjection(commandBuffer: cb,
@@ -1027,11 +1058,13 @@ extension RealForwardRunner {
                                      layer: L,
                                      startPosition: startPosition,
                                      tokenCount: t,
+                                     slot: slot,
                                      keySource: scratch.kStage,
                                      valueSource: scratch.vStage,
                                      bytesPerToken: bytes / t)
         }
-        let kvView = kv?.keyView(layer: L, validTokenCount: startPosition + t)
+        let kvView = kv?.keyView(layer: L, slot: slot,
+                                 validTokenCount: startPosition + t)
         let params = PrefillAttentionParams(
                 startPosition: UInt32(startPosition),
                 queryCount: UInt32(t),
@@ -1050,16 +1083,18 @@ extension RealForwardRunner {
                 kvGroupSize: UInt32(kvView?.groupSize
                     ?? KVCacheManager.quantizationGroupSize))
         if let kv {
-                let keyView = kv.keyView(layer: L, validTokenCount: startPosition + t)
-                let valueView = kv.valueView(layer: L, validTokenCount: startPosition + t)
+                let keyView = kv.keyView(layer: L, slot: slot,
+                                         validTokenCount: startPosition + t)
+                let valueView = kv.valueView(layer: L, slot: slot,
+                                             validTokenCount: startPosition + t)
                 let ringCapacity = kv.ringCapacity(layer: L)
                 let activeRingCapacity = ringCapacity > 0 && startPosition + t > ringCapacity
                     ? UInt32(ringCapacity)
                     : 0
                 try prefillAttention.encodeCausal(commandBuffer: cb,
                                               q: attnQ,
-                                              k: keyView.buffer,
-                                              v: valueView.buffer,
+                                              k: keyView.buffer, kOffset: keyView.offset,
+                                              v: valueView.buffer, vOffset: valueView.offset,
                                               out: scratch.attentionOutput,
                                               params: params,
                                               kvRingCapacity: activeRingCapacity,
@@ -1699,7 +1734,8 @@ extension RealForwardRunner {
         prefillRouteNanos: inout UInt64,
         prefillTileNanos: inout UInt64,
         prefillTailNanos: inout UInt64,
-        prefillActiveExperts: inout UInt64
+        prefillActiveExperts: inout UInt64,
+        slot: Int = 0
     ) async throws {
         try Task.checkCancellation()
         let prefillLayerStart = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
@@ -1735,7 +1771,8 @@ extension RealForwardRunner {
                 cb: cb, layer: L, views: views, scratch: scratch,
                 tokenCount: t, hiddenSize: D,
                 snapshotGDNAfterFirstToken: snapshotGDNAfterFirstToken,
-                useTwoRowProjection: useTwoRowProjection)
+                useTwoRowProjection: useTwoRowProjection,
+                slot: slot)
         } else if let ane = aneChunk, ane.coveredLayers.contains(L) {
             try await runANEFullAttentionPrefill(
                 ane: ane, cb: &cb, layer: L, scratch: scratch,
@@ -1748,7 +1785,8 @@ extension RealForwardRunner {
                 isFull: isFull, headDim: headDim, numKVHeads: numKVHeads,
                 qDim: qDim, kvDim: kvDim, rmsEps: eps,
                 useTwoRowProjection: useTwoRowProjection,
-                keepMask: qsaSelection)
+                keepMask: qsaSelection,
+                slot: slot)
         }
         // Plain pre-norm residual block: hidden += attention branch,
         // then one post-attention norm feeds router, shared expert,

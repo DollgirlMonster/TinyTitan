@@ -14,6 +14,18 @@ public protocol LogitProducer: AnyObject, Sendable {
     /// the single-sequence producers that have no slots.
     func produce(token: Int32, position: Int, slot: Int,
                  into logits: MTLBuffer) async throws
+
+    /// Clear one sequence's state before it starts. A single-sequence producer
+    /// resets everything; a batched one must reset only `slot`, or starting a
+    /// request would wipe the sequences already running beside it. Gated, so it
+    /// cannot clear shared scratch mid-step.
+    func resetSequence(slot: Int) async
+}
+
+public extension LogitProducer {
+    func resetSequence(slot: Int) async {
+        reset()
+    }
 }
 
 public extension LogitProducer {
@@ -60,4 +72,29 @@ protocol ChunkedPrefillRunner: LogitProducer {
                         config: PrefillRuntimeConfig,
                         into logits: MTLBuffer,
                         onProgress: (Int) -> Void) async throws -> PrefillResult
+
+    /// Slot-aware chunked prefill: the chunk is written into `slot`'s KV and
+    /// GDN regions. A requirement (not an extension method) so the existential
+    /// dispatch reaches the runner; the default serves producers with one slot.
+    func prefillChunked(tokens: ArraySlice<Int32>,
+                        startPosition: Int,
+                        slot: Int,
+                        outputMode: PrefillOutputMode,
+                        config: PrefillRuntimeConfig,
+                        into logits: MTLBuffer,
+                        onProgress: (Int) -> Void) async throws -> PrefillResult
+}
+
+extension ChunkedPrefillRunner {
+    func prefillChunked(tokens: ArraySlice<Int32>,
+                        startPosition: Int,
+                        slot: Int,
+                        outputMode: PrefillOutputMode,
+                        config: PrefillRuntimeConfig,
+                        into logits: MTLBuffer,
+                        onProgress: (Int) -> Void) async throws -> PrefillResult {
+        try await prefillChunked(tokens: tokens, startPosition: startPosition,
+                                 outputMode: outputMode, config: config,
+                                 into: logits, onProgress: onProgress)
+    }
 }

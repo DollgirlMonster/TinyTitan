@@ -11,16 +11,23 @@ import TinyTitanValidationSupport
 @Suite struct QwenRunnerTests {
 
     private func makeRunner(weightBits: Int = 4,
-                            slots: Int = 1) throws -> (URL, MetalContext, RealForwardRunner) {
+                            slots: Int = 1,
+                            forceLogitsHead: Bool = false,
+                            maxContext: Int = 64) throws -> (URL, MetalContext, RealForwardRunner) {
         let dir = try QwenToySynthetic.write(weightBits: weightBits)
         let ctx = try MetalContext()
         let model = try Model.load(directoryURL: dir,
                                    device: ctx.device,
                                    expecting: .qwenToy())
+        // A 4-bit lm_head defaults to the fused greedy head, which never writes
+        // the logits buffer; a logits comparison must force the logits head, as
+        // the server does.
+        let runtime = try RuntimeConfiguration(forceLogitsHead: forceLogitsHead)
         let runner = try RealForwardRunner(model: model,
                                            context: ctx,
-                                           maxContext: 64,
-                                           slots: slots)
+                                           maxContext: maxContext,
+                                           slots: slots,
+                                           runtimeConfiguration: runtime)
         return (dir, ctx, runner)
     }
 
@@ -68,9 +75,9 @@ import TinyTitanValidationSupport
         }
     }
 
-    @Test(arguments: [8])
+    @Test(arguments: [4, 8])
     func higherBitMultiTokenPrefillMatchesPureDecode(bits: Int) async throws {
-        let (dir, ctx, runner) = try makeRunner(weightBits: bits)
+        let (dir, ctx, runner) = try makeRunner(weightBits: bits, forceLogitsHead: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let logits = try makeLogits(ctx, vocab: 1024)
         let tokens: [Int32] = [11, 7, 5, 3, 9]
@@ -145,6 +152,46 @@ import TinyTitanValidationSupport
                     #expect(abs(w - g) <= 1e-3,
                             "slot \(slot) step \(step) logit \(i): \(g) vs \(w)")
                 }
+            }
+        }
+    }
+
+    /// Chunked prefill must fill the slot it is told to, for every slot. Before
+    /// this, only slot 0 could take the chunked path (other slots fell back to
+    /// decode-as-prefill, which does not match numerically on 4-bit), and the
+    /// chunked attention read the K/V buffers at offset 0 regardless of slot.
+    @Test(arguments: [4, 8])
+    func chunkedPrefillFillsTheRequestedSlot(bits: Int) async throws {
+        let tokens: [Int32] = [11, 7, 5, 3, 9]
+        let vocab = 1024
+        let soloMaxContext = 65536
+
+        let (soloDir, soloCtx, solo) = try makeRunner(weightBits: bits,
+                                                      forceLogitsHead: true,
+                                                      maxContext: soloMaxContext)
+        defer { try? FileManager.default.removeItem(at: soloDir) }
+        let soloLogits = try makeLogits(soloCtx, vocab: vocab)
+        _ = try await solo.prefillChunked(
+            tokens: tokens[...], startPosition: 0, outputMode: .logits,
+            config: .production(chunkTokens: 32), into: soloLogits, onProgress: { _ in })
+        try await solo.produce(token: 2, position: tokens.count, into: soloLogits)
+        let expected = Fp16Buffer.read(soloLogits, count: vocab)
+
+        for slot in 0..<4 {
+            let (dir, ctx, runner) = try makeRunner(weightBits: bits, slots: 4,
+                                                    forceLogitsHead: true,
+                                                    maxContext: soloMaxContext)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let logits = try makeLogits(ctx, vocab: vocab)
+            _ = try await runner.prefillChunked(
+                tokens: tokens[...], startPosition: 0, slot: slot, outputMode: .logits,
+                config: .production(chunkTokens: 32), into: logits, onProgress: { _ in })
+            try await runner.produce(token: 2, position: tokens.count, slot: slot,
+                                     into: logits)
+            let actual = Fp16Buffer.read(logits, count: vocab)
+            for (i, (want, got)) in zip(expected, actual).enumerated() {
+                #expect(abs(want - got) <= 1e-3,
+                        "slot \(slot) prefill+decode logit \(i): \(got) vs solo \(want)")
             }
         }
     }

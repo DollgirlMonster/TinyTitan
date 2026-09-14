@@ -17,9 +17,12 @@ extension RealForwardRunner {
     /// sequences through one runner without aliasing.
     public func produce(token: Int32, position: Int, slot: Int,
                         into logits: MTLBuffer) async throws {
-        try prefillChunkState.requireClean(operation: "produce")
         try await forwardStepGate.acquire()
         do {
+            // Checked under the gate: the commit state is runner-wide, so
+            // another slot's in-flight prefill is only visible here, not before
+            // the gate.
+            try prefillChunkState.requireClean(operation: "produce")
             try await produceToken(token: token,
                                    position: position,
                                    slot: slot,
