@@ -376,11 +376,12 @@ struct DynamicServingArgumentTests {
         #expect(try parse(["--model", "/m"]).queueLimit + 1 >= 4)
     }
 
-    /// The batched width defaults to four and is bounded to 1...4.
-    @Test func concurrentSequenceCountDefaultsToFourAndIsBounded() throws {
-        #expect(try parse(["--model", "/m"]).maxConcurrentSequences == 4)
-        #expect(try parse(["--model", "/m", "--max-concurrent-sequences", "1"])
-                    .maxConcurrentSequences == 1)
+    /// The batched width defaults to one — opt-in until the multi-slot output
+    /// corruption is fixed — and is bounded to 1...4.
+    @Test func concurrentSequenceCountDefaultsToOneAndIsBounded() throws {
+        #expect(try parse(["--model", "/m"]).maxConcurrentSequences == 1)
+        #expect(try parse(["--model", "/m", "--max-concurrent-sequences", "4"])
+                    .maxConcurrentSequences == 4)
         for bad in ["0", "5", "-1"] {
             #expect(throws: ServerArgumentError.self) {
                 try parse(["--model", "/m", "--max-concurrent-sequences", bad])

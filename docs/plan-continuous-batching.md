@@ -299,6 +299,37 @@ not the common case.
 Still open: the token-wise stages are not fused across rows (Phase 2c), which is
 the throughput win rather than a correctness or safety gap.
 
+## Known bug: slots above one corrupt real-model output
+
+**The batched width defaults to one again.** Measured on 2026-09-15 while
+trying to benchmark combined tok/s, width > 1 produces degenerate output on the
+real models, while width 1 is correct:
+
+| Configuration | `The capital of France is` |
+| --- | --- |
+| 4B, width 1, cache off | `The capital of France is **Paris**. ...` |
+| 4B, width 1 (or CLI) | coherent |
+| 4B, width 4 | CJK/symbol gibberish |
+| 4B, width 4, fp16 KV | same gibberish (not the quantized path) |
+| 2B, width 4, single-model path | same gibberish |
+| CLI, chat template + logits head | coherent |
+
+The shape of the failure locates it: slot 0 takes the **chunked** prefill path
+and is correct, slots 1... take the **sequential (`.off`) prefill** path and are
+not — with four concurrent clients, the slot-0 client produced the coherent text
+and the other three the gibberish. Width 1 with the prompt cache off is correct,
+so the cache is not the cause.
+
+The toy-runner test `batchedDecodeKeepsSlotsIndependent` passes for slots 0 and
+1, so the KV/GDN slot arithmetic is right for that graph; the real model's
+divergence is in a path the toy does not reach. That is the next thing to find:
+compare chunked prefill against the `.off` sequential prefill for a real model
+at a slot other than 0, then follow whichever differs.
+
+Until it is fixed `--max-concurrent-sequences` stays opt-in at 1, and the
+combined-tok/s numbers under width > 1 measure corrupt output (the timing is
+still representative of the compute, the text is not).
+
 ## Risks and open questions
 
 - **GDN segmented scan** is the sharp edge: the recurrent state makes rows

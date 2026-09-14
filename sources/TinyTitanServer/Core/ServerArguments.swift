@@ -11,8 +11,12 @@ public struct ServerArguments: Equatable, Sendable {
     public let modelIDOverride: String?
     public let maxContext: Int
     public let queueLimit: Int
-    /// Generations that may run at once through the batched engine. One is the
-    /// historical single-generation server; the excess still queues.
+    /// Generations that may run at once through the batched engine.
+    ///
+    /// Defaults to one. Above one the engine's slot addressing is correct for
+    /// the synthetic test graph but produces corrupt output on the real 2B and
+    /// 4B (slot 0 is right, slots 1... are not), so the width is opt-in until
+    /// that is fixed; see docs/plan-continuous-batching.md.
     public let maxConcurrentSequences: Int
 
     /// The width a session's runner and scratch may actually be built with.
@@ -131,9 +135,11 @@ public struct ServerArguments: Equatable, Sendable {
       --rope-scaling <mode>  Context scaling: none or yarn (default none).
       --queue-limit <count>  Maximum queued requests (default 4).
       --max-concurrent-sequences <count>
-                             Generations served at once, 1...4 (default 4).
-                             Requests beyond this plus --queue-limit are shed
-                             with 429. The prompt cache is off above 1.
+                             Generations served at once, 1...4 (default 1).
+                             Above 1 is experimental: the batched slots corrupt
+                             real-model output today. Requests beyond this plus
+                             --queue-limit are shed with 429. The prompt cache
+                             is off above 1.
       --prompt-cache-mode <off|single-prefix|multi-prefix>
                              Prompt KV reuse mode (default multi-prefix).
       --prompt-cache-entries <count>
@@ -209,7 +215,9 @@ public struct ServerArguments: Equatable, Sendable {
         var maxContext = 262_144
         var maxContextWasSet = false
         var queueLimit = 4
-        var maxConcurrentSequences = 4
+        // Opt-in until the multi-slot output corruption is fixed; one is the
+        // last known-good width.
+        var maxConcurrentSequences = 1
         var promptCacheMode: ServerPromptCacheMode = .multiPrefix
         var promptCacheMaximumEntries = 4
         var promptCacheMemoryMiB = 256
