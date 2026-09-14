@@ -190,7 +190,7 @@ public actor CPUModelBackend: ServerInferenceBackend {
             if produced >= budget { break }
             logits = try model.step(token: next)
         }
-        output.publish(try decoder.consumeTail(detokenizer.flush()))
+        output.publish(try decoder.consumeTail(detokenizer.flush()), isToken: false)
         try decoder.finish()
         output.finish()
         return ServerCompletion(
@@ -200,7 +200,8 @@ public actor CPUModelBackend: ServerInferenceBackend {
             usage: OpenAIUsage(promptTokens: prompt.count,
                                completionTokens: produced,
                                totalTokens: prompt.count + produced,
-                               cachedTokens: 0),
+                               cachedTokens: 0,
+                               reasoningTokens: output.reasoningTokens),
             // Named, as the GPU path names it: a Messages client is told
             // which of its stop sequences ended the turn.
             stopSequence: output.matchedStop,

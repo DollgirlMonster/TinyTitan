@@ -569,6 +569,9 @@ extension ServerHTTPHandler {
             "prompt_tokens_details": [
                 "cached_tokens": usage.promptTokensDetails.cachedTokens,
             ],
+            "completion_tokens_details": [
+                "reasoning_tokens": usage.completionTokensDetails.reasoningTokens,
+            ],
         ]
     }
 

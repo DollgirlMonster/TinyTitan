@@ -37,7 +37,8 @@ private actor ThinkingBackend: ServerInferenceBackend {
         onEvent(.content("swer."))
         return ServerCompletion(
             content: "Answer.", toolCalls: [], finishReason: "stop",
-            usage: OpenAIUsage(promptTokens: 5, completionTokens: 9, totalTokens: 14),
+            usage: OpenAIUsage(promptTokens: 5, completionTokens: 9, totalTokens: 14,
+                               reasoningTokens: 4),
             reasoning: thinks ? "Weigh it." : "")
     }
 }
@@ -105,6 +106,11 @@ struct ChatReasoningTests {
             #expect(message["reasoning_content"] as? String == "Weigh it.")
             let usage = try #require(try object(data)["usage"] as? [String: Any])
             #expect(usage["completion_tokens"] as? Int == 9)
+            // How many of those tokens were spent thinking, reported apart from
+            // the total: the clients that route reasoning read it to bill and to
+            // budget, and it is a subset of completion_tokens, not an addition.
+            let details = try #require(usage["completion_tokens_details"] as? [String: Any])
+            #expect(details["reasoning_tokens"] as? Int == 4)
         }
     }
 
@@ -296,6 +302,25 @@ struct ResponsesReasoningTests {
         private var events: [ServerInferenceEvent] = []
         func append(_ event: ServerInferenceEvent) { lock.withLock { events.append(event) } }
         var all: [ServerInferenceEvent] { lock.withLock { events } }
+    }
+
+    /// Reasoning tokens come from the channel each generated token landed in,
+    /// not from the thought text: detokenizing and re-tokenizing is not an
+    /// identity, so only the decoder's verdict is the count the usage object can
+    /// advertise. The flush at the end of generation is released text rather
+    /// than a token, so it is not counted either.
+    @Test func reasoningTokensCountTokensNotCharacters() {
+        let sink = Sink()
+        var output = AssistantOutput(stops: [], onEvent: { sink.append($0) })
+        output.publish([.reasoning("Weigh ")])
+        output.publish([.reasoning("it.")])
+        output.publish([.content("An")])
+        // One token can close the thought block and open the answer.
+        output.publish([.reasoning("hmm"), .content("!")])
+        output.publish([.content(" tail")], isToken: false)
+        #expect(output.reasoningTokens == 3)
+        #expect(output.reasoning == "Weigh it.hmm")
+        #expect(output.content == "An! tail")
     }
 
     /// Stop strings apply to the answer alone, and each watcher sees only

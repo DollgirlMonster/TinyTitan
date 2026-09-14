@@ -6,6 +6,14 @@ public enum StructuredAssistantEvent: Equatable, Sendable {
     /// a client shows apart from the answer, or not at all.
     case reasoning(String)
     case toolCall(ParsedToolCall)
+
+    /// True for the thought channel. The one thing a caller needs to count
+    /// reasoning *tokens* rather than parse the text: a token's own batch says
+    /// which channel it landed in.
+    public var isReasoning: Bool {
+        if case .reasoning = self { return true }
+        return false
+    }
 }
 
 /// unchecked-invariant: one decoder per generation, driven only from that

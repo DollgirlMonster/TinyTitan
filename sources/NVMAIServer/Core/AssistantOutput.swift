@@ -24,6 +24,13 @@ struct AssistantOutput {
     private(set) var content = ""
     private(set) var reasoning = ""
     private(set) var calls: [ParsedToolCall] = []
+    /// Generated tokens whose text landed in the thought channel.
+    ///
+    /// Counted where the channel split happens rather than derived from the
+    /// reasoning text afterwards: detokenizing and re-tokenizing is not an
+    /// identity, so only the decoder's own per-token verdict is the number the
+    /// usage object can honestly advertise as `reasoning_tokens`.
+    private(set) var reasoningTokens = 0
 
     /// `observeReasoning` sees the thought text and nothing else -- on the
     /// GPU path, the loop detector that watches reasoning on its own.
@@ -43,7 +50,12 @@ struct AssistantOutput {
     /// The stop string that matched, which the Messages API names.
     var matchedStop: String? { stopMatcher.matchedStop }
 
-    mutating func publish(_ events: [StructuredAssistantEvent]) {
+    /// `isToken` is false for the flush at the end of generation: released tail
+    /// text is not a generated token, so it must not be counted as one.
+    mutating func publish(_ events: [StructuredAssistantEvent], isToken: Bool = true) {
+        if isToken, events.contains(where: \.isReasoning) {
+            reasoningTokens += 1
+        }
         for event in events {
             switch event {
             case .content(let text):

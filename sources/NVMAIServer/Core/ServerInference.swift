@@ -1212,8 +1212,8 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             ? .reset : completionStart
         let activePromptIDs = activeProducer is StreamingMTPDecoder
             ? promptIDs : effectivePromptIDs
-        func publish(_ events: [StructuredAssistantEvent]) {
-            output.publish(events)
+        func publish(_ events: [StructuredAssistantEvent], isToken: Bool = true) {
+            output.publish(events, isToken: isToken)
             if output.isStopped { shouldStop = true }
         }
         // `renderTokenizer` is the one this request's reasoning resolves to, and
@@ -1244,7 +1244,7 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
                     case .token(_, let tokenID, let delta):
                         publish(try decoder.consume(tokenID: tokenID, delta: delta))
                     case .tail(let text):
-                        publish(try decoder.consumeTail(text))
+                        publish(try decoder.consumeTail(text), isToken: false)
                     }
                 } catch {
                     decodingError = error
@@ -1339,7 +1339,8 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             usage: OpenAIUsage(promptTokens: result.prefillTokens,
                                completionTokens: result.newTokens,
                                totalTokens: result.prefillTokens + result.newTokens,
-                               cachedTokens: result.cachedPromptTokens),
+                               cachedTokens: result.cachedPromptTokens,
+                               reasoningTokens: output.reasoningTokens),
             watchdogTrips: watchdogs.trips,
             stopSequence: output.matchedStop,
             reasoning: output.reasoning,

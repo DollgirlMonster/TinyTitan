@@ -533,6 +533,73 @@ struct ServerArgumentTests {
         #expect(loaded.reasoningNotes.isEmpty)
     }
 
+    /// A request carrying `extra` beside the usual fields.
+    private static func request(withExtra extra: String) throws -> OpenAIChatRequest {
+        let json = #"{"model":"m","messages":[{"role":"user","content":"x"}],"# + extra + "}"
+        return try JSONDecoder().decode(OpenAIChatRequest.self, from: Data(json.utf8))
+    }
+
+    /// The template-kwargs dialect is how llama.cpp, vLLM and TabbyAPI clients
+    /// carry the thinking controls, and `enable_thinking: false` there is the
+    /// only way they turn thinking off. Reading just the top-level field
+    /// honoured the level beside that object and dropped the switch. That is the
+    /// case that matters: a client which forces thinking off for its
+    /// summarization calls -- so the model's own thinking cannot eat the output
+    /// cap and truncate the summary -- had the fix silently lost.
+    @Test func templateKwargsTurnThinkingOff() throws {
+        let loadedOn = ServerReasoningProfile(family: .qwen38flash,
+                                              thinkingMode: .on,
+                                              reasoningEffort: .xhigh)
+        let off = try OpenAIRequestValidator.validate(
+            try Self.request(withExtra: #""chat_template_kwargs":{"enable_thinking":false}"#),
+            modelID: "m", reasoningProfile: loadedOn)
+        #expect(off.reasoning?.thinkingMode == .off)
+        #expect(off.reasoning?.effort == nil)
+
+        // `true` is the switch the other way: it must turn a thinking-off
+        // server on rather than being ignored as a no-op.
+        let loadedOff = ServerReasoningProfile(family: .qwen36,
+                                               thinkingMode: .off,
+                                               reasoningEffort: nil)
+        let on = try OpenAIRequestValidator.validate(
+            try Self.request(withExtra: #""chat_template_kwargs":{"enable_thinking":true}"#),
+            modelID: "m", reasoningProfile: loadedOff)
+        #expect(on.reasoning?.thinkingMode == .on)
+    }
+
+    /// The object carries the level too, and an explicit top-level
+    /// `reasoning_effort` wins over it. The precedence is pinned so a client
+    /// that sends both cannot be surprised by which one applied.
+    @Test func templateKwargsEffortIsHonouredAndTopLevelWins() throws {
+        let profile = ServerReasoningProfile(family: .qwen38flash,
+                                             thinkingMode: .on,
+                                             reasoningEffort: .xhigh)
+        let fromKwargs = try OpenAIRequestValidator.validate(
+            try Self.request(withExtra: #""chat_template_kwargs":{"reasoning_effort":"low"}"#),
+            modelID: "m", reasoningProfile: profile)
+        #expect(fromKwargs.reasoning?.thinkingMode == .on)
+        #expect(fromKwargs.reasoning?.effort == .low)
+
+        let both = try OpenAIRequestValidator.validate(
+            try Self.request(
+                withExtra: #""reasoning_effort":"medium","#
+                    + #""chat_template_kwargs":{"reasoning_effort":"low"}"#),
+            modelID: "m", reasoningProfile: profile)
+        #expect(both.reasoning?.effort == .medium,
+                "the top-level field is this project's own spelling and takes precedence")
+    }
+
+    /// llama.cpp's per-request thinking budget is accepted and reported as
+    /// unenforced rather than refused or dropped in silence: refusing a field
+    /// the runtime does not implement would break the client for the rest of the
+    /// session, and ignoring it without a word would hide the deviation.
+    @Test func reasoningBudgetTokensIsAcceptedAndReported() throws {
+        let validated = try OpenAIRequestValidator.validate(
+            try Self.request(withExtra: #""reasoning_budget_tokens":4096"#), modelID: "m")
+        #expect(validated.reasoningNotes.contains { $0.contains("reasoning_budget_tokens") },
+                "an accepted-but-unenforced field must say so")
+    }
+
     /// Every spelling a coding agent might send means something on the
     /// ladder, so none of them is a failure.
     @Test func unfamiliarReasoningVocabularyIsAccepted() throws {

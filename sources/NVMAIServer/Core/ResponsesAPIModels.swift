@@ -666,7 +666,9 @@ public enum ResponsesAPIBuilder {
             "input_tokens_details": ["cached_tokens": usage.promptTokensDetails.cachedTokens,
                                      "cache_write_tokens": 0],
             "output_tokens": usage.completionTokens,
-            "output_tokens_details": ["reasoning_tokens": 0],
+            "output_tokens_details": [
+                "reasoning_tokens": usage.completionTokensDetails.reasoningTokens,
+            ],
             "total_tokens": usage.totalTokens,
         ]
     }

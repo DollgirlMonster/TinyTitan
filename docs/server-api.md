@@ -57,15 +57,32 @@ misconfigured client believe it was talking to a model it was not.
   because the decoder cannot guarantee one. `parallel_tool_calls: false`
   (Codex sends it always) is echoed and not enforced; Anthropic's
   `disable_parallel_tool_use` is refused.
-- **Reasoning is a load-time setting.** `--thinking on` and
-  `--reasoning-effort` decide what the template renders. A request may
-  confirm the active level (`reasoning.effort`, `reasoning_effort`,
-  `thinking: {type: enabled}`) and is refused if it asks for another, with
-  the restart flag named in the message. `thinking: {type: adaptive}` leaves
-  the choice to the model and is accepted whatever the server runs (Claude
-  Code sends it on every request), as is `output_config.effort`. The model's
-  thoughts are never returned, so Anthropic's `context_management` edits
-  (clearing old thinking) are accepted and have nothing to do.
+- **Reasoning levels.** The server's own `--thinking` / `--reasoning-effort`
+  decide what a model renders by default. A request may ask for a different
+  level and the nearest one the served model actually renders is applied — the
+  substitution is logged, never turned into a refusal, because coding agents
+  send vocabularies this project never defined (`xhigh` on a binary-thinking
+  model, `ultra`, `none`, `extra-high`) and failing one breaks that agent for
+  the rest of the session. A mid-session switch is real rather than a log line:
+  the level is carried into generation, which resolves the tokenizer for it.
+  The controls are read from **either dialect**: `reasoning_effort` (this
+  project's own spelling) and, as llama.cpp, vLLM and TabbyAPI clients send
+  them, a `chat_template_kwargs` object carrying `enable_thinking` and
+  `reasoning_effort`. Precedence is explicit — an explicit top-level
+  `reasoning_effort` wins, then `chat_template_kwargs.reasoning_effort`, then
+  `chat_template_kwargs.enable_thinking` (`false` means thinking off). Reading
+  only the top-level field used to honour the level beside that object and drop
+  the switch, which is the case that matters: a client forcing thinking off for
+  its summarization calls, so the model's own thinking cannot eat the output cap
+  and truncate the summary, had the fix silently lost. llama.cpp's
+  `reasoning_budget_tokens` is **accepted and not enforced** — this runtime
+  bounds thinking by the level a template renders, not by a token count — and
+  the log says so. `thinking: {type: adaptive}` and `output_config.effort` are
+  accepted whatever the server runs (Claude Code sends the former on every
+  request). The model's thoughts are returned on the OpenAI surfaces
+  (`reasoning_content`) but not on the Messages API, so Anthropic's
+  `context_management` edits (clearing old thinking) are accepted and have
+  nothing to do.
 - **Structured output** (`response_format`, `text.format: json_schema`,
   `output_config.format`) is refused; the decoder has no grammar constraint.
 - **Logprobs**, `n > 1`, `background: true`, prompt templates, hosted
@@ -77,7 +94,12 @@ misconfigured client believe it was talking to a model it was not.
   serves what it has rather than refusing every turn.
 - **Usage** is exact: prompt and generated tokens, with the prompt-cache hit
   reported as `cached_tokens` (OpenAI) or `cache_read_input_tokens`
-  (Anthropic, where `input_tokens` excludes it).
+  (Anthropic, where `input_tokens` excludes it), and the generated tokens the
+  model spent thinking reported as `completion_tokens_details.reasoning_tokens`
+  (OpenAI; `output_tokens_details.reasoning_tokens` on the Responses API). That
+  count is a subset of `completion_tokens`, not an addition to it, and it comes
+  from the channel each generated token landed in rather than from measuring the
+  thought text — detokenizing and re-tokenizing is not an identity.
 
 ## Chat Completions
 

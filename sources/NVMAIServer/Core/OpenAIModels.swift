@@ -134,6 +134,31 @@ public struct OpenAIStreamOptions: Codable, Equatable, Sendable {
     }
 }
 
+/// The thinking controls as Qwen's chat templates take them.
+///
+/// llama.cpp, vLLM and TabbyAPI clients send these inside a
+/// `chat_template_kwargs` object rather than as the top-level
+/// `reasoning_effort`, and `enable_thinking: false` there is the only way those
+/// clients turn thinking off for one request. A server that read only the
+/// top-level field honoured the *level* beside this object and dropped the
+/// switch, which is the case that matters: a client that forces thinking off
+/// for its summarization calls (so the model's own thinking cannot eat the
+/// output cap and truncate the summary) had the fix silently lost.
+public struct OpenAIChatTemplateKwargs: Codable, Equatable, Sendable {
+    public let enableThinking: Bool?
+    public let reasoningEffort: String?
+
+    enum CodingKeys: String, CodingKey {
+        case enableThinking = "enable_thinking"
+        case reasoningEffort = "reasoning_effort"
+    }
+
+    public init(enableThinking: Bool? = nil, reasoningEffort: String? = nil) {
+        self.enableThinking = enableThinking
+        self.reasoningEffort = reasoningEffort
+    }
+}
+
 public struct OpenAIChatRequest: Codable, Equatable, Sendable {
     public let model: String
     public let messages: [OpenAIChatMessage]
@@ -157,6 +182,66 @@ public struct OpenAIChatRequest: Codable, Equatable, Sendable {
     /// Requested reasoning-effort level. Validated against the served model
     /// family's chat template and the server's load-time profile.
     public let reasoningEffort: String?
+    /// The same controls in the template-kwargs dialect (see above).
+    public let chatTemplateKwargs: OpenAIChatTemplateKwargs?
+    /// llama.cpp's hard per-request thinking-token budget.
+    ///
+    /// Decoded, never refused, and not enforced: this runtime bounds thinking by
+    /// the level a template renders rather than by a token count, and a client
+    /// that sends this also sends the level it wants. Refusing a field the
+    /// runtime does not implement would break that client for the rest of the
+    /// session, which is the failure the effort mapping already exists to avoid.
+    public let reasoningBudgetTokens: Int?
+
+    /// Explicit, with the two thinking-control extras defaulted, so the protocol
+    /// mappers that build a chat request from their own shapes keep compiling
+    /// unchanged. A `let` with an inline default would have been skipped by the
+    /// synthesised decoder, which is how the budget silently decoded to nil.
+    public init(model: String,
+                messages: [OpenAIChatMessage],
+                stream: Bool? = nil,
+                streamOptions: OpenAIStreamOptions? = nil,
+                temperature: Float? = nil,
+                topP: Float? = nil,
+                maxTokens: Int? = nil,
+                maxCompletionTokens: Int? = nil,
+                stop: OpenAIStop? = nil,
+                seed: UInt64? = nil,
+                tools: [OpenAITool]? = nil,
+                toolChoice: JSONValue? = nil,
+                parallelToolCalls: Bool? = nil,
+                topK: Int? = nil,
+                repetitionPenalty: Float? = nil,
+                n: Int? = nil,
+                logprobs: Bool? = nil,
+                presencePenalty: Float? = nil,
+                frequencyPenalty: Float? = nil,
+                reasoningEffort: String? = nil,
+                chatTemplateKwargs: OpenAIChatTemplateKwargs? = nil,
+                reasoningBudgetTokens: Int? = nil) {
+        self.model = model
+        self.messages = messages
+        self.stream = stream
+        self.streamOptions = streamOptions
+        self.temperature = temperature
+        self.topP = topP
+        self.maxTokens = maxTokens
+        self.maxCompletionTokens = maxCompletionTokens
+        self.stop = stop
+        self.seed = seed
+        self.tools = tools
+        self.toolChoice = toolChoice
+        self.parallelToolCalls = parallelToolCalls
+        self.topK = topK
+        self.repetitionPenalty = repetitionPenalty
+        self.n = n
+        self.logprobs = logprobs
+        self.presencePenalty = presencePenalty
+        self.frequencyPenalty = frequencyPenalty
+        self.reasoningEffort = reasoningEffort
+        self.chatTemplateKwargs = chatTemplateKwargs
+        self.reasoningBudgetTokens = reasoningBudgetTokens
+    }
 
     enum CodingKeys: String, CodingKey {
         case model, messages, stream, temperature, stop, seed, tools, n, logprobs
@@ -171,6 +256,8 @@ public struct OpenAIChatRequest: Codable, Equatable, Sendable {
         case presencePenalty = "presence_penalty"
         case frequencyPenalty = "frequency_penalty"
         case reasoningEffort = "reasoning_effort"
+        case chatTemplateKwargs = "chat_template_kwargs"
+        case reasoningBudgetTokens = "reasoning_budget_tokens"
     }
 }
 
@@ -217,26 +304,50 @@ public struct OpenAIUsage: Codable, Equatable, Sendable {
         }
     }
 
+    /// How many of `completion_tokens` the model spent thinking.
+    ///
+    /// The clients that route reasoning separately (llama.cpp's patched servers,
+    /// the coding harnesses built on them) read this to bill and to budget; the
+    /// runtime already knows the split, because the decoder puts every token in
+    /// one channel or the other. Kept as its own object rather than folded into
+    /// `completion_tokens` so a client can see both.
+    public struct CompletionTokensDetails: Codable, Equatable, Sendable {
+        public let reasoningTokens: Int
+
+        enum CodingKeys: String, CodingKey {
+            case reasoningTokens = "reasoning_tokens"
+        }
+
+        public init(reasoningTokens: Int) {
+            self.reasoningTokens = reasoningTokens
+        }
+    }
+
     public let promptTokens: Int
     public let completionTokens: Int
     public let totalTokens: Int
     public let promptTokensDetails: PromptTokensDetails
+    public let completionTokensDetails: CompletionTokensDetails
 
     enum CodingKeys: String, CodingKey {
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
         case totalTokens = "total_tokens"
         case promptTokensDetails = "prompt_tokens_details"
+        case completionTokensDetails = "completion_tokens_details"
     }
 
     public init(promptTokens: Int,
                 completionTokens: Int,
                 totalTokens: Int,
-                cachedTokens: Int = 0) {
+                cachedTokens: Int = 0,
+                reasoningTokens: Int = 0) {
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens
         self.totalTokens = totalTokens
         self.promptTokensDetails = PromptTokensDetails(cachedTokens: cachedTokens)
+        self.completionTokensDetails = CompletionTokensDetails(
+            reasoningTokens: reasoningTokens)
     }
 }
 
@@ -488,7 +599,23 @@ public enum OpenAIRequestValidator {
         var reasoning = RequestReasoning(
             thinkingMode: reasoningProfile.thinkingMode,
             effort: reasoningProfile.effectiveEffort)
-        if let effortRaw = request.reasoningEffort {
+        // The controls arrive in two dialects. `reasoning_effort` is this
+        // project's own spelling; llama.cpp, vLLM and TabbyAPI clients put the
+        // same controls in a `chat_template_kwargs` object, where
+        // `enable_thinking: false` is the only way they turn thinking off.
+        // Reading only the top-level field honoured the level beside that
+        // object and dropped the switch. Precedence is explicit: an explicit
+        // top-level effort wins, then the template-kwargs effort, then the
+        // template switch (true -> on, false -> off).
+        let requestedEffortRaw = request.reasoningEffort
+            ?? request.chatTemplateKwargs?.reasoningEffort
+            ?? request.chatTemplateKwargs?.enableThinking.map { $0 ? "on" : "off" }
+        if request.reasoningBudgetTokens != nil {
+            reasoningNotes.append(
+                "reasoning_budget_tokens is accepted but not enforced; this runtime "
+                + "bounds thinking by the requested level, not by a token count")
+        }
+        if let effortRaw = requestedEffortRaw {
             let control = reasoningProfile.family.reasoningControl
             let supported = control.supportedLevels
             if let requested = ReasoningLevel.requested(effortRaw) {
