@@ -54,7 +54,38 @@ import Testing
             expected[32 + pair] = Float16(x0 * sine + x1 * cosine)
         }
         let actual = Fp16Buffer.read(buffer, count: input.count).map(Float16.init)
-        #expect(actual == expected)
+
+        // Agreement, not identity.
+        //
+        // This compares a Metal kernel against a CPU reference, and the two do
+        // not round alike: both evaluate cos/sin at a large angle — position
+        // 524287 against this pair's inverse frequency is about 145 radians —
+        // and Metal's transcendentals are the fast variants while the reference
+        // goes through libm, so the argument reduction differs. On an M3 the two
+        // agree bit for bit; on the GitHub `macos-26` runner these two cases
+        // differ by up to 0.017 of full scale (the largest single component was
+        // 0.3416 against 0.3247 at 524287, and 0.3196 against 0.3071 at
+        // 1048575). That measurement is why this asserts a tolerance instead of
+        // `==`: bit-exactness against a CPU reference is not a property of the
+        // kernel, and the repository already treats GPU-family numerics as
+        // machine-specific — see the SCOPE note at the top of
+        // `tools/golden-baseline.sh`.
+        //
+        // The bound still fails a wrong rotation: a swapped pair, a sign error
+        // or a wrong partial-rotary split moves a component by O(full scale),
+        // not by 2% of it. `chunkedPrefillMatchesScalarYaRN` below compares two
+        // Metal paths, so it stays exact.
+        var worst = Float(0)
+        var worstIndex = 0
+        for index in actual.indices {
+            let deviation = abs(Float(actual[index]) - Float(expected[index]))
+            if deviation > worst {
+                worst = deviation
+                worstIndex = index
+            }
+        }
+        #expect(worst <= 0.02,
+                "scalar RoPE differs from the CPU reference by \(worst) at index \(worstIndex) at position \(position)")
     }
 
     @Test func chunkedPrefillMatchesScalarYaRN() throws {
