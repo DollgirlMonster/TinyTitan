@@ -13,43 +13,74 @@
 # harness runs its own server on 8096 that way.
 NVMAI_DEFAULT_PORT=8080
 
-# nvmai_resolve_model <key> -> NVMAI_MODEL_{KEY,STEM,LABEL}
+# nvmai_resolve_model <key> -> NVMAI_MODEL_{KEY,STEM,LABEL,ENGINES,THINKING,FAMILY}
+#
+# ENGINES, THINKING and FAMILY are what the built-in fallback list needs to
+# describe an install truthfully when the server cannot report its catalog:
+# which engines can serve the family, default first, the thinking levels its
+# chat template renders, and the family's own name as the runtime spells it
+# (the engine message names it). The catalog is still the better source -- it
+# reads all three off the install -- and the fallback is only reached without
+# it.
 nvmai_resolve_model() {
   case "${1:-}" in
     ornith|ornith15|ornith1.5)
       NVMAI_MODEL_KEY=ornith
       NVMAI_MODEL_STEM="ornith-1.5_35B_A3B"
-      NVMAI_MODEL_LABEL="Ornith 1.5 35B-A3B" ;;
+      NVMAI_MODEL_LABEL="Ornith 1.5 35B-A3B"
+      NVMAI_MODEL_FAMILY=qwen36
+      NVMAI_MODEL_ENGINES=gpu
+      NVMAI_MODEL_THINKING="off,on" ;;
     qwen36|qwen3.6)
       NVMAI_MODEL_KEY=qwen36
       NVMAI_MODEL_STEM="qwen3.6_35B_A3B"
-      NVMAI_MODEL_LABEL="Qwen 3.6 35B-A3B" ;;
+      NVMAI_MODEL_LABEL="Qwen 3.6 35B-A3B"
+      NVMAI_MODEL_FAMILY=qwen36
+      NVMAI_MODEL_ENGINES=gpu
+      NVMAI_MODEL_THINKING="off,on" ;;
     agentworld|aw)
       NVMAI_MODEL_KEY=agentworld
       NVMAI_MODEL_STEM="qwen-agentworld_35B_A3B"
-      NVMAI_MODEL_LABEL="Qwen-AgentWorld 35B-A3B" ;;
+      NVMAI_MODEL_LABEL="Qwen-AgentWorld 35B-A3B"
+      NVMAI_MODEL_FAMILY=qwen36
+      NVMAI_MODEL_ENGINES=gpu
+      NVMAI_MODEL_THINKING="off,on" ;;
     katcoder|kat|kat-coder)
       NVMAI_MODEL_KEY=katcoder
       NVMAI_MODEL_STEM="kat-coder-v2.5_35B_A3B"
-      NVMAI_MODEL_LABEL="KAT-Coder-V2.5-Dev 35B-A3B" ;;
+      NVMAI_MODEL_LABEL="KAT-Coder-V2.5-Dev 35B-A3B"
+      NVMAI_MODEL_FAMILY=qwen36
+      NVMAI_MODEL_ENGINES=gpu
+      NVMAI_MODEL_THINKING="off,on" ;;
     qwen38|qwen3.8)
       NVMAI_MODEL_KEY=qwen38
       NVMAI_MODEL_STEM="qwen3.8-flash-next_125B_A6B"
-      NVMAI_MODEL_LABEL="Qwen3.8-Flash-Next 125B-A6B" ;;
-    # The CPU models. They exist only in the server's catalog, so these
-    # resolve there and never in the built-in GPU list below.
+      NVMAI_MODEL_LABEL="Qwen3.8-Flash-Next 125B-A6B"
+      NVMAI_MODEL_FAMILY=qwen38flash
+      NVMAI_MODEL_ENGINES=gpu
+      NVMAI_MODEL_THINKING="off,low,medium,xhigh" ;;
+    # The dense models: the one shape both engines implement, GPU by default.
     qwen35-2b|qwen3.5-2b)
       NVMAI_MODEL_KEY=qwen35-2b
       NVMAI_MODEL_STEM="qwen3.5_2B"
-      NVMAI_MODEL_LABEL="Qwen 3.5 2B" ;;
+      NVMAI_MODEL_LABEL="Qwen 3.5 2B"
+      NVMAI_MODEL_FAMILY=qwen3_5_dense
+      NVMAI_MODEL_ENGINES="gpu,cpu"
+      NVMAI_MODEL_THINKING="off,on" ;;
     qwen35-4b|qwen3.5-4b)
       NVMAI_MODEL_KEY=qwen35-4b
       NVMAI_MODEL_STEM="qwen3.5_4B"
-      NVMAI_MODEL_LABEL="Qwen 3.5 4B" ;;
+      NVMAI_MODEL_LABEL="Qwen 3.5 4B"
+      NVMAI_MODEL_FAMILY=qwen3_5_dense
+      NVMAI_MODEL_ENGINES="gpu,cpu"
+      NVMAI_MODEL_THINKING="off,on" ;;
     qwen35-9b|qwen3.5-9b)
       NVMAI_MODEL_KEY=qwen35-9b
       NVMAI_MODEL_STEM="qwen3.5_9B"
-      NVMAI_MODEL_LABEL="Qwen 3.5 9B" ;;
+      NVMAI_MODEL_LABEL="Qwen 3.5 9B"
+      NVMAI_MODEL_FAMILY=qwen3_5_dense
+      NVMAI_MODEL_ENGINES="gpu,cpu"
+      NVMAI_MODEL_THINKING="off,on" ;;
     *)
       echo "unknown AI model: ${1:-} (ornith|qwen36|agentworld|katcoder|qwen38|qwen35-2b|qwen35-4b|qwen35-9b)" >&2
       return 2 ;;
@@ -71,9 +102,10 @@ nvmai_model_port() {
   echo "$NVMAI_DEFAULT_PORT"
 }
 
-# Every (model, quantization) this checkout knows about, for help text and
-# for the fallback list when the server cannot report its catalog.
-NVMAI_ALL_MODELS=(ornith qwen36 agentworld katcoder qwen38)
+# Every model this checkout knows about, for help text and for the fallback
+# list when the server cannot report its catalog. One list: the catalog is
+# still the source of what is installed.
+NVMAI_ALL_MODELS=(ornith qwen36 agentworld katcoder qwen38 qwen35-2b qwen35-4b qwen35-9b)
 
 # --- Installed models, from the server's catalog -----------------------
 #
@@ -135,7 +167,7 @@ for row in gpu + cpu:
 nvmai_reset_catalog() {
   NVMAI_CAT_ID=(); NVMAI_CAT_NAME=(); NVMAI_CAT_QUANT=(); NVMAI_CAT_BACKEND=()
   NVMAI_CAT_PATH=(); NVMAI_CAT_THINKING=(); NVMAI_CAT_SIZE=(); NVMAI_CAT_FAMILY=()
-  NVMAI_CAT_ENGINES=()
+  NVMAI_CAT_ENGINES=(); NVMAI_CATALOG_MISSING=()
 }
 
 nvmai_load_catalog() {
@@ -178,22 +210,66 @@ nvmai_load_catalog() {
   fi
 }
 
-# nvmai_static_catalog <models-dir>: the same arrays from the built-in
-# list, for a server that cannot report its catalog. GPU installs only,
-# thinking off/on, and no ids: such a server reports its one id once up.
+# nvmai_catalog_keep_installed: drop every entry whose install directory is
+# gone, so what the launcher presents is what the disk holds whatever the
+# catalog came from. NVMAI_CATALOG_JSON can name an older build's output and a
+# model can be deleted between two runs; neither may leave a model or a width
+# on the menu that cannot be loaded. Returns 1 when nothing is left.
+nvmai_catalog_keep_installed() {
+  local i
+  local ids=() names=() quants=() backends=() paths=()
+  local thinking=() sizes=() families=() engines=()
+  for (( i = 0; i < ${#NVMAI_CAT_ID[@]}; i++ )); do
+    [[ -e "${NVMAI_CAT_PATH[$i]}" ]] || continue
+    ids+=("${NVMAI_CAT_ID[$i]}"); names+=("${NVMAI_CAT_NAME[$i]}")
+    quants+=("${NVMAI_CAT_QUANT[$i]}"); backends+=("${NVMAI_CAT_BACKEND[$i]}")
+    paths+=("${NVMAI_CAT_PATH[$i]}"); thinking+=("${NVMAI_CAT_THINKING[$i]}")
+    sizes+=("${NVMAI_CAT_SIZE[$i]}"); families+=("${NVMAI_CAT_FAMILY[$i]}")
+    engines+=("${NVMAI_CAT_ENGINES[$i]}")
+  done
+  nvmai_reset_catalog
+  (( ${#ids[@]} > 0 )) || return 1
+  NVMAI_CAT_ID=("${ids[@]}"); NVMAI_CAT_NAME=("${names[@]}")
+  NVMAI_CAT_QUANT=("${quants[@]}"); NVMAI_CAT_BACKEND=("${backends[@]}")
+  NVMAI_CAT_PATH=("${paths[@]}"); NVMAI_CAT_THINKING=("${thinking[@]}")
+  NVMAI_CAT_SIZE=("${sizes[@]}"); NVMAI_CAT_FAMILY=("${families[@]}")
+  NVMAI_CAT_ENGINES=("${engines[@]}")
+}
+
+# nvmai_static_catalog <models-dir>: the same arrays from the built-in list,
+# for a server that cannot report its catalog. No ids: such a server reports
+# its one id once up.
+#
+# Only installs that are on disk are listed: this menu is what the person is
+# about to load, so a model or a width that is not in models/ is not offered.
+# The labels left out are collected in NVMAI_CATALOG_MISSING, so the caller can
+# say in one line what NVMAI supports but this checkout does not have. Returns
+# 1 with NVMAI_CATALOG_ERROR set when models/ holds none of them.
 nvmai_static_catalog() {
-  local models_dir="$1" key bits
+  local models_dir="$1" key bits dir added
+  local missing=()
   nvmai_reset_catalog
   for key in "${NVMAI_ALL_MODELS[@]}"; do
     nvmai_resolve_model "$key"
+    added=0
     for bits in 8 4; do
       nvmai_resolve_quant "$bits"
+      dir="$models_dir/${NVMAI_MODEL_STEM}_${NVMAI_QUANT_DIR}"
+      [[ -e "$dir" ]] || continue
       NVMAI_CAT_ID+=("-"); NVMAI_CAT_NAME+=("$NVMAI_MODEL_LABEL"); NVMAI_CAT_QUANT+=("$bits")
-      NVMAI_CAT_BACKEND+=(gpu); NVMAI_CAT_PATH+=("$models_dir/${NVMAI_MODEL_STEM}_${NVMAI_QUANT_DIR}")
-      NVMAI_CAT_THINKING+=("off,on"); NVMAI_CAT_SIZE+=("-")
-      NVMAI_CAT_FAMILY+=("${NVMAI_MODEL_KEY}"); NVMAI_CAT_ENGINES+=("gpu")
+      NVMAI_CAT_BACKEND+=("${NVMAI_MODEL_ENGINES%%,*}")
+      NVMAI_CAT_PATH+=("$dir"); NVMAI_CAT_THINKING+=("$NVMAI_MODEL_THINKING")
+      NVMAI_CAT_SIZE+=("-"); NVMAI_CAT_FAMILY+=("$NVMAI_MODEL_FAMILY")
+      NVMAI_CAT_ENGINES+=("$NVMAI_MODEL_ENGINES")
+      added=1
     done
+    (( added )) || missing+=("$NVMAI_MODEL_LABEL")
   done
+  (( ${#missing[@]} > 0 )) && NVMAI_CATALOG_MISSING=("${missing[@]}")
+  if (( ${#NVMAI_CAT_ID[@]} == 0 )); then
+    NVMAI_CATALOG_ERROR="no install under $models_dir matches the built-in list"
+    return 1
+  fi
 }
 
 # nvmai_catalog_find_id <id> -> echoes the index of the entry with that id.

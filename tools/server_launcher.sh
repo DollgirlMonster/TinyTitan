@@ -76,8 +76,9 @@
 # reported as not applying rather than passed or dropped in silence.
 #
 # Overrides: NVMAI_PORT, NVMAI_THINKING_MODE, NVMAI_CATALOG_JSON,
-# NVMAI_PHYSICAL_RAM_BYTES (the RAM-ceiling test seam),
-# NVMAI_LAUNCHER_DRY_RUN=1, and the per-client ones below.
+# NVMAI_PHYSICAL_RAM_BYTES (the RAM-ceiling test seam), NVMAI_MODELS_DIR (the
+# installs directory, models/ by default), NVMAI_LAUNCHER_DRY_RUN=1, and the
+# per-client ones below.
 # NVMAI_LAUNCHER_ASSUME_TTY=1 answers the interactive questions from a pipe
 # while still starting nothing (it is the test seam for this script's
 # questions, not something a person needs).
@@ -86,7 +87,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BINARY="$BASE_DIR/.build/arm64-apple-macosx/release/NVMAIServer"
-MODELS_DIR="$BASE_DIR/models"
+MODELS_DIR="${NVMAI_MODELS_DIR:-$BASE_DIR/models}"
 # One catalogue for the model list, the install paths and the port.
 # shellcheck source=tools/nvmai_models.sh
 source "$SCRIPT_DIR/nvmai_models.sh"
@@ -308,16 +309,33 @@ fi
 # 3) Model and quantization
 # ============================================================
 
-# The installed models: the server's own catalog, or the built-in list.
+# The installed models: the server's own catalog, or the built-in list. Both
+# are held to installs that are really on disk, so the menu never offers a model
+# or a width that cannot be loaded.
+dynamic=0
 if nvmai_load_catalog "$BINARY" "$MODELS_DIR"; then
-  dynamic=1
+  if nvmai_catalog_keep_installed; then
+    dynamic=1
+  else
+    catalog_error="none of the models it lists are under $MODELS_DIR"
+  fi
 else
-  dynamic=0
+  catalog_error="$NVMAI_CATALOG_ERROR"
+fi
+if (( ! dynamic )); then
   echo "" >&2
-  echo "NOTE: the model catalog is unavailable ($NVMAI_CATALOG_ERROR)." >&2
-  echo "      Offering the built-in list of GPU installs instead; the server will" >&2
+  echo "NOTE: the model catalog is unavailable ($catalog_error)." >&2
+  echo "      Offering the installs this checkout has instead; the server will" >&2
   echo "      serve only the model chosen here, and switching needs a restart." >&2
-  nvmai_static_catalog "$MODELS_DIR"
+  if ! nvmai_static_catalog "$MODELS_DIR"; then
+    echo "" >&2
+    echo "ERROR: $NVMAI_CATALOG_ERROR." >&2
+    echo "       Add one first: docs/adding-a-model.md, or tools/install_models.sh." >&2
+    exit 2
+  fi
+  if (( ${#NVMAI_CATALOG_MISSING[@]} > 0 )); then
+    echo "      Supported but not installed here: ${NVMAI_CATALOG_MISSING[*]}" >&2
+  fi
 fi
 
 if [[ -z "$MODEL_ARG" ]]; then
@@ -348,7 +366,6 @@ if [[ -z "$MODEL_ARG" ]]; then
     if [[ "${NVMAI_CAT_SIZE[$i]}" != "-" ]]; then size="${NVMAI_CAT_SIZE[$i]} GB"; fi
     note=""
     if (( i == default_idx )); then note="  (default)"; fi
-    if (( ! dynamic )) && [[ ! -e "${NVMAI_CAT_PATH[$i]}" ]]; then note="$note  (not installed)"; fi
     printf "  %2d) %-28s %s-bit  %-4s %8s  %-22s %-24s%s\n" "$((i + 1))" \
       "${NVMAI_CAT_NAME[$i]}" "${NVMAI_CAT_QUANT[$i]}" \
       "$( engine_column "${NVMAI_CAT_ENGINES[$i]:-${NVMAI_CAT_BACKEND[$i]}}" )" \
@@ -383,22 +400,19 @@ else
     # No width given means 8-bit, the historical default.
     nvmai_resolve_quant "${BITS:-8}" || exit 2
     if ! idx="$(nvmai_catalog_find_dir "${NVMAI_MODEL_STEM}_${NVMAI_QUANT_DIR}")"; then
-      # The fallback list is the GPU installs, so a CPU model is absent from
-      # it even when it is installed. Saying "not installed" here would send
-      # someone to re-install a model that is already there.
-      if (( ! dynamic )) && [[ "${NVMAI_MODEL_KEY}" == qwen35-* ]]; then
-        echo "ERROR: $NVMAI_MODEL_LABEL is a CPU-engine model, and the built-in" >&2
-        echo "       fallback list covers the GPU installs only, so it is not offered" >&2
-        echo "       here. Two ways out:" >&2
-        echo "         - let this launcher read the catalog by building the server:" >&2
-        echo "             swift build -c release --product NVMAIServer" >&2
-        echo "           (or point NVMAI_CATALOG_JSON at that binary's --catalog output)" >&2
-        echo "         - or start it yourself, which the single-model form supports:" >&2
-        echo "             .build/release/NVMAIServer --model <install dir> --cpu" >&2
-        exit 1
+      echo "ERROR: $NVMAI_MODEL_LABEL ${NVMAI_QUANT%bit}-bit is not installed (no ${NVMAI_MODEL_STEM}_${NVMAI_QUANT_DIR} under $MODELS_DIR)" >&2
+      # Name the widths that are here: "not installed" alone reads like the
+      # whole model is missing when only the one asked for is.
+      installed_widths=""
+      for width_idx in "${!NVMAI_CAT_PATH[@]}"; do
+        if [[ "$(basename "${NVMAI_CAT_PATH[$width_idx]}")" == "${NVMAI_MODEL_STEM}_"* ]]; then
+          installed_widths="$installed_widths ${NVMAI_CAT_QUANT[$width_idx]}-bit"
+        fi
+      done
+      if [[ -n "$installed_widths" ]]; then
+        echo "       installed here:$installed_widths" >&2
       fi
-      echo "ERROR: $NVMAI_MODEL_LABEL $NVMAI_QUANT is not installed (the catalog has no ${NVMAI_MODEL_STEM}_${NVMAI_QUANT_DIR})" >&2
-      echo "Install it first: tools/install_models.sh (see --help for the target names)" >&2
+      echo "       Install it first: tools/install_models.sh (see --help for the target names)" >&2
       exit 1
     fi
   fi
