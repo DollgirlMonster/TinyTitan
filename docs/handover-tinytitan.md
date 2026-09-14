@@ -32,7 +32,7 @@ that still bite are folded in below.
 | `.build` | fresh release build, but it now produces **new binary names** (`TinyTitanServer`, `TinyTitanMac`, `TinyTitanCLI`, `TinyTitanRepack`, `TinyTitanDecodeService`, `TinyTitanBench`); stale `NVMAI*` binaries may still sit beside them |
 | Wiki | renamed and pushed (`8fc5bd4`); its clone at `.qwen/wiki` is clean but **stale at `077137d`** — pull before editing |
 | CodeQL | **clean.** The analysis on `a1b9e34` reports 0 results (`8a1def0`, before the scratch-path fix, reported 11); alerts open 0, fixed 11 |
-| CI | run on `549079a` (the rename) — still in flight when this was written; earlier runs were cancelled by the next push, so check `gh run list --branch main` |
+| CI | on `549079a` (the rename) the **`test` job passed**; the `thread-sanitizer` job was cancelled by the push after it, and the run on this document was still going when it was written — `gh run list --branch main` |
 
 **The pruned installs stay pruned.** Ornith 1.5, Qwen 3.6 and Qwen-AgentWorld 35B
 (6 targets plus sidecars) were deleted for disk, and `release.sh` names every
