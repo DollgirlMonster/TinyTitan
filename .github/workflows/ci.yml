@@ -43,7 +43,7 @@ jobs:
         run: tools/lint.sh
       - name: Run serial tests
         # `swift test` implicitly performs its own DEBUG build, which also
-        # produces the `.build/debug/NVMAIRepack` binary that RepackCLITests
+        # produces the `.build/debug/TinyTitanRepack` binary that RepackCLITests
         # spawns — no separate debug build step is needed.
         run: swift test --no-parallel
       - name: Check Markdown links

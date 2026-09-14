@@ -93,11 +93,11 @@ trap as the QSA selection work.
 
 1. **Output identity, long prompt.** A multi-chunk, multi-layer prompt
    (>= 3,306 words, as used for the chunk change) must produce byte-identical
-   text with layer-major on and off. Put it behind `NVMAI_PREFILL_LAYER_MAJOR`
+   text with layer-major on and off. Put it behind `TINYTITAN_PREFILL_LAYER_MAJOR`
    so both orders exist on one build.
 2. **Recurrent state specifically.** GDN state and the conv histories are the
    parts most likely to break under reordering and least likely to show up in
-   a short comparison. Compare `NVMAI_ACT_DUMP` activations at the last token
+   a short comparison. Compare `TINYTITAN_ACT_DUMP` activations at the last token
    of each chunk boundary against the chunk-major run.
 3. **Both goldens**, to catch anything that leaked into the single-chunk path.
 4. **Then** the 8k A/B for the number, reporting `expert_read_mib` alongside

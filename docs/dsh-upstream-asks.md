@@ -1,4 +1,4 @@
-# Two asks for DeepSeek Harness, from running it against a local NVMAI server
+# Two asks for DeepSeek Harness, from running it against a local TinyTitan server
 
 Date: 2026-09-14. Verified against the installed `@deepseek-ai/dsh` **0.1.5-rc.2**
 and `@earendil-works/pi-ai` 0.85.1. Upstream (`deepseek-ai/deepseek-harness`) has
@@ -65,7 +65,7 @@ let a deployment opt out; the seam-level default seems truer to the intent.
 reasoning tokens in usage), and a compaction call behaves the same, while an
 ordinary turn still thinks at the route's default.
 
-**Local mitigation meanwhile.** NVMAI ships `plugins/dsh-nvmai`, a thin bundle
+**Local mitigation meanwhile.** TinyTitan ships `plugins/dsh-tinytitan`, a thin bundle
 that mounts a compaction backend forcing `off` for those calls; the route's own
 `reasoning` default still decides ordinary turns.
 
@@ -101,7 +101,7 @@ DeepSeek route (visible in a session transcript as
 `{"inputTokens": 9707, "outputTokens": 153, "totalTokens": 11140, "cacheReadTokens": 1280, "reasoningTokens": 132}`)
 and never on a pi-ai route, so the context meter and any per-turn accounting
 cannot separate thinking from answer there — exactly where local models spend
-most of their output tokens. NVMAI does report the field; the adapter discards
+most of their output tokens. TinyTitan does report the field; the adapter discards
 it. The doc comment ("reasoning folded into output by pi-ai") describes pi-ai's
 *output* bucket, not the separate count pi-ai also returns.
 
@@ -123,6 +123,6 @@ the cache fields do.
 
 Both are small enough to carry as a patch against the installed package while
 upstream decides — but an upgrade replaces `node_modules`, so re-apply after one.
-The first is already worked around by `plugins/dsh-nvmai` for compaction; the
+The first is already worked around by `plugins/dsh-tinytitan` for compaction; the
 second cannot be worked around from outside the adapter, which is why it is the
 more valuable of the two.

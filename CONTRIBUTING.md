@@ -1,6 +1,6 @@
 # Contributing
 
-NVMAI welcomes focused fixes, documentation improvements, and
+TinyTitan welcomes focused fixes, documentation improvements, and
 benchmark reports from Apple Silicon Macs.
 
 ## Before opening a change
@@ -9,7 +9,7 @@ benchmark reports from Apple Silicon Macs.
 - Preserve the bounded-memory model path. Never load a complete checkpoint,
   shard, or large model tensor into Swift heap memory.
 - Keep public runtime controls limited to those documented in
-  [Runtime controls](https://github.com/Pummelchen/NVMAI/wiki/Runtime-Controls).
+  [Runtime controls](https://github.com/Pummelchen/TinyTitan/wiki/Runtime-Controls).
 - Add or update a focused test for behavior changes.
 
 Run the release build, the production gates, and the serial tests:
@@ -62,7 +62,7 @@ model, memory, macOS version, Swift version, and any protocol change.
 
 ## Benchmark reports
 
-Follow the [community benchmark protocol](https://github.com/Pummelchen/NVMAI/wiki/Benchmarking-Guide). Review
+Follow the [community benchmark protocol](https://github.com/Pummelchen/TinyTitan/wiki/Benchmarking-Guide). Review
 all captured files before sharing them, and remove personal paths or unrelated
 process details.
 

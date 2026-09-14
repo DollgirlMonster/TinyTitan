@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The one NVMAI launcher: start the server, or start it and open a coding
+# The one TinyTitan launcher: start the server, or start it and open a coding
 # client against it. Interactive by default; every question has a default, so
 # pressing Enter through them launches the recommended setup.
 #
@@ -33,7 +33,7 @@
 # Flags (override the positional form, and work in any order):
 #
 #   --client <c>    server|@CLIENTS@
-#              (the list is filled from NVMAI_CLIENTS in tools/nvmai_models.sh,
+#              (the list is filled from TINYTITAN_CLIENTS in tools/tinytitan_models.sh,
 #              which the coder benchmark reads too)
 #   --model <m>     model key or catalog id
 #   --bits <4|8>    quantization for a model key
@@ -52,7 +52,7 @@
 #   --context <n|native|max> native 262144, or 524288/1048576 with --yarn
 #   --kv <4|8|16>   KV-cache precision (default 8)
 #   --yarn          enable YaRN context scaling
-#   --port <n>      default 8080 (NVMAI_PORT overrides)
+#   --port <n>      default 8080 (TINYTITAN_PORT overrides)
 #   --memory        enable persistent agent memory for this project
 #   --dry-run       print the server command and client setup; start nothing
 #   --prompt-cache <multi-prefix|off>  prompt-state reuse (default multi-prefix,
@@ -79,22 +79,22 @@
 # quantized KV and no expert cache, so --kv, --context, --yarn and --ram are
 # reported as not applying rather than passed or dropped in silence.
 #
-# Overrides: NVMAI_PORT, NVMAI_THINKING_MODE, NVMAI_CATALOG_JSON,
-# NVMAI_PHYSICAL_RAM_BYTES (the RAM-ceiling test seam), NVMAI_MODELS_DIR (the
-# installs directory, models/ by default), NVMAI_LAUNCHER_DRY_RUN=1, and the
+# Overrides: TINYTITAN_PORT, TINYTITAN_THINKING_MODE, TINYTITAN_CATALOG_JSON,
+# TINYTITAN_PHYSICAL_RAM_BYTES (the RAM-ceiling test seam), TINYTITAN_MODELS_DIR (the
+# installs directory, models/ by default), TINYTITAN_LAUNCHER_DRY_RUN=1, and the
 # per-client ones below.
-# NVMAI_LAUNCHER_ASSUME_TTY=1 answers the interactive questions from a pipe
+# TINYTITAN_LAUNCHER_ASSUME_TTY=1 answers the interactive questions from a pipe
 # while still starting nothing (it is the test seam for this script's
 # questions, not something a person needs).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARY="$BASE_DIR/.build/arm64-apple-macosx/release/NVMAIServer"
-MODELS_DIR="${NVMAI_MODELS_DIR:-$BASE_DIR/models}"
+BINARY="$BASE_DIR/.build/arm64-apple-macosx/release/TinyTitanServer"
+MODELS_DIR="${TINYTITAN_MODELS_DIR:-$BASE_DIR/models}"
 # One catalogue for the model list, the install paths and the port.
-# shellcheck source=tools/nvmai_models.sh
-source "$SCRIPT_DIR/nvmai_models.sh"
+# shellcheck source=tools/tinytitan_models.sh
+source "$SCRIPT_DIR/tinytitan_models.sh"
 
 say()  { printf '%s\n' "$*"; }
 rule() { printf '%s\n' "------------------------------------------------------------"; }
@@ -118,12 +118,12 @@ usage() {
   # here, so this help cannot name a client the launcher does not accept.
   sed -n '2,/^set -euo pipefail/p' "$0" \
     | sed 's/^# \{0,1\}//' \
-    | sed "s/@CLIENTS@/$(nvmai_client_ids_csv '|')/" \
+    | sed "s/@CLIENTS@/$(tinytitan_client_ids_csv '|')/" \
     | sed '$d'
 }
 
 DRY_RUN=0
-if [[ "${NVMAI_LAUNCHER_DRY_RUN:-0}" == 1 ]]; then DRY_RUN=1; fi
+if [[ "${TINYTITAN_LAUNCHER_DRY_RUN:-0}" == 1 ]]; then DRY_RUN=1; fi
 
 # A dry run and a piped run must never block on a question: they take every
 # default instead. Interactive only when a person is actually there -- except
@@ -131,7 +131,7 @@ if [[ "${NVMAI_LAUNCHER_DRY_RUN:-0}" == 1 ]]; then DRY_RUN=1; fi
 # run still decides that nothing is started.
 INTERACTIVE=1
 if [[ "$DRY_RUN" == "1" || ! -t 0 ]]; then INTERACTIVE=0; fi
-if [[ "${NVMAI_LAUNCHER_ASSUME_TTY:-0}" == "1" ]]; then INTERACTIVE=1; fi
+if [[ "${TINYTITAN_LAUNCHER_ASSUME_TTY:-0}" == "1" ]]; then INTERACTIVE=1; fi
 
 CLIENT=""; MODE=""; MODEL_ARG=""; BITS=""; ANSWERS=""; THINKING_ARG=""
 RAM_ARG=""; CONTEXT_ARG=""; KV_ARG=""; YARN=0; PORT_ARG=""; MEMORY=0; ENGINE_ARG=""
@@ -240,7 +240,7 @@ done
 client_label() {
   case "$1" in
     server) echo "Server only (no client)" ;;
-    *)      nvmai_client_label "$1" || echo "$1" ;;
+    *)      tinytitan_client_label "$1" || echo "$1" ;;
   esac
 }
 
@@ -254,13 +254,13 @@ normalize_client() {
     openai|anthropic)   echo server; return 0 ;;
   esac
   # Everything else has to be a client the shared catalogue carries.
-  if nvmai_client_label "$1" >/dev/null 2>&1; then echo "$1"; return 0; fi
+  if tinytitan_client_label "$1" >/dev/null 2>&1; then echo "$1"; return 0; fi
   return 1
 }
 
 if [[ -z "$CLIENT" ]] && (( INTERACTIVE )); then
   menu_ids=()
-  while IFS= read -r id; do menu_ids+=("$id"); done < <(nvmai_client_ids)
+  while IFS= read -r id; do menu_ids+=("$id"); done < <(tinytitan_client_ids)
   echo "What do you want to launch?"
   echo "  1) Server only — start the API, no client (default)"
   for (( menu_index = 0; menu_index < ${#menu_ids[@]}; menu_index++ )); do
@@ -282,7 +282,7 @@ fi
 requested_client="$CLIENT"
 if ! CLIENT="$(normalize_client "$requested_client")"; then
   # Name what was asked for: the assignment above has already emptied CLIENT.
-  echo "unknown client: $requested_client (server|$(nvmai_client_ids_csv '|'))" >&2
+  echo "unknown client: $requested_client (server|$(tinytitan_client_ids_csv '|'))" >&2
   exit 2
 fi
 
@@ -330,34 +330,34 @@ fi
 # are held to installs that are really on disk, so the menu never offers a model
 # or a width that cannot be loaded.
 dynamic=0
-if nvmai_load_catalog "$BINARY" "$MODELS_DIR"; then
-  if nvmai_catalog_keep_installed; then
+if tinytitan_load_catalog "$BINARY" "$MODELS_DIR"; then
+  if tinytitan_catalog_keep_installed; then
     dynamic=1
   else
     catalog_error="none of the models it lists are under $MODELS_DIR"
   fi
 else
-  catalog_error="$NVMAI_CATALOG_ERROR"
+  catalog_error="$TINYTITAN_CATALOG_ERROR"
 fi
 if (( ! dynamic )); then
   echo "" >&2
   echo "NOTE: the model catalog is unavailable ($catalog_error)." >&2
   echo "      Offering the installs this checkout has instead; the server will" >&2
   echo "      serve only the model chosen here, and switching needs a restart." >&2
-  if ! nvmai_static_catalog "$MODELS_DIR"; then
+  if ! tinytitan_static_catalog "$MODELS_DIR"; then
     echo "" >&2
-    echo "ERROR: $NVMAI_CATALOG_ERROR." >&2
+    echo "ERROR: $TINYTITAN_CATALOG_ERROR." >&2
     echo "       Add one first: docs/adding-a-model.md, or tools/install_models.sh." >&2
     exit 2
   fi
-  if (( ${#NVMAI_CATALOG_MISSING[@]} > 0 )); then
-    echo "      Supported but not installed here: ${NVMAI_CATALOG_MISSING[*]}" >&2
+  if (( ${#TINYTITAN_CATALOG_MISSING[@]} > 0 )); then
+    echo "      Supported but not installed here: ${TINYTITAN_CATALOG_MISSING[*]}" >&2
   fi
 fi
 
 if [[ -z "$MODEL_ARG" ]]; then
-  count=${#NVMAI_CAT_ID[@]}
-  default_idx="$(nvmai_catalog_find_dir ornith-1.5_35B_A3B_8Bit)" || default_idx=0
+  count=${#TINYTITAN_CAT_ID[@]}
+  default_idx="$(tinytitan_catalog_find_dir ornith-1.5_35B_A3B_8Bit)" || default_idx=0
   echo ""
   if (( dynamic )); then
     echo "Which model? (loaded first; every other one stays available by name)"
@@ -380,13 +380,13 @@ if [[ -z "$MODEL_ARG" ]]; then
     "#" "model" "bits" "engine" "size" "api id" "thinking" ""
   for (( i = 0; i < count; i++ )); do
     size=""
-    if [[ "${NVMAI_CAT_SIZE[$i]}" != "-" ]]; then size="${NVMAI_CAT_SIZE[$i]} GB"; fi
+    if [[ "${TINYTITAN_CAT_SIZE[$i]}" != "-" ]]; then size="${TINYTITAN_CAT_SIZE[$i]} GB"; fi
     note=""
     if (( i == default_idx )); then note="  (default)"; fi
     printf "  %2d) %-28s %s-bit  %-4s %8s  %-22s %-24s%s\n" "$((i + 1))" \
-      "${NVMAI_CAT_NAME[$i]}" "${NVMAI_CAT_QUANT[$i]}" \
-      "$( engine_column "${NVMAI_CAT_ENGINES[$i]:-${NVMAI_CAT_BACKEND[$i]}}" )" \
-      "$size" "${NVMAI_CAT_ID[$i]}" "${NVMAI_CAT_THINKING[$i]//,/, }" "$note"
+      "${TINYTITAN_CAT_NAME[$i]}" "${TINYTITAN_CAT_QUANT[$i]}" \
+      "$( engine_column "${TINYTITAN_CAT_ENGINES[$i]:-${TINYTITAN_CAT_BACKEND[$i]}}" )" \
+      "$size" "${TINYTITAN_CAT_ID[$i]}" "${TINYTITAN_CAT_THINKING[$i]//,/, }" "$note"
   done
   printf "Choice [1-%d] (default %d): " "$count" "$((default_idx + 1))"
   read -r pick || exit 1
@@ -397,33 +397,33 @@ if [[ -z "$MODEL_ARG" ]]; then
     echo "invalid choice: $pick" >&2; exit 2
   fi
 else
-  if idx="$(nvmai_catalog_find_id "$MODEL_ARG")"; then
+  if idx="$(tinytitan_catalog_find_id "$MODEL_ARG")"; then
     if [[ -n "$BITS" ]]; then
       case "$BITS" in
         4|8|4bit|8bit)
-          if [[ "${BITS%bit}" != "${NVMAI_CAT_QUANT[$idx]}" ]]; then
-            echo "$MODEL_ARG is ${NVMAI_CAT_QUANT[$idx]}-bit, not ${BITS%bit}-bit" >&2
+          if [[ "${BITS%bit}" != "${TINYTITAN_CAT_QUANT[$idx]}" ]]; then
+            echo "$MODEL_ARG is ${TINYTITAN_CAT_QUANT[$idx]}-bit, not ${BITS%bit}-bit" >&2
             exit 2
           fi ;;
         *) echo "unknown bits: $BITS (4|8)" >&2; exit 2 ;;
       esac
     fi
   else
-    if ! nvmai_resolve_model "$MODEL_ARG" 2>/dev/null; then
+    if ! tinytitan_resolve_model "$MODEL_ARG" 2>/dev/null; then
       echo "unknown model: $MODEL_ARG (a model id, or ornith|qwen36|agentworld|katcoder|qwen38|qwen35-2b|qwen35-4b|qwen35-9b)" >&2
-      if (( dynamic )); then echo "installed: ${NVMAI_CAT_ID[*]}" >&2; fi
+      if (( dynamic )); then echo "installed: ${TINYTITAN_CAT_ID[*]}" >&2; fi
       exit 2
     fi
     # No width given means 8-bit, the historical default.
-    nvmai_resolve_quant "${BITS:-8}" || exit 2
-    if ! idx="$(nvmai_catalog_find_dir "${NVMAI_MODEL_STEM}_${NVMAI_QUANT_DIR}")"; then
-      echo "ERROR: $NVMAI_MODEL_LABEL ${NVMAI_QUANT%bit}-bit is not installed (no ${NVMAI_MODEL_STEM}_${NVMAI_QUANT_DIR} under $MODELS_DIR)" >&2
+    tinytitan_resolve_quant "${BITS:-8}" || exit 2
+    if ! idx="$(tinytitan_catalog_find_dir "${TINYTITAN_MODEL_STEM}_${TINYTITAN_QUANT_DIR}")"; then
+      echo "ERROR: $TINYTITAN_MODEL_LABEL ${TINYTITAN_QUANT%bit}-bit is not installed (no ${TINYTITAN_MODEL_STEM}_${TINYTITAN_QUANT_DIR} under $MODELS_DIR)" >&2
       # Name the widths that are here: "not installed" alone reads like the
       # whole model is missing when only the one asked for is.
       installed_widths=""
-      for width_idx in "${!NVMAI_CAT_PATH[@]}"; do
-        if [[ "$(basename "${NVMAI_CAT_PATH[$width_idx]}")" == "${NVMAI_MODEL_STEM}_"* ]]; then
-          installed_widths="$installed_widths ${NVMAI_CAT_QUANT[$width_idx]}-bit"
+      for width_idx in "${!TINYTITAN_CAT_PATH[@]}"; do
+        if [[ "$(basename "${TINYTITAN_CAT_PATH[$width_idx]}")" == "${TINYTITAN_MODEL_STEM}_"* ]]; then
+          installed_widths="$installed_widths ${TINYTITAN_CAT_QUANT[$width_idx]}-bit"
         fi
       done
       if [[ -n "$installed_widths" ]]; then
@@ -435,12 +435,12 @@ else
   fi
 fi
 
-MODEL_ID="${NVMAI_CAT_ID[$idx]}"
-MODEL_NAME="${NVMAI_CAT_NAME[$idx]}"
-MODEL_QUANT="${NVMAI_CAT_QUANT[$idx]}"
-MODEL_BACKEND="${NVMAI_CAT_BACKEND[$idx]}"
-MODEL_DIR="${NVMAI_CAT_PATH[$idx]}"
-IFS=',' read -r -a levels <<< "${NVMAI_CAT_THINKING[$idx]}"
+MODEL_ID="${TINYTITAN_CAT_ID[$idx]}"
+MODEL_NAME="${TINYTITAN_CAT_NAME[$idx]}"
+MODEL_QUANT="${TINYTITAN_CAT_QUANT[$idx]}"
+MODEL_BACKEND="${TINYTITAN_CAT_BACKEND[$idx]}"
+MODEL_DIR="${TINYTITAN_CAT_PATH[$idx]}"
+IFS=',' read -r -a levels <<< "${TINYTITAN_CAT_THINKING[$idx]}"
 
 # ============================================================
 # 3b) Engine: which engine serves this install, and what was asked for
@@ -452,9 +452,9 @@ IFS=',' read -r -a levels <<< "${NVMAI_CAT_THINKING[$idx]}"
 # Qwen 3.5 models (2B/4B/9B) are implemented by *both*, from the same `.gturbo`
 # payload. That is the one case where the engine is a real choice, so it is the
 # one case that asks.
-IFS=',' read -r -a engines <<< "${NVMAI_CAT_ENGINES[$idx]:-$MODEL_BACKEND}"
-default_engine="${NVMAI_CAT_BACKEND[$idx]}"
-engine_family="${NVMAI_CAT_FAMILY[$idx]:--}"
+IFS=',' read -r -a engines <<< "${TINYTITAN_CAT_ENGINES[$idx]:-$MODEL_BACKEND}"
+default_engine="${TINYTITAN_CAT_BACKEND[$idx]}"
+engine_family="${TINYTITAN_CAT_FAMILY[$idx]:--}"
 engine_name() { if [[ "$1" == cpu ]]; then echo CPU; else echo GPU; fi; }
 engine_available() {
   local candidate
@@ -587,16 +587,16 @@ level_names() {
   echo "$out"
 }
 
-thinking_default="${NVMAI_THINKING_MODE:-off}"
+thinking_default="${TINYTITAN_THINKING_MODE:-off}"
 if ! default_word="$(normalize_level "$thinking_default")"; then
-  echo "invalid NVMAI_THINKING_MODE: $thinking_default (off|on|minimal|low|medium|high|xhigh|max)" >&2
+  echo "invalid TINYTITAN_THINKING_MODE: $thinking_default (off|on|minimal|low|medium|high|xhigh|max)" >&2
   exit 2
 fi
 if ! default_level="$(level_for_model "$default_word")"; then
   # A default the model cannot render is a person's mistake worth naming, not
   # a level to substitute in silence.
   default_level="${levels[0]}"
-  echo "NOTE: NVMAI_THINKING_MODE=$thinking_default is not a level $MODEL_NAME ${MODEL_QUANT}-bit renders" >&2
+  echo "NOTE: TINYTITAN_THINKING_MODE=$thinking_default is not a level $MODEL_NAME ${MODEL_QUANT}-bit renders" >&2
   echo "      ($(level_names)); using $default_level." >&2
 fi
 
@@ -659,7 +659,7 @@ think_word="$(thinking_label "$thinking_level")"
 ram_tier() {
   # Any positive whole number of GB, with or without the "G" suffix, because the
   # runtime's --ram-budget takes any size and the benchmark profile passes its
-  # own (NVMAI_BENCH_RAM_BUDGET). The 1/2/4/8/16/32 menu is still what the
+  # own (TINYTITAN_BENCH_RAM_BUDGET). The 1/2/4/8/16/32 menu is still what the
   # interactive question offers.
   local value="${1%[Gg]}"
   case "$value" in
@@ -683,11 +683,11 @@ ram_tier() {
 # through as `--ram-budget` and taken verbatim -- which is the person's call, so
 # this script warns in red and starts anyway.
 #
-# `NVMAI_PHYSICAL_RAM_BYTES` is the test seam: this mapping has to be checkable
+# `TINYTITAN_PHYSICAL_RAM_BYTES` is the test seam: this mapping has to be checkable
 # on a machine of any size.
 physical_ram_bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"
-if [[ -n "${NVMAI_PHYSICAL_RAM_BYTES:-}" ]]; then
-  physical_ram_bytes="$NVMAI_PHYSICAL_RAM_BYTES"
+if [[ -n "${TINYTITAN_PHYSICAL_RAM_BYTES:-}" ]]; then
+  physical_ram_bytes="$TINYTITAN_PHYSICAL_RAM_BYTES"
 fi
 case "$physical_ram_bytes" in
   *[!0-9]*|"") physical_ram_bytes=0 ;;
@@ -811,7 +811,7 @@ elif [[ -n "$CONTEXT_ARG" ]]; then
   esac
 fi
 
-PORT="${PORT_ARG:-${NVMAI_PORT:-$NVMAI_DEFAULT_PORT}}"
+PORT="${PORT_ARG:-${TINYTITAN_PORT:-$TINYTITAN_DEFAULT_PORT}}"
 
 # The context, KV and YaRN flags reach the GPU runtime only. Asking for one of
 # them against a CPU model is a misunderstanding worth naming: the CPU engine
@@ -830,7 +830,7 @@ if [[ "$ENGINE" == "cpu" ]]; then
 fi
 
 if [[ "$MEMORY" == "1" ]]; then
-  export NVMAI_MEMORY=1
+  export TINYTITAN_MEMORY=1
 fi
 
 # ============================================================
@@ -922,14 +922,14 @@ api_model_note=""
 print_setup() {
   echo ""
   echo "============================================================"
-  echo " NVMAIServer ready — $MODEL_NAME ${MODEL_QUANT}-bit ($( [[ "$MODEL_BACKEND" == cpu ]] && echo CPU || echo GPU ))"
+  echo " TinyTitanServer ready — $MODEL_NAME ${MODEL_QUANT}-bit ($( [[ "$MODEL_BACKEND" == cpu ]] && echo CPU || echo GPU ))"
   echo "                                            answers ${mode_word}, thinking ${think_word}"
   echo "============================================================"
   echo ""
   if [[ "$API" == "anthropic" ]]; then
     echo "Anthropic API setup — point any Anthropic Messages client at this:"
     echo "  ANTHROPIC_BASE_URL=http://127.0.0.1:${PORT}"
-    echo "  ANTHROPIC_API_KEY=nvmai   (any value; the server does not authenticate)"
+    echo "  ANTHROPIC_API_KEY=tinytitan   (any value; the server does not authenticate)"
     echo "  Model:      $launch_model $api_model_note"
     echo "  Endpoint:   POST /v1/messages"
   else
@@ -977,39 +977,39 @@ if [[ "$DRY_RUN" == "1" ]]; then
   echo "Client setup the launcher would write/use:"
   case "$CLIENT" in
     server)   echo "  Server only; nothing to configure." ;;
-    codex)    echo "  ~/.codex-nvmai/config.toml -> $launch_model via $API at port $PORT" ;;
+    codex)    echo "  ~/.codex-tinytitan/config.toml -> $launch_model via $API at port $PORT" ;;
     claude)   echo "  ANTHROPIC_BASE_URL=http://127.0.0.1:$PORT, model $launch_model" ;;
-    qwen)     echo "  ~/.qwen-nvmai/settings.json -> $launch_model at port $PORT" ;;
-    opencode) echo "  ~/.config/opencode/opencode.jsonc provider 'nvmai' (model $launch_model)" ;;
-    zed)      echo "  ~/.config/zed/settings.json openai_compatible 'nvmai' (model $launch_model)" ;;
+    qwen)     echo "  ~/.qwen-tinytitan/settings.json -> $launch_model at port $PORT" ;;
+    opencode) echo "  ~/.config/opencode/opencode.jsonc provider 'tinytitan' (model $launch_model)" ;;
+    zed)      echo "  ~/.config/zed/settings.json openai_compatible 'tinytitan' (model $launch_model)" ;;
   esac
   echo ""
   print_setup
   exit 0
 fi
 
-# Persistent memory, when NVMAI_MEMORY=1. The workspace is the directory this
+# Persistent memory, when TINYTITAN_MEMORY=1. The workspace is the directory this
 # was launched from, so each repository keeps its own memory.
-nvmai_export_memory_environment "$PWD"
+tinytitan_export_memory_environment "$PWD"
 
 if [[ "$MEMORY" == "1" ]]; then
-  echo "Memory: on (in-process, ${NVMAI_MEMORY_DIR}${NVMAI_MEMORY_CACHE_MIB:+, cap ${NVMAI_MEMORY_CACHE_MIB} MiB}, workspace $(basename "$PWD"))"
+  echo "Memory: on (in-process, ${TINYTITAN_MEMORY_DIR}${TINYTITAN_MEMORY_CACHE_MIB:+, cap ${TINYTITAN_MEMORY_CACHE_MIB} MiB}, workspace $(basename "$PWD"))"
 fi
 
 # ============================================================
 # 10) Start the server
 # ============================================================
 
-# Stop only a stale NVMAIServer on this port -- never an unrelated process --
+# Stop only a stale TinyTitanServer on this port -- never an unrelated process --
 # then wait until the port actually frees, so a slow teardown cannot race the
 # new server's bind.
 if lsof -i :"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "Stopping the existing NVMAIServer on port $PORT..."
+  echo "Stopping the existing TinyTitanServer on port $PORT..."
   for pid in $(lsof -ti :"$PORT" -sTCP:LISTEN); do
-    if ps -p "$pid" -o command= | grep -q NVMAIServer; then
+    if ps -p "$pid" -o command= | grep -q TinyTitanServer; then
       kill "$pid"
     else
-      echo "  skipping non-NVMAIServer pid $pid on port $PORT" >&2
+      echo "  skipping non-TinyTitanServer pid $pid on port $PORT" >&2
     fi
   done
   for _ in $(seq 1 100); do
@@ -1024,7 +1024,7 @@ if [[ ! -e "$MODEL_DIR" ]]; then
   exit 1
 fi
 
-echo "Starting NVMAIServer ($MODEL_NAME ${MODEL_QUANT}-bit, $model_word, $mode_word, thinking $think_word) on port $PORT..."
+echo "Starting TinyTitanServer ($MODEL_NAME ${MODEL_QUANT}-bit, $model_word, $mode_word, thinking $think_word) on port $PORT..."
 
 "${server_cmd[@]}" &
 server_pid=$!
@@ -1043,7 +1043,7 @@ for _ in $(seq 1 240); do
   sleep 2
 done
 if ! models_json="$(curl -s --max-time 5 "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null)" || [[ -z "$models_json" ]]; then
-  echo "ERROR: NVMAIServer did not come up on port $PORT" >&2
+  echo "ERROR: TinyTitanServer did not come up on port $PORT" >&2
   kill "$server_pid" 2>/dev/null || true
   exit 1
 fi
@@ -1072,21 +1072,21 @@ BASE_URL="http://127.0.0.1:${PORT}/v1"
 backup_once() {
   local file="$1"
   [[ -f "$file" ]] || return 0
-  local backup="${file}.nvmai-backup"
+  local backup="${file}.tinytitan-backup"
   [[ -f "$backup" ]] || cp "$file" "$backup"
 }
 
 configure_codex() {
-  local dir="${CODEX_HOME_NVMAI:-$HOME/.codex-nvmai}"
+  local dir="${CODEX_HOME_TinyTitan:-$HOME/.codex-tinytitan}"
   mkdir -p "$dir"
   backup_once "$dir/config.toml"
   cat > "$dir/config.toml" <<EOF
-# Written by NVMAI tools/server_launcher.sh
+# Written by TinyTitan tools/server_launcher.sh
 model = "$launch_model"
-model_provider = "nvmai"
+model_provider = "tinytitan"
 
-[model_providers.nvmai]
-name = "NVMAI"
+[model_providers.tinytitan]
+name = "TinyTitan"
 base_url = "$BASE_URL"
 wire_api = "responses"
 EOF
@@ -1100,7 +1100,7 @@ configure_claude() {
   # no file to write. The two extra model variables matter: without them it
   # asks for a claude-* id for its background tasks and gets a 404.
   export ANTHROPIC_BASE_URL="http://127.0.0.1:${PORT}"
-  export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-nvmai}"
+  export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-tinytitan}"
   export ANTHROPIC_MODEL="$launch_model"
   export ANTHROPIC_DEFAULT_HAIKU_MODEL="$launch_model"
   export ANTHROPIC_SMALL_FAST_MODEL="$launch_model"
@@ -1111,7 +1111,7 @@ configure_qwen() {
   # Qwen Code reads JSON settings from $QWEN_HOME (default ~/.qwen/), not a
   # Codex-style TOML. A dedicated home leaves the user's real qwen-code
   # config (providers, keys, memories) untouched.
-  local dir="${QWEN_HOME_NVMAI:-$HOME/.qwen-nvmai}"
+  local dir="${QWEN_HOME_TinyTitan:-$HOME/.qwen-tinytitan}"
   mkdir -p "$dir"
   backup_once "$dir/settings.json"
   cat > "$dir/settings.json" <<EOF
@@ -1120,9 +1120,9 @@ configure_qwen() {
     "openai": [
       {
         "id": "$launch_model",
-        "name": "[NVMAI] $launch_model",
+        "name": "[TinyTitan] $launch_model",
         "baseUrl": "$BASE_URL",
-        "description": "NVMAI local server",
+        "description": "TinyTitan local server",
         "envKey": "OPENAI_API_KEY"
       }
     ]
@@ -1144,7 +1144,7 @@ configure_qwen() {
 EOF
   export QWEN_HOME="$dir"
   export OPENAI_API_KEY="${OPENAI_API_KEY:-dummy}"
-  # NVMAI's cold prefill of qwen-code's large system prompt can exceed
+  # TinyTitan's cold prefill of qwen-code's large system prompt can exceed
   # qwen-code's default 240s stream-idle timeout; disable it so the request is
   # not aborted mid-generation. Also disable the 900s stream-lifetime cap,
   # which would otherwise abort long reasoning generations mid-answer.
@@ -1153,7 +1153,7 @@ EOF
   echo "  Qwen Code configured: $dir/settings.json"
 }
 
-# Merge the NVMAI provider into a JSONC settings file, keeping everything
+# Merge the TinyTitan provider into a JSONC settings file, keeping everything
 # else. Comments and trailing commas are tolerated on read; the file is
 # rewritten as plain JSON (Zed and OpenCode both accept that) with a backup
 # kept beside it. Each client has its own schema, so the shape is passed in:
@@ -1163,17 +1163,17 @@ merge_client_config() {
   local file="$1" schema="$2" provider="$3" model="$4" context="$5"
   mkdir -p "$(dirname "$file")"
   backup_once "$file"
-  NVMAI_MERGE_FILE="$file" NVMAI_MERGE_SCHEMA="$schema" NVMAI_MERGE_PROVIDER="$provider" \
-  NVMAI_MERGE_MODEL="$model" NVMAI_MERGE_URL="$BASE_URL" NVMAI_MERGE_CONTEXT="$context" \
+  TINYTITAN_MERGE_FILE="$file" TINYTITAN_MERGE_SCHEMA="$schema" TINYTITAN_MERGE_PROVIDER="$provider" \
+  TINYTITAN_MERGE_MODEL="$model" TINYTITAN_MERGE_URL="$BASE_URL" TINYTITAN_MERGE_CONTEXT="$context" \
   python3 - <<'PY'
 import json, os, re, sys
 
-path = os.environ["NVMAI_MERGE_FILE"]
-schema = os.environ["NVMAI_MERGE_SCHEMA"]
-provider = os.environ["NVMAI_MERGE_PROVIDER"]
-model = os.environ["NVMAI_MERGE_MODEL"]
-base_url = os.environ["NVMAI_MERGE_URL"]
-context = int(os.environ["NVMAI_MERGE_CONTEXT"])
+path = os.environ["TINYTITAN_MERGE_FILE"]
+schema = os.environ["TINYTITAN_MERGE_SCHEMA"]
+provider = os.environ["TINYTITAN_MERGE_PROVIDER"]
+model = os.environ["TINYTITAN_MERGE_MODEL"]
+base_url = os.environ["TINYTITAN_MERGE_URL"]
+context = int(os.environ["TINYTITAN_MERGE_CONTEXT"])
 
 
 def strip_comments(text):
@@ -1235,11 +1235,11 @@ def table(parent, key):
 if schema == "opencode":
     block = {
         "npm": "@ai-sdk/openai-compatible",
-        "name": "NVMAI (local)",
-        "options": {"baseURL": base_url, "apiKey": "nvmai"},
+        "name": "TinyTitan (local)",
+        "options": {"baseURL": base_url, "apiKey": "tinytitan"},
         "models": {
             model: {
-                "name": f"NVMAI — {model}",
+                "name": f"TinyTitan — {model}",
                 "limit": {"context": context, "output": 65536},
             }
         },
@@ -1251,7 +1251,7 @@ else:  # zed
         "available_models": [
             {
                 "name": model,
-                "display_name": f"NVMAI — {model}",
+                "display_name": f"TinyTitan — {model}",
                 "max_tokens": context,
                 "capabilities": {
                     "tools": True,
@@ -1276,16 +1276,16 @@ PY
 configure_opencode() {
   local file="$HOME/.config/opencode/opencode.jsonc"
   # OpenCode has no environment override for a provider, so the provider block
-  # is written into its config. The provider is named "nvmai" so nothing of
+  # is written into its config. The provider is named "tinytitan" so nothing of
   # the user's own "openai" setup is touched.
-  merge_client_config "$file" opencode nvmai "$launch_model" "${max_context:-262144}"
-  echo "  Pick \"$launch_model\" under the nvmai provider in OpenCode's model list."
+  merge_client_config "$file" opencode tinytitan "$launch_model" "${max_context:-262144}"
+  echo "  Pick \"$launch_model\" under the tinytitan provider in OpenCode's model list."
 }
 
 configure_zed() {
   local file="$HOME/.config/zed/settings.json"
-  merge_client_config "$file" zed nvmai "$launch_model" "${max_context:-262144}"
-  echo "  In Zed: Settings -> AI -> LLM Providers; choose the nvmai provider's model."
+  merge_client_config "$file" zed tinytitan "$launch_model" "${max_context:-262144}"
+  echo "  In Zed: Settings -> AI -> LLM Providers; choose the tinytitan provider's model."
 }
 
 case "$CLIENT" in
@@ -1318,7 +1318,7 @@ client_bin() {
   esac
   if [[ -n "$var" && -n "${!var-}" ]]; then echo "${!var}"; return 0; fi
   # The binary names the shared catalogue carries, first one on PATH.
-  for candidate in $(nvmai_client_binaries "$id"); do
+  for candidate in $(tinytitan_client_binaries "$id"); do
     if override="$(command -v "$candidate" 2>/dev/null)"; then
       echo "$override"
       return 0

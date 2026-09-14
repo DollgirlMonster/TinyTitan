@@ -1,6 +1,6 @@
 # The server's APIs
 
-NVMAIServer speaks three client protocols over one generation path. A request
+TinyTitanServer speaks three client protocols over one generation path. A request
 on any of them becomes the same validated chat request, runs through the same
 queue, prompt cache, memory decorator and decoder, and is answered in the
 protocol's own object and event shapes. What the model can do is identical on
@@ -243,6 +243,6 @@ against the server with the model replaced by a scripted backend, which is
 what caught the fields the unit tests never wrote (Codex's `namespace` and
 `web_search` tools, Claude Code's `context_management` and `adaptive`
 thinking); it skips when a CLI is not installed. None of them needs a model.
-For hand runs, `NVMAI_STUB_SERVER_SECONDS=600 swift test --filter
+For hand runs, `TINYTITAN_STUB_SERVER_SECONDS=600 swift test --filter
 StubServerForManualRuns` keeps such a server up and writes its port to
-`/tmp/nvmai-stub-port`.
+`/tmp/tinytitan-stub-port`.

@@ -5,7 +5,7 @@
 # the baseline and the shipped configuration.
 #
 #   benchmark/memval_matrix.sh                  # everything, ~a day
-#   NVMAI_MEMVAL_RUNS=1 benchmark/memval_matrix.sh   # a quick pass
+#   TINYTITAN_MEMVAL_RUNS=1 benchmark/memval_matrix.sh   # a quick pass
 #
 # Never edit anything under benchmark/ or tools/ while this runs: bash reads
 # scripts by offset, and a shifted file mid-run is how a report step once
@@ -23,7 +23,7 @@ for install in qwen36:4 qwen36:8 ornith:4 ornith:8 agentworld:4 agentworld:8; do
   for bench in book pong; do
     arms="$arms_book"; [[ "$bench" == pong ]] && arms="$arms_pong"
     echo "##### $install $bench arms=[$arms] $(date)" | tee -a "$LOG"
-    NVMAI_MEMVAL_MODEL="$model" NVMAI_MEMVAL_QUANT="$quant" NVMAI_MEMVAL_ARMS="$arms" \
+    TINYTITAN_MEMVAL_MODEL="$model" TINYTITAN_MEMVAL_QUANT="$quant" TINYTITAN_MEMVAL_ARMS="$arms" \
       benchmark/memval_run.sh "$bench" 2>&1 | tee -a "$LOG" | tail -3
     echo "##### $install $bench DONE $(date) (exit ${PIPESTATUS[0]})" | tee -a "$LOG"
   done

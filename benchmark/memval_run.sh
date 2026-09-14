@@ -6,32 +6,32 @@
 #   benchmark/memval_run.sh book            # summary, auto, minimal, full
 #   benchmark/memval_run.sh pong full       # one arm
 #
-# The install: NVMAI_MEMVAL_MODEL=ornith|qwen36|agentworld (default qwen36)
-# and NVMAI_MEMVAL_QUANT=4|8 (default 4). NVMAI_MEMVAL_ARMS="summary auto"
+# The install: TINYTITAN_MEMVAL_MODEL=ornith|qwen36|agentworld (default qwen36)
+# and TINYTITAN_MEMVAL_QUANT=4|8 (default 4). TINYTITAN_MEMVAL_ARMS="summary auto"
 # limits the arms. Results go under .build/benchmark-logs/memory-<bench>-
-# <label>/ where the label is NVMAI_MEMVAL_LABEL or "<model>-<quant>bit".
+# <label>/ where the label is TINYTITAN_MEMVAL_LABEL or "<model>-<quant>bit".
 #
 # Each arm gets a freshly started server with its own configuration and its
 # own empty memory directory under the scratch root, so nothing an arm writes
-# can reach another arm or the user's real ~/.nvmai/memory. The server is
+# can reach another arm or the user's real ~/.tinytitan/memory. The server is
 # stopped between arms. Never build while this is running.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH="${1:?pong|book}"
 ONLY="${2:-}"
-PORT="${NVMAI_PORT:-8096}"
-MODEL="${NVMAI_MEMVAL_MODEL:-qwen36}"
-QUANT="${NVMAI_MEMVAL_QUANT:-4}"
+PORT="${TINYTITAN_PORT:-8096}"
+MODEL="${TINYTITAN_MEMVAL_MODEL:-qwen36}"
+QUANT="${TINYTITAN_MEMVAL_QUANT:-4}"
 case "$MODEL" in
   ornith|qwen36|agentworld) : ;;
-  *) echo "NVMAI_MEMVAL_MODEL must be ornith, qwen36 or agentworld" >&2; exit 2 ;;
+  *) echo "TINYTITAN_MEMVAL_MODEL must be ornith, qwen36 or agentworld" >&2; exit 2 ;;
 esac
 # One launcher for every model and client now; `codex` keeps the agent loop,
 # which is what these benchmarks drove before.
 LAUNCH=("$ROOT/tools/server_launcher.sh" codex full "$MODEL" "$QUANT" default off)
 [[ -x "${LAUNCH[0]}" ]] || { echo "no launcher at ${LAUNCH[0]}" >&2; exit 2; }
-LABEL="${NVMAI_MEMVAL_LABEL:-$MODEL-${QUANT}bit}"
-SCRATCH="${NVMAI_MEMVAL_SCRATCH:-$ROOT/.build/benchmark-logs/memval-scratch-$LABEL}"
+LABEL="${TINYTITAN_MEMVAL_LABEL:-$MODEL-${QUANT}bit}"
+SCRATCH="${TINYTITAN_MEMVAL_SCRATCH:-$ROOT/.build/benchmark-logs/memval-scratch-$LABEL}"
 # One results directory per benchmark and install. `pong` and `book` keep the
 # names their recorded runs already carry, because tools that read those runs
 # -- the simulator, the watchdog calibration -- glob for them.
@@ -53,36 +53,36 @@ case "$BENCH" in
   *) echo "usage: $0 smoke|pong|book|correct|projects|volume [arm]" >&2; exit 2 ;;
 esac
 [[ -n "$ONLY" ]] && ARMS=("$ONLY")
-if [[ -n "${NVMAI_MEMVAL_ARMS:-}" && "$BENCH" != smoke ]]; then
-  read -r -a ARMS <<< "$NVMAI_MEMVAL_ARMS"
+if [[ -n "${TINYTITAN_MEMVAL_ARMS:-}" && "$BENCH" != smoke ]]; then
+  read -r -a ARMS <<< "$TINYTITAN_MEMVAL_ARMS"
 fi
 # Repeats. Only meaningful with sampling on: at temperature 0 a repeat is the
 # same output, so the default leaves temperature to the server, which is what
-# a real client does. NVMAI_MEMVAL_TEMPERATURE=0 pins it for a determinism
+# a real client does. TINYTITAN_MEMVAL_TEMPERATURE=0 pins it for a determinism
 # check.
-RUNS="${NVMAI_MEMVAL_RUNS:-3}"
+RUNS="${TINYTITAN_MEMVAL_RUNS:-3}"
 # Where the run numbering starts. Repeats of one configuration have to be
 # interleaved with the others to be worth anything -- three of A then three
 # of B measures the order as much as the arms -- and interleaving means
 # invoking this script once per run, which would otherwise overwrite run 1
 # every time.
-FIRST_RUN="${NVMAI_MEMVAL_FIRST_RUN:-1}"
+FIRST_RUN="${TINYTITAN_MEMVAL_FIRST_RUN:-1}"
 [[ "$BENCH" == smoke ]] && RUNS=1
 # The server distils a session after this much quiet. Two minutes in
 # production; here the harness waits for the log line, so keep it short.
-IDLE="${NVMAI_MEMVAL_CONSOLIDATION_IDLE:-5}"
+IDLE="${TINYTITAN_MEMVAL_CONSOLIDATION_IDLE:-5}"
 
-BINARY="$ROOT/.build/arm64-apple-macosx/release/NVMAIServer"
+BINARY="$ROOT/.build/arm64-apple-macosx/release/TinyTitanServer"
 if [[ ! -x "$BINARY" ]]; then
-  echo "ERROR: no release binary at $BINARY; run: swift build -c release --product NVMAIServer" >&2
+  echo "ERROR: no release binary at $BINARY; run: swift build -c release --product TinyTitanServer" >&2
   exit 1
 fi
 # The release binary must be newer than every source file, or the arms
 # measure whatever was last built. This is the check that was missing when
 # three arms of numbers turned out to be the same arm.
-# NVMAIMemoryTool is the CLI; the server does not link it, so SwiftPM will
+# TinyTitanMemoryTool is the CLI; the server does not link it, so SwiftPM will
 # not relink the server when it changes, and it is not measured here.
-newest_source="$(find "$ROOT/sources" -path "$ROOT/sources/NVMAIMemoryTool" -prune -o -name '*.swift' -newer "$BINARY" -print | head -1)"
+newest_source="$(find "$ROOT/sources" -path "$ROOT/sources/TinyTitanMemoryTool" -prune -o -name '*.swift' -newer "$BINARY" -print | head -1)"
 if [[ -n "$newest_source" ]]; then
   echo "ERROR: $newest_source is newer than the release binary; rebuild first." >&2
   exit 1
@@ -100,7 +100,7 @@ listening_pids() { lsof -ti :"$PORT" -sTCP:LISTEN 2>/dev/null || true; }
 stop_server() {
   local pid
   for pid in $(listening_pids); do
-    ps -p "$pid" -o command= | grep -q NVMAIServer && kill -TERM "$pid" 2>/dev/null || true
+    ps -p "$pid" -o command= | grep -q TinyTitanServer && kill -TERM "$pid" 2>/dev/null || true
   done
   for _ in $(seq 1 90); do
     [[ -z "$(listening_pids)" ]] && break
@@ -166,22 +166,22 @@ for ARM in "${ARMS[@]}"; do
   fi
   (
     cd "$ROOT"
-    NVMAI_PORT="$PORT" NVMAI_MEMORY="$MEMORY" NVMAI_MEMORY_TOOLS="$TOOLS" \
-    NVMAI_MEMORY_DIR="$MEMDIR" NVMAI_MEMORY_JOURNAL=1 \
-    NVMAI_MEMORY_GUARD="${NVMAI_MEMORY_GUARD:-1}" \
-    NVMAI_MEMORY_CONSOLIDATION=1 NVMAI_MEMORY_CONSOLIDATION_IDLE_SECONDS="$IDLE" \
+    TINYTITAN_PORT="$PORT" TINYTITAN_MEMORY="$MEMORY" TINYTITAN_MEMORY_TOOLS="$TOOLS" \
+    TINYTITAN_MEMORY_DIR="$MEMDIR" TINYTITAN_MEMORY_JOURNAL=1 \
+    TINYTITAN_MEMORY_GUARD="${TINYTITAN_MEMORY_GUARD:-1}" \
+    TINYTITAN_MEMORY_CONSOLIDATION=1 TINYTITAN_MEMORY_CONSOLIDATION_IDLE_SECONDS="$IDLE" \
       exec "${LAUNCH[@]}"
   ) >"$SERVER_LOG" 2>&1 &
   LAUNCHER_PID=$!
   wait_ready
   grep -m1 "memory enabled" "$SERVER_LOG" || echo "(memory line: none, as expected for $ARM)"
 
-  NVMAI_PORT="$PORT" NVMAI_MEMVAL_MEMDIR="$MEMDIR" NVMAI_MEMVAL_RUN="$RUN" \
-  NVMAI_MEMVAL_SERVER_LOG="$SERVER_LOG" NVMAI_MEMVAL_RESULTS="$LOGS" \
+  TINYTITAN_PORT="$PORT" TINYTITAN_MEMVAL_MEMDIR="$MEMDIR" TINYTITAN_MEMVAL_RUN="$RUN" \
+  TINYTITAN_MEMVAL_SERVER_LOG="$SERVER_LOG" TINYTITAN_MEMVAL_RESULTS="$LOGS" \
     python3 "$SCRIPT" "$ARM" 2>&1 | tee "$LOGS/run-$ARM-r$RUN.log"
   stop_server
   echo "--- consolidations for $ARM run $RUN:"; grep -c "consolidated session=" "$SERVER_LOG" || true
 done
 done
 
-[[ "$BENCH" == smoke ]] || { echo; echo "=== report ($LABEL)"; NVMAI_MEMVAL_RESULTS="$LOGS" python3 "$SCRIPT" report; }
+[[ "$BENCH" == smoke ]] || { echo; echo "=== report ($LABEL)"; TINYTITAN_MEMVAL_RESULTS="$LOGS" python3 "$SCRIPT" report; }

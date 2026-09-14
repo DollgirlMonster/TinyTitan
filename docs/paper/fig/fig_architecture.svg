@@ -6,7 +6,7 @@
   <text x="65" y="54" text-anchor="middle" font-size="9">Claude Code / Codex</text>
   <!-- server -->
   <rect x="150" y="10" width="400" height="280" rx="6" fill="none" stroke="#333" stroke-dasharray="4 3"/>
-  <text x="160" y="26" font-size="9.5" fill="#333">NVMAIServer process (one binary, one process)</text>
+  <text x="160" y="26" font-size="9.5" fill="#333">TinyTitanServer process (one binary, one process)</text>
   <rect x="165" y="38" width="120" height="44" rx="4" fill="#e8f0f8" stroke="#2f7fb3"/>
   <text x="225" y="56" text-anchor="middle" font-weight="bold">MemoryBackend</text>
   <text x="225" y="70" text-anchor="middle" font-size="9">decorator on the request path</text>

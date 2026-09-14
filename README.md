@@ -1,19 +1,18 @@
-<img width="1774" height="887" alt="image" src="https://github.com/user-attachments/assets/dc91bc31-0cd4-42e6-bc7a-67ffb277efe0" />
+<p align="center">
+  <img width="480" alt="TinyTitan — the fastest SSD streamer for AI on Mac" src="assets/tinytitan-hero.png" />
+</p>
 
+# TinyTitan
 
-
-
-# NVMAI
-
-[![Stars](https://img.shields.io/github/stars/Pummelchen/NVMAI?style=flat-square&logo=github&label=Stars&color=e3b341)](https://github.com/Pummelchen/NVMAI/stargazers)
-[![Views (14d)](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Pummelchen/NVMAI/main/.github/traffic.json)](https://github.com/Pummelchen/NVMAI)
-[![Last Commit](https://img.shields.io/github/last-commit/Pummelchen/NVMAI?style=flat-square&logo=git&label=Last%20Commit&color=2ea44f)](https://github.com/Pummelchen/NVMAI/commits/main)
+[![Stars](https://img.shields.io/github/stars/Pummelchen/TinyTitan?style=flat-square&logo=github&label=Stars&color=e3b341)](https://github.com/Pummelchen/TinyTitan/stargazers)
+[![Views (14d)](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Pummelchen/TinyTitan/main/.github/traffic.json)](https://github.com/Pummelchen/TinyTitan)
+[![Last Commit](https://img.shields.io/github/last-commit/Pummelchen/TinyTitan?style=flat-square&logo=git&label=Last%20Commit&color=2ea44f)](https://github.com/Pummelchen/TinyTitan/commits/main)
 [![Contact](https://img.shields.io/badge/Contact-0xa0b1%40gmail.com-blue?style=flat-square&logo=gmail&logoColor=white)](mailto:0xa0b1@gmail.com)
 
-NVMAI is the fastest SSD streamer for AI models on Mac.
+TinyTitan is the fastest SSD streamer for AI models on Mac.
 
 What is new in each release lives in the
-[Changelog](https://github.com/Pummelchen/NVMAI/wiki/Changelog).
+[Changelog](https://github.com/Pummelchen/TinyTitan/wiki/Changelog).
 
 ## Benchmarks
 
@@ -60,17 +59,17 @@ Every model installs at **4-bit and 8-bit**:
 
 ### Usage
 
-- **Easiest install:** one command checks the Mac, builds NVMAI, optionally
+- **Easiest install:** one command checks the Mac, builds TinyTitan, optionally
   downloads a model, and installs a double-clickable Mac app in
   `~/Applications`. Safe to re-run; it updates instead of cloning twice.
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/Pummelchen/NVMAI/main/tools/install_nvmai.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/Pummelchen/TinyTitan/main/tools/install_tinytitan.sh | bash
   ```
-  From a clone, `tools/install_nvmai.sh` does the same. See
+  From a clone, `tools/install_tinytitan.sh` does the same. See
   [docs/site](docs/site/) for the plain-language article series, or
-  `tools/install_nvmai.sh --help` for its flags.
+  `tools/install_tinytitan.sh --help` for its flags.
 - **OpenAI-compatible server:** A loopback Chat Completions and Responses API
-  for starting NVMAI and connecting supported coding clients.
+  for starting TinyTitan and connecting supported coding clients.
 - **One server, one port, one launcher:** `tools/server_launcher.sh` starts the
   API on its own, or starts it and opens one of the supported clients — Codex,
   Claude Code, Qwen Code, OpenCode or the Zed editor — wiring that client's
@@ -80,7 +79,7 @@ Every model installs at **4-bit and 8-bit**:
   cache (1/2/4/8/16/32 GB; anything over 40% of the Mac's physical memory is
   warned about in red and used anyway, and the default is the install's own
   measured profile, which the runtime holds to half of physical memory).
-  It serves on `127.0.0.1:8080` (`NVMAI_PORT` overrides it), and every other
+  It serves on `127.0.0.1:8080` (`TINYTITAN_PORT` overrides it), and every other
   installed model stays available by name through the API; the server switches
   on demand, keeping one model resident at a time.
 
@@ -90,7 +89,7 @@ tools/server_launcher.sh --client codex --model ornith 4     # server + Codex
 tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
 ```
 
-- **Persistent agent memory (optional):** With `NVMAI_MEMORY=1` the model gets
+- **Persistent agent memory (optional):** With `TINYTITAN_MEMORY=1` the model gets
   memory that outlives a conversation, scoped per repository, with six memory
   tools the engine answers itself. It runs inside the server process, so there
   is no database to install and nothing to start. Off by default; see
@@ -114,22 +113,22 @@ tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
   shim) and checks every client's wiring without a model
   (`--round clients`); DeepSeek Harness reaches the server through its own
   `llm-pi-ai` provider route, which `tools/dsh_route.sh` generates from the
-  installed models (and `plugins/dsh-nvmai` keeps current inside the harness,
+  installed models (and `plugins/dsh-tinytitan` keeps current inside the harness,
   adding a compaction backend that does not think) — see
-  [Connect a client](https://github.com/Pummelchen/NVMAI/wiki/OpenAI-Compatible-Server#connect-a-client).
-- **Mac app and tools:** NVMAI also provides a native Mac app, direct CLI
+  [Connect a client](https://github.com/Pummelchen/TinyTitan/wiki/OpenAI-Compatible-Server#connect-a-client).
+- **Mac app and tools:** TinyTitan also provides a native Mac app, direct CLI
   generation, streaming responses, and client-authorized function-tool calls.
 
 
 ### Core Benefits
 
-- NVMAI streams LLM's faster than any other similar project.
+- TinyTitan streams LLM's faster than any other similar project.
 - Run large MOE AI models on low RAM Apple Silicon Macs by keeping the AI model on SSD/NVMe. 
-- A 125B model on 8 GB of RAM. NVMAI streams experts straight from SSD, so model size is bounded by your disk space, not your memory.
-- You set the RAM budget. NVMAI stays inside it. Give it 4 GB or 8 GB — it holds the line, so your Mac stays responsive while the model runs.
+- A 125B model on 8 GB of RAM. TinyTitan streams experts straight from SSD, so model size is bounded by your disk space, not your memory.
+- You set the RAM budget. TinyTitan stays inside it. Give it 4 GB or 8 GB — it holds the line, so your Mac stays responsive while the model runs.
 - Apple Neural Engine acceleration for prompt processing - 2.3× faster than the GPU cores.
 - Our own Metal kernels, our own engine. Purpose-built for Apple silicon and engineered to use your Mac at the physical limit.
-- No MLX. No GGUF. NVMAI ships its own high-speed model format and a converter that builds it straight from the original weights.
+- No MLX. No GGUF. TinyTitan ships its own high-speed model format and a converter that builds it straight from the original weights.
   
 
 ### Special Features
@@ -159,7 +158,7 @@ tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
   three-stage tiled GPU reduction, cutting per-token sampling cost from
   15.5 ms to 1.4 ms with a token-for-token identical stream — the main
   source of the v4.6 decode gain.
-- **ANE prefill:** `NVMAI_PREFILL_ANE=on` runs
+- **ANE prefill:** `TINYTITAN_PREFILL_ANE=on` runs
   full-attention prefill blocks on the Neural Engine from a one-time
   exported Core ML sidecar, roughly halving long-prompt time to first
   token; short prompts and decode are untouched.
@@ -175,18 +174,18 @@ tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
 
 ## Core Links
 
-- [Getting started](https://github.com/Pummelchen/NVMAI/wiki/Getting-Started)
-- [Features](https://github.com/Pummelchen/NVMAI/wiki/Features)
-- [Local server and launchers](https://github.com/Pummelchen/NVMAI/wiki/OpenAI-Compatible-Server)
-- [Runtime controls](https://github.com/Pummelchen/NVMAI/wiki/Runtime-Controls)
-- [Benchmarks](https://github.com/Pummelchen/NVMAI/wiki/Benchmarks)
-- [Changelog](https://github.com/Pummelchen/NVMAI/wiki/Changelog)
+- [Getting started](https://github.com/Pummelchen/TinyTitan/wiki/Getting-Started)
+- [Features](https://github.com/Pummelchen/TinyTitan/wiki/Features)
+- [Local server and launchers](https://github.com/Pummelchen/TinyTitan/wiki/OpenAI-Compatible-Server)
+- [Runtime controls](https://github.com/Pummelchen/TinyTitan/wiki/Runtime-Controls)
+- [Benchmarks](https://github.com/Pummelchen/TinyTitan/wiki/Benchmarks)
+- [Changelog](https://github.com/Pummelchen/TinyTitan/wiki/Changelog)
 - [Repository layout](docs/repository-layout.md) — where everything lives, and
   the naming and file-size conventions
 
 ## Credits
 
-NVMAI is a focused fork of
+TinyTitan is a focused fork of
 [drumih/turbo-fieldfare](https://github.com/drumih/turbo-fieldfare), which
 provides the bounded-memory runtime, installer, CLI, Mac app, and local server.
 The Qwen 3.6 integration was created by

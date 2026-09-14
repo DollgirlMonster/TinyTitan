@@ -46,10 +46,10 @@ silently ignoring it. Do not build a workflow around it.
 "Thinking" means the model reasons at length before it gives its answer. It
 helps on genuinely hard problems and wastes time on simple ones.
 
-NVMAI exposes only what each model's own template implements:
+TinyTitan exposes only what each model's own template implements:
 
 - **Ornith 1.5 and Qwen 3.6** have a plain **off/on** switch. They do not
-  define effort levels, and NVMAI will not pretend otherwise.
+  define effort levels, and TinyTitan will not pretend otherwise.
 - **Qwen 3.8 Flash Next** also supports **low**, **medium**, and
   **extra high** effort. Its template's own default is extra high.
 
@@ -95,7 +95,7 @@ YaRN — [Long context and the KV cache](07-long-context.md) covers it properly.
 
 ## Speed and memory: the expert-cache dials
 
-These are the dials specific to what makes NVMAI unusual.
+These are the dials specific to what makes TinyTitan unusual.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -143,7 +143,7 @@ they are explains the speed you see.
   probably want *while* the current layer is still working. It is on or off
   per model and weight width — 35B models have it on, the 125B model does
   not — and that choice comes from measurement, not intuition.
-- **Tiled Top-K sampling** is just the fast way NVMAI picks the next word.
+- **Tiled Top-K sampling** is just the fast way TinyTitan picks the next word.
   It cut that step from 15.5 ms to 1.4 ms per token, with an identical
   output stream. You never see it; you benefit from it.
 - **Neural Engine prefill** routes the full-attention part of prompt
@@ -151,7 +151,7 @@ they are explains the speed you see.
   than the GPU cores on a 6,000-token prompt. It needs an exported Core ML
   support file next to the model, and **no shipped install includes one yet**,
   so in practice you are on the GPU path until you export it yourself. When
-  the file is missing NVMAI falls back silently, so there is nothing to
+  the file is missing TinyTitan falls back silently, so there is nothing to
   configure and nothing to break. The project still calls this experimental
   because its output is not byte-identical to the GPU path.
 
@@ -164,7 +164,7 @@ Both are off by default and exist for specific situations:
   ready to spend the memory yet.
 - **`--idle-unload-seconds <n>`** releases the model after `n` seconds with no
   requests, and reloads it transparently on the next one. This is the polite
-  option if you keep NVMAI running all day on a busy Mac. Pair it with a disk
+  option if you keep TinyTitan running all day on a busy Mac. Pair it with a disk
   prompt cache, because unloading discards the in-memory one.
 
 ## What you should probably not touch
@@ -172,20 +172,20 @@ Both are off by default and exist for specific situations:
 - **The per-model tuning** — expert cache, prefetch depth, sampling defaults.
   The runtime reads these from the install's own measured profile. The
   launcher deliberately does not override them.
-- **The experimental switches** (`NVMAI_EXPERT_IO_BACKEND=metal`,
-  `NVMAI_SAMPLER_PATH=generic`, and friends). These exist as comparison paths
+- **The experimental switches** (`TINYTITAN_EXPERT_IO_BACKEND=metal`,
+  `TINYTITAN_SAMPLER_PATH=generic`, and friends). These exist as comparison paths
   for benchmarking — the sampler one is the slower control arm, and the Metal
   I/O backend is incomplete. None of them is a speed-up you are missing out
   on, and there is no measured case for leaving them on.
 
 The complete list of every environment variable and flag, with the
 measurement behind each default, is
-[Runtime Controls](https://github.com/Pummelchen/NVMAI/wiki/Runtime-Controls)
+[Runtime Controls](https://github.com/Pummelchen/TinyTitan/wiki/Runtime-Controls)
 on the wiki. This article is the map; that page is the territory.
 
 ## Where to go next
 
 Now let's point your own apps at it → **[Connecting your apps](06-connecting-your-apps.md)**
 
-*Defaults are from NVMAI 5.1. The ±15% measurement note and the prefill figure
+*Defaults are from TinyTitan 5.1. The ±15% measurement note and the prefill figure
 come from the project's own benchmark notes on a base 8-core M3 with 24 GB.*

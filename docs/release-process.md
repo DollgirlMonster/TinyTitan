@@ -1,4 +1,4 @@
-# Cutting an NVMAI release
+# Cutting an TinyTitan release
 
 This is the runbook for turning a green `main` into a tagged, published release
 with prebuilt binaries. It exists because the sequence has traps that cost time
@@ -16,9 +16,9 @@ release notes are `docs/release-notes-vX.Y.md`.
 | macOS 26+, Swift 6.3+ | `sw_vers`, `swift --version` | The runtime's floor; the release notes state it |
 | Disk | `df -h .` | A clean scratch build plus the staged archive wants ~10 GB |
 | Memory | `memory_pressure -Q` | The golden baselines load real models |
-| **No model process** | `pgrep -fl 'NVMAIServer\|NVMAIMac\|NVMAIDecodeService\|NVMAICLI\|NVMAIPackageTests\|swiftpm-testing-helper\|mlx_lm\|mlx-lm'` | The golden gate refuses to run beside one; see §5 |
+| **No model process** | `pgrep -fl 'TinyTitanServer\|TinyTitanMac\|TinyTitanDecodeService\|TinyTitanCLI\|TinyTitanPackageTests\|swiftpm-testing-helper\|mlx_lm\|mlx-lm'` | The golden gate refuses to run beside one; see §5 |
 | `gh` authenticated | `gh auth status` | Publishing uses it; it must be the repo owner's account |
-| A release build exists | `ls .build/arm64-apple-macosx/release/NVMAICLI` | The golden gate drives that binary and runs *before* the clean scratch build; `release.sh` refuses to start without it |
+| A release build exists | `ls .build/arm64-apple-macosx/release/TinyTitanCLI` | The golden gate drives that binary and runs *before* the clean scratch build; `release.sh` refuses to start without it |
 | The installs to verify | `ls models/*/verified-install.json` | The gate verifies only what is installed, and never fetches a model; see §5 |
 | Clean tree, HEAD on the tag | `git status --porcelain` | `release.sh` enforces both |
 
@@ -29,16 +29,16 @@ yours, stop and ask the human — §5 is the long version.
 
 Three places, and only the first is a literal:
 
-1. **`tools/install_nvmai.sh`** — `CFBundleVersion` and
+1. **`tools/install_tinytitan.sh`** — `CFBundleVersion` and
    `CFBundleShortVersionString` in the app bundle it writes. That is the only
    version literal in the tree. Grep for the previous version before believing
    this: `grep -rn "5\.1\b" --include="*.sh" --include="*.swift" sources/ tools/`.
 2. **The wiki `Changelog.md`** (`.qwen/wiki/Changelog.md`) — a new `## X.Y — <headline>`
-   section at the top, with `[Release vX.Y](https://github.com/Pummelchen/NVMAI/releases/tag/vX.Y)`
+   section at the top, with `[Release vX.Y](https://github.com/Pummelchen/TinyTitan/releases/tag/vX.Y)`
    and user-facing bullets. Keep it compact: what a *user* can do now that they
    could not before, and the numbers that back it.
 3. **`README.md`** — **no release callout.** The README is the stable front
-   page: what NVMAI is, the benchmark table, the supported-model list and the
+   page: what TinyTitan is, the benchmark table, the supported-model list and the
    links. A version's announcement belongs in the wiki `Changelog.md` above, so a
    reader finds it once instead of the README accumulating a section per release.
    The README changes only when a fact it states changes — a new benchmark row, a
@@ -53,7 +53,7 @@ re-verifying would be a false claim.
 
 `docs/release-notes-vX.Y.md`, modelled on the previous one:
 
-- a `## NVMAI X.Y — <headline>` title, then one paragraph saying what the
+- a `## TinyTitan X.Y — <headline>` title, then one paragraph saying what the
   release is for;
 - one `###` section per user-visible change, each naming the check that backs
   it (a gate, a measurement, a real-model run);
@@ -65,8 +65,8 @@ re-verifying would be a false claim.
   ```
   ### Checksum
 
-  `nvmai-X.Y-macos-arm64.tar.gz` sha256: `SHA256_PENDING`
-  `nvmai-X.Y-macos-arm64.tar.gz` size: `ARCHIVE_BYTES_PENDING` bytes
+  `tinytitan-X.Y-macos-arm64.tar.gz` sha256: `SHA256_PENDING`
+  `tinytitan-X.Y-macos-arm64.tar.gz` size: `ARCHIVE_BYTES_PENDING` bytes
   ```
 
 Neither placeholder is one to forget: `release.sh --publish` substitutes both
@@ -89,7 +89,7 @@ headline plus the lead paragraph.
 ```bash
 git add -A && git commit -m "Prepare X.Y: release notes, the changelog entry, and the app version"
 git push origin main
-git tag -a vX.Y -m "NVMAI X.Y — <headline>
+git tag -a vX.Y -m "TinyTitan X.Y — <headline>
 
 <lead paragraph>"
 git push origin vX.Y
@@ -107,7 +107,7 @@ tools/release.sh vX.Y --publish --notes docs/release-notes-vX.Y.md
 ```
 
 The dry run is the default because publishing notifies watchers. Read its
-output; then look at `.build/releases/nvmai-release-X.Y/` — the staged tree and
+output; then look at `.build/releases/tinytitan-release-X.Y/` — the staged tree and
 the tarball — before re-running with `--publish`.
 
 What the dry run does, in order:
@@ -256,8 +256,8 @@ instead, with its reason, and `release.sh` prints it in the golden phase and
 **refuses to publish unless the notes repeat it**:
 
 ```bash
-NVMAI_RELEASE_SKIP_GOLDENS=qwen38-8 \
-NVMAI_RELEASE_SKIP_GOLDENS_REASON="install is Dropbox online-only; 134 GB needed, 123 GB free" \
+TINYTITAN_RELEASE_SKIP_GOLDENS=qwen38-8 \
+TINYTITAN_RELEASE_SKIP_GOLDENS_REASON="install is Dropbox online-only; 134 GB needed, 123 GB free" \
   tools/release.sh v5.3
 ```
 
@@ -271,7 +271,7 @@ more than one that implies all of them ran.
 ## 6. After publishing
 
 ```bash
-gh release view vX.Y --repo Pummelchen/NVMAI --json url,assets \
+gh release view vX.Y --repo Pummelchen/TinyTitan --json url,assets \
   --jq '"\(.url) \([.assets[].name] | join(", "))"'
 ```
 
@@ -295,7 +295,7 @@ machine it was measured on, and leave previous releases' tables alone.
       `SHA256_PENDING` **and** `ARCHIVE_BYTES_PENDING` — never a size copied out
       of a dry run
 - [ ] Tree clean, `git tag -a vX.Y`, tag pushed, `release.sh` preconditions pass
-- [ ] A release build exists (`.build/arm64-apple-macosx/release/NVMAICLI`) and
+- [ ] A release build exists (`.build/arm64-apple-macosx/release/TinyTitanCLI`) and
       `models/` holds exactly the installs you intend to verify
 - [ ] Dry run green: lint, the serial suite, **every installed golden**, a
       warning-free clean build
@@ -304,7 +304,7 @@ machine it was measured on, and leave previous releases' tables alone.
       enforces this)
 - [ ] Every baseline that was not checked is named in `### Verification` — both
       the ones absent from `models/` and any skipped via
-      `NVMAI_RELEASE_SKIP_GOLDENS` (`release.sh --publish` enforces this)
+      `TINYTITAN_RELEASE_SKIP_GOLDENS` (`release.sh --publish` enforces this)
 - [ ] Staged archive inspected (six executables, bundles, licence, notices)
 - [ ] `--publish --notes docs/release-notes-vX.Y.md`, then `gh release view`
 - [ ] No model process left running afterwards

@@ -13,7 +13,7 @@ the target is zero.
     python3.13 benchmark/watchdog_calibrate.py --show 3   # what tripped
 
 The loop and stub detectors are ports of the Swift ones in
-`sources/NVMAIServer/Core/Watchdogs/`. `--selftest` checks both against the
+`sources/TinyTitanServer/Core/Watchdogs/`. `--selftest` checks both against the
 shared fixture the Swift unit tests use, so the port cannot drift silently.
 
 Two watchdogs are not calibrated here, for reasons rather than by omission:
@@ -35,7 +35,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGS = ROOT / ".build/benchmark-logs"
-FIXTURE = ROOT / "tests/NVMAIServer/Fixtures/watchdog-cases.json"
+FIXTURE = ROOT / "tests/TinyTitanServer/Fixtures/watchdog-cases.json"
 
 # Replies that are genuinely broken, hand-reviewed once and recorded here so
 # a true catch is never counted as a false alarm. The corpus is otherwise

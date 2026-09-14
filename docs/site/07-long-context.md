@@ -16,7 +16,7 @@ Context is measured in **tokens** (roughly word-pieces). Your prompt and the
 model's reply both count against it. When the conversation grows past the
 limit, something has to give — older parts fall out of view.
 
-NVMAI's native context goes up to **262,144 tokens** (262K). That is a large
+TinyTitan's native context goes up to **262,144 tokens** (262K). That is a large
 amount: a substantial document, or a long working session, fits comfortably.
 Optional **YaRN** scaling extends that to **512K or 1M** tokens.
 
@@ -79,7 +79,7 @@ longer a hard refusal.
 
 There is a feature here you never have to switch on, but you will notice it.
 
-When you ask a follow-up, NVMAI **reuses the conversation state** it already
+When you ask a follow-up, TinyTitan **reuses the conversation state** it already
 computed instead of re-processing the whole history. That is why your second
 question is much faster than your first — and the effect is dramatic on long
 conversations, where re-reading everything would otherwise dominate the wait.
@@ -109,7 +109,7 @@ with the conversation. The memory in
 [Memory that remembers](08-memory-that-remembers.md) is a different thing
 entirely: durable facts that survive between sessions, scoped to your project.
 They are unrelated, and confusing them is the most common misunderstanding
-about NVMAI.
+about TinyTitan.
 
 ## Where to go next
 
@@ -117,8 +117,8 @@ Now the feature worth getting excited about →
 **[Memory that remembers](08-memory-that-remembers.md)**
 
 Exact YaRN behaviour and every KV option:
-[Runtime Controls](https://github.com/Pummelchen/NVMAI/wiki/Runtime-Controls)
+[Runtime Controls](https://github.com/Pummelchen/TinyTitan/wiki/Runtime-Controls)
 on the wiki.
 
 *Memory figures are computed from the production Qwen/Ornith model topology
-and its cache layout at NVMAI 5.1, and match the project's published tables.*
+and its cache layout at TinyTitan 5.1, and match the project's published tables.*

@@ -141,7 +141,7 @@ mechanism but not the rate.
 ## 5. Reproduce
 
 ```bash
-swift build -c release --product NVMAIServer
+swift build -c release --product TinyTitanServer
 benchmark/memval_run.sh smoke
 benchmark/memval_run.sh pong
 benchmark/memval_run.sh book

@@ -14,11 +14,11 @@ here was checked against the tree, and the counts are from that pass.
 | `docs/` | Engineering documentation: plans, profiles, the findings register, the user-facing `docs/site/` | yes |
 | `tools/` | Build, install, verification and conversion drivers (`*.sh`, `*.py`) | yes |
 | `benchmark/` | Benchmark scripts, the golden outputs the baseline compares against, launch helpers | yes |
-| `plugins/` | Client-side bundles for tools that drive the server; `plugins/dsh-nvmai/` is the DeepSeek Harness one | yes |
+| `plugins/` | Client-side bundles for tools that drive the server; `plugins/dsh-tinytitan/` is the DeepSeek Harness one | yes |
 | `assets/` | Brand assets (wordmark, slogans) | yes |
 | `.build/`, `models/` | SwiftPM's build directory and the installed models | **no** — ignored, and never a source of truth |
 
-`plugins/dsh-nvmai/` is a Node package (the DeepSeek Harness bundle), the one
+`plugins/dsh-tinytitan/` is a Node package (the DeepSeek Harness bundle), the one
 non-Swift, non-Python deliverable here: it ships a `cordis.patch.yml`, a plugin
 entry, a compaction backend and its own `node --test` suite, and it is installed
 into a DSH profile as a `file:` dependency. It is plain ESM JavaScript because
@@ -34,24 +34,24 @@ models you installed.
 `sources/` holds one directory per SwiftPM target, and the name of the
 directory is the name of the target:
 
-- **`NVMAI`** — the runtime: the model, the forward runner, the kernels, the
+- **`TinyTitan`** — the runtime: the model, the forward runner, the kernels, the
   tokenizer. Subdirectories are *concerns*, not layers:
   `Kernels/` (Swift dispatch over the shaders), `Metal/` (the `.metal`
   sources), `Runtime/{Inference,Prefill,KVCache,Generation,Configuration,Family}`,
   `Infrastructure/{ModelIO,Streaming,Metal}`, `CPUEngine/`, `Tokenization/`.
-- **`NVMAIServer`, `NVMAICLI`, `NVMAIRepack`, `NVMAIMemoryTool`** — the four
+- **`TinyTitanServer`, `TinyTitanCLI`, `TinyTitanRepack`, `TinyTitanMemoryTool`** — the four
   executables, each split into a SwiftPM-invisible `Command/` subdirectory
   (the `@main`/top-level entry) and a `Core/` library part that the tests
   import. `Package.swift` declares them as two targets each, with
   `exclude: ["Command"]` on the library half.
-- **`NVMAIApp`, `NVMAIDecodeService`, `NVMAIDecodeProtocol`** — the Mac app,
+- **`TinyTitanApp`, `TinyTitanDecodeService`, `TinyTitanDecodeProtocol`** — the Mac app,
   the out-of-process decode helper it drives, and the IPC contract between
   them. The app splits `Core/` (testable, no AppKit) from `Mac/` (the views)
   and `MacPresentation/`.
-- **`NVMAIFormat`, `NVMAIMemory`, `ContinuityCore`** — the `.gturbo` format
+- **`TinyTitanFormat`, `TinyTitanMemory`, `ContinuityCore`** — the `.gturbo` format
   types, the memory layer, and the session/continuity engine. Each is a
   standalone library with its own README where its contract needs prose.
-- **`NVMAIBench`, `NVMAIValidation`, `NVMAIKernelsC`** — the benchmark
+- **`TinyTitanBench`, `TinyTitanValidation`, `TinyTitanKernelsC`** — the benchmark
   harness, the validation/reference target, and the C kernels.
 
 Two naming conventions follow from this and are worth stating, because both
@@ -59,13 +59,13 @@ were violated by exactly one file each and both violations were fixed in the
 2026-09-11 pass:
 
 1. **`main.swift` means top-level code.** A file with top-level statements is
-   named `main.swift` (`NVMAICLI/Command`, `NVMAIServer/Command`,
-   `NVMAIRepack/Command`, `NVMAIMemoryTool`). A file whose entry point is
-   `@main` is named after its type (`NVMAIApp/Mac/App/NVMAIMacApp.swift`,
-   `NVMAIDecodeService/Entry.swift`, `NVMAIBench/NVMAIBench.swift`,
+   named `main.swift` (`TinyTitanCLI/Command`, `TinyTitanServer/Command`,
+   `TinyTitanRepack/Command`, `TinyTitanMemoryTool`). A file whose entry point is
+   `@main` is named after its type (`TinyTitanApp/Mac/App/TinyTitanMacApp.swift`,
+   `TinyTitanDecodeService/Entry.swift`, `TinyTitanBench/TinyTitanBench.swift`,
    `ContinuityDemo/ContinuityDemo.swift`). `@main` in a `main.swift` happens to
    compile while the target is a single file and stops compiling the moment a
-   second file joins the target — which is how `NVMAIBench` was caught.
+   second file joins the target — which is how `TinyTitanBench` was caught.
 2. **Feature files are named for the type or the axis they extend**:
    `Model.swift` + `Model+Loading.swift`, `HTTPServerHandler.swift` +
    `HTTPServerHandler+{Routes,Chat,Responses,Anthropic,Plumbing}.swift`. A
@@ -74,17 +74,17 @@ were violated by exactly one file each and both violations were fixed in the
 ## Tests mirror sources
 
 `tests/<Target>/...` mirrors the target's own directory shape, so a test is
-found the same way the code is: `sources/NVMAI/Runtime/Prefill/X.swift` is
-tested by `tests/NVMAI/Runtime/Prefill/...`. Where a target has a `Core/`
-library half, the test path repeats it (`sources/NVMAIServer/Core` ↔
-`tests/NVMAIServer/Core`).
+found the same way the code is: `sources/TinyTitan/Runtime/Prefill/X.swift` is
+tested by `tests/TinyTitan/Runtime/Prefill/...`. Where a target has a `Core/`
+library half, the test path repeats it (`sources/TinyTitanServer/Core` ↔
+`tests/TinyTitanServer/Core`).
 
-One path was inconsistent and is now fixed: the `NVMAI` runtime's test target
-sat at `tests/NVMAI/Core` while the runtime itself has no `Core/` level. It is
-`tests/NVMAI` now, with the target renamed `NVMAITestsCore` → `NVMAITests`.
+One path was inconsistent and is now fixed: the `TinyTitan` runtime's test target
+sat at `tests/TinyTitan/Core` while the runtime itself has no `Core/` level. It is
+`tests/TinyTitan` now, with the target renamed `TinyTitanTestsCore` → `TinyTitanTests`.
 
-`tests/NVMAI/Runtime/qwen38_tensor_names.txt` and
-`tests/NVMAIRepack/Core/Support/qwen38_tensor_names.txt` are byte-identical
+`tests/TinyTitan/Runtime/qwen38_tensor_names.txt` and
+`tests/TinyTitanRepack/Core/Support/qwen38_tensor_names.txt` are byte-identical
 200 KB fixtures. **That duplication is required, not an oversight:** SwiftPM
 resources belong to one target, the two files are resources of two different
 test targets, and neither target may read the other's `Bundle.module`.

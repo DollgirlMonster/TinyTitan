@@ -8,7 +8,7 @@ surgery (replace the section, keep everything else, back it up), and its refusal
 to describe nothing.
 
 They run against `tools/testdata/catalog-example.json` through
-`NVMAI_CATALOG_JSON`, so they need no model, no built server and no network.
+`TINYTITAN_CATALOG_JSON`, so they need no model, no built server and no network.
 
 Run from this directory, like the other benchmark tests:
 
@@ -42,10 +42,10 @@ def run_route(*args: str, catalog: pathlib.Path | None = CATALOG,
               expect: int = 0) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     if catalog is None:
-        environment.pop("NVMAI_CATALOG_JSON", None)
+        environment.pop("TINYTITAN_CATALOG_JSON", None)
     else:
-        environment["NVMAI_CATALOG_JSON"] = str(catalog)
-    environment.pop("NVMAI_MODELS_DIR", None)
+        environment["TINYTITAN_CATALOG_JSON"] = str(catalog)
+    environment.pop("TINYTITAN_MODELS_DIR", None)
     run = subprocess.run(["bash", str(SCRIPT), *args], text=True,
                          capture_output=True, check=False, env=environment)
     if expect is not None:
@@ -97,7 +97,7 @@ class RouteBlockTests(unittest.TestCase):
     def test_the_three_switches_and_the_usage_contract_are_set(self) -> None:
         block = run_route("--models", "qwen38").stdout
         self.assertIn("      baseURL: http://127.0.0.1:8080/v1", block)
-        self.assertIn("        authorization: Bearer nvmai-local", block)
+        self.assertIn("        authorization: Bearer tinytitan-local", block)
         self.assertIn("      streamIdleTimeoutMs: 3600000", block)
         self.assertIn("            thinkingFormat: chat-template", block)
         self.assertIn("              enable_thinking: { $var: thinking.enabled }", block)
@@ -148,7 +148,7 @@ class SettingsSurgeryTests(unittest.TestCase):
 
         if yaml is not None:
             parsed = yaml.safe_load(text)
-            route = parsed["llm-pi-ai"]["providers"]["nvmai"]
+            route = parsed["llm-pi-ai"]["providers"]["tinytitan"]
             self.assertEqual(route["api"], "openai-completions")
             self.assertEqual(route["baseURL"], "http://127.0.0.1:8080/v1")
             self.assertEqual(route["reasoning"], "medium")

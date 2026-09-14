@@ -1,4 +1,4 @@
-# NVMAI
+# TinyTitan
 
 Swift and Metal inference for Qwen-family MoE and dense text models on Apple
 Silicon, streaming routed experts from SSD so a model larger than RAM still
@@ -14,29 +14,29 @@ This checkout is for running and reporting existing behavior. Do not edit source
 
 ## Layout and commands
 
-`sources/` holds one directory per SwiftPM target. `sources/NVMAI/` is the
-runtime and `sources/NVMAIFormat/` plus `sources/NVMAIKernelsC/` are its format
-types and C kernels. `sources/NVMAIRepack/`, `sources/NVMAICLI/`,
-`sources/NVMAIServer/` and `sources/NVMAIApp/` hold the installer, CLI, loopback
-server and Mac app; the app's `sources/NVMAIDecodeService/` and
-`sources/NVMAIDecodeProtocol/` are the out-of-process decode helper and its IPC
-contract. `sources/NVMAIMemory/` and `sources/ContinuityCore/` are persistent
-agent memory, `sources/NVMAIMemoryTool/` inspects it, and
-`sources/NVMAIBench/` plus `sources/NVMAIValidation/` are the benchmark driver
+`sources/` holds one directory per SwiftPM target. `sources/TinyTitan/` is the
+runtime and `sources/TinyTitanFormat/` plus `sources/TinyTitanKernelsC/` are its format
+types and C kernels. `sources/TinyTitanRepack/`, `sources/TinyTitanCLI/`,
+`sources/TinyTitanServer/` and `sources/TinyTitanApp/` hold the installer, CLI, loopback
+server and Mac app; the app's `sources/TinyTitanDecodeService/` and
+`sources/TinyTitanDecodeProtocol/` are the out-of-process decode helper and its IPC
+contract. `sources/TinyTitanMemory/` and `sources/ContinuityCore/` are persistent
+agent memory, `sources/TinyTitanMemoryTool/` inspects it, and
+`sources/TinyTitanBench/` plus `sources/TinyTitanValidation/` are the benchmark driver
 and the validation/reference target. An executable target keeps its top-level
-or `@main` entry in `Command/`; `plugins/dsh-nvmai/` is the DeepSeek Harness
+or `@main` entry in `Command/`; `plugins/dsh-tinytitan/` is the DeepSeek Harness
 bundle (route writer + quiet compaction) and `docs/repository-layout.md` has
 the conventions.
 
 `tests/` mirrors `sources/` path for path and never loads a model. User and
 engineering documentation lives in the
-[GitHub Wiki](https://github.com/Pummelchen/NVMAI/wiki); `docs/` holds the
+[GitHub Wiki](https://github.com/Pummelchen/TinyTitan/wiki); `docs/` holds the
 runbooks, the profiles and the audit register.
 
 ```bash
 swift build -c release
-.build/release/NVMAIMac
-swift run -c release NVMAICLI \
+.build/release/TinyTitanMac
+swift run -c release TinyTitanCLI \
   --model models/kat-coder-v2.5_35B_A3B_4Bit \
   --prompt "The capital of France is" \
   --max-new 64
@@ -44,8 +44,8 @@ swift run -c release NVMAICLI \
 # Installing is a separate, operator-requested job: it downloads 19.5 GB
 # (4-bit) or 36.9 GB (8-bit), and this checkout deliberately does not hold
 # every supported model. Never run it to satisfy a check.
-swift run -c release NVMAIRepack --model ornith15-8bit --output models/ornith-1.5_35B_A3B_8Bit
-swift run -c release NVMAIRepack --model ornith15-8bit --output models/ornith-1.5_35B_A3B_8Bit --resume
+swift run -c release TinyTitanRepack --model ornith15-8bit --output models/ornith-1.5_35B_A3B_8Bit
+swift run -c release TinyTitanRepack --model ornith15-8bit --output models/ornith-1.5_35B_A3B_8Bit --resume
 ```
 
 The installer streams the pinned model without staging the full source checkpoint. Set `HF_TOKEN` only if requested. The 4-bit download is about 19.5 GB and the 8-bit about 36.9 GB; 6-bit is withdrawn. Cancellation preserves verified completed ranges; continue them with `--resume` or remove them with `--discard-partial --output <model.gturbo>`. Run the installer only when the human asks for a model to be added — never to make a verification pass.
@@ -58,7 +58,7 @@ place (re-hashes the payload against the manifest and rebinds it to the
 current path):
 
 ```bash
-swift run -c release NVMAIRepack --verify-install --input-gturbo models/kat-coder-v2.5_35B_A3B_4Bit
+swift run -c release TinyTitanRepack --verify-install --input-gturbo models/kat-coder-v2.5_35B_A3B_4Bit
 ```
 
 Never hand-edit the receipt to match the new path: the path binding is what
@@ -67,7 +67,7 @@ instead of re-establishing it.
 
 ## Local server
 
-Follow the [server guide](https://github.com/Pummelchen/NVMAI/wiki/OpenAI-Compatible-Server) for launch commands, health
+Follow the [server guide](https://github.com/Pummelchen/TinyTitan/wiki/OpenAI-Compatible-Server) for launch commands, health
 checks, client setup, prompt reuse, tool loops, and supported API behavior.
 Apply the model-process checks below first; never start a second model process
 or terminate an existing one.
@@ -79,7 +79,7 @@ the server is needed, and stop only a server you launched.
 
 ## Test rules
 
-Before a model run, require macOS 26+, Swift 6.3+, enough disk, acceptable `memory_pressure -Q`, a completed selected `.gturbo` installation, and no process from `pgrep -fl 'NVMAIServer|NVMAIMac|NVMAIDecodeService|NVMAICLI|NVMAIPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'`. If a check fails, inform the user and stop; do not terminate apps or delete or reinstall the model.
+Before a model run, require macOS 26+, Swift 6.3+, enough disk, acceptable `memory_pressure -Q`, a completed selected `.gturbo` installation, and no process from `pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'`. If a check fails, inform the user and stop; do not terminate apps or delete or reinstall the model.
 
 Run package tests serially (`swift test --no-parallel`), passing any extra
 arguments like `--filter` through. Run only one app, CLI, or model-using test
@@ -112,7 +112,7 @@ converting, repacking or re-installing it. No gate, benchmark or release step
 may fetch a model to satisfy itself. Adding a model is the separate runbook
 `docs/adding-a-model.md`, and it is the operator's decision, not a release's.
 
-For performance results, build release once and follow the [community benchmark guide](https://github.com/Pummelchen/NVMAI/wiki/Benchmarking-Guide) exactly. Do not enable experimental controls or profiling.
+For performance results, build release once and follow the [community benchmark guide](https://github.com/Pummelchen/TinyTitan/wiki/Benchmarking-Guide) exactly. Do not enable experimental controls or profiling.
 
 Launch helpers live in `benchmark/`. Start the server before running any benchmark script.
 
@@ -145,5 +145,5 @@ are shared by all of them.
 Responses can use the context space left after formatting the prompt, and FP16
 is the runtime KV format. The HUD shows generation rate, token count, and
 decode-service memory; Last run also shows time to first token and I/O. Build
-the app with its sibling `NVMAIDecodeService`; it never loads a second
-in-process model. See [README](README.md) and [Runtime controls](https://github.com/Pummelchen/NVMAI/wiki/Runtime-Controls).
+the app with its sibling `TinyTitanDecodeService`; it never loads a second
+in-process model. See [README](README.md) and [Runtime controls](https://github.com/Pummelchen/TinyTitan/wiki/Runtime-Controls).

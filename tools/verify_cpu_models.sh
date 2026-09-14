@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# The whole-model check for the dense CPU models on disk: `NVMAIBench cpu35`
+# The whole-model check for the dense CPU models on disk: `TinyTitanBench cpu35`
 # must print "all continuations correct" for each.
 #
-# The equivalence gate (tests/NVMAI/CPUEngine/DenseGTurboEquivalenceTests.swift,
+# The equivalence gate (tests/TinyTitan/CPUEngine/DenseGTurboEquivalenceTests.swift,
 # driven by tools/repack_dense.sh) compares logits against the snapshot a repack
 # came from. This asks the other question -- does the engine continue real text
 # correctly end to end -- so the two are complements, not duplicates.
@@ -22,7 +22,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODELS="$ROOT/models"
 DEFAULT_MODELS=(qwen3.5_2B_4Bit qwen3.5_2B_8Bit qwen3.5_4B_4Bit qwen3.5_4B_8Bit)
-GUARD='NVMAIServer|NVMAIMac|NVMAIDecodeService|NVMAICLI|NVMAIPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'
+GUARD='TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'
 
 if [ "$#" -gt 0 ]; then
   targets=("$@")
@@ -42,8 +42,8 @@ for model in "${targets[@]}"; do
     echo "no $MODELS/$model (an installed .gturbo)"; exit 1; }
 done
 
-swift build -c release --product NVMAIBench || exit 1
-BENCH="$(swift build -c release --show-bin-path)/NVMAIBench"
+swift build -c release --product TinyTitanBench || exit 1
+BENCH="$(swift build -c release --show-bin-path)/TinyTitanBench"
 
 status=0
 for model in "${targets[@]}"; do

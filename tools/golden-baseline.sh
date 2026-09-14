@@ -25,7 +25,7 @@
 # a fixed prompt. Greedy means the sampler never draws, so the only inputs are
 # the weights and the kernels — exactly what a runtime refactor must not change.
 #
-# --server exists because the stored baselines only ever drove NVMAICLI, and a
+# --server exists because the stored baselines only ever drove TinyTitanCLI, and a
 # server binary 15 hours older than the runtime it links went unnoticed until
 # it refused a promoted 8-bit model by hand. The two modes catch different
 # things and neither substitutes for the other:
@@ -47,8 +47,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CLI="$ROOT/.build/arm64-apple-macosx/release/NVMAICLI"
-SERVER="$ROOT/.build/arm64-apple-macosx/release/NVMAIServer"
+CLI="$ROOT/.build/arm64-apple-macosx/release/TinyTitanCLI"
+SERVER="$ROOT/.build/arm64-apple-macosx/release/TinyTitanServer"
 LAUNCHER="$ROOT/tools/server_launcher.sh"
 
 # The launcher resolves a model key or the catalog id the server advertises
@@ -94,7 +94,7 @@ READY_TIMEOUT="${READY_TIMEOUT:-1800}"
 # This measures the GPU path, deliberately not following the default: the ANE
 # path is a qualified speed/quality trade rather than the reference arithmetic,
 # and a regression in the GPU path is what this has to catch.
-export NVMAI_PREFILL_ANE=off
+export TINYTITAN_PREFILL_ANE=off
 
 mode=capture
 server_mode=0
@@ -113,7 +113,7 @@ if [ ! -x "$CLI" ]; then
   exit 2
 fi
 if [ "$server_mode" = 1 ] && [ ! -x "$SERVER" ]; then
-  echo "missing $SERVER — run: swift build -c release --product NVMAIServer" >&2
+  echo "missing $SERVER — run: swift build -c release --product TinyTitanServer" >&2
   exit 2
 fi
 
@@ -127,7 +127,7 @@ fi
 # "a model process is already running" sent the operator looking for the wrong
 # thing when it was another project's tests. Do not narrow the pattern to fix
 # that: reporting the matches is what lets a human judge.
-if busy=$(pgrep -fl 'NVMAIServer|NVMAIMac|NVMAIDecodeService|NVMAICLI|NVMAIPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm' 2>/dev/null); then
+if busy=$(pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm' 2>/dev/null); then
   echo "refusing to start: these processes match the model-process guard" >&2
   echo "$busy" | sed 's/^/  /' >&2
   echo "stop them yourself, or re-run when they are gone. This script never terminates a process it did not start." >&2

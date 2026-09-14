@@ -6,7 +6,7 @@
 
 **Paste this into the next session:**
 
-> Continue the NVMAI work in this checkout. Read `AGENTS.md`, then
+> Continue the TinyTitan work in this checkout. Read `AGENTS.md`, then
 > `docs/handover-kat-coder.md`, then the wiki's `Project-Tracker` entry
 > "KAT-Coder-V2.5-Dev: prep landed, conversion and install pending". The
 > checkout has been moved, so start by re-issuing every install receipt. Then
@@ -29,7 +29,7 @@ server, no conversion, no release job.
   `model.visual.*`, no `mtp.*`, `lm_head` present.
 - **Output sizes measured**: 20.0 GB at 4-bit, 36.9 GB at 8-bit.
 - `tools/install_models.sh` catalogue (`katcoder`, `katcoder-8bit`) and the
-  preset→id mapping; `tools/nvmai_models.sh` key/stem/label, help and fallback
+  preset→id mapping; `tools/tinytitan_models.sh` key/stem/label, help and fallback
   list; `tools/server_launcher.sh` help and error text.
 - `ModelProfile.swift` rows for both widths, carrying **KAT's own temperature
   1.0** (its `generation_config.json`), not Qwen 3.6's 0.6.
@@ -55,7 +55,7 @@ no re-download). Re-issue in place:
 cd <new checkout>
 for d in models/*/; do
   [ -f "$d/verified-install.json" ] || continue
-  swift run -c release NVMAIRepack --verify-install --input-gturbo "$d"
+  swift run -c release TinyTitanRepack --verify-install --input-gturbo "$d"
 done
 ```
 
@@ -78,11 +78,11 @@ leaves orphan output shards behind. Before re-running after a failure,
 `rm -rf .build/katcoder-affine-*`. Then delete the snapshot and verify:
 
 ```bash
-.build/release/NVMAICLI --model models/kat-coder-v2.5_35B_A3B_4Bit \
+.build/release/TinyTitanCLI --model models/kat-coder-v2.5_35B_A3B_4Bit \
   --prompt "The capital of France is" --max-new 5 --temperature 0
 tools/golden-baseline.sh katcoder-4        # capture (no --check)
 tools/golden-baseline.sh --check katcoder-4
-.build/release/NVMAIRepack --verify-install --input-gturbo models/kat-coder-v2.5_35B_A3B_4Bit
+.build/release/TinyTitanRepack --verify-install --input-gturbo models/kat-coder-v2.5_35B_A3B_4Bit
 ```
 
 Apply the model-run preconditions first (macOS 26+, Swift 6.3+, disk,

@@ -1,6 +1,6 @@
 # Memory that remembers, and the guard
 
-Everything else in this series makes NVMAI *work*. This is the article about
+Everything else in this series makes TinyTitan *work*. This is the article about
 the feature that makes it feel like it *knows your project*.
 
 It is also the one with a genuine safety question attached, and the project
@@ -20,7 +20,7 @@ decisions you made two weeks ago and have since forgotten you made.
 
 None of that fits in a prompt. It is unbounded, and most of it is irrelevant
 to any single question. It belongs in a **store the model can query** — which
-is what NVMAI's memory is.
+is what TinyTitan's memory is.
 
 **It is not the KV cache.** The KV cache is the current conversation's
 working state and vanishes when you stop. Memory is durable, cross-session,
@@ -32,7 +32,7 @@ and survives restarts. If you read
 One environment variable:
 
 ```bash
-NVMAI_MEMORY=1 tools/server_launcher.sh
+TINYTITAN_MEMORY=1 tools/server_launcher.sh
 ```
 
 That is the whole configuration for a first try. Three details worth knowing:
@@ -44,12 +44,12 @@ That is the whole configuration for a first try. Three details worth knowing:
   `<namespace> / <user> / <workspace>`, where the workspace is the repository
   you launched from — its directory name plus a digest of its full path, so
   two checkouts of the same repo never share memory.
-- **Launch from your project folder.** If you start NVMAI from your home
+- **Launch from your project folder.** If you start TinyTitan from your home
   directory, it refuses and tells you why: one store would otherwise collect
-  every project you own into a single fact pile. (`NVMAI_MEMORY_WORKSPACE=name`
+  every project you own into a single fact pile. (`TINYTITAN_MEMORY_WORKSPACE=name`
   overrides it when you have a reason.)
 
-You can point a different workspace per request with an `X-NVMAI-Workspace`
+You can point a different workspace per request with an `X-TinyTitan-Workspace`
 header, which lets one running server serve several checkouts.
 
 ## What it looks like in practice
@@ -59,7 +59,7 @@ describe.
 
 ```bash
 cd ~/code/my-ledger
-NVMAI_MEMORY=1 ~/NVMAI/tools/server_launcher.sh
+TINYTITAN_MEMORY=1 ~/TinyTitan/tools/server_launcher.sh
 ```
 
 Now connect your client as usual and work normally. Say, for a first session:
@@ -75,7 +75,7 @@ once you stop for a moment.
 
 ```bash
 cd ~/code/my-ledger
-NVMAI_MEMORY=1 ~/NVMAI/tools/server_launcher.sh
+TINYTITAN_MEMORY=1 ~/TinyTitan/tools/server_launcher.sh
 ```
 
 The next session opens already knowing the database, the migration folder, and
@@ -92,7 +92,7 @@ Two practical notes:
 - **Keep working in the same folder.** That is what makes it *your* project's
   memory rather than a pile of everything.
 - **It is plain files.** One journal per project, under the `memory/` folder in
-  the NVMAI checkout by default. You can read them, and deleting one forgets
+  the TinyTitan checkout by default. You can read them, and deleting one forgets
   that project. Nothing goes anywhere else.
 
 ## What the model gets
@@ -112,7 +112,7 @@ never runs while you are waiting. If you want the model to also write during a
 session, you turn on its memory functions:
 
 ```bash
-NVMAI_MEMORY=1 NVMAI_MEMORY_TOOLS=full tools/server_launcher.sh
+TINYTITAN_MEMORY=1 TINYTITAN_MEMORY_TOOLS=full tools/server_launcher.sh
 ```
 
 | Function | What it is for |
@@ -124,7 +124,7 @@ NVMAI_MEMORY=1 NVMAI_MEMORY_TOOLS=full tools/server_launcher.sh
 | `memory_append` | Add a line to an existing memory |
 | `memory_delete` | Remove something wrong or obsolete |
 
-`NVMAI_MEMORY_TOOLS=minimal` gives you the first three essentials
+`TINYTITAN_MEMORY_TOOLS=minimal` gives you the first three essentials
 (`memory_set`, `memory_get`, `memory_list`).
 
 The model never gets a raw database command — just these functions. They are
@@ -196,7 +196,7 @@ cores while the big model owns the graphics chip.
 
 Why it is interesting, and why it is not free:
 
-- The CPU side is *core*-idle during generation — NVMAIServer uses about
+- The CPU side is *core*-idle during generation — TinyTitanServer uses about
   **0.20 of one core out of eight**. So the idea looks free.
 - **It is not free, because decode is bound by memory, not cores.** Both
   engines compete for the same memory system. Measured, with a 35B
@@ -251,15 +251,15 @@ nothing to gain.
 
 That is the whole feature tour. Now the question behind all of it — *how does
 this run a model that does not fit?* →
-**[Why NVMAI can run models that "don't fit"](09-why-nvmai-runs-big-models.md)**
+**[Why TinyTitan can run models that "don't fit"](09-why-tinytitan-runs-big-models.md)**
 
 The memory design document and the guard's measurements:
-[`docs/agent-memory.md`](https://github.com/Pummelchen/NVMAI/blob/main/docs/agent-memory.md)
+[`docs/agent-memory.md`](https://github.com/Pummelchen/TinyTitan/blob/main/docs/agent-memory.md)
 and
-[`docs/plan-memory-guard-and-shadow.md`](https://github.com/Pummelchen/NVMAI/blob/main/docs/plan-memory-guard-and-shadow.md).
+[`docs/plan-memory-guard-and-shadow.md`](https://github.com/Pummelchen/TinyTitan/blob/main/docs/plan-memory-guard-and-shadow.md).
 Runtime settings:
-[Runtime Controls](https://github.com/Pummelchen/NVMAI/wiki/Runtime-Controls).
+[Runtime Controls](https://github.com/Pummelchen/TinyTitan/wiki/Runtime-Controls).
 
-*Memory defaults and the guard/CPU figures are from NVMAI 5.1's own
+*Memory defaults and the guard/CPU figures are from TinyTitan 5.1's own
 measurements on a base 8-core M3 with 24 GB. The side-engine measurements are
 recorded in the repository's CPU side-engine plan.*

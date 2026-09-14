@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify, clean-build, package, and optionally publish an NVMAI release.
+# Verify, clean-build, package, and optionally publish an TinyTitan release.
 # with a checksum, and publishes a GitHub Release from an existing tag.
 #
 #   tools/release.sh v4.0                  # dry run: verify, build, package, stop
@@ -23,8 +23,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO="${NVMAI_RELEASE_REPO:-Pummelchen/NVMAI}"
-PRODUCTS=(NVMAIServer NVMAICLI NVMAIMac NVMAIDecodeService NVMAIRepack NVMAIBench)
+REPO="${TINYTITAN_RELEASE_REPO:-Pummelchen/TinyTitan}"
+PRODUCTS=(TinyTitanServer TinyTitanCLI TinyTitanMac TinyTitanDecodeService TinyTitanRepack TinyTitanBench)
 
 die() { echo "error: $*" >&2; exit 1; }
 step() { printf '\n== %s\n' "$*"; }
@@ -43,9 +43,9 @@ while [ $# -gt 0 ]; do
 done
 
 VERSION="${TAG#v}"
-STAGE_ROOT="$ROOT/.build/releases/nvmai-release-$VERSION"
-STAGE="$STAGE_ROOT/nvmai-$VERSION-macos-arm64"
-ARCHIVE="$STAGE_ROOT/nvmai-$VERSION-macos-arm64.tar.gz"
+STAGE_ROOT="$ROOT/.build/releases/tinytitan-release-$VERSION"
+STAGE="$STAGE_ROOT/tinytitan-$VERSION-macos-arm64"
+ARCHIVE="$STAGE_ROOT/tinytitan-$VERSION-macos-arm64.tar.gz"
 SCRATCH="$STAGE_ROOT/build"
 
 cd "$ROOT"
@@ -57,8 +57,8 @@ step "preconditions"
 # in .build (golden-baseline.sh exits 2 without it), so a missing release build
 # used to surface as per-target "golden baseline mismatch" lines. Demand it
 # first, where the message can say what to actually run.
-[ -x "$ROOT/.build/arm64-apple-macosx/release/NVMAICLI" ] \
-  || die "no release build at .build/arm64-apple-macosx/release/NVMAICLI; run: swift build -c release (the golden gate drives that binary)"
+[ -x "$ROOT/.build/arm64-apple-macosx/release/TinyTitanCLI" ] \
+  || die "no release build at .build/arm64-apple-macosx/release/TinyTitanCLI; run: swift build -c release (the golden gate drives that binary)"
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || die "tag $TAG does not exist locally"
 [ "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)" ] \
   || die "HEAD is not $TAG; check out the tagged commit before releasing"
@@ -67,9 +67,9 @@ git ls-remote --tags origin 2>/dev/null | grep -q "refs/tags/$TAG$" \
 gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 \
   && die "a Release for $TAG already exists on $REPO"
 # A skipped baseline needs its reason before anything expensive starts, so a
-# forgotten NVMAI_RELEASE_SKIP_GOLDENS_REASON fails here and not an hour later.
-if [ -n "${NVMAI_RELEASE_SKIP_GOLDENS:-}" ] && [ -z "${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}" ]; then
-  die "NVMAI_RELEASE_SKIP_GOLDENS=${NVMAI_RELEASE_SKIP_GOLDENS} without NVMAI_RELEASE_SKIP_GOLDENS_REASON; a skipped baseline must record why"
+# forgotten TINYTITAN_RELEASE_SKIP_GOLDENS_REASON fails here and not an hour later.
+if [ -n "${TINYTITAN_RELEASE_SKIP_GOLDENS:-}" ] && [ -z "${TINYTITAN_RELEASE_SKIP_GOLDENS_REASON:-}" ]; then
+  die "TINYTITAN_RELEASE_SKIP_GOLDENS=${TINYTITAN_RELEASE_SKIP_GOLDENS} without TINYTITAN_RELEASE_SKIP_GOLDENS_REASON; a skipped baseline must record why"
 fi
 echo "  tag $TAG at $(git rev-parse --short HEAD), tree clean, no existing Release"
 
@@ -103,15 +103,15 @@ grep -q 'Test run with .* passed' "$STAGE_ROOT.testlog" 2>/dev/null \
 # it beside the skip, and must be repeated in the release notes -- --publish
 # refuses when it is not:
 #
-#   NVMAI_RELEASE_SKIP_GOLDENS=qwen38-8 \
-#   NVMAI_RELEASE_SKIP_GOLDENS_REASON="install is Dropbox online-only; 134 GB
+#   TINYTITAN_RELEASE_SKIP_GOLDENS=qwen38-8 \
+#   TINYTITAN_RELEASE_SKIP_GOLDENS_REASON="install is Dropbox online-only; 134 GB
 #     needed, 123 GB free" tools/release.sh v5.3
 GOLDENS_CHECKED=0
 GOLDEN_SKIPPED=""
 GOLDEN_ABSENT=""
 GOLDEN_DECLARED=""
-SKIP_GOLDENS="${NVMAI_RELEASE_SKIP_GOLDENS:-}"
-SKIP_GOLDENS_REASON="${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}"
+SKIP_GOLDENS="${TINYTITAN_RELEASE_SKIP_GOLDENS:-}"
+SKIP_GOLDENS_REASON="${TINYTITAN_RELEASE_SKIP_GOLDENS_REASON:-}"
 
 # Installs that are deliberately NOT golden targets. The coverage guard below
 # errors on any installed model missing from check_golden, so this list is how
@@ -240,7 +240,7 @@ swift build -c release --scratch-path "$SCRATCH" 2>&1 | tee "$STAGE_ROOT.buildlo
 grep -qE '^[^ ]+\.(swift|metal|c|h|m|mm):[0-9]+:[0-9]+: warning:' "$STAGE_ROOT.buildlog" \
   && die "release build emitted compiler warnings"
 BIN="$SCRATCH/arm64-apple-macosx/release"
-[ -x "$BIN/NVMAIServer" ] || die "build produced no NVMAIServer"
+[ -x "$BIN/TinyTitanServer" ] || die "build produced no TinyTitanServer"
 
 # --- stage ------------------------------------------------------------------
 step "stage"
@@ -257,18 +257,18 @@ find "$BIN" -maxdepth 1 -name '*.bundle' -exec cp -R {} "$STAGE/" \;
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/"
 
 cat > "$STAGE/README-binaries.txt" <<TXT
-NVMAI $VERSION — prebuilt binaries (macOS, Apple Silicon / arm64)
+TinyTitan $VERSION — prebuilt binaries (macOS, Apple Silicon / arm64)
 
 Built from tag $TAG with: swift build -c release
 Requires macOS 26+. Apple Silicon only; there is no x86_64 build.
 
 Contents
-  NVMAIServer          OpenAI-compatible local server (binds 127.0.0.1 only)
-  NVMAICLI             one-shot prompt CLI
-  NVMAIMac             Mac app
-  NVMAIDecodeService   out-of-process decode service used by the Mac app
-  NVMAIRepack          model installer / repacker
-  NVMAIBench           benchmark driver
+  TinyTitanServer          OpenAI-compatible local server (binds 127.0.0.1 only)
+  TinyTitanCLI             one-shot prompt CLI
+  TinyTitanMac             Mac app
+  TinyTitanDecodeService   out-of-process decode service used by the Mac app
+  TinyTitanRepack          model installer / repacker
+  TinyTitanBench           benchmark driver
   *.bundle             Metal shader library and other runtime resources — keep
                        these next to the executables or the runtime cannot
                        load its kernels
@@ -280,9 +280,9 @@ These binaries are NOT code-signed or notarized. macOS Gatekeeper will refuse
 them on first run. Either build from source, or clear the quarantine attribute
 yourself after verifying the checksum published with this archive:
 
-  xattr -dr com.apple.quarantine /path/to/nvmai-$VERSION-macos-arm64
+  xattr -dr com.apple.quarantine /path/to/tinytitan-$VERSION-macos-arm64
 
-No model weights are included. NVMAIRepack defaults to Ornith 1.5 8-bit (about
+No model weights are included. TinyTitanRepack defaults to Ornith 1.5 8-bit (about
 36.9 GB); 4-bit remains available explicitly. The runtime defaults to standard
 answers with thinking off, as described in the README and Wiki.
 TXT
@@ -338,7 +338,7 @@ grep -q "$BYTES" "$RENDERED_NOTES" \
 step "publish"
 gh release create "$TAG" "$ARCHIVE" "$ARCHIVE.sha256" \
   --repo "$REPO" \
-  --title "NVMAI $VERSION" \
+  --title "TinyTitan $VERSION" \
   --notes-file "$RENDERED_NOTES" \
   --latest || die "gh release create failed"
 gh release view "$TAG" --repo "$REPO" --json url,assets \

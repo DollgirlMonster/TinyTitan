@@ -35,7 +35,7 @@ except ImportError as exc:  # pragma: no cover
     sys.exit(f"missing dependency: {exc}\n"
              f"  install them for the interpreter running this file: {sys.executable}\n"
              "    -m pip install safetensors numpy ml_dtypes\n"
-             "  (or point NVMAI_PYTHON at another Python 3.10+)")
+             "  (or point TINYTITAN_PYTHON at another Python 3.10+)")
 sys.path.insert(0, str(Path(__file__).parent))
 import importlib.util
 

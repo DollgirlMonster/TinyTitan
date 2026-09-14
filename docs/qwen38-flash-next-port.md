@@ -1,6 +1,6 @@
 # Qwen3.8-Flash-Next port — verified design record
 
-Requested in [issue #2](https://github.com/Pummelchen/NVMAI/issues/2). Every
+Requested in [issue #2](https://github.com/Pummelchen/TinyTitan/issues/2). Every
 number below was read from the official checkpoint's `config.json`, the
 `transformers` `qwen4_exp` modeling source, or the quantized checkpoints'
 tensor indexes — none is assumed. This document is the contract for the port;
@@ -27,7 +27,7 @@ parameterization below unnecessary.
 
 Were community pins ever adopted, the trust model would match Ornith's
 (repo + revision + source-index SHA) and must be stated in user-facing docs. There is **no
-group-64 8-bit anywhere**, so the port must parameterize NVMAI's group size
+group-64 8-bit anywhere**, so the port must parameterize TinyTitan's group size
 (the manifest already records `groupSize` per slot; kernels and tools
 hardcode 64 today). Affine group 32 costs ~6% more bytes per weight than
 group 64 (5.0 vs 4.75 effective bits at 4-bit).
@@ -41,7 +41,7 @@ existing model (their call, never ours). Plan: 4-bit first.
 The checkpoint is **multimodal** (`Qwen4ExpForConditionalGeneration`, vision
 tower, interleaved mrope). This port is **text-only**, like the Ornith port;
 with equal text positions the mrope collapses exactly to standard partial
-RoPE, and `rotate_half` over the first 64 dims matches NVMAI's existing
+RoPE, and `rotate_half` over the first 64 dims matches TinyTitan's existing
 NeoX-subdim convention.
 
 Familiar (config-level deltas from Qwen3.5-MoE):
@@ -145,7 +145,7 @@ floor on this M3 → **≤17 tok/s ceiling**; expert SSD traffic ~480
 activations/token at a 3.07 MiB stride with an unknown hit rate against 512
 experts/layer — the measured SSD saturation (~3.4 GB/s) makes **exposed
 expert I/O the expected wall**, plausibly single-digit tok/s on 24 GB.
-16–32 GB machines are exactly the audience; the memory story fits NVMAI's
+16–32 GB machines are exactly the audience; the memory story fits TinyTitan's
 thesis better than any model yet (only 6 B active, table lookups tiny).
 
 ## Phasing
@@ -205,9 +205,9 @@ verified geometry above and adds facts the config/source audit could not show:
   values raise. Thinking on also pre-opens `<think>\n` in the generation
   prompt (the off branch emits the closed block), and upstream
   `generation_config.json` defaults to temperature 1.0 / Top-K 20 /
-  Top-P 0.95 — a per-family sampling-default question for P1. NVMAI now has
+  Top-P 0.95 — a per-family sampling-default question for P1. TinyTitan now has
   the per-family control: `ModelFamily.reasoningControl` gates
-  `--reasoning-effort` / `NVMAI_REASONING_EFFORT` / the API's
+  `--reasoning-effort` / `TINYTITAN_REASONING_EFFORT` / the API's
   `reasoning_effort` field (binary families reject them; effort is a
   load-time control validated against the manifest family), the tokenizer
   passes the effort into the bundled template and mirrors its system-block
@@ -234,7 +234,7 @@ has not shipped.
 
 ### The group-size question is answered: 64
 
-`quantization: {group_size: 64, bits: 4, mode: affine}` — the format NVMAI
+`quantization: {group_size: 64, bits: 4, mode: affine}` — the format TinyTitan
 already uses. **The planned P1 group-32 kernel work is dropped.** Per-path
 overrides are 8-bit g64 on `embed_tokens`, `lm_head`, `mlp.gate` (router) and
 `shared_expert_gate`; everything else including all 512 routed experts is
@@ -316,7 +316,7 @@ integrity, not quality.
 
 A greedy logit parity against `transformers` is not runnable here -- the bf16
 checkpoint is ~360 GB against 288 GB free -- but the question underneath it is
-answerable directly and cheaply. `benchmark/nvmai_quant_fidelity.py` pulls the
+answerable directly and cheaply. `benchmark/tinytitan_quant_fidelity.py` pulls the
 same tensors from both repos by HTTP range (no bulk download), dequantizes the
 MLX affine blocks, and compares against the official bf16 values.
 
@@ -434,7 +434,7 @@ Notes worth keeping:
 
 ### How to verify, when it runs
 
-Weight fidelity is settled (`benchmark/nvmai_quant_fidelity.py`); behaviour is
+Weight fidelity is settled (`benchmark/tinytitan_quant_fidelity.py`); behaviour is
 not. The reference implementation is public
 (`Rocktalk-Holdings/mlx-qwen4exp`), so the honest check is a greedy logit
 comparison against it on a short prefix -- the analogue of the golden baseline
@@ -491,7 +491,7 @@ direction still produces smooth, plausible output.
 ## It answers (2026-08-30)
 
 ```
-$ NVMAICLI --model qwen3.8-flash-next_125B_A6B_4Bit \
+$ TinyTitanCLI --model qwen3.8-flash-next_125B_A6B_4Bit \
     --prompt "The capital of France is" --max-new 20 --temperature 0
  Paris. The capital of Germany is Berlin. The capital of Italy is Rome. The capital of Spain
 ```
@@ -516,11 +516,11 @@ The harness is in `tools/`:
 - `qwen38_parity.py`, `qwen38_full_forward.py` and
   `qwen38_sequence_parity.py` compare it against a run's activation dumps.
 
-The runtime side is `NVMAI_ACT_DUMP=<dir>`, with `NVMAI_ACT_DUMP_POSITIONS`
+The runtime side is `TINYTITAN_ACT_DUMP=<dir>`, with `TINYTITAN_ACT_DUMP_POSITIONS`
 for how many positions to capture. It is off unless the variable is set.
 
 The dumps hang off the decode path, so checking a *prompt's* positions needs
-`NVMAI_SEQUENTIAL_HC_PREFILL=1` as well --- batched prefill never calls
+`TINYTITAN_SEQUENTIAL_HC_PREFILL=1` as well --- batched prefill never calls
 `produceToken`, and without the oracle the reference's caches start at the
 first generated token and every comparison after it is shifted.
 
@@ -573,7 +573,7 @@ the MLX-sourced build answered. The cause was one line of convention.
 
 `Qwen3_5RMSNorm` initialises its parameter to **zeros** and computes
 `normalized * (1.0 + weight)`. The checkpoint therefore stores the *offset from
-one*, not the gain. NVMAI's runtime multiplies by the stored value, so the +1
+one*, not the gain. TinyTitan's runtime multiplies by the stored value, so the +1
 has to be folded in at conversion -- which is exactly what MLX's converter
 does. `prepare_qwen38.py` copied the raw value through, so gamma was wrong by
 one on **148 tensors**: every hyper-connection norm (97 of them -- both norms
@@ -620,7 +620,7 @@ minutes.
 
 It is batched now --- the grouped norm, the three gate projections, the stream
 reduce, the inject, and the whole PLE block all take a row count --- and the
-sequential path is kept behind `NVMAI_SEQUENTIAL_HC_PREFILL=1` as the oracle
+sequential path is kept behind `TINYTITAN_SEQUENTIAL_HC_PREFILL=1` as the oracle
 it is checked against. The two produce byte-identical output.
 
 What actually buys the time is chunk size, because routed experts are what
@@ -657,7 +657,7 @@ same host computation, one row per query, and costs about a second on a
 2,048-token chunk against the ~75 s that chunk already takes.
 
 Verified against the reference the same way everything else was, with
-`NVMAI_QSA_BUDGET` lowering the budget so the sparse path engages after 67
+`TINYTITAN_QSA_BUDGET` lowering the budget so the sparse path engages after 67
 tokens instead of 2,051: across 80 positions of a real generation, layer 3's
 attention output matches to cosine 0.99997 or better on both sides of the
 boundary. Without that knob every check of this code would be a
@@ -771,13 +771,13 @@ prompt cache off, warm:
 About **3x slower**, which is the same verdict the acceptance arithmetic gave
 and slightly worse than the 2.8x it predicted. The recommendation is unchanged:
 MTP stays off unless asked for. Note the draft head installed here still comes
-from `NVMAIRepack --model qwen38flash-mtp` against the MLX repack; the
+from `TinyTitanRepack --model qwen38flash-mtp` against the MLX repack; the
 converter's own MTP path is fixed but has never produced a build.
 
 
 The draft head installs from its own 1.37 GB shard inside the target's
-repository (`NVMAIRepack --model qwen38flash-mtp`) and runs through the
-existing speculative loop (`NVMAIServer --mtp-model`). It is **off unless
+repository (`TinyTitanRepack --model qwen38flash-mtp`) and runs through the
+existing speculative loop (`TinyTitanServer --mtp-model`). It is **off unless
 asked for**, and should stay that way.
 
 **Measured, 150 tokens, same prompt:**
@@ -855,7 +855,7 @@ All three were silent, and one was the third instance of a single mistake.
    rolling window does not, and stays desynchronized for the rest of the
    generation.
 
-`NVMAI_MTP_TRACE=1` prints the four numbers per step (boundary, draft,
+`TINYTITAN_MTP_TRACE=1` prints the four numbers per step (boundary, draft,
 prediction after each row, accepted). Speculative decoding is meant to be
 exact, so when its output differs from scalar the question is always which of
 those is wrong, and the text cannot answer it.

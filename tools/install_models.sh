@@ -7,13 +7,13 @@
 #   tools/install_models.sh --all-8bit      # every 8-bit model
 #
 # Most models install straight from a pinned Hugging Face release through
-# NVMAIRepack, which streams and verifies in one pass. Qwen3.8-Flash-Next is
+# TinyTitanRepack, which streams and verifies in one pass. Qwen3.8-Flash-Next is
 # the exception and is documented below, because the difference matters when
 # choosing what to trust.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$ROOT/.build/arm64-apple-macosx/release/NVMAIRepack"
+BIN="$ROOT/.build/arm64-apple-macosx/release/TinyTitanRepack"
 MODELS="$ROOT/models"
 
 # The converters need a Python with numpy/ml_dtypes/safetensors at 3.10 or
@@ -69,7 +69,7 @@ Coverage
 Sources
 
   Every install is built from the model's own bf16 release, quantized here
-  (group-64 affine) by the tools in tools/ and imported by NVMAIRepack.
+  (group-64 affine) by the tools in tools/ and imported by TinyTitanRepack.
   Third-party quantizations are deliberately not used: their group sizes,
   widths and norm conventions are theirs, and here the router, the
   shared-expert gate, the DeltaNet gating projections and every norm stay
@@ -81,7 +81,7 @@ Sources
                       one fetch; one width alone already converts both and
                       keeps the other snapshot for a later run.
   convert_qwen35      tools/prepare_qwen35.py --size {2b,4b,9b}, then
-                      NVMAIRepack --input-snapshot. One fetch yields both
+                      TinyTitanRepack --input-snapshot. One fetch yields both
                       widths. These are the dense models, and the only ones
                       the CPU engine runs; the 9B is the vision-language
                       build, converted text-only like the others.
@@ -120,7 +120,7 @@ install_one() {
   # Every conversion path runs a Python converter, so resolve the interpreter
   # once, here, rather than emitting a raw "command not found" per call.
   local python
-  python="$(nvmai_resolve_python)" || return 1
+  python="$(tinytitan_resolve_python)" || return 1
   for row in "${CATALOGUE[@]}"; do
     # Six fields on the MoE rows, four elsewhere; the trailing two are only
     # read by the convert_qwen35moe branch.
@@ -142,7 +142,7 @@ install_one() {
     fi
     case "$source" in
       repack)
-        [[ -x "$BIN" ]] || { echo "build NVMAIRepack first: swift build -c release" >&2; return 1; }
+        [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
         echo "installing $name -> models/$dir"
         # --resume is refused when there is nothing to resume; pass it only
         # when a previous attempt left its state behind.
@@ -155,7 +155,7 @@ install_one() {
       convert)
         # Qwen's own bf16 release, quantized one shard at a time by
         # tools/prepare_qwen38.py (a 360 GB fetch per width), then repacked.
-        [[ -x "$BIN" ]] || { echo "build NVMAIRepack first: swift build -c release" >&2; return 1; }
+        [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
         if [[ ! -f ".build/qwen38-affine-${width}bit/model.safetensors.index.json" ]]; then
           echo "converting $name -> .build/qwen38-affine-${width}bit"
           "$python" tools/prepare_qwen38.py --bits "$width" \
@@ -169,7 +169,7 @@ install_one() {
       convert_qwen38_mtp)
         # The draft head's 31 tensors, range-fetched from Qwen's original by
         # tools/prepare_qwen38_mtp.py, then imported as a draft-head sidecar.
-        [[ -x "$BIN" ]] || { echo "build NVMAIRepack first: swift build -c release" >&2; return 1; }
+        [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
         if [[ ! -f ".build/qwen38-mtp-affine/model.safetensors.index.json" ]]; then
           echo "converting $name -> .build/qwen38-mtp-affine"
           "$python" tools/prepare_qwen38_mtp.py --bits "$width" \
@@ -182,7 +182,7 @@ install_one() {
       convert_qwen36_mtp)
         # Qwen3.6's draft head: 19 tensors of the `mtp.*` namespace in two
         # shards of Qwen's original, converted as a qwen3_5_mtp sidecar.
-        [[ -x "$BIN" ]] || { echo "build NVMAIRepack first: swift build -c release" >&2; return 1; }
+        [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
         if [[ ! -f ".build/qwen36-mtp-affine/model.safetensors.index.json" ]]; then
           echo "converting $name -> .build/qwen36-mtp-affine"
           "$python" tools/prepare_agentworld.py --model qwen36 --draft-head --bits "$width" \
@@ -199,7 +199,7 @@ install_one() {
         # from that one download, to `.build/<preset>-affine-{4,8}bit`, so
         # neither width may be thrown away: the snapshot is kept until both
         # installs exist, and the other width then costs no fetch at all.
-        [[ -x "$BIN" ]] || { echo "build NVMAIRepack first: swift build -c release" >&2; return 1; }
+        [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
         local preset="${preset_field:-${name%-8bit}}" model_id
         case "$preset" in
           agentworld) model_id="qwen-agentworld" ;;
@@ -231,7 +231,7 @@ install_one() {
         # Ornith's draft head lives in shard 16 of its original checkpoint;
         # tools/prepare_ornith_mtp.py verifies that shard against its pinned
         # revision and converts it.
-        [[ -x "$BIN" ]] || { echo "build NVMAIRepack first: swift build -c release" >&2; return 1; }
+        [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
         local src=.build/ornith-mtp-src rev=e4dfb35a93d4b6822a811a7676f3488514abe7e2
         local base="https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/resolve/$rev"
         mkdir -p "$src"
@@ -279,7 +279,7 @@ install_one() {
           qwen35-9b) size_key=9b; model_id="qwen3.5-9b" ;;
           *) echo "unknown Qwen 3.5 size: $preset" >&2; return 2 ;;
         esac
-        [[ -x "$BIN" ]] || { echo "build NVMAIRepack first: swift build -c release" >&2; return 1; }
+        [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
         # The 9B checkpoint is the vision-language build; the converter drops
         # the model.visual.* tower and writes the text model, so the install
         # is text-only like every other model here.

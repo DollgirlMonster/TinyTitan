@@ -2,7 +2,7 @@
 
 The build is done and a model is on disk. Let's make it say something.
 
-There are two doors into NVMAI, and they use the same engine. Pick whichever
+There are two doors into TinyTitan, and they use the same engine. Pick whichever
 sounds like you.
 
 - **The Mac app** — a normal window, nothing to type but your question. Start
@@ -12,9 +12,9 @@ sounds like you.
 
 ## Door one: the Mac app
 
-Open the **NVMAI** app from your Applications folder. The installer in
-[Getting NVMAI running](02-getting-nvmai-running.md) puts it there. (If you
-built NVMAI by hand instead, the app is the file `.build/release/NVMAIMac`
+Open the **TinyTitan** app from your Applications folder. The installer in
+[Getting TinyTitan running](02-getting-tinytitan-running.md) puts it there. (If you
+built TinyTitan by hand instead, the app is the file `.build/release/TinyTitanMac`
 inside the project folder — double-click it in the Finder, or run it from the
 Terminal.) A window opens with an input box.
 
@@ -37,7 +37,7 @@ normal — it is the model generating, not a download.
   125B model at about 5. If you are used to cloud chatbots, this will feel
   slower, and that is the honest trade: nothing leaves your machine, and
   nothing is metered.
-- **One model at a time.** If a second NVMAI process is already running, they
+- **One model at a time.** If a second TinyTitan process is already running, they
   will fight over memory. Quit one first.
 
 ### The controls you will actually use
@@ -62,7 +62,7 @@ Some models can reason at length before answering. It genuinely helps with
 hard questions — a tricky bug, a piece of analysis — and genuinely wastes
 your time on easy ones.
 
-NVMAI only offers the thinking controls each model's own template actually
+TinyTitan only offers the thinking controls each model's own template actually
 implements. That is deliberate: with thinking off it answers directly, and it
 will not invent "low/medium/high effort" modes for a model that does not have
 them. If you want the details of which model offers what, that is
@@ -76,14 +76,14 @@ you will see exactly what the model does with no help.
 Open Terminal and start the server:
 
 ```bash
-~/NVMAI/tools/server_launcher.sh
+~/TinyTitan/tools/server_launcher.sh
 ```
 
-(The installer also made a shortcut, so `nvmai` works if
+(The installer also made a shortcut, so `tinytitan` works if
 `~/.local/bin` is on your `PATH`.)
 
 Answer its questions — pressing Enter through them all gives you the
-recommended setup. When it prints **"NVMAIServer ready"**, the model is up.
+recommended setup. When it prints **"TinyTitanServer ready"**, the model is up.
 Leave this window open: the launcher *is* the server. `Ctrl-C` in that window
 stops it.
 
@@ -91,7 +91,7 @@ stops it.
 directly. This is the simplest possible thing that works:
 
 ```bash
-.build/release/NVMAICLI \
+.build/release/TinyTitanCLI \
   --model models/ornith-1.5_35B_A3B_8Bit \
   --prompt "The capital of France is" \
   --max-new 32 \
@@ -112,7 +112,7 @@ A few flags worth meeting early:
 
 **If you want to talk to it like a chat assistant**, use the server and a
 client rather than the raw CLI. [Connecting your apps](06-connecting-your-apps.md)
-sets that up, and it is genuinely the best way to use NVMAI day to day.
+sets that up, and it is genuinely the best way to use TinyTitan day to day.
 
 ## Which ever you chose, the model is the same
 
@@ -126,7 +126,7 @@ can call. Nothing is second-class.
 | --- | --- |
 | It sits "loading" for minutes | Normal for the first load of a large model; watch free memory |
 | It starts, then dies | Another model process may be running — quit it and retry |
-| The app opens but cannot find a model | The model folder name must match exactly; see [Getting NVMAI running](02-getting-nvmai-running.md) |
+| The app opens but cannot find a model | The model folder name must match exactly; see [Getting TinyTitan running](02-getting-tinytitan-running.md) |
 | Very slow, machine sluggish | Free up memory, or pick a smaller model — [Choosing a model](04-choosing-a-model.md) |
 | Nonsense or repeated text | Lower the temperature; see [The dials](05-the-dials.md) |
 
@@ -138,5 +138,5 @@ that is usually enough for someone to spot it.
 You have it answering. The next real decision is which model you are running
 and why → **[Choosing a model](04-choosing-a-model.md)**
 
-*NVMAI 5.1 at the time of writing. Speed figures come from the project's
+*TinyTitan 5.1 at the time of writing. Speed figures come from the project's
 published benchmarks on a base 8-core M3 with 24 GB; your Mac will differ.*

@@ -9,29 +9,29 @@ import PackageDescription
 /// added later cannot quietly opt out. The ones deliberately *not* adopted
 /// (and why, with their measured diagnostic counts) are recorded in
 /// `docs/swift-language-standard.md`.
-let nvmaiLanguageStandard: [SwiftSetting] = [
+let tinytitanLanguageStandard: [SwiftSetting] = [
     .enableUpcomingFeature("InferIsolatedConformances"),
     .enableUpcomingFeature("ImmutableWeakCaptures"),
     .enableUpcomingFeature("MemberImportVisibility"),
 ]
 
 let package = Package(
-    name: "NVMAI",
+    name: "TinyTitan",
     platforms: [
         .macOS(.v26),
     ],
     products: [
-        .library(name: "NVMAI", targets: ["NVMAI"]),
-        .library(name: "NVMAIFormat", targets: ["NVMAIFormat"]),
+        .library(name: "TinyTitan", targets: ["TinyTitan"]),
+        .library(name: "TinyTitanFormat", targets: ["TinyTitanFormat"]),
         .library(name: "ContinuityCore", targets: ["ContinuityCore"]),
-        .executable(name: "NVMAIRepack", targets: ["NVMAIRepack"]),
-        .executable(name: "NVMAICLI", targets: ["NVMAICLI"]),
-        .executable(name: "NVMAIMac", targets: ["NVMAIMac"]),
-        .executable(name: "NVMAIDecodeService", targets: ["NVMAIDecodeService"]),
-        .executable(name: "NVMAIServer", targets: ["NVMAIServer"]),
-        .executable(name: "NVMAIBench", targets: ["NVMAIBench"]),
+        .executable(name: "TinyTitanRepack", targets: ["TinyTitanRepack"]),
+        .executable(name: "TinyTitanCLI", targets: ["TinyTitanCLI"]),
+        .executable(name: "TinyTitanMac", targets: ["TinyTitanMac"]),
+        .executable(name: "TinyTitanDecodeService", targets: ["TinyTitanDecodeService"]),
+        .executable(name: "TinyTitanServer", targets: ["TinyTitanServer"]),
+        .executable(name: "TinyTitanBench", targets: ["TinyTitanBench"]),
         .executable(name: "ContinuityDemo", targets: ["ContinuityDemo"]),
-        .executable(name: "nvmai-memory", targets: ["NVMAIMemoryTool"]),
+        .executable(name: "tinytitan-memory", targets: ["TinyTitanMemoryTool"]),
     ],
     dependencies: [
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.0"),
@@ -39,9 +39,9 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "NVMAIFormat",
-            path: "sources/NVMAIFormat",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanFormat",
+            path: "sources/TinyTitanFormat",
+            swiftSettings: tinytitanLanguageStandard
         ),
         // C99 + NEON for the inner loops where Swift's vector types do not
         // lower well. Kept deliberately small: one file, one entry point,
@@ -49,73 +49,73 @@ let package = Package(
         // flags -- -O3 measured the same as SwiftPM's release default (0.675
         // vs 0.680 ms), so it is not worth the unsafeFlags constraint.
         .target(
-            name: "NVMAIKernelsC",
-            path: "sources/NVMAIKernelsC",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanKernelsC",
+            path: "sources/TinyTitanKernelsC",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .target(
-            name: "NVMAI",
+            name: "TinyTitan",
             dependencies: [
-                "NVMAIFormat",
-                "NVMAIKernelsC",
+                "TinyTitanFormat",
+                "TinyTitanKernelsC",
                 .product(name: "Tokenizers", package: "swift-transformers"),
             ],
-            path: "sources/NVMAI",
+            path: "sources/TinyTitan",
             resources: [
                 .copy("Metal"),
             ],
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
         .target(
-            name: "NVMAIRepackCore",
-            dependencies: ["NVMAIFormat"],
-            path: "sources/NVMAIRepack/Core",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanRepackCore",
+            dependencies: ["TinyTitanFormat"],
+            path: "sources/TinyTitanRepack/Core",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .executableTarget(
-            name: "NVMAIRepack",
-            dependencies: ["NVMAIRepackCore"],
-            path: "sources/NVMAIRepack/Command",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanRepack",
+            dependencies: ["TinyTitanRepackCore"],
+            path: "sources/TinyTitanRepack/Command",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .target(
-            name: "NVMAICLICore",
-            dependencies: ["NVMAI"],
-            path: "sources/NVMAICLI",
+            name: "TinyTitanCLICore",
+            dependencies: ["TinyTitan"],
+            path: "sources/TinyTitanCLI",
             exclude: ["Command"],
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
         .executableTarget(
-            name: "NVMAICLI",
-            dependencies: ["NVMAICLICore"],
-            path: "sources/NVMAICLI/Command",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanCLI",
+            dependencies: ["TinyTitanCLICore"],
+            path: "sources/TinyTitanCLI/Command",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .target(
-            name: "NVMAIAppCore",
-            dependencies: ["NVMAI", "NVMAIRepackCore", "NVMAIDecodeProtocol"],
-            path: "sources/NVMAIApp/Core",
+            name: "TinyTitanAppCore",
+            dependencies: ["TinyTitan", "TinyTitanRepackCore", "TinyTitanDecodeProtocol"],
+            path: "sources/TinyTitanApp/Core",
             resources: [
                 .copy("Resources/app-prompts.json"),
             ],
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
         .target(
-            name: "NVMAIMacPresentation",
-            dependencies: ["NVMAIAppCore"],
-            path: "sources/NVMAIApp/MacPresentation",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanMacPresentation",
+            dependencies: ["TinyTitanAppCore"],
+            path: "sources/TinyTitanApp/MacPresentation",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .target(
-            name: "NVMAIDecodeProtocol",
-            path: "sources/NVMAIDecodeProtocol",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanDecodeProtocol",
+            path: "sources/TinyTitanDecodeProtocol",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .executableTarget(
-            name: "NVMAIDecodeService",
-            dependencies: ["NVMAIAppCore", "NVMAIDecodeProtocol"],
-            path: "sources/NVMAIDecodeService",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanDecodeService",
+            dependencies: ["TinyTitanAppCore", "TinyTitanDecodeProtocol"],
+            path: "sources/TinyTitanDecodeService",
+            swiftSettings: tinytitanLanguageStandard
         ),
         // Continuity: sessions, task memory and context assembly, in this
         // process. Depends on nothing at all, not even NIO, so it cannot
@@ -126,10 +126,10 @@ let package = Package(
             // Documentation that lives next to the code it describes. SwiftPM
             // treats any undeclared file under a target path as unhandled and
             // warns on every clean plan; excluding it says so explicitly and
-            // leaves the file where it is. (`sources/NVMAICLICore`'s
+            // leaves the file where it is. (`sources/TinyTitanCLICore`'s
             // `exclude: ["Command"]` is the same mechanism.)
             exclude: ["README.md"],
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
         // Worked examples and a scale check for ContinuityCore. Not part of
         // the server; it exists so the package's claims can be run.
@@ -137,7 +137,7 @@ let package = Package(
             name: "ContinuityDemo",
             dependencies: ["ContinuityCore"],
             path: "sources/ContinuityDemo",
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
         // Agent memory: the model-facing surface (keys, tools, prompt
         // fragment, journal filter) over ContinuityCore. Depends on nothing
@@ -145,120 +145,120 @@ let package = Package(
         // subsystem being able to reach back into inference, and on no
         // networking, so it cannot reach off the machine.
         .target(
-            name: "NVMAIMemory",
+            name: "TinyTitanMemory",
             dependencies: ["ContinuityCore"],
-            path: "sources/NVMAIMemory",
-            swiftSettings: nvmaiLanguageStandard
+            path: "sources/TinyTitanMemory",
+            swiftSettings: tinytitanLanguageStandard
         ),
         // See and correct what the server remembers: list, show, delete.
         // Reads take no lock; writes need the workspace.
         .executableTarget(
-            name: "NVMAIMemoryTool",
-            dependencies: ["NVMAIMemory", "ContinuityCore"],
-            path: "sources/NVMAIMemoryTool",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanMemoryTool",
+            dependencies: ["TinyTitanMemory", "ContinuityCore"],
+            path: "sources/TinyTitanMemoryTool",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .target(
-            name: "NVMAIServerCore",
+            name: "TinyTitanServerCore",
             dependencies: [
-                "NVMAI",
-                "NVMAIMemory",
+                "TinyTitan",
+                "TinyTitanMemory",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
             ],
-            path: "sources/NVMAIServer/Core",
-            swiftSettings: nvmaiLanguageStandard
+            path: "sources/TinyTitanServer/Core",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .executableTarget(
-            name: "NVMAIServer",
-            dependencies: ["NVMAIServerCore"],
-            path: "sources/NVMAIServer/Command",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanServer",
+            dependencies: ["TinyTitanServerCore"],
+            path: "sources/TinyTitanServer/Command",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .executableTarget(
-            name: "NVMAIBench",
-            dependencies: ["NVMAI"],
-            path: "sources/NVMAIBench",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanBench",
+            dependencies: ["TinyTitan"],
+            path: "sources/TinyTitanBench",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .executableTarget(
-            name: "NVMAIMac",
-            dependencies: ["NVMAIAppCore", "NVMAIMacPresentation"],
-            path: "sources/NVMAIApp/Mac",
+            name: "TinyTitanMac",
+            dependencies: ["TinyTitanAppCore", "TinyTitanMacPresentation"],
+            path: "sources/TinyTitanApp/Mac",
             resources: [
-                .copy("Resources/nvmai-app-icon.png"),
+                .copy("Resources/tinytitan-app-icon.png"),
             ],
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
         .target(
-            name: "NVMAIValidationSupport",
-            dependencies: ["NVMAI"],
-            path: "sources/NVMAIValidation/Support",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanValidationSupport",
+            dependencies: ["TinyTitan"],
+            path: "sources/TinyTitanValidation/Support",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(
-            name: "NVMAITests",
-            dependencies: ["NVMAI", "NVMAIValidationSupport", "NVMAIRepackCore", "NVMAICLICore"],
-            path: "tests/NVMAI",
+            name: "TinyTitanTests",
+            dependencies: ["TinyTitan", "TinyTitanValidationSupport", "TinyTitanRepackCore", "TinyTitanCLICore"],
+            path: "tests/TinyTitan",
             resources: [.copy("Tokenization/Fixtures"),
                         .copy("Runtime/qwen38_tensor_names.txt"),
                         .copy("Runtime/ple_golden.json")],
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(
-            name: "NVMAIRepackTests",
-            // `NVMAIFormat` directly: the manifest and resident-index validation
+            name: "TinyTitanRepackTests",
+            // `TinyTitanFormat` directly: the manifest and resident-index validation
             // tests assert on those types rather than on JSON dictionaries.
-            dependencies: ["NVMAIRepackCore", "NVMAIFormat"],
-            path: "tests/NVMAIRepack/Core",
+            dependencies: ["TinyTitanRepackCore", "TinyTitanFormat"],
+            path: "tests/TinyTitanRepack/Core",
             resources: [.copy("Support/qwen38_tensor_names.txt")],
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(
-            name: "NVMAIAppCoreTests",
-            dependencies: ["NVMAIAppCore", "NVMAI", "NVMAIRepackCore", "NVMAIDecodeProtocol"],
-            path: "tests/NVMAIApp/Core",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanAppCoreTests",
+            dependencies: ["TinyTitanAppCore", "TinyTitan", "TinyTitanRepackCore", "TinyTitanDecodeProtocol"],
+            path: "tests/TinyTitanApp/Core",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(
-            name: "NVMAIDecodeServiceTests",
-            dependencies: ["NVMAIDecodeService", "NVMAIAppCore", "NVMAIDecodeProtocol"],
-            path: "tests/NVMAIDecodeService",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanDecodeServiceTests",
+            dependencies: ["TinyTitanDecodeService", "TinyTitanAppCore", "TinyTitanDecodeProtocol"],
+            path: "tests/TinyTitanDecodeService",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(
-            name: "NVMAIMacPresentationTests",
-            dependencies: ["NVMAIAppCore", "NVMAIMacPresentation"],
-            path: "tests/NVMAIApp/MacPresentation",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanMacPresentationTests",
+            dependencies: ["TinyTitanAppCore", "TinyTitanMacPresentation"],
+            path: "tests/TinyTitanApp/MacPresentation",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(
             name: "ContinuityCoreTests",
             dependencies: ["ContinuityCore"],
             path: "tests/ContinuityCore",
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(
-            name: "NVMAIMemoryTests",
-            dependencies: ["NVMAIMemory", "ContinuityCore"],
-            path: "tests/NVMAIMemory",
-            swiftSettings: nvmaiLanguageStandard
+            name: "TinyTitanMemoryTests",
+            dependencies: ["TinyTitanMemory", "ContinuityCore"],
+            path: "tests/TinyTitanMemory",
+            swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(
-            name: "NVMAIServerTests",
+            name: "TinyTitanServerTests",
             dependencies: [
-                "NVMAIServerCore",
-                "NVMAIMemory",
+                "TinyTitanServerCore",
+                "TinyTitanMemory",
                 // `GenerationDefaults.Sampling`, so the mapper tests can pin
                 // that an omitted field follows the served model's profile
                 // rather than a hardcoded house default.
-                "NVMAI",
+                "TinyTitan",
                 .product(name: "NIOEmbedded", package: "swift-nio"),
             ],
-            path: "tests/NVMAIServer",
+            path: "tests/TinyTitanServer",
             resources: [.copy("Fixtures")],
-            swiftSettings: nvmaiLanguageStandard
+            swiftSettings: tinytitanLanguageStandard
         ),
     ],
     swiftLanguageModes: [.v6]

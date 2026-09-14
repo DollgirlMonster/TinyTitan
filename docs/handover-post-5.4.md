@@ -2,7 +2,7 @@
 
 **Paste this into the next session:**
 
-> Continue the NVMAI work in this checkout. Read `AGENTS.md`, then
+> Continue the TinyTitan work in this checkout. Read `AGENTS.md`, then
 > `docs/handover-post-5.4.md`, then the wiki `Project-Tracker`. 5.4 is published
 > and `main` has moved well past it with tooling, server and test changes.
 > **Verification uses only the installs already under `models/`** — never
@@ -13,7 +13,7 @@
 ## Where the work stands
 
 5.4 is published (`v5.4` → `41efbc5`;
-[release](https://github.com/Pummelchen/NVMAI/releases/tag/v5.4), archive
+[release](https://github.com/Pummelchen/TinyTitan/releases/tag/v5.4), archive
 24,770,200 bytes, sha256 `def50d3e…`). It first shipped the 5.3 content to users,
 because 5.3 was tagged and never published. `main` is **well past the tag** —
 tooling, a server change, a test fix, and this handover — so the tag is not
@@ -23,7 +23,7 @@ handover came to state a number its commit had already invalidated.)
 
 | Piece | State |
 | --- | --- |
-| Checkout | `~/Downloads/NVMAI`, a real git repo bound to `origin/main`, tree clean |
+| Checkout | `~/Downloads/TinyTitan`, a real git repo bound to `origin/main`, tree clean |
 | Models | **11 installs, 461 GB.** **10 of the gate's 16 golden targets have an install**; the six absent are the pruned MoE families |
 | Goldens stored | **16** — the ten MoE files plus the six dense `qwen3.5-*` files captured 2026-09-14 |
 | Receipts | all 11 re-issued on 2026-09-14 — they had been bound to the dead Dropbox path, so **none loaded** before that |
@@ -62,7 +62,7 @@ window their installs were present.
 ## The rules that govern the harnesses
 
 **Every benchmark and test script starts its server through
-`tools/server_launcher.sh`.** `benchmark/nvmai_profile.py:server_command()`
+`tools/server_launcher.sh`.** `benchmark/tinytitan_profile.py:server_command()`
 builds that invocation (`--client server …`), so the ~18 harnesses that share it
 needed no change, and `tools/golden-baseline.sh` starts its server leg the same
 way. A command names its install by **catalog id** (`<modelID>_<bits>-Bit`), read
@@ -121,7 +121,7 @@ and section 6 the things closed by measurement that must not be re-proposed.
 ## Traps worth carrying forward
 
 - **The receipt is path-bound.** Another move invalidates all 11 again. Re-issue
-  in place with `NVMAIRepack --verify-install`; never hand-edit the receipt.
+  in place with `TinyTitanRepack --verify-install`; never hand-edit the receipt.
 - **This checkout had no `.git` at all** when the session started — it was a
   snapshot of `main` with `.github/` and `.gitignore` missing. Anyone handed a
   folder like that should compare content against the remote before trusting it,
@@ -130,7 +130,7 @@ and section 6 the things closed by measurement that must not be re-proposed.
   path the launcher waited and exited *before* installing its cleanup trap, so a
   harness that signalled it orphaned the model process — and this project's own
   guard then refuses to run beside one. The trap is installed with the server now;
-  measured before (`NVMAIServer` left running) and after (none).
+  measured before (`TinyTitanServer` left running) and after (none).
 - **The coder harness's clients pay a multi-minute cold prefill.** Codex
   abandons a stream that has produced nothing for five minutes and retries, and a
   retry is a cold prefill again — a request that never finished publishes no
@@ -140,7 +140,7 @@ and section 6 the things closed by measurement that must not be re-proposed.
   retries for codex, as it already did for qwen. Expect the coder round to take
   hours, not minutes.
 - **A key read from a TOML file must sit before the table header.** The codex
-  timeout keys first landed *inside* `[model_providers.nvmai]`, where they are
+  timeout keys first landed *inside* `[model_providers.tinytitan]`, where they are
   scoped to that table and silently ignored (codex reports unknown fields only as
   warnings). Parse the generated file to prove the scoping.
 - **A wrapped shell list is not a space-delimited list.** `NON_GOLDEN_INSTALLS`
@@ -152,7 +152,7 @@ and section 6 the things closed by measurement that must not be re-proposed.
   (badges, `NOTICE`, a traffic workflow) and each one forces a fetch + rebase +
   tag move. `release.sh` needs `HEAD` to *be* the tag, so check `git fetch`
   before tagging, and expect to force-move an unpublished tag.
-- **The golden gate drives `.build/release/NVMAICLI`**, and it runs before the
+- **The golden gate drives `.build/release/TinyTitanCLI`**, and it runs before the
   clean scratch build, so a release needs a normal `swift build -c release`
   first — doubly so now that the server changed after the last one. `release.sh`
   fails fast with that message instead of reporting it as a per-target

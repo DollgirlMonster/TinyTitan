@@ -1,9 +1,9 @@
 # Connecting your apps (the local server)
 
-This is where NVMAI stops being a chatbot window and becomes *infrastructure*:
+This is where TinyTitan stops being a chatbot window and becomes *infrastructure*:
 your model, answering your existing tools, on your machine.
 
-The idea is small. NVMAI serves a **local** web address that speaks the same
+The idea is small. TinyTitan serves a **local** web address that speaks the same
 language as OpenAI's and Anthropic's APIs. Any app that can talk to those can
 talk to your Mac instead — and then it is your model doing the work, with no
 account, no bill, and nothing leaving the machine.
@@ -31,7 +31,7 @@ instructions it prints for you.
 ## Starting it
 
 ```bash
-~/NVMAI/tools/server_launcher.sh
+~/TinyTitan/tools/server_launcher.sh
 ```
 
 The launcher asks a few plain questions and then prints the exact settings
@@ -97,26 +97,26 @@ There are two ways to get a client connected:
 **OpenAI-compatible clients** need only the base URL, any API key, and the
 model ID. That is the whole story for most tools.
 
-**Codex** wants a provider entry in its own config (`~/.codex-nvmai/config.toml`):
+**Codex** wants a provider entry in its own config (`~/.codex-tinytitan/config.toml`):
 
 ```toml
 model = "ornith-1.5-35b-a3b_8-Bit"
-model_provider = "nvmai"
+model_provider = "tinytitan"
 
-[model_providers.nvmai]
-name = "NVMAI"
+[model_providers.tinytitan]
+name = "TinyTitan"
 base_url = "http://127.0.0.1:8080/v1"
 wire_api = "responses"
 ```
 
-Note `wire_api = "responses"` — that is why NVMAI implements the Responses
+Note `wire_api = "responses"` — that is why TinyTitan implements the Responses
 API and not just Chat Completions.
 
 **Claude Code** uses the Anthropic surface:
 
 ```bash
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8080
-export ANTHROPIC_API_KEY=nvmai
+export ANTHROPIC_API_KEY=tinytitan
 export ANTHROPIC_MODEL=ornith-1.5-35b-a3b_8-Bit
 export ANTHROPIC_DEFAULT_HAIKU_MODEL=ornith-1.5-35b-a3b_8-Bit
 ```
@@ -134,11 +134,11 @@ yourself:
 {
   "language_models": {
     "openai_compatible": {
-      "nvmai": {
+      "tinytitan": {
         "api_url": "http://127.0.0.1:8080/v1",
         "available_models": [
           { "name": "ornith-1.5-35b-a3b_8-Bit",
-            "display_name": "NVMAI — Ornith 1.5 8-bit",
+            "display_name": "TinyTitan — Ornith 1.5 8-bit",
             "max_tokens": 262144 }
         ]
       }
@@ -153,12 +153,12 @@ with YaRN — because Zed uses it to decide how much context it has left.
 
 **Codex, Claude Code, Qwen Code, OpenCode and Zed** are all supported directly.
 For Codex and Qwen Code the launcher writes their configuration into dedicated
-directories (`~/.codex-nvmai`, `~/.qwen-nvmai`) so your real configuration is
+directories (`~/.codex-tinytitan`, `~/.qwen-tinytitan`) so your real configuration is
 left untouched, and it disables Qwen Code's stream timeouts, which would
 otherwise cut off a long local generation mid-answer. Claude Code is set up
 through environment variables. OpenCode and Zed read their own settings files,
-so the launcher merges an `nvmai` provider into them — leaving the rest of
-your configuration, and your original file as a `.nvmai-backup` — and then
+so the launcher merges an `tinytitan` provider into them — leaving the rest of
+your configuration, and your original file as a `.tinytitan-backup` — and then
 opens the editor for you.
 
 ## A two-minute smoke test
@@ -191,8 +191,8 @@ the client's configuration.
 Worth being precise about, because it is a safety property and not a
 limitation.
 
-When a coding assistant wants to run a command or edit a file, NVMAI **proposes
-that tool call and hands it back to your client**. NVMAI never executes it,
+When a coding assistant wants to run a command or edit a file, TinyTitan **proposes
+that tool call and hands it back to your client**. TinyTitan never executes it,
 never authorizes it, and never bypasses the client's permission rules. Your
 client's normal "may I run this?" prompt still happens, exactly as it would
 with a cloud model.
@@ -209,14 +209,14 @@ to authenticate and nothing to intercept.
 
 That means one rule, and it is firm:
 
-> **Never proxy, tunnel, or expose the NVMAI server to another machine.**
+> **Never proxy, tunnel, or expose the TinyTitan server to another machine.**
 
 There is no password to guess because there is no password. The protection is
 that only your Mac can reach it. Opening it up would hand anyone on that
 network the ability to run a model as you, with your files in reach of whatever
 client is connected.
 
-If you want NVMAI on another device, run it on that device.
+If you want TinyTitan on another device, run it on that device.
 
 ## If it will not connect
 
@@ -236,8 +236,8 @@ Your apps are talking to it. Now let's handle long documents properly →
 
 The complete API reference — every route, every field, the streaming event
 grammar — is
-[Local Server](https://github.com/Pummelchen/NVMAI/wiki/OpenAI-Compatible-Server)
+[Local Server](https://github.com/Pummelchen/TinyTitan/wiki/OpenAI-Compatible-Server)
 on the wiki.
 
-*NVMAI 5.1 at the time of writing. Client names are their owners' trademarks;
-NVMAI is not affiliated with them.*
+*TinyTitan 5.1 at the time of writing. Client names are their owners' trademarks;
+TinyTitan is not affiliated with them.*

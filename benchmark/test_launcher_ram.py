@@ -5,7 +5,7 @@ limit: a larger `--ram` is warned about in red and passed on, because the
 machine is the operator's. These tests pin the arithmetic (two fifths, floored
 to whole GB, which is what `--ram` takes) and both sides of the boundary.
 
-`NVMAI_PHYSICAL_RAM_BYTES` is the launcher's seam for exactly this: the mapping
+`TINYTITAN_PHYSICAL_RAM_BYTES` is the launcher's seam for exactly this: the mapping
 has to be checkable on a machine of any size.
 
 Run from this directory, like the other benchmark tests:
@@ -22,7 +22,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "tools/server_launcher.sh"
-SERVER = ROOT / ".build/arm64-apple-macosx/release/NVMAIServer"
+SERVER = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
 MODELS = ROOT / "models"
 
 # Installed memory in bytes, and the launcher's rule for it: 40%, floored.
@@ -57,7 +57,7 @@ def installed_model() -> str | None:
 
 def dry_run(*args: str, physical_bytes: int) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
-    environment["NVMAI_PHYSICAL_RAM_BYTES"] = str(physical_bytes)
+    environment["TINYTITAN_PHYSICAL_RAM_BYTES"] = str(physical_bytes)
     return subprocess.run(
         ["bash", str(LAUNCHER), "--client", "server", *args, "--dry-run"],
         text=True, capture_output=True, check=False, env=environment,

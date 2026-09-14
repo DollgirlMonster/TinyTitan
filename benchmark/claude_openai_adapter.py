@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Minimal Anthropic Messages -> OpenAI Chat adapter for NVMAI benchmarks.
+"""Minimal Anthropic Messages -> OpenAI Chat adapter for TinyTitan benchmarks.
 
-Claude Code speaks the Anthropic Messages API, while NVMAI intentionally
+Claude Code speaks the Anthropic Messages API, while TinyTitan intentionally
 exposes OpenAI-compatible endpoints.  This loopback-only adapter translates
 the subset Claude Code uses in non-interactive benchmark runs, including text
 and function-tool blocks.  It is not installed as a service and is not a
@@ -19,7 +19,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from nvmai_profile import DEFAULT_API_MODEL
+from tinytitan_profile import DEFAULT_API_MODEL
 
 
 def _text_content(content: Any) -> str:
@@ -113,7 +113,7 @@ def _openai_tools(body: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 class AdapterHandler(BaseHTTPRequestHandler):
-    server_version = "NVMAIClaudeBenchmarkAdapter/1"
+    server_version = "TinyTitanClaudeBenchmarkAdapter/1"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print("adapter: " + (fmt % args), file=sys.stderr, flush=True)
@@ -285,7 +285,7 @@ class AdapterServer(ThreadingHTTPServer):
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--openai-url", required=True, help="NVMAI base URL ending in /v1")
+    parser.add_argument("--openai-url", required=True, help="TinyTitan base URL ending in /v1")
     parser.add_argument("--model", default=DEFAULT_API_MODEL)
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--max-tokens", type=int, default=2048)

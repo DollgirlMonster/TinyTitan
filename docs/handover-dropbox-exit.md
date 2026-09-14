@@ -9,7 +9,7 @@
 
 **Paste this into the next session:**
 
-> Continue the NVMAI work in this checkout, which is being moved out of the
+> Continue the TinyTitan work in this checkout, which is being moved out of the
 > Dropbox folder. Read `AGENTS.md`, then `docs/handover-dropbox-exit.md`, then
 > the wiki `Project-Tracker` section "Release 5.3 is prepared, tagged and
 > unpublished". **Hydrate every online-only model file before anything moves** —
@@ -64,7 +64,7 @@ re-download.
 **0a. Find what is online-only** (empty output means everything is local):
 
 ```bash
-cd /Users/andreborchert/Library/CloudStorage/Dropbox/Coding/NVMAI
+cd /Users/andreborchert/Library/CloudStorage/Dropbox/Coding/TinyTitan
 find models -type f -size +1M -exec stat -f "%b %z %N" {} \; |
   awk '$1*512 < $2*0.9 {print $3, $2}'
 ```
@@ -103,8 +103,8 @@ option.
 Then:
 
 ```bash
-mv /Users/andreborchert/Library/CloudStorage/Dropbox/Coding/NVMAI \
-   /Users/andreborchert/Coding/NVMAI          # create ~/Coding first
+mv /Users/andreborchert/Library/CloudStorage/Dropbox/Coding/TinyTitan \
+   /Users/andreborchert/Coding/TinyTitan          # create ~/Coding first
 ```
 
 `~/Library/CloudStorage/Dropbox` and `~` are on the same volume, so this is a
@@ -124,12 +124,12 @@ and moves with the tree.
 ## Step 1 — after the move: rebuild and re-issue
 
 ```bash
-cd /Users/andreborchert/Coding/NVMAI
+cd /Users/andreborchert/Coding/TinyTitan
 rm -rf .build                     # build products carry the old absolute path
 swift build -c release
 for d in models/*/; do
   [ -f "$d/verified-install.json" ] || continue
-  .build/release/NVMAIRepack --verify-install --input-gturbo "$d"
+  .build/release/TinyTitanRepack --verify-install --input-gturbo "$d"
 done
 ```
 
@@ -174,8 +174,8 @@ baseline skipped **by name** rather than deleted from the gate's list:
 
 ```bash
 git checkout v5.3
-NVMAI_RELEASE_SKIP_GOLDENS=qwen38-8 \
-NVMAI_RELEASE_SKIP_GOLDENS_REASON="install was online-only; never hydrated before the move" \
+TINYTITAN_RELEASE_SKIP_GOLDENS=qwen38-8 \
+TINYTITAN_RELEASE_SKIP_GOLDENS_REASON="install was online-only; never hydrated before the move" \
   tools/release.sh v5.3
 ```
 
@@ -188,7 +188,7 @@ target; update the reason to whatever is true at the time. Then:
 1. Fill `### Verification` in `docs/release-notes-v5.3.md` from the dry run's
    real output — the golden count, the archive size, the clean-build result —
    and keep the honest paragraph about what was not checked, if anything.
-2. Inspect `.build/releases/nvmai-release-5.3/` before publishing.
+2. Inspect `.build/releases/tinytitan-release-5.3/` before publishing.
 3. Commit the notes on `main`, then publish **from the tag** with a copy of them
    (the notes file inside a detached checkout is the tagged version):
 
@@ -197,7 +197,7 @@ target; update the reason to whatever is true at the time. Then:
    git checkout v5.3                                 # HEAD must BE the tag
    tools/release.sh v5.3 --publish --notes /tmp/notes-5.3.md
    git checkout main
-   gh release view v5.3 --repo Pummelchen/NVMAI --json url,assets
+   gh release view v5.3 --repo Pummelchen/TinyTitan --json url,assets
    ```
 4. Then the standing post-push checks: README, wiki, tracker in sync; no model
    process left running.
@@ -226,6 +226,6 @@ never move a tag that has a Release.
   drop a target from `check_golden`'s list — that is what the skip mechanism is
   for.
 - The measured KAT rows (17.86 / 6.91 tok/s) came from
-  `benchmark/nvmai_maxthroughput.py` on this machine; the dense GPU-versus-CPU
+  `benchmark/tinytitan_maxthroughput.py` on this machine; the dense GPU-versus-CPU
   README rows are quoted from the wiki page and were not re-measured for 5.3.
   The notes say so and must keep saying so.

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Qualify Ornith Concise Mode on coding tools and self-scaffolding loops.
 
-The A/B keeps NVMAI's production server profile fixed and changes only
-``NVMAI_CONCISE_MODE``. Tool execution is deliberately narrow: files stay in
+The A/B keeps TinyTitan's production server profile fixed and changes only
+``TINYTITAN_CONCISE_MODE``. Tool execution is deliberately narrow: files stay in
 one case directory and the only executable actions are running a Python or
 Swift source file. Results and complete tool traces live below ``.build``.
 
@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from coder_cli_benchmark import preflight, utc_now
-from nvmai_profile import (
+from tinytitan_profile import (
     DEFAULT_API_MODEL,
     DEFAULT_MODEL_PATH,
     server_command,
@@ -37,7 +37,7 @@ from nvmai_profile import (
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SERVER = ROOT / ".build/arm64-apple-macosx/release/NVMAIServer"
+SERVER = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
 DEFAULT_OUTPUT = ROOT / ".build/ornith-concise-tool-ab"
 DEFAULT_PORT = 18340
 SAMPLING = {

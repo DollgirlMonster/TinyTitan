@@ -1,6 +1,6 @@
 # Choosing a model: the one real decision
 
-NVMAI itself has few choices that can ruin your day. This is the one: which
+TinyTitan itself has few choices that can ruin your day. This is the one: which
 model you install. Everything else is a dial you can turn back.
 
 Here is the honest version, up front.
@@ -12,7 +12,7 @@ baseline the project's own getting-started guide tells you to use. Choose
 about half the speed. Both are supported, both are good, and you can have both
 installed.
 
-The 8-bit build is what NVMAI's installer and library default to, because it
+The 8-bit build is what TinyTitan's installer and library default to, because it
 is the higher-quality option. The 4-bit build is what you should *start* with,
 unless you already know you want maximum fidelity over speed.
 
@@ -31,7 +31,7 @@ If you take one thing from this article: **8-bit is for when you care about
 the answer, 4-bit is for when you care about the speed and the disk space.**
 Both are real, supported choices. Neither is a trap.
 
-## The models NVMAI runs
+## The models TinyTitan runs
 
 Only specific models are supported. This is not a general-purpose runner, and
 a random model from the internet will not load. What works:
@@ -140,9 +140,9 @@ Model chosen and installed. Now the settings that actually change your
 results → **[The dials](05-the-dials.md)**
 
 Precise sizes and the full capability matrix live in
-[Features](https://github.com/Pummelchen/NVMAI/wiki/Features) and
-[Getting Started](https://github.com/Pummelchen/NVMAI/wiki/Getting-Started)
+[Features](https://github.com/Pummelchen/TinyTitan/wiki/Features) and
+[Getting Started](https://github.com/Pummelchen/TinyTitan/wiki/Getting-Started)
 on the wiki.
 
 *Sizes and speeds are the project's published figures from a base 8-core M3
-with 24 GB, at NVMAI 5.1. Installed sizes vary slightly by model.*
+with 24 GB, at TinyTitan 5.1. Installed sizes vary slightly by model.*

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]; LOGS = ROOT / ".build/benchmark-logs
 OUT = ROOT / "docs/paper/fig"; OUT.mkdir(exist_ok=True)
 
 def load_mod(name, results):
-    os.environ["NVMAI_MEMVAL_RESULTS"] = str(results)
+    os.environ["TINYTITAN_MEMVAL_RESULTS"] = str(results)
     spec = importlib.util.spec_from_file_location(name, ROOT / "benchmark" / f"{name}.py")
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 book = load_mod("memory_book", LOGS / "memory-book-v2")

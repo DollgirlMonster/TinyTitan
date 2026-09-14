@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Write (or print) the DeepSeek Harness route for the NVMAI server.
+# Write (or print) the DeepSeek Harness route for the TinyTitan server.
 #
 #   tools/dsh_route.sh                     # print the block (copy it yourself)
 #   tools/dsh_route.sh --write             # install it into ~/.dsh/settings.yaml
@@ -7,36 +7,36 @@
 #   tools/dsh_route.sh --reasoning off     # route default level (default: medium)
 #
 # The block is generated from the installs this checkout actually has: the
-# server's own catalog (NVMAIServer --catalog --models-dir models, or
-# NVMAI_CATALOG_JSON when the server is not built) supplies each served id, its
+# server's own catalog (TinyTitanServer --catalog --models-dir models, or
+# TINYTITAN_CATALOG_JSON when the server is not built) supplies each served id, its
 # name and the thinking levels its chat template renders, so the harness's model
 # picker follows `models/` instead of a hand-written list that goes stale.
 #
 # Three switches in the block are not obvious and are easy to get wrong by hand:
 #
-#   compat.thinkingFormat: chat-template   the only place NVMAI reads
+#   compat.thinkingFormat: chat-template   the only place TinyTitan reads
 #                                          enable_thinking; pi-ai's `qwen`
 #                                          format sends the switch top-level,
-#                                          where NVMAI ignores it
+#                                          where TinyTitan ignores it
 #   headers.authorization                  pi-ai refuses a keyless route
-#                                          ("No API key for provider"); NVMAI
+#                                          ("No API key for provider"); TinyTitan
 #                                          accepts and ignores the header
-#   streamIdleTimeoutMs                    NVMAI says nothing until the first
+#   streamIdleTimeoutMs                    TinyTitan says nothing until the first
 #                                          token, and a cold local prefill
 #                                          outlives pi-ai's five-minute default
 #
 # The route's `reasoning` default is what the *auxiliary* calls use too
 # (compaction and session titles name no level of their own), so `medium` means
 # a thinking summariser. `--reasoning off` keeps them unthinking at the cost of
-# chat starting unthinking too; the plugins/dsh-nvmai plugin is the way to have
+# chat starting unthinking too; the plugins/dsh-tinytitan plugin is the way to have
 # both (it forces thinking off for those calls).
 #
 # Flags:
-#   --port <n>        the port the server serves on (default 8080, NVMAI_PORT)
+#   --port <n>        the port the server serves on (default 8080, TINYTITAN_PORT)
 #   --context <n>     contextWindow to declare (default 262144, the launcher's pin)
 #   --max-tokens <n>  maxTokens to declare (default 32768)
 #   --reasoning <l>   route default level: off|low|medium|xhigh (default medium)
-#   --provider <name> provider route name (default nvmai)
+#   --provider <name> provider route name (default tinytitan)
 #   --models <a> [b]  only these ids, install keys or families
 #   --thinking <l,…>  levels to declare when --from-server has to guess them
 #   --from-server     read the served ids from GET /v1/models instead of the
@@ -55,16 +55,16 @@ usage() { sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARY="$BASE_DIR/.build/arm64-apple-macosx/release/NVMAIServer"
-MODELS_DIR="${NVMAI_MODELS_DIR:-$BASE_DIR/models}"
-# shellcheck source=tools/nvmai_models.sh
-source "$SCRIPT_DIR/nvmai_models.sh"
+BINARY="$BASE_DIR/.build/arm64-apple-macosx/release/TinyTitanServer"
+MODELS_DIR="${TINYTITAN_MODELS_DIR:-$BASE_DIR/models}"
+# shellcheck source=tools/tinytitan_models.sh
+source "$SCRIPT_DIR/tinytitan_models.sh"
 
-PORT="${NVMAI_PORT:-$NVMAI_DEFAULT_PORT}"
+PORT="${TINYTITAN_PORT:-$TINYTITAN_DEFAULT_PORT}"
 CONTEXT=262144
 MAX_TOKENS=32768
 REASONING=medium
-PROVIDER=nvmai
+PROVIDER=tinytitan
 MODE=print
 SETTINGS="${DSH_HOME:-$HOME/.dsh}/settings.yaml"
 FROM_SERVER=0
@@ -114,15 +114,15 @@ if (( FROM_SERVER )); then
   (( ${#served[@]} > 0 )) || die "the server on port $PORT listed no models"
   for id in "${served[@]}"; do add_model "$id" "$id" "$THINKING" "-" ""; done
 else
-  if ! nvmai_load_catalog "$BINARY" "$MODELS_DIR"; then
-    die "no catalog ($NVMAI_CATALOG_ERROR); build the server, or pass --from-server"
+  if ! tinytitan_load_catalog "$BINARY" "$MODELS_DIR"; then
+    die "no catalog ($TINYTITAN_CATALOG_ERROR); build the server, or pass --from-server"
   fi
-  for (( i = 0; i < ${#NVMAI_CAT_ID[@]}; i++ )); do
+  for (( i = 0; i < ${#TINYTITAN_CAT_ID[@]}; i++ )); do
     # The static fallback has no ids ("-"): a route cannot name a model the
     # server will not answer to.
-    [[ "${NVMAI_CAT_ID[$i]}" == "-" ]] && continue
-    add_model "${NVMAI_CAT_ID[$i]}" "${NVMAI_CAT_NAME[$i]}" \
-      "${NVMAI_CAT_THINKING[$i]}" "${NVMAI_CAT_FAMILY[$i]}" "${NVMAI_CAT_PATH[$i]}"
+    [[ "${TINYTITAN_CAT_ID[$i]}" == "-" ]] && continue
+    add_model "${TINYTITAN_CAT_ID[$i]}" "${TINYTITAN_CAT_NAME[$i]}" \
+      "${TINYTITAN_CAT_THINKING[$i]}" "${TINYTITAN_CAT_FAMILY[$i]}" "${TINYTITAN_CAT_PATH[$i]}"
   done
 fi
 (( ${#ids[@]} > 0 )) || die "the catalog describes no servable install under $MODELS_DIR"
@@ -134,7 +134,7 @@ if (( ${#FILTER[@]} > 0 )); then
   patterns=()
   for needle in "${FILTER[@]}"; do
     patterns+=("$needle")
-    if stem="$(nvmai_resolve_model "$needle" 2>/dev/null && echo "$NVMAI_MODEL_STEM")"; then
+    if stem="$(tinytitan_resolve_model "$needle" 2>/dev/null && echo "$TINYTITAN_MODEL_STEM")"; then
       patterns+=("$stem")
     fi
   done
@@ -161,7 +161,7 @@ fi
 # pi-ai's level vocabulary has no `on` (its levels are off|minimal|low|medium|
 # high|xhigh|max), while a binary-thinking template renders exactly off|on.
 # Such a family's thinking mode is therefore offered as `medium` with the wire
-# value `on`: the picker shows one thinking choice, and NVMAI reads `on`.
+# value `on`: the picker shows one thinking choice, and TinyTitan reads `on`.
 efforts_block() {
   local list="$1" level
   echo "          reasoningEfforts:"
@@ -178,24 +178,24 @@ efforts_block() {
 }
 
 block=""
-block+="# DeepSeek Harness route to the NVMAI server on port ${PORT}."$'\n'
+block+="# DeepSeek Harness route to the TinyTitan server on port ${PORT}."$'\n'
 block+="# Generated by tools/dsh_route.sh from the installs under models/."$'\n'
 block+="# ${#ids[@]} served model(s); settings.yaml is hot-reloaded."$'\n'
 block+="llm-pi-ai:"$'\n'
 block+="  providers:"$'\n'
 block+="    ${PROVIDER}:"$'\n'
-block+="      displayName: NVMAI"$'\n'
+block+="      displayName: TinyTitan"$'\n'
 block+="      api: openai-completions"$'\n'
 block+="      baseURL: http://127.0.0.1:${PORT}/v1"$'\n'
 block+="      # pi-ai refuses a keyless route (\"No API key for provider\");"$'\n'
-block+="      # NVMAI has no authentication and ignores the header."$'\n'
+block+="      # TinyTitan has no authentication and ignores the header."$'\n'
 block+="      headers:"$'\n'
-block+="        authorization: Bearer nvmai-local"$'\n'
+block+="        authorization: Bearer tinytitan-local"$'\n'
 block+="      # Level for calls that name none: compaction and session titles."$'\n'
-block+="      # Use \`off\` to keep those unthinking, or install plugins/dsh-nvmai,"$'\n'
+block+="      # Use \`off\` to keep those unthinking, or install plugins/dsh-tinytitan,"$'\n'
 block+="      # which forces it for them without turning chat off."$'\n'
 block+="      reasoning: ${REASONING}"$'\n'
-block+="      # NVMAI emits nothing until the first token; pi-ai's own default"$'\n'
+block+="      # TinyTitan emits nothing until the first token; pi-ai's own default"$'\n'
 block+="      # abandons an idle stream after five minutes."$'\n'
 block+="      streamIdleTimeoutMs: 3600000"$'\n'
 block+="      defaultContextWindow: ${CONTEXT}"$'\n'
@@ -208,8 +208,8 @@ for (( i = 0; i < ${#ids[@]}; i++ )); do
   block+="          maxTokens: ${MAX_TOKENS}"$'\n'
   block+="$(efforts_block "${levels[$i]}")"$'\n'
   block+="          compat:"$'\n'
-  block+="            # The only place NVMAI reads the thinking switch; pi-ai's"$'\n'
-  block+="            # \`qwen\` format sends it top-level, where NVMAI ignores it."$'\n'
+  block+="            # The only place TinyTitan reads the thinking switch; pi-ai's"$'\n'
+  block+="            # \`qwen\` format sends it top-level, where TinyTitan ignores it."$'\n'
   block+="            thinkingFormat: chat-template"$'\n'
   block+="            chatTemplateKwargs:"$'\n'
   block+="              enable_thinking: { \$var: thinking.enabled }"$'\n'

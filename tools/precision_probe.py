@@ -13,7 +13,7 @@ import importlib.util
 spec = importlib.util.spec_from_file_location("pq", "tools/prepare_qwen38.py")
 pq = importlib.util.module_from_spec(spec); spec.loader.exec_module(pq)
 
-SP = "/private/tmp/claude-501/-Users-andreborchert-Downloads-NVMAI/d4ac9bc1-da72-4471-8662-cfbcc02dd766/scratchpad"
+SP = "/private/tmp/claude-501/-Users-andreborchert-Downloads-TinyTitan/d4ac9bc1-da72-4471-8662-cfbcc02dd766/scratchpad"
 BASE = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/main"
 wm = json.load(open(f"{SP}/q38_index.json"))["weight_map"]
 _headers = {}

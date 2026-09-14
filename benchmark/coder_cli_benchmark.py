@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproducible Ornith coding-client and NVMAI feature benchmark rounds.
+"""Reproducible Ornith coding-client and TinyTitan feature benchmark rounds.
 
 The default ``coder`` round runs Codex, Qwen Code, OpenCode, and (through the
 adjacent loopback adapter) Claude Code against Ornith 8-bit with fixed short,
@@ -30,7 +30,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from nvmai_profile import (
+from tinytitan_profile import (
     DEFAULT_CONTEXT_TOKENS,
     DEFAULT_KV_BITS,
     DEFAULT_THINKING_MODE,
@@ -41,9 +41,9 @@ from nvmai_profile import (
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SERVER = ROOT / ".build/arm64-apple-macosx/release/NVMAIServer"
+SERVER = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
 ADAPTER = ROOT / "benchmark/claude_openai_adapter.py"
-CLIENTS_LIBRARY = ROOT / "tools/nvmai_models.sh"
+CLIENTS_LIBRARY = ROOT / "tools/tinytitan_models.sh"
 MODEL_PATHS = {
     "ornith": {
         4: ROOT / "models/ornith-1.5_35B_A3B_4Bit",
@@ -84,7 +84,7 @@ MTP_PATHS = {
     "ornith": ROOT / "models/ornith-1.5_35B_A3B_MTP_4Bit",
 }
 PROCESS_PATTERN = (
-    "NVMAIServer|NVMAIMac|NVMAIDecodeService|NVMAICLI|NVMAIPackageTests|"
+    "TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|"
     "swiftpm-testing-helper|mlx_lm|mlx-lm"
 )
 DEFAULT_TEMPERATURE = 0.6
@@ -96,7 +96,7 @@ DEFAULT_PRESENCE_PENALTY = 0.0
 def client_catalogue() -> list[dict[str, Any]]:
     """The client list the launcher uses, read from its one definition.
 
-    `tools/nvmai_models.sh` carries `NVMAI_CLIENTS` as `id|label|kind|binaries`
+    `tools/tinytitan_models.sh` carries `TINYTITAN_CLIENTS` as `id|label|kind|binaries`
     entries. The launcher builds its menu, its labels and its `--client`
     validation from that array; this harness builds its `--clients` choices and
     its binary search from the same array, so the two cannot list different
@@ -107,9 +107,9 @@ def client_catalogue() -> list[dict[str, Any]]:
     launcher configures those, and only their wiring can be checked here.
     """
     text = CLIENTS_LIBRARY.read_text()
-    block = re.search(r"NVMAI_CLIENTS=\((.*?)\n\)", text, re.S)
+    block = re.search(r"TINYTITAN_CLIENTS=\((.*?)\n\)", text, re.S)
     if block is None:
-        raise RuntimeError(f"no NVMAI_CLIENTS array in {CLIENTS_LIBRARY}")
+        raise RuntimeError(f"no TINYTITAN_CLIENTS array in {CLIENTS_LIBRARY}")
     clients: list[dict[str, Any]] = []
     for match in re.finditer(r'"([^"]+)"', block.group(1)):
         fields = match.group(1).split("|")
@@ -121,7 +121,7 @@ def client_catalogue() -> list[dict[str, Any]]:
         clients.append({"id": client_id, "label": label, "kind": kind,
                         "binaries": binaries.split()})
     if not clients:
-        raise RuntimeError("NVMAI_CLIENTS is empty")
+        raise RuntimeError("TINYTITAN_CLIENTS is empty")
     return clients
 
 
@@ -226,12 +226,12 @@ def fixed_prompts() -> dict[str, str]:
             "Keep the answer within 60 words."
         ),
         "medium": (
-            f"{instruction}\n\nUsing the README below, summarize NVMAI's purpose, "
+            f"{instruction}\n\nUsing the README below, summarize TinyTitan's purpose, "
             "core features, and basic usage in at most 80 words.\n\n"
             f"--- README.md ---\n{readme}\n--- end README.md ---"
         ),
         "long": (
-            f"{instruction}\n\nUsing the repository documents below, explain NVMAI's "
+            f"{instruction}\n\nUsing the repository documents below, explain TinyTitan's "
             "bounded expert-streaming architecture, its safety constraints, and the correct "
             "model install/run workflow in at most 80 words.\n\n"
             f"--- README.md ---\n{readme}\n--- end README.md ---\n\n"
@@ -382,7 +382,7 @@ def command_version(binary: str) -> str:
 def client_binaries() -> dict[str, str | None]:
     """Every client in the shared catalogue, with the first binary on PATH.
 
-    The order and the binary names come from `NVMAI_CLIENTS`, which is also what
+    The order and the binary names come from `TINYTITAN_CLIENTS`, which is also what
     the launcher resolves, so a client installed for one is found by both.
     """
     found: dict[str, str | None] = {}
@@ -402,11 +402,11 @@ def prepare_client_config(output: pathlib.Path, client: str, base_url: str,
     home.mkdir(parents=True, exist_ok=True)
     if client == "codex":
         # The timeout keys belong to the top-level table, so they go *before*
-        # `[model_providers.nvmai]`: after a table header TOML scopes them to
+        # `[model_providers.tinytitan]`: after a table header TOML scopes them to
         # that table, where they would be ignored (and codex reports unknown
         # fields only as warnings).
         (home / "config.toml").write_text(
-            f'model = "{model}"\nmodel_provider = "nvmai"\n'
+            f'model = "{model}"\nmodel_provider = "tinytitan"\n'
             # Codex gives up on a stream that has produced nothing for five
             # minutes and retries -- and a retry is a *cold* prefill again,
             # because a request that never finished publishes no prompt-cache
@@ -419,14 +419,14 @@ def prepare_client_config(output: pathlib.Path, client: str, base_url: str,
             "stream_idle_timeout_ms = 3600000\n"
             "request_max_retries = 0\n"
             "stream_max_retries = 0\n\n"
-            "[model_providers.nvmai]\nname = \"NVMAI\"\n"
+            "[model_providers.tinytitan]\nname = \"TinyTitan\"\n"
             f'base_url = "{base_url}"\nwire_api = "responses"\n'
         )
     elif client == "qwen":
         write_json(home / "settings.json", {
             "modelProviders": {"openai": [{
-                "id": model, "name": f"[NVMAI] {model}", "baseUrl": base_url,
-                "description": "NVMAI local benchmark", "envKey": "OPENAI_API_KEY",
+                "id": model, "name": f"[TinyTitan] {model}", "baseUrl": base_url,
+                "description": "TinyTitan local benchmark", "envKey": "OPENAI_API_KEY",
             }]},
             "security": {"auth": {"selectedType": "openai"}},
             "model": {"name": model},
@@ -439,11 +439,11 @@ def prepare_client_config(output: pathlib.Path, client: str, base_url: str,
     elif client == "opencode":
         write_json(home / "opencode" / "opencode.json", {
             "$schema": "https://opencode.ai/config.json",
-            "model": f"nvmai/{model}",
-            "small_model": f"nvmai/{model}",
-            "provider": {"nvmai": {
+            "model": f"tinytitan/{model}",
+            "small_model": f"tinytitan/{model}",
+            "provider": {"tinytitan": {
                 "npm": "@ai-sdk/openai-compatible",
-                "name": "NVMAI",
+                "name": "TinyTitan",
                 "options": {
                     "baseURL": base_url,
                     "headers": {"Authorization": "Bearer local"},
@@ -508,7 +508,7 @@ def run_client(*, client: str, binary: str, prompt: str, base_url: str, model: s
         env["XDG_CONFIG_HOME"] = str(config)
         command = [
             binary, "run", "--pure", "--format", "json", "--dir", str(ROOT),
-            "-m", f"nvmai/{model}", prompt,
+            "-m", f"tinytitan/{model}", prompt,
         ]
     elif client == "claude":
         if not adapter_url:
@@ -590,7 +590,7 @@ def quality_check(prompt_name: str, answer: str, exit_code: int) -> dict[str, An
             failures.append("concurrency use case missing")
     elif prompt_name == "medium":
         for label, terms in {
-            "project": ("nvmai",),
+            "project": ("tinytitan",),
             "model": ("ornith",),
             "streaming": ("ssd", "expert"),
             "quantization": ("4-bit", "8-bit"),
