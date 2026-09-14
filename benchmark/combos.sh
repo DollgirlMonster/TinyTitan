@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Compatibility entry point for the current two-round benchmark harness.
+# Compatibility entry point for the current benchmark harness: the coder round
+# (coding clients), the features round (direct OpenAI requests) and the clients
+# round (the launcher's client list and this harness's agreeing; no model).
 #
 # Examples:
 #   benchmark/combos.sh
 #   benchmark/combos.sh --round coder
 #   benchmark/combos.sh --round features
+#   benchmark/combos.sh --round clients
 #   benchmark/combos.sh --round all --output .build/benchmark-rounds/my-run
 set -euo pipefail
 

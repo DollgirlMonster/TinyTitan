@@ -32,7 +32,9 @@
 #
 # Flags (override the positional form, and work in any order):
 #
-#   --client <c>    server|codex|claude|qwen|opencode|zed
+#   --client <c>    server|@CLIENTS@
+#              (the list is filled from NVMAI_CLIENTS in tools/nvmai_models.sh,
+#              which the coder benchmark reads too)
 #   --model <m>     model key or catalog id
 #   --bits <4|8>    quantization for a model key
 #   --engine <cpu|gpu>  which engine serves the model. Almost every install
@@ -110,7 +112,14 @@ warn_red() {
 # Arguments
 # ============================================================
 
-usage() { sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d'; }
+usage() {
+  # The client list is filled from the shared catalogue rather than copied
+  # here, so this help cannot name a client the launcher does not accept.
+  sed -n '2,/^set -euo pipefail/p' "$0" \
+    | sed 's/^# \{0,1\}//' \
+    | sed "s/@CLIENTS@/$(nvmai_client_ids_csv '|')/" \
+    | sed '$d'
+}
 
 DRY_RUN=0
 if [[ "${NVMAI_LAUNCHER_DRY_RUN:-0}" == 1 ]]; then DRY_RUN=1; fi
@@ -229,54 +238,50 @@ done
 
 client_label() {
   case "$1" in
-    server)   echo "Server only (no client)" ;;
-    codex)    echo "Codex" ;;
-    claude)   echo "Claude Code" ;;
-    qwen)     echo "Qwen Code" ;;
-    opencode) echo "OpenCode" ;;
-    zed)      echo "Zed editor" ;;
-    *)        echo "$1" ;;
+    server) echo "Server only (no client)" ;;
+    *)      nvmai_client_label "$1" || echo "$1" ;;
   esac
 }
 
 normalize_client() {
   case "$1" in
-    ""|server|none|api) echo server ;;
-    # The coding-CLI spellings the old launcher accepted.
-    codex)              echo codex ;;
-    claude|claude-code) echo claude ;;
-    qwen|qwen-code)     echo qwen ;;
-    opencode)           echo opencode ;;
-    zed)                echo zed ;;
+    ""|server|none|api) echo server; return 0 ;;
+    # The coding-CLI spellings earlier versions accepted.
+    claude|claude-code) echo claude; return 0 ;;
+    qwen|qwen-code)     echo qwen; return 0 ;;
     # The old API names meant "start the server for that API".
-    openai|anthropic)   echo server ;;
-    *) return 1 ;;
+    openai|anthropic)   echo server; return 0 ;;
   esac
+  # Everything else has to be a client the shared catalogue carries.
+  if nvmai_client_label "$1" >/dev/null 2>&1; then echo "$1"; return 0; fi
+  return 1
 }
 
 if [[ -z "$CLIENT" ]] && (( INTERACTIVE )); then
+  menu_ids=()
+  while IFS= read -r id; do menu_ids+=("$id"); done < <(nvmai_client_ids)
   echo "What do you want to launch?"
   echo "  1) Server only — start the API, no client (default)"
-  echo "  2) Codex"
-  echo "  3) Claude Code"
-  echo "  4) Qwen Code"
-  echo "  5) OpenCode"
-  echo "  6) Zed editor"
-  printf "Choice [1-6] (default 1): "
+  for (( menu_index = 0; menu_index < ${#menu_ids[@]}; menu_index++ )); do
+    printf '  %d) %s\n' "$((menu_index + 2))" "$(client_label "${menu_ids[$menu_index]}")"
+  done
+  printf "Choice [1-%d] (default 1): " "$(( ${#menu_ids[@]} + 1 ))"
   read -r client_choice || exit 1
-  case "${client_choice:-1}" in
-    1) CLIENT=server ;;
-    2) CLIENT=codex ;;
-    3) CLIENT=claude ;;
-    4) CLIENT=qwen ;;
-    5) CLIENT=opencode ;;
-    6) CLIENT=zed ;;
-    *) echo "invalid choice: $client_choice" >&2; exit 2 ;;
-  esac
+  client_choice="${client_choice:-1}"
+  if [[ "$client_choice" == "1" ]]; then
+    CLIENT=server
+  elif [[ "$client_choice" =~ ^[0-9]+$ ]] \
+    && (( client_choice >= 2 && client_choice <= ${#menu_ids[@]} + 1 )); then
+    CLIENT="${menu_ids[$((client_choice - 2))]}"
+  else
+    echo "invalid choice: $client_choice" >&2; exit 2
+  fi
 fi
 [[ -z "$CLIENT" ]] && CLIENT=server
-if ! CLIENT="$(normalize_client "$CLIENT")"; then
-  echo "unknown client: $CLIENT (server|codex|claude|qwen|opencode|zed)" >&2
+requested_client="$CLIENT"
+if ! CLIENT="$(normalize_client "$requested_client")"; then
+  # Name what was asked for: the assignment above has already emptied CLIENT.
+  echo "unknown client: $requested_client (server|$(nvmai_client_ids_csv '|'))" >&2
   exit 2
 fi
 
@@ -1293,12 +1298,29 @@ if [[ "$CLIENT" == "server" ]]; then
 fi
 
 client_bin() {
-  case "$1" in
-    codex)    echo "${CODEX:-$(command -v codex 2>/dev/null || echo "$HOME/.local/bin/codex")}" ;;
-    claude)   echo "${CLAUDE:-$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")}" ;;
-    qwen)     echo "${QWEN:-$(command -v qwen-code 2>/dev/null || echo "$HOME/.qwen-code/bin/qwen-code")}" ;;
-    opencode) echo "${OPENCODE:-$(command -v opencode 2>/dev/null || echo /opt/homebrew/bin/opencode)}" ;;
-    zed)      echo "${ZED:-$(command -v zed 2>/dev/null || echo /usr/local/bin/zed)}" ;;
+  local id="$1" var="" candidate override
+  case "$id" in
+    codex)    var=CODEX ;;
+    claude)   var=CLAUDE ;;
+    qwen)     var=QWEN ;;
+    opencode) var=OPENCODE ;;
+    zed)      var=ZED ;;
+  esac
+  if [[ -n "$var" && -n "${!var-}" ]]; then echo "${!var}"; return 0; fi
+  # The binary names the shared catalogue carries, first one on PATH.
+  for candidate in $(nvmai_client_binaries "$id"); do
+    if override="$(command -v "$candidate" 2>/dev/null)"; then
+      echo "$override"
+      return 0
+    fi
+  done
+  # Where each client installs itself when PATH does not carry it.
+  case "$id" in
+    codex)    echo "$HOME/.local/bin/codex" ;;
+    qwen)     echo "$HOME/.qwen-code/bin/qwen-code" ;;
+    opencode) echo "/opt/homebrew/bin/opencode" ;;
+    zed)      echo "/usr/local/bin/zed" ;;
+    claude)   echo "$HOME/.local/bin/claude" ;;
   esac
 }
 

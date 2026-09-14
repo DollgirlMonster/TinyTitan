@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared model catalogue for every launcher and start script.
+# Shared model and client catalogue for every launcher and start script.
 #
 # One place decides which installs exist, what they are called and where
 # they live, so the server launcher, the CLI launcher and the eight
@@ -7,11 +7,81 @@
 # model itself and a start script that hardcoded a port is exactly how the
 # "-fast" alias and the width-suffixed model id got out of step before.
 #
+# The client list lives here for the same reason: the launcher launches them
+# and the coder benchmark measures them, so both read one list and a test
+# (benchmark/test_coder_clients.py) fails if either drifts from it.
+#
 # Every model serves on one port. The server switches models on demand by
 # name, one resident at a time, so a port per install only left client
 # configs to keep in step. NVMAI_PORT still overrides it: the memory
 # harness runs its own server on 8096 that way.
 NVMAI_DEFAULT_PORT=8080
+
+# --- Clients ---------------------------------------------------------------
+#
+# Every client this checkout launches or measures, in menu order:
+#
+#   id|label|kind|binaries
+#
+# `coder` clients are the ones a benchmark can ask a question and score; each
+# has a command builder in benchmark/coder_cli_benchmark.py. `editor` clients
+# are configured and opened instead: Zed's CLI has no non-interactive prompt
+# mode (it opens windows, diffs files and pipes stdin), so it can be wired and
+# checked, never prompted.
+NVMAI_CLIENTS=(
+  "codex|Codex|coder|codex"
+  "claude|Claude Code|coder|claude"
+  "qwen|Qwen Code|coder|qwen qwen-code"
+  "opencode|OpenCode|coder|opencode"
+  "zed|Zed editor|editor|zed"
+)
+
+# nvmai_client_ids -> one client id per line, in menu order.
+nvmai_client_ids() {
+  local entry
+  for entry in "${NVMAI_CLIENTS[@]}"; do printf '%s\n' "${entry%%|*}"; done
+}
+
+# nvmai_client_field <id> <2 label | 3 kind | 4 binaries> -> that field.
+# Returns 1 for an id the list does not carry.
+nvmai_client_field() {
+  local entry rest
+  for entry in "${NVMAI_CLIENTS[@]}"; do
+    [[ "${entry%%|*}" == "$1" ]] || continue
+    rest="${entry#*|}"
+    case "$2" in
+      2) printf '%s\n' "${rest%%|*}" ;;
+      3) rest="${rest#*|}"; printf '%s\n' "${rest%%|*}" ;;
+      4) printf '%s\n' "${rest#*|}" ;;
+      *) return 1 ;;
+    esac
+    return 0
+  done
+  return 1
+}
+
+nvmai_client_label()    { nvmai_client_field "$1" 2; }
+nvmai_client_kind()     { nvmai_client_field "$1" 3; }
+nvmai_client_binaries() { nvmai_client_field "$1" 4; }
+
+# nvmai_client_ids_csv <separator> -> "codex<sep>claude<sep>…", for help text.
+nvmai_client_ids_csv() {
+  local separator="${1:-|}" first=1 id
+  while IFS= read -r id; do
+    (( first )) || printf '%s' "$separator"
+    printf '%s' "$id"
+    first=0
+  done < <(nvmai_client_ids)
+  printf '\n'
+}
+
+# nvmai_coder_client_ids -> just the clients a benchmark can prompt.
+nvmai_coder_client_ids() {
+  local id
+  while IFS= read -r id; do
+    [[ "$(nvmai_client_kind "$id")" == "coder" ]] && printf '%s\n' "$id"
+  done < <(nvmai_client_ids)
+}
 
 # nvmai_resolve_model <key> -> NVMAI_MODEL_{KEY,STEM,LABEL,ENGINES,THINKING,FAMILY}
 #

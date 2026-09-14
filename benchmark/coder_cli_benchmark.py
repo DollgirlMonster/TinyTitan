@@ -43,6 +43,7 @@ from nvmai_profile import (
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SERVER = ROOT / ".build/arm64-apple-macosx/release/NVMAIServer"
 ADAPTER = ROOT / "benchmark/claude_openai_adapter.py"
+CLIENTS_LIBRARY = ROOT / "tools/nvmai_models.sh"
 MODEL_PATHS = {
     "ornith": {
         4: ROOT / "models/ornith-1.5_35B_A3B_4Bit",
@@ -56,7 +57,27 @@ MODEL_PATHS = {
         4: ROOT / "models/kat-coder-v2.5_35B_A3B_4Bit",
         8: ROOT / "models/kat-coder-v2.5_35B_A3B_8Bit",
     },
+    # The dense Qwen 3.5 installs. They have no routed experts, so they cannot
+    # carry the `features` round's cache/streaming tracks — but they are the
+    # cheapest way to exercise a *client* end to end (a 2B prefill is seconds,
+    # not the minutes a 35B prompt costs), which is what the coder round needs
+    # when the subject is a client rather than a model.
+    "qwen35-2b": {
+        4: ROOT / "models/qwen3.5_2B_4Bit",
+        8: ROOT / "models/qwen3.5_2B_8Bit",
+    },
+    "qwen35-4b": {
+        4: ROOT / "models/qwen3.5_4B_4Bit",
+        8: ROOT / "models/qwen3.5_4B_8Bit",
+    },
+    "qwen35-9b": {
+        4: ROOT / "models/qwen3.5_9B_4Bit",
+        8: ROOT / "models/qwen3.5_9B_8Bit",
+    },
 }
+# Families with no routed experts: the `features` round's tracks (expert cache,
+# streamed expert reads, speculative draft head) have nothing to measure there.
+DENSE_FAMILIES = frozenset({"qwen35-2b", "qwen35-4b", "qwen35-9b"})
 # Only Ornith ships an MTP draft head, so the `features` round's MTP track is
 # Ornith-only; `run_feature_round` skips that track for a family without one.
 MTP_PATHS = {
@@ -70,6 +91,44 @@ DEFAULT_TEMPERATURE = 0.6
 DEFAULT_TOP_P = 0.95
 DEFAULT_TOP_K = 20
 DEFAULT_PRESENCE_PENALTY = 0.0
+
+
+def client_catalogue() -> list[dict[str, Any]]:
+    """The client list the launcher uses, read from its one definition.
+
+    `tools/nvmai_models.sh` carries `NVMAI_CLIENTS` as `id|label|kind|binaries`
+    entries. The launcher builds its menu, its labels and its `--client`
+    validation from that array; this harness builds its `--clients` choices and
+    its binary search from the same array, so the two cannot list different
+    clients. `benchmark/test_coder_clients.py` pins it.
+
+    `kind` is `coder` for a client this harness can ask a question and score, and
+    `editor` for one whose CLI only opens windows and diffs files (Zed): the
+    launcher configures those, and only their wiring can be checked here.
+    """
+    text = CLIENTS_LIBRARY.read_text()
+    block = re.search(r"NVMAI_CLIENTS=\((.*?)\n\)", text, re.S)
+    if block is None:
+        raise RuntimeError(f"no NVMAI_CLIENTS array in {CLIENTS_LIBRARY}")
+    clients: list[dict[str, Any]] = []
+    for match in re.finditer(r'"([^"]+)"', block.group(1)):
+        fields = match.group(1).split("|")
+        if len(fields) != 4:
+            raise RuntimeError(f"client entry is not id|label|kind|binaries: {match.group(1)!r}")
+        client_id, label, kind, binaries = fields
+        if kind not in ("coder", "editor"):
+            raise RuntimeError(f"client {client_id!r} has unknown kind {kind!r}")
+        clients.append({"id": client_id, "label": label, "kind": kind,
+                        "binaries": binaries.split()})
+    if not clients:
+        raise RuntimeError("NVMAI_CLIENTS is empty")
+    return clients
+
+
+CLIENTS = client_catalogue()
+CLIENT_KINDS = {client["id"]: client["kind"] for client in CLIENTS}
+CODER_CLIENTS = [client["id"] for client in CLIENTS if client["kind"] == "coder"]
+EDITOR_CLIENTS = [client["id"] for client in CLIENTS if client["kind"] != "coder"]
 
 
 @dataclass
@@ -321,12 +380,20 @@ def command_version(binary: str) -> str:
 
 
 def client_binaries() -> dict[str, str | None]:
-    return {
-        "codex": shutil.which("codex"),
-        "qwen": shutil.which("qwen") or shutil.which("qwen-code"),
-        "opencode": shutil.which("opencode"),
-        "claude": shutil.which("claude"),
-    }
+    """Every client in the shared catalogue, with the first binary on PATH.
+
+    The order and the binary names come from `NVMAI_CLIENTS`, which is also what
+    the launcher resolves, so a client installed for one is found by both.
+    """
+    found: dict[str, str | None] = {}
+    for client in CLIENTS:
+        binary: str | None = None
+        for name in client["binaries"]:
+            binary = shutil.which(name)
+            if binary:
+                break
+        found[client["id"]] = binary
+    return found
 
 
 def prepare_client_config(output: pathlib.Path, client: str, base_url: str,
@@ -553,10 +620,83 @@ def server_log_delta(path: pathlib.Path, offset: int) -> tuple[str, int]:
         return data, handle.tell()
 
 
+def run_clients_round(args: argparse.Namespace, output: pathlib.Path) -> None:
+    """Check every client in the shared catalogue is wired for both scripts.
+
+    No model is loaded and no server starts: this round is about the launcher
+    and this harness agreeing. For each client it records the binary and its
+    version, runs the *launcher's* dry run for that client and keeps the setup
+    line the launcher prints, and — for a coder client — writes the isolated
+    config this harness would hand the same client, so the two writers are
+    compared rather than assumed to agree.
+
+    A missing coder client fails the round, because the coder round cannot run
+    it. A missing editor client is recorded: an editor is the operator's to
+    install, and its CLI has no non-interactive prompt mode to score anyway.
+    """
+    binaries = client_binaries()
+    model = manifest_api_model(MODEL_PATHS[args.model][max(args.quantizations)])
+    rows: list[dict[str, Any]] = []
+    failures: list[str] = []
+    for client in CLIENTS:
+        client_id, kind = client["id"], client["kind"]
+        binary = binaries[client_id]
+        row: dict[str, Any] = {
+            "id": client_id,
+            "label": client["label"],
+            "kind": kind,
+            "binary": binary,
+            "version": command_version(binary) if binary else "not installed",
+        }
+        if binary is None:
+            if kind == "coder":
+                failures.append(f"{client_id}: not installed, so the coder round cannot run it")
+            else:
+                row["note"] = "editor client; only the launcher's config is checkable here"
+        launcher = subprocess.run(
+            ["bash", str(ROOT / "tools/server_launcher.sh"), "--client", client_id,
+             "--model", model, "--dry-run"],
+            text=True, capture_output=True, check=False,
+        )
+        row["launcher_exit"] = launcher.returncode
+        if launcher.returncode != 0:
+            detail = (launcher.stderr.strip().splitlines() or ["no stderr"])[-1]
+            failures.append(f"{client_id}: launcher dry run exited {launcher.returncode}: {detail}")
+        else:
+            setup = re.search(r"Client setup the launcher would write/use:(.*?)\n\n",
+                              launcher.stdout, re.S)
+            row["launcher_setup"] = " ".join(setup.group(1).split()) if setup else ""
+        if kind == "coder":
+            home = prepare_client_config(output, client_id, "http://127.0.0.1:1/v1", model)
+            row["config_home"] = str(home)
+            row["config_files"] = sorted(
+                str(path.relative_to(home)) for path in home.rglob("*") if path.is_file()
+            )
+        rows.append(row)
+
+    record = {
+        "round": "clients",
+        "model": model,
+        "launcher": str(ROOT / "tools/server_launcher.sh"),
+        "catalogue": str(CLIENTS_LIBRARY),
+        "clients": rows,
+        "failures": failures,
+    }
+    write_json(output / "clients.json", record)
+    for row in rows:
+        print(f"CLIENT {row['id']:<9} {row['kind']:<6} {row['version']}", flush=True)
+        if row.get("launcher_setup"):
+            print(f"  launcher: {row['launcher_setup']}", flush=True)
+        if row.get("config_files"):
+            print(f"  harness config: {', '.join(row['config_files'])}", flush=True)
+    if failures:
+        raise RuntimeError("client wiring failures:\n  " + "\n  ".join(failures))
+
+
 def run_coder_round(args: argparse.Namespace, output: pathlib.Path, prompts: dict[str, str],
                     results: pathlib.Path) -> None:
     binaries = client_binaries()
-    clients = args.clients or ["codex", "qwen", "opencode", "claude"]
+    clients = args.clients or CODER_CLIENTS
     for client in clients:
         if not binaries.get(client):
             raise RuntimeError(f"requested coding client is not installed: {client}")
@@ -883,12 +1023,12 @@ def run_feature_round(args: argparse.Namespace, output: pathlib.Path,
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--round", choices=("coder", "features", "all"), default="coder")
+    parser.add_argument("--round", choices=("coder", "features", "clients", "all"), default="coder")
     parser.add_argument("--model", choices=tuple(MODEL_PATHS), default="ornith",
                         help="which supported family's installs to run (default: ornith)")
     parser.add_argument("--output", type=pathlib.Path)
     parser.add_argument("--quantizations", nargs="+", type=int, choices=(4, 8), default=[8])
-    parser.add_argument("--clients", nargs="+", choices=("codex", "qwen", "opencode", "claude"))
+    parser.add_argument("--clients", nargs="+", choices=tuple(CLIENT_KINDS))
     parser.add_argument("--prompts", nargs="+", choices=("short", "medium", "long"),
                         default=["short", "medium", "long"])
     parser.add_argument("--repetitions", type=int, default=3)
@@ -899,6 +1039,17 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error("--repetitions must be positive")
+    if args.round in ("features", "all") and args.model in DENSE_FAMILIES:
+        parser.error(
+            f"--round {args.round} --model {args.model}: {args.model} is a dense install with "
+            "no routed experts, so the features round's expert-cache, streamed-read and draft-head "
+            "tracks have nothing to measure. Use --round coder (or pick an MoE family).")
+    for client in args.clients or []:
+        if CLIENT_KINDS[client] != "coder":
+            parser.error(
+                f"--clients {client}: {client} is an editor client. The launcher writes its "
+                "provider config and opens it; its CLI has no non-interactive prompt mode to "
+                "score. Check its wiring with --round clients instead.")
     args.executed = 0
     return args
 
@@ -922,6 +1073,10 @@ def main() -> int:
         name: command_version(binary) if binary else "not installed"
         for name, binary in binaries.items()
     }
+    # What each client is here for: `coder` clients are scored by the coder
+    # round, `editor` clients are configured and checked (see run_clients_round).
+    environment["client_kinds"] = dict(CLIENT_KINDS)
+    environment["client_catalogue"] = str(CLIENTS_LIBRARY)
     environment["prompt_sha256"] = {name: sha256_text(value) for name, value in prompts.items()}
     environment["arguments"] = vars(args) | {"output": str(output)}
     environment["default_profile"] = {
@@ -939,6 +1094,8 @@ def main() -> int:
         write_json(output / "environment.json", environment)
     print(f"OUTPUT {output}", flush=True)
     try:
+        if args.round in ("clients", "all"):
+            run_clients_round(args, output)
         if args.round in ("coder", "all"):
             run_coder_round(args, output, prompts, output / "coder-results.jsonl")
         if args.round in ("features", "all"):

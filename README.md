@@ -101,9 +101,12 @@ tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
   `count_tokens`, streaming), so Codex, Claude Code and the OpenAI and
   Anthropic SDKs all talk to the same model; see
   [docs/server-api.md](docs/server-api.md).
-- **Tested coding CLIs:** The launch workflow supports Codex, Qwen Code, and
-  OpenCode against the local server, and DeepSeek Harness reaches it through its
-  own `llm-pi-ai` provider route, with no plugin — see
+- **Tested coding CLIs:** The launch workflow supports Codex, Claude Code, Qwen
+  Code, OpenCode and the Zed editor against the local server; the coder benchmark
+  scores the four that can be prompted (Claude Code through a loopback Anthropic
+  shim) and checks every client's wiring without a model
+  (`--round clients`), and DeepSeek Harness reaches the server through its own
+  `llm-pi-ai` provider route, with no plugin — see
   [Connect a client](https://github.com/Pummelchen/NVMAI/wiki/OpenAI-Compatible-Server#connect-a-client).
 - **Mac app and tools:** NVMAI also provides a native Mac app, direct CLI
   generation, streaming responses, and client-authorized function-tool calls.
