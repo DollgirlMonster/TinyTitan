@@ -212,11 +212,20 @@ sentence from "checked and byte-identical".
 An installed model that no `check_golden` line covers is a hard error rather than
 a silent omission, so a model cannot join the fleet unchecked. An intentional
 exception is declared, with its reason, in `NON_GOLDEN_INSTALLS` in
-`tools/release.sh`: today that is the MTP draft head (a sidecar a covered
-target's baseline already exercises) and the dense Qwen 3.5 2B/4B/9B (which have
-no stored baseline in `benchmark/golden/` at all — capturing real ones is an open
-item in the wiki tracker). The guard exists to catch the *undeclared* case, so
-add to that list deliberately, not to silence it.
+`tools/release.sh`: today that is only the MTP draft head, a sidecar a covered
+target's baseline already exercises. (The dense Qwen 3.5 2B/4B/9B used to be
+listed here because they had no stored baseline at all, so a release verified
+them through neither path. They have targets of their own now —
+`qwen35-{2b,4b,9b}-{4,8}` — captured while the installs were present.) The guard
+exists to catch the *undeclared* case, so add to that list deliberately, not to
+silence it.
+
+**A baseline can only be captured while its model is installed**, and `models/`
+is pruned for disk. So the set the gate actually checks moves with what is on the
+machine: a target with no install is reported as not checked (above), and its
+stored file stays in the repository for whenever the install returns. Capture
+while an install is present — that is the only window — and never delete a stored
+baseline because its model is currently absent.
 
 ### A baseline the host cannot check at all (a documented skip)
 

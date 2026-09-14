@@ -115,17 +115,15 @@ SKIP_GOLDENS_REASON="${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}"
 
 # Installs that are deliberately NOT golden targets. The coverage guard below
 # errors on any installed model missing from check_golden, so this list is how
-# an intentional exception is declared instead of being silently unchecked. Two
-# kinds live here, and both are recorded rather than implied:
+# an intentional exception is declared instead of being silently unchecked.
 #
 #   * the MTP draft head -- a sidecar to a target whose own baseline already
-#     exercises it, not a served model;
-#   * the dense Qwen 3.5 2B/4B/9B -- there is no stored baseline for them in
-#     benchmark/golden/ at all (the ten files there cover the five MoE
-#     families), so a release verifies them through neither path. Their
-#     `.gturbo`-versus-snapshot equivalence is covered by the opt-in
-#     NVMAI_DENSE_EQUIV tests instead. Capturing real dense baselines is an open
-#     item in the wiki tracker.
+#     exercises it, not a served model.
+#
+# The dense Qwen 3.5 2B/4B/9B were listed here too, because they had no stored
+# baseline at all: a release verified them through neither path, and capturing
+# one was an open item. They now have targets of their own, so they moved into
+# check_golden and out of this list.
 # The names may be laid out one per line for readability; NON_GOLDEN_SET folds
 # the whitespace to single spaces first, because the match below is a
 # space-delimited substring test and a name that ends a line has no trailing
@@ -133,12 +131,6 @@ SKIP_GOLDENS_REASON="${NVMAI_RELEASE_SKIP_GOLDENS_REASON:-}"
 # wrapped, not guessed at.
 NON_GOLDEN_INSTALLS="
   qwen3.8-flash-next_125B_A6B_MTP_4Bit
-  qwen3.5_2B_4Bit
-  qwen3.5_2B_8Bit
-  qwen3.5_4B_4Bit
-  qwen3.5_4B_8Bit
-  qwen3.5_9B_4Bit
-  qwen3.5_9B_8Bit
 "
 NON_GOLDEN_SET=" $(printf '%s' "$NON_GOLDEN_INSTALLS" | tr -s '[:space:]' ' ') "
 
@@ -199,6 +191,16 @@ check_golden qwen-agentworld_35B_A3B_8Bit agentworld-8
 # that ships it cannot pass without its baseline.
 check_golden kat-coder-v2.5_35B_A3B_4Bit katcoder-4
 check_golden kat-coder-v2.5_35B_A3B_8Bit katcoder-8
+# The dense Qwen 3.5 models. They used to have no baseline at all, which made
+# them the one supported shape a release never verified; the targets exist now
+# and are inert on a machine that has not installed them, exactly like every
+# other target here.
+check_golden qwen3.5_2B_4Bit qwen35-2b-4
+check_golden qwen3.5_2B_8Bit qwen35-2b-8
+check_golden qwen3.5_4B_4Bit qwen35-4b-4
+check_golden qwen3.5_4B_8Bit qwen35-4b-8
+check_golden qwen3.5_9B_4Bit qwen35-9b-4
+check_golden qwen3.5_9B_8Bit qwen35-9b-8
 
 # An installed model that no check_golden line covers would be silently
 # unchecked. The old guard caught that only when *no* baseline had been checked
