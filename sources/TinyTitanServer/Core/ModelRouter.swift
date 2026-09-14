@@ -423,25 +423,15 @@ extension ModelRouter {
         return { entry, reasoning in
             switch entry.kind {
             case .gpu:
-                let plan = ModelSessionPlan(
+                // One plan factory for both front ends: a loader-built plan
+                // that drops a field is how `slots` silently stayed at one on
+                // the catalog path while the coordinator admitted four.
+                let plan = ModelSessionPlan.from(
+                    arguments: arguments,
                     modelDirectory: entry.path,
-                    maxContext: arguments.maxContext,
-                    promptCacheMode: arguments.promptCacheMode,
-                    promptCacheMaximumEntries: arguments.promptCacheMaximumEntries,
-                    promptCacheMemoryLimitBytes: arguments.promptCacheMemoryMiB * 1_048_576,
-                    promptCacheDiskDirectory: arguments.promptCacheDiskDirectory.map {
-                        URL(fileURLWithPath: $0).standardizedFileURL
-                    },
-                    promptCacheDiskLimitBytes: arguments.promptCacheDiskMiB * 1_048_576,
-                    prefillChunkTokens: arguments.prefillChunkTokens,
-                    kvCachePrecision: arguments.kvCachePrecision,
-                    ropeScalingMode: arguments.ropeScalingMode,
-                    thinkingMode: reasoning.thinking,
+                    thinking: reasoning.thinking,
                     reasoningEffort: reasoning.effort,
-                    expertCacheSlots: arguments.expertCacheSlots,
-                    expertCacheBudgetBytes: arguments.expertCacheBudgetBytes,
-                    mtpModelDirectory: nil,
-                    mtpMemoryMiB: arguments.mtpMemoryMiB)
+                    mtpModelDirectory: nil)
                 return try await plan.makeSession(reusingContext: try await metal.context())
             case .cpu:
                 return try await CPUModelBackend(

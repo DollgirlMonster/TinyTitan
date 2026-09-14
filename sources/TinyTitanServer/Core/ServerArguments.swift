@@ -14,6 +14,14 @@ public struct ServerArguments: Equatable, Sendable {
     /// Generations that may run at once through the batched engine. One is the
     /// historical single-generation server; the excess still queues.
     public let maxConcurrentSequences: Int
+
+    /// The width a session's runner and scratch may actually be built with.
+    /// MTP is single-sequence, so it pins the width to one; every plan factory
+    /// reads this rather than re-deriving it, so the single-model path and the
+    /// catalog loader cannot disagree.
+    public var sessionSlots: Int {
+        mtpModel == nil ? maxConcurrentSequences : 1
+    }
     public let promptCacheMode: ServerPromptCacheMode
     public let promptCacheMaximumEntries: Int
     public let promptCacheMemoryMiB: Int

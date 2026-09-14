@@ -400,4 +400,26 @@ struct DynamicServingArgumentTests {
         #expect(ServerModelSession.effectivePromptCacheMode(
             requested: .multiPrefix, mtpEnabled: true, slots: 1) == .off)
     }
+
+    /// Every plan is built through `ModelSessionPlan.from`, which carries the
+    /// configured width. The catalog loader once built its own plan and dropped
+    /// `slots`, so `--models-dir` sessions ran one sequence while the
+    /// coordinator admitted four; this pins the width through the shared
+    /// factory so that cannot recur silently.
+    @Test func thePlanFactoryCarriesTheConfiguredWidth() throws {
+        let three = try parse(["--model", "/m", "--max-concurrent-sequences", "3"])
+        let plan = ModelSessionPlan.from(
+            arguments: three,
+            modelDirectory: URL(fileURLWithPath: "/m"),
+            thinking: .off, reasoningEffort: nil, mtpModelDirectory: nil)
+        #expect(plan.slots == 3)
+
+        let mtp = try parse(["--model", "/m", "--mtp-model", "/d"])
+        let mtpPlan = ModelSessionPlan.from(
+            arguments: mtp,
+            modelDirectory: URL(fileURLWithPath: "/m"),
+            thinking: .off, reasoningEffort: nil,
+            mtpModelDirectory: URL(fileURLWithPath: "/d"))
+        #expect(mtpPlan.slots == 1, "MTP is single-sequence")
+    }
 }

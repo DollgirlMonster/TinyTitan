@@ -72,6 +72,15 @@ import TinyTitan
             physicalMemory: physical, expertCacheBudgetBytes: Int(physical)) == 0)
     }
 
+    /// A dense family allocates no expert cache, so its profile's budget for one
+    /// must not be taken off the KV headroom. A MoE family's must.
+    @Test func aDenseModelHoldsBackNoExpertCache() {
+        #expect(BatchedMemoryBudget.expertCacheHeldBack(numExperts: 0, configured: 8 * 1_073_741_824) == 0)
+        #expect(BatchedMemoryBudget.expertCacheHeldBack(numExperts: 512, configured: 8 * 1_073_741_824)
+                    == 8 * 1_073_741_824)
+        #expect(BatchedMemoryBudget.expertCacheHeldBack(numExperts: 512, configured: -1) == 0)
+    }
+
     /// A shipped install at the advertised context must fit: the clamp exists
     /// for the models that do not, not to shrink the common case.
     @Test func aShippedModelFitsItsWorstCaseAtTheAdvertisedContext() {

@@ -772,7 +772,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             vocab: model.config.vocabSize)
         let slotBudget = BatchedMemoryBudget.slotBudgetBytes(
             physicalMemory: ProcessInfo.processInfo.physicalMemory,
-            expertCacheBudgetBytes: expertCacheBudgetBytes ?? tunedBudget)
+            // A dense family has no routed experts, so it has no expert cache to
+            // hold back; see `expertCacheHeldBack`.
+            expertCacheBudgetBytes: BatchedMemoryBudget.expertCacheHeldBack(
+                numExperts: model.config.numExperts,
+                configured: expertCacheBudgetBytes ?? tunedBudget))
         let effectiveSlots = BatchedMemoryBudget.effectiveSlots(
             requested: requestedSlots,
             perSlotBytes: perSlotBytes,

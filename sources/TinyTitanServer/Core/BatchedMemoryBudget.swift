@@ -18,6 +18,15 @@ enum BatchedMemoryBudget {
         return max(0, Int(physicalMemory / 2) - max(0, expertCacheBudgetBytes))
     }
 
+    /// The expert cache to hold back from the KV headroom.
+    ///
+    /// A dense family has no routed experts, so the profile's expert-cache
+    /// budget is memory it will never allocate; subtracting it took 8 GiB off
+    /// the headroom of a dense install and clamped a width that fits.
+    static func expertCacheHeldBack(numExperts: Int, configured: Int) -> Int {
+        numExperts > 0 ? max(0, configured) : 0
+    }
+
     /// The largest width whose worst-case stores fit the budget.
     ///
     /// Always at least one: the single-sequence path must stay available even
