@@ -23,17 +23,34 @@ responses also carry `request-id`.
 
 ## The model name
 
-A request must name the served model or its `-fast` alias (`GET /v1/models`
-lists both). Any other name is refused: 404 `model_not_found` on the OpenAI
-paths, 404 `not_found_error` on the Anthropic path. That includes the
-`claude-*` names Claude Code sends by default, so point it at the served id:
+What a request may name depends on how the server was started. Both modes refuse
+an unknown name rather than answering it with whatever is loaded — that would let
+a misconfigured client believe it was talking to a model it was not.
 
-```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:8096 ANTHROPIC_MODEL=$(curl -s 127.0.0.1:8096/v1/models | jq -r '.data[0].id') claude
-```
+- **One model** (`--model <dir>`, no `--models-dir`): the served model or its
+  `<id>-fast` alias. Any other name is refused: 404 `model_not_found` on the
+  OpenAI paths, 404 `not_found_error` on the Anthropic path. That includes the
+  `claude-*` names Claude Code sends by default, so point it at the served id:
 
-The alternative — answering any name with whatever is loaded — would make a
-misconfigured client believe it was talking to a model it was not.
+  ```bash
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8096 ANTHROPIC_MODEL=$(curl -s 127.0.0.1:8096/v1/models | jq -r '.data[0].id') claude
+  ```
+
+- **A catalog** (`--models-dir <dir>`): `GET /v1/models` lists every install the
+  catalog serves — plus `<id>@cpu` where the install has a second engine that is
+  a real choice — and a request naming **any** of them is served. The router
+  waits for in-flight generations, unloads the resident model and loads the named
+  one, so one model is resident at a time and a client may switch between turns
+  of a session. Measured on this machine's dense installs (2B/4B at 4- and
+  8-bit): a switch costs about 1.5–5 s of load, and `GET /v1/models/{id}` answers
+  for a model that is not resident without loading it.
+
+`<id>-fast` is accepted in either mode for any served id, but it is **not** listed
+by `GET /v1/models` — it names the same weights with the CLI-strip heuristic
+switched on for that request (see [Chat Completions](#chat-completions)), so
+listing it would put two entries for one install in front of every client. One
+deviation worth knowing: a response to a `-fast` request reports the base id in
+its `model` field rather than the alias that was asked for.
 
 ## What every protocol shares
 
