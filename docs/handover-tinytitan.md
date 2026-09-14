@@ -104,13 +104,24 @@ whose traps still bite and are folded in below.
    at most 3 entries per PR). That document carries the ready-to-copy entry for
    this repository's subpackage and the checklist — `dsh.bundle` ✓, a `plugins/`
    subpackage the CI reads ✓, the `repository` field ✓, real tested code ✓, a repo
-   older than a day ✓, the npm name `dsh-tinytitan` unclaimed — with two gaps:
-   the **`dsh-plugin` GitHub topic is not set** on this repository, and no entry
-   has been submitted. **The licence is settled: MIT on purpose**, because the
+   older than a day ✓, the npm name `dsh-tinytitan` unclaimed — and **it is
+   submitted**: the **`dsh-plugin` topic is set** on this repository, and
+   [PR #5094](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5094)
+   adds the one data file (+6/−0, mergeable) after the catalogue's own tooling
+   came back clean locally — `validateEntries()` clean over 3,633 entries,
+   `awesome-lint` at 79 warnings/0 errors identical to pristine `main`,
+   `added-dates` 3 passed, and a site build of 3,633 rows with detail pages and
+   sitemap entries in both locales. That audit also produced the trap worth
+   knowing: **`build-site.mjs` parses the generated READMEs, not
+   `data/plugins/*.yml`**, so a yml-only submission builds a site missing its own
+   entry until `pr-check.yml`'s regeneration step is replicated — a local row
+   count one below `readEntries()` is that, not a dropped entry. **The licence is
+   settled: MIT on purpose**, because the
    plugin is an independent work that talks to the server over its HTTP API and
    copies nothing from the project's lineage; the plugin README says so, so it is
-   not "aligned" with the repository's Apache-2.0 later. Remaining, all
-   decisions: `npm publish`, add the topic, open the one-file PR. The two
+   not "aligned" with the repository's Apache-2.0 later. Remaining: the
+   catalogue maintainer's review, optional `screenshots.json`, and `npm publish`
+   if the operator wants download counts. The two
    upstream asks in `docs/dsh-upstream-asks.md` are still unposted.
 3. **The expert cache cannot be unwired on the models that wire it.**
    `TINYTITAN_KEEP_WIRED` can only turn it *on*, and the Qwen3.8/35B profile rows
