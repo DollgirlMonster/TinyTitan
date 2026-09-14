@@ -334,8 +334,24 @@ def prepare_client_config(output: pathlib.Path, client: str, base_url: str,
     home = output / "client-config" / client
     home.mkdir(parents=True, exist_ok=True)
     if client == "codex":
+        # The timeout keys belong to the top-level table, so they go *before*
+        # `[model_providers.nvmai]`: after a table header TOML scopes them to
+        # that table, where they would be ignored (and codex reports unknown
+        # fields only as warnings).
         (home / "config.toml").write_text(
-            f'model = "{model}"\nmodel_provider = "nvmai"\n\n'
+            f'model = "{model}"\nmodel_provider = "nvmai"\n'
+            # Codex gives up on a stream that has produced nothing for five
+            # minutes and retries -- and a retry is a *cold* prefill again,
+            # because a request that never finished publishes no prompt-cache
+            # entry. On a 35B model whose prompt is a large agent system prompt,
+            # a cold prefill takes longer than that, so the run could never
+            # finish: measured on KAT 4-bit, a ~18k-token prompt produced no
+            # token after five minutes and codex issued the next request.
+            # The qwen client's equivalent knobs are already disabled below; this
+            # is the same setting for this one.
+            "stream_idle_timeout_ms = 3600000\n"
+            "request_max_retries = 0\n"
+            "stream_max_retries = 0\n\n"
             "[model_providers.nvmai]\nname = \"NVMAI\"\n"
             f'base_url = "{base_url}"\nwire_api = "responses"\n'
         )
