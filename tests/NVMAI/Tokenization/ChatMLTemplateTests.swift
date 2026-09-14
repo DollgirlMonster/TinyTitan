@@ -101,6 +101,45 @@ struct ChatMLTemplateTests {
         #expect(p.contains("<|im_start|>user\nHi<|im_end|>\n"))
     }
 
+    /// OpenAI's `developer` role is the documented successor of `system`, and
+    /// this template defines only system/user/assistant/tool. Handing the name
+    /// through raised the template's `Unexpected message role.`, which the Chat
+    /// Completions surface answered as HTTP 500 — for a role pi-ai sends on
+    /// every reasoning request.
+    @Test("A developer message renders as the system turn it stands for")
+    func developerRoleIsSystem() throws {
+        let asDeveloper = try tok.applyChatTemplate([
+            Message(role: .developer, content: "Be terse."),
+            Message(role: .user, content: "Hi"),
+        ])
+        let asSystem = try tok.applyChatTemplate([
+            Message(role: .system, content: "Be terse."),
+            Message(role: .user, content: "Hi"),
+        ])
+        #expect(asDeveloper == asSystem)
+        #expect(asDeveloper.hasPrefix("<|im_start|>system\nBe terse.<|im_end|>\n"),
+                "the developer turn did not render as system: \(asDeveloper)")
+    }
+
+    @Test("The Jinja tool path renders a developer message as system too")
+    func developerRoleThroughJinja() throws {
+        let messages = [
+            Message(role: .developer, content: "Be helpful."),
+            Message(role: .user, content: "Hi"),
+        ]
+        let asDeveloper = try tok.encodeToolChat(messages: messages, tools: [])
+        let asSystem = try tok.encodeToolChat(
+            messages: [
+                Message(role: .system, content: "Be helpful."),
+                Message(role: .user, content: "Hi"),
+            ],
+            tools: [])
+        #expect(asDeveloper == asSystem)
+        let text = tok.decode(asDeveloper, skipSpecialTokens: false)
+        #expect(text.hasPrefix("<|im_start|>system\nBe helpful."),
+                "the developer turn did not render as system: \(text)")
+    }
+
     @Test("System message after a user turn is rejected")
     func misplacedSystemTurn() {
         #expect(throws: GFTokenizerError.self) {

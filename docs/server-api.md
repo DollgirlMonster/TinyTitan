@@ -103,23 +103,20 @@ misconfigured client believe it was talking to a model it was not.
 
 ## Chat Completions
 
-`messages` with `system`/`user`/`assistant`/`tool` roles, `tools`, `stream`
-with `stream_options.include_usage`, `stop` (up to four strings), `seed`,
-`temperature`, `top_p`, `top_k`, `repetition_penalty`. Streams end with
+`messages` with `system`/`developer`/`user`/`assistant`/`tool` roles, `tools`,
+`stream` with `stream_options.include_usage`, `stop` (up to four strings),
+`seed`, `temperature`, `top_p`, `top_k`, `repetition_penalty`. Streams end with
 `data: [DONE]`; a failure mid-stream sends an error object first.
 
-A `developer` message is parsed and validated like `system` — leading guidance,
-before the conversation — but this surface hands the role to the model's chat
-template unchanged, and the installed Qwen templates define only
-`system`/`user`/`assistant`/`tool`. Such a request therefore fails with a 500
-`internal_error`, whose server log line is
-`Jinja.TemplateException("Unexpected message role.")`. The Responses surface
-merges `developer` items into the leading system message and is unaffected,
-which is the surface Codex — the client that sends them — uses. A Chat
-Completions client that sends `developer` for a reasoning model needs its own
-compatibility switch (pi-ai: `compat.supportsDeveloperRole: false`); teaching
-the chat surface to read the role as `system` is open work, not current
-behavior.
+A `developer` message is the OpenAI role that replaced `system`, and it is
+served as one: it is validated as leading guidance before the conversation and
+then rendered as the system turn it stands for, because the installed Qwen
+templates define only `system`/`user`/`assistant`/`tool`. Handing the role name
+to a template raised `Jinja.TemplateException("Unexpected message role.")` — an
+HTTP 500 for a role the API defines and clients such as pi-ai send on every
+reasoning request — so no client switch is needed any more. The Responses
+surface still merges `developer` items into the leading system message, which is
+the same turn by a different road.
 
 ## Responses
 

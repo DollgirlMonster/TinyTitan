@@ -405,6 +405,20 @@ public struct GFTokenizer: @unchecked Sendable {
 
     public enum Role: String, Codable, Sendable {
         case system, developer, user, assistant, tool
+
+        /// The name a chat template is handed for this role.
+        ///
+        /// OpenAI's `developer` role is the documented successor of `system`,
+        /// and every chat template this project ships (Qwen 3.5/3.6/3.8,
+        /// AgentWorld, Ornith, KAT) defines only `system`, `user`, `assistant`
+        /// and `tool`. Handing the name through raised the template's own
+        /// `raise_exception('Unexpected message role.')`, which the Chat
+        /// Completions surface answered as HTTP 500 — for a role the OpenAI API
+        /// defines and pi-ai sends on every reasoning request. The protocol
+        /// model keeps the role it was given; only the render is normalized.
+        public var templateRole: String {
+            self == .developer ? Role.system.rawValue : rawValue
+        }
     }
     public struct HistoricalToolCall: Codable, Sendable, Equatable {
         public let id: String
@@ -574,8 +588,13 @@ public struct GFTokenizer: @unchecked Sendable {
         var s = ""
         // Effort-aware templates open the conversation with the derived
         // instruction: inside the leading system block when the chat has one,
-        // otherwise as a synthetic system block of its own.
-        if let instruction = effortSystemInstruction, messages.first?.role != .system {
+        // otherwise as a synthetic system block of its own. A leading
+        // `developer` message *is* that system block (`Role.templateRole`), so
+        // it must not also get a synthetic one in front of it.
+        let opensWithGuidance = messages.first.map {
+            $0.role == .system || $0.role == .developer
+        } ?? false
+        if let instruction = effortSystemInstruction, !opensWithGuidance {
             s += Self.imStartMark + "system\n" + instruction + Self.imEndMark + "\n"
         }
         // The bundled template's `ns.last_query_index`: the last user turn that
@@ -602,10 +621,14 @@ public struct GFTokenizer: @unchecked Sendable {
             // content (`render_content(...)|trim`); the manual renderer
             // mirrors that exactly so both paths agree byte-for-byte.
             var content = rawContent.trimmingCharacters(in: .whitespacesAndNewlines)
-            if message.role == .system && index != 0 {
+            // `developer` is `system` in everything but name here
+            // (`Role.templateRole`), so it takes the same place rule and the
+            // same effort-instruction fold.
+            let isGuidance = message.role == .system || message.role == .developer
+            if isGuidance && index != 0 {
                 throw GFTokenizerError.invalidChatTemplate("system message must be first")
             }
-            if index == 0, message.role == .system,
+            if index == 0, isGuidance,
                let instruction = effortSystemInstruction {
                 content = content.isEmpty ? instruction : instruction + "\n\n" + content
             }
@@ -624,7 +647,7 @@ public struct GFTokenizer: @unchecked Sendable {
                     ? "<think>\n" + reasoning + "\n</think>\n\n" + answer
                     : answer
             }
-            s += Self.imStartMark + message.role.rawValue + "\n" + content + Self.imEndMark + "\n"
+            s += Self.imStartMark + message.role.templateRole + "\n" + content + Self.imEndMark + "\n"
         }
         s += generationSuffix
         return s
@@ -637,7 +660,7 @@ public struct GFTokenizer: @unchecked Sendable {
         }
         let upstreamMessages: [Tokenizers.Message] = try messages.map { message in
             var value: Tokenizers.Message = [
-                "role": message.role.rawValue,
+                "role": message.role.templateRole,
                 "content": message.content,
             ]
             if !message.toolCalls.isEmpty {

@@ -71,6 +71,22 @@ struct Qwen38TemplateTests {
             + "<|im_start|>assistant\n<think>\n")
     }
 
+    /// A leading `developer` message *is* the conversation's system block
+    /// (`Role.templateRole`), so the effort instruction folds into it rather
+    /// than opening a synthetic block in front of it — the same shape a
+    /// `system` first message produces, byte for byte.
+    @Test("A leading developer message takes the instruction like system")
+    func effortPrependsToDeveloperMessage() async throws {
+        let tok = try await Self.load(thinkingMode: .on, effort: .low)
+        let p = try tok.applyChatTemplate([
+            Message(role: .developer, content: "Be terse."),
+            Message(role: .user, content: "Hi"),
+        ])
+        #expect(p == "<|im_start|>system\n" + Self.lowInstruction + "\n\nBe terse.<|im_end|>\n"
+            + "<|im_start|>user\nHi<|im_end|>\n"
+            + "<|im_start|>assistant\n<think>\n")
+    }
+
     @Test("Thinking off renders the closed think block and no instruction")
     func thinkingOff() async throws {
         let tok = try await Self.load(thinkingMode: .off, effort: nil)
