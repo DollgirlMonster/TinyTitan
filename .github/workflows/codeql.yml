@@ -55,28 +55,40 @@ jobs:
         with:
           languages: swift
           build-mode: manual
-          # Excludes `.build/**` — the SwiftPM checkouts of this project's
-          # dependencies, and the build products — from the results. Every
-          # alert the scan produced before this was a path-injection in
-          # `swift-huggingface`'s own cache code; the config file records why
-          # that code is out of scope for this repository.
+          # Kept for the record and for any buildless analysis: it documents
+          # why `.build/**` is out of scope, and the init log echoes it. It is
+          # *not* what keeps those results out of the scan — see the build step
+          # below for the measurement.
           config-file: .github/codeql/codeql-config.yml
 
       # The build must really happen: this is what the extractor observes.
-      # Each target is built explicitly so the scan stays bounded, and every
-      # one is pinned to arm64 (see the note at the top of this file).
+      # Each target is built explicitly so the scan stays bounded, every one is
+      # pinned to arm64 (see the note at the top of this file), and all of them
+      # share a scratch path *outside the checkout*.
+      #
+      # That scratch path is what keeps this repository's dependencies out of
+      # the database. The first attempt used the config file's `paths-ignore`,
+      # and the action accepted it (the init log echoes `- .build/**`), but the
+      # analysis of commit 3839fb0 still reported all eleven
+      # `swift-huggingface` path-injection alerts: for a compiled language in
+      # manual build mode that switch does not filter results, because the
+      # extractor extracts whatever the build compiles. Building elsewhere means
+      # the dependency checkouts are never under the analyzed source root, so
+      # there is nothing to report and nothing to ignore.
       - name: Build for extraction
+        env:
+          SCRATCH: ${{ runner.temp }}/nvmai-codeql-build
         run: |
           echo "--- toolchain ---"
           swift --version
           uname -m
-          echo "-----------------"
-          swift build --target NVMAIFormat --arch arm64
-          swift build --target NVMAIKernelsC --arch arm64
-          swift build --target NVMAI --arch arm64
-          swift build --target ContinuityCore --arch arm64
-          swift build --target NVMAIRepackCore --arch arm64
-          swift build --target NVMAIDecodeProtocol --arch arm64
+          echo "--- scratch path: $SCRATCH ---"
+          swift build --target NVMAIFormat --arch arm64 --scratch-path "$SCRATCH"
+          swift build --target NVMAIKernelsC --arch arm64 --scratch-path "$SCRATCH"
+          swift build --target NVMAI --arch arm64 --scratch-path "$SCRATCH"
+          swift build --target ContinuityCore --arch arm64 --scratch-path "$SCRATCH"
+          swift build --target NVMAIRepackCore --arch arm64 --scratch-path "$SCRATCH"
+          swift build --target NVMAIDecodeProtocol --arch arm64 --scratch-path "$SCRATCH"
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

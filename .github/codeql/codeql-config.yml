@@ -15,8 +15,15 @@
 # genuine fix for the rest belongs upstream, in
 # https://github.com/huggingface/swift-huggingface.
 #
-# `paths-ignore` filters results rather than the build: the extractor still
-# observes every compiled target, so the repository's own sources stay covered.
+# `paths-ignore` filters results, not the build: the extractor still observes
+# every compiled target, so the repository's own sources stay covered — and for a
+# *compiled* language in manual build mode it turns out not to filter at all. The
+# analysis of commit 3839fb0 carried this file (the init log echoes
+# `- .build/**`) and still reported all eleven alerts. What keeps them out of the
+# scan is the workflow's build step: every target is built with a
+# `--scratch-path` outside the checkout, so the dependency sources are never
+# under the analyzed source root. This file stays as the record of the scope
+# decision, and for any future buildless analysis where the switch does apply.
 name: NVMAI CodeQL configuration
 paths-ignore:
   - .build/**
