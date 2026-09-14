@@ -316,11 +316,26 @@ struct ResponsesAPIHTTPTests {
         }
     }
 
+    /// `text.format` reaches the validator: it used to be refused as an
+    /// unsupported feature, and now it is a schema the sampler is masked with.
+    @Test func aStructuredOutputFormatReachesTheValidator() async throws {
+        let backend = TextBackend()
+        try await withServer(backend) { port in
+            let (_, response) = try await post(port, "/v1/responses", """
+            {"model":"test-model","input":"x","text":{"format":{"type":"json_object"}}}
+            """)
+            #expect(response.statusCode == 200)
+            #expect(backend.log.requests[0].jsonSchema
+                        == .object(properties: [:], required: [], additional: true))
+        }
+    }
+
     @Test func unsupportedFeaturesAreRefusedByName() async throws {
         try await withServer(TextBackend()) { port in
             for body in [
                 #"{"model":"test-model","input":"x","background":true}"#,
-                #"{"model":"test-model","input":"x","text":{"format":{"type":"json_schema","name":"s","schema":{}}}}"#,
+                #"{"model":"test-model","input":"x","prompt":{"id":"p"}}"#,
+                #"{"model":"test-model","input":"x","text":{"format":{"type":"xml"}}}"#,
                 #"{"model":"test-model","input":[{"role":"user","content":[{"type":"input_image","image_url":"http://x"}]}]}"#,
             ] {
                 let (data, response) = try await post(port, "/v1/responses", body)

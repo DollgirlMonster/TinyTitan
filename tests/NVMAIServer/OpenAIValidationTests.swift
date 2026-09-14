@@ -252,20 +252,26 @@ struct OpenAIValidationTests {
     }
 
     /// The Chat Completions spelling of the Responses API's `text.format`.
-    /// Silently answering prose to a JSON-mode request is a client-visible lie,
-    /// so a *named* format other than `text` is refused; the API's own default
-    /// and an unrecognized shape are not.
-    @Test func refusesStructuredOutputFormats() throws {
-        for format in [#"{"type":"json_object"}"#,
-                       #"{"type":"json_schema","json_schema":{"name":"x","schema":{}}}"#] {
+    /// A named JSON format compiles into a schema the sampler is masked with;
+    /// the API's own default and an unrecognized shape stay free text, and a
+    /// *named* format that is not JSON is still refused rather than answered
+    /// with prose. The grammar itself is covered by `StructuredOutputTests`.
+    @Test func carriesStructuredOutputFormatsAndRefusesUnknownOnes() throws {
+        func validate(_ format: String) throws -> ValidatedChatRequest {
             let data = Data(#"""
             {"model":"m","messages":[{"role":"user","content":"hi"}],"response_format":\#(format)}
             """#.utf8)
             let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
-            #expect(throws: ServerRequestError.self) {
-                try OpenAIRequestValidator.validate(request, modelID: "m")
-            }
+            return try OpenAIRequestValidator.validate(request, modelID: "m")
         }
+        #expect(try validate(#"{"type":"json_object"}"#).jsonSchema
+                    == .object(properties: [:], required: [], additional: true))
+        // An empty schema says nothing, so it compiles to "any JSON value" --
+        // the document grammar without a schema layer.
+        #expect(try validate(#"{"type":"json_schema","json_schema":{"name":"x","schema":{}}}"#)
+                    .jsonSchema == .any)
+        #expect(try validate(#"{"type":"text"}"#).jsonSchema == nil)
+        #expect(throws: ServerRequestError.self) { _ = try validate(#"{"type":"xml"}"#) }
     }
 
     @Test func acceptsPlainTextResponseFormat() throws {

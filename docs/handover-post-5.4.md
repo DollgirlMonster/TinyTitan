@@ -93,6 +93,16 @@ Everything below is in the wiki tracker; this is the short list.
    every supported model is text-only today), conversation history, LaTeX
    rendering.
 
+Also closed since the first draft: **structured output is enforced** rather
+than refused. `response_format` (`json_object` / `json_schema`), the Responses
+`text.format` and the Messages `output_config.format` all compile into a
+byte-level JSON grammar that masks the sampler on both engines, so a model can
+only emit a document the schema allows. The supported schema subset is small and
+explicit and everything outside it is refused by name; thinking is off for a
+constrained request, because the grammar constrains every token. See
+`docs/structured-output.md`, and note what it does *not* claim: a response
+truncated by `max_tokens` is a truncated document.
+
 Closed since the first draft of this handover: the six dense installs now have
 baselines (`a5b9ae2`), so the gate checks ten targets here instead of four; the
 Chat Completions surface renders a `developer` message as the `system` turn it

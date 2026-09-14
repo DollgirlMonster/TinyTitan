@@ -34,6 +34,9 @@ public actor CPUModelBackend: ServerInferenceBackend {
     /// mid-session re-render reads from the same place the load did.
     private let tokenizerFolder: URL
     private let loadedReasoning: RequestReasoning
+    /// The vocabulary-as-bytes table for structured output, built on first use
+    /// and shared by every request this backend serves.
+    private var jsonTokenTable: JSONTokenTable?
     private let context: Int
     private let defaults: GenerationDefaults.Sampling
 
@@ -154,7 +157,12 @@ public actor CPUModelBackend: ServerInferenceBackend {
             throw CPUBackendError.promptTooLong(prompt.count, context)
         }
         let budget = min(request.maximumCompletionTokens, context - prompt.count)
-        let configuration = request.generationConfig
+        var configuration = request.generationConfig
+        if let node = request.jsonSchema {
+            if jsonTokenTable == nil { jsonTokenTable = JSONTokenTable(tokenizer: tokenizer) }
+            configuration.constraint = JSONConstraint(table: jsonTokenTable!, node: node,
+                                                      vocab: model.configuration.vocabulary)
+        }
         let sampler = CPUSampler(
             temperature: configuration.temperature,
             topP: configuration.topP ?? 1,
@@ -181,7 +189,18 @@ public actor CPUModelBackend: ServerInferenceBackend {
         var produced = 0
         var reason = "length"
         while produced < budget {
+            // Structured output: floor every token the grammar no longer
+            // accepts before the sampler sees the row. The same contract as
+            // the GPU path's mask, on the same kind of buffer.
+            if let constraint = configuration.constraint {
+                let mask = constraint.allowedMask()
+                guard !mask.isEmpty else { throw GeneratorError.constrainedDecodeStalled }
+                mask.apply(toLogits: &logits)
+            }
             let next = sampler.pick(logits, using: generator)
+            if let constraint = configuration.constraint, !constraint.observe(Int32(next)) {
+                throw GeneratorError.constrainedDecodeViolation(id: Int32(next))
+            }
             if next == Int(tokenizer.eosID) { reason = "stop"; break }
             produced += 1
             output.publish(try events(for: Int32(next), decoder: decoder,

@@ -100,6 +100,27 @@ public struct GFTokenizer: @unchecked Sendable {
     public let thinkEndID: Int32?
     public let stopTokenIDs: Set<Int32>
     public let vocabSize: Int
+
+    /// Tokens that stand for a control marker rather than for text: the ChatML
+    /// turn and tool barriers, the channel markers, and every stop token.
+    ///
+    /// Anything that reads a token as *bytes* -- the JSON grammar's token table
+    /// is the one caller -- must skip these. Their `convertIdToToken` text is
+    /// the marker's spelling, not a byte string the model emitted, and a
+    /// grammar that treated `<|im_end|>` as those nine characters would allow a
+    /// marker inside a JSON string, where the streaming decoder would then
+    /// swallow it as a barrier.
+    public var nonByteTokenIDs: Set<Int32> {
+        var ids: Set<Int32> = [
+            bosID, eosID, padID, endOfTurnID,
+            toolCallStartID, toolCallEndID, toolResponseID, toolResponseEndID,
+            channelStartID, channelEndID,
+        ]
+        if let thinkStartID { ids.insert(thinkStartID) }
+        if let thinkEndID { ids.insert(thinkEndID) }
+        ids.formUnion(stopTokenIDs)
+        return ids
+    }
     public let thinkingMode: ModelThinkingMode
     /// Requested effort override for effort-aware templates; nil means the
     /// template's own default. Cleared when thinking is off because every

@@ -60,6 +60,14 @@ public struct GenerationConfig: Sendable {
     public var seed: UInt64? = nil         // nil = nondeterministic
     public var stopStrings: [String] = []
     public var extraStopTokens: Set<Int32> = []
+    /// A grammar the sampled tokens must stay inside, when the request asked
+    /// for structured output. Nil -- the only value every caller but the
+    /// server's JSON modes uses -- means the whole vocabulary is available and
+    /// generation is bit-identical to what it was before constraints existed.
+    ///
+    /// The constraint is stateful and is advanced by the decode loop, once per
+    /// generated token; see `JSONConstraint`.
+    public var constraint: JSONConstraint? = nil
 
     public init(maxNewTokens: Int = 256,
                 temperature: Float = GenerationDefaults.temperature,
@@ -69,7 +77,8 @@ public struct GenerationConfig: Sendable {
                 repetitionPenalty: Float = 1.0,
                 seed: UInt64? = nil,
                 stopStrings: [String] = [],
-                extraStopTokens: Set<Int32> = []) {
+                extraStopTokens: Set<Int32> = [],
+                constraint: JSONConstraint? = nil) {
         self.maxNewTokens = maxNewTokens
         self.temperature = temperature
         self.topK = topK
@@ -79,6 +88,7 @@ public struct GenerationConfig: Sendable {
         self.seed = seed
         self.stopStrings = stopStrings
         self.extraStopTokens = extraStopTokens
+        self.constraint = constraint
     }
 
     public func validate() throws {
@@ -233,6 +243,18 @@ final class Sampler {
             applyRepetitionPenaltyInPlace(logits: logits,
                                           history: history,
                                           penalty: config.repetitionPenalty)
+        }
+        // Structured output: floor every token the grammar no longer accepts,
+        // in the shared logits buffer, before the softcap+softmax front-end
+        // reads it. The write is host-side and the buffer is the previous
+        // token's, already completed, so this is the same safe moment the
+        // repetition penalty uses. The constraint is advanced by the decode
+        // loop once the token it is about to allow has actually been chosen.
+        if let constraint = config.constraint {
+            let mask = constraint.allowedMask()
+            guard !mask.isEmpty else { throw GeneratorError.constrainedDecodeStalled }
+            mask.apply(toLogits: logits.contents().bindMemory(to: Float16.self, capacity: vocab),
+                       count: vocab)
         }
         // The tiled front-end follows the same path selection as the Top-K
         // half: `generic` forces the single-threadgroup pair so an A/B

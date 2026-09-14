@@ -230,6 +230,43 @@ public enum ResponsesAPIMapper {
         }
     }
 
+    /// This surface's `text.format`, reshaped into the Chat Completions
+    /// `response_format` spelling the one validator parses.
+    ///
+    /// OpenAI's two spellings differ only in where the schema lives: the
+    /// Responses object puts `name`, `schema` and `strict` at the top level of
+    /// the format, Chat Completions nests them under `json_schema`. Nothing
+    /// else about the rule differs, so nothing else is duplicated.
+    public static func responseFormat(_ format: JSONValue?) throws -> JSONValue? {
+        guard let format, case .object(let dict) = format,
+              case .string(let type)? = dict["type"] else {
+            return nil
+        }
+        switch type {
+        case "text":
+            return nil
+        case "json_object":
+            return format
+        case "json_schema":
+            var wrapper: [String: JSONValue] = [:]
+            for key in ["name", "schema", "strict"] where dict[key] != nil {
+                wrapper[key] = dict[key]
+            }
+            guard wrapper["schema"] != nil else {
+                throw ServerRequestError.invalid(
+                    message: "json_schema requires a schema",
+                    param: "text.format.schema", code: "invalid_value")
+            }
+            return .object(["type": .string("json_schema"),
+                            "json_schema": .object(wrapper)])
+        default:
+            throw ServerRequestError.invalid(
+                message: "text.format \(type) is not supported; use text, json_object "
+                    + "or json_schema",
+                param: "text.format", code: "unsupported_value")
+        }
+    }
+
     /// The text of a function_call_output's `output`: a string, or a list of
     /// `input_text` parts.
     public static func outputText(_ output: JSONValue?) throws -> String {
@@ -246,12 +283,6 @@ public enum ResponsesAPIMapper {
             throw ServerRequestError.invalid(
                 message: "background responses are not supported",
                 param: "background", code: "unsupported_value")
-        }
-        if let format = request.text?.format, case .object(let dict) = format,
-           case .string(let type)? = dict["type"], type != "text" {
-            throw ServerRequestError.invalid(
-                message: "text.format \(type) is not supported; only plain text output is available",
-                param: "text.format", code: "unsupported_value")
         }
         if let topLogprobs = request.topLogprobs, topLogprobs > 0 {
             throw ServerRequestError.invalid(
@@ -378,6 +409,7 @@ public enum ResponsesAPIMapper {
                 toolCalls: nil, toolCallID: nil, name: nil), at: 0)
         }
         let tools = functionTools(request.tools).tools
+        let responseFormat = try responseFormat(request.text?.format)
         return OpenAIChatRequest(
             model: request.model,
             messages: chatMessages,
@@ -413,7 +445,8 @@ public enum ResponsesAPIMapper {
             logprobs: nil,
             presencePenalty: request.presencePenalty,
             frequencyPenalty: nil,
-            reasoningEffort: request.reasoning?.effort)
+            reasoningEffort: request.reasoning?.effort,
+            responseFormat: responseFormat)
     }
 
     /// A finished response's output, in the shape a later request carries it

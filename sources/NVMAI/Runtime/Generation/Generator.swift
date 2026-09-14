@@ -11,7 +11,7 @@ public enum StopReason: String, Codable, Sendable, Equatable {
     case external
 }
 
-enum GeneratorError: Error, CustomStringConvertible, Equatable {
+public enum GeneratorError: Error, CustomStringConvertible, Equatable {
     case contextOverflow(prompt: Int, maxNew: Int, maxContext: Int)
     case invalidGenerationConfig(String)
     case invalidContinuation(String)
@@ -34,6 +34,13 @@ enum GeneratorError: Error, CustomStringConvertible, Equatable {
     /// Reported with the id and the vocabulary size, whatever produced it, which
     /// is what turns an unidentified intermittent fault into a named one.
     case samplerReturnedOutOfRangeToken(id: UInt32, vocab: Int)
+    /// A constrained decode reached a position the grammar allows no token
+    /// from. The document cannot be finished, so a request that asked for a
+    /// schema could only be answered with invalid JSON.
+    case constrainedDecodeStalled
+    /// The sampler returned a token the grammar had ruled out, which means the
+    /// mask and the token stream disagree -- a bug here, not a client mistake.
+    case constrainedDecodeViolation(id: Int32)
 
     public var description: String {
         switch self {
@@ -55,6 +62,15 @@ enum GeneratorError: Error, CustomStringConvertible, Equatable {
                 + "NaN (or +inf with logit softcap disabled), so no token could "
                 + "be drawn. The model produced a degenerate distribution; "
                 + "check the install for corrupt or NaN weights."
+        case .constrainedDecodeStalled:
+            return "constrained decoding stalled: the requested JSON grammar allows "
+                + "no token from the current position, so the response could not be "
+                + "completed. This is a defect in the schema compiler or the "
+                + "grammar, not in the request."
+        case .constrainedDecodeViolation(let id):
+            return "constrained decoding produced token \(id), which the JSON grammar "
+                + "had ruled out; the mask and the sampled token disagree, which is a "
+                + "defect in the constrained decoder."
         }
     }
 }

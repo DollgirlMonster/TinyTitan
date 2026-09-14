@@ -471,6 +471,14 @@ public struct ValidatedChatRequest: Sendable {
     /// prompt cache keys on this value: two levels render different prompts,
     /// and a cached KV range from one must never be spliced onto the other.
     public let reasoning: RequestReasoning?
+    /// The compiled JSON schema this request must produce, when it asked for
+    /// structured output. Nil is free text -- the only value every caller but
+    /// the three JSON spellings passes.
+    ///
+    /// The schema is compiled here, during validation, so an unsupported
+    /// keyword is a 400 before a model is touched rather than a failure in the
+    /// middle of a generation.
+    public let jsonSchema: JSONSchemaNode?
 
     public init(messages: [GFTokenizer.Message],
                 tools: [GFTokenizer.FunctionDefinition],
@@ -483,7 +491,8 @@ public struct ValidatedChatRequest: Sendable {
                 isEngineInternal: Bool = false,
                 model: String? = nil,
                 reasoningNotes: [String] = [],
-                reasoning: RequestReasoning? = nil) {
+                reasoning: RequestReasoning? = nil,
+                jsonSchema: JSONSchemaNode? = nil) {
         self.messages = messages
         self.tools = tools
         self.stream = stream
@@ -496,6 +505,36 @@ public struct ValidatedChatRequest: Sendable {
         self.model = model
         self.reasoningNotes = reasoningNotes
         self.reasoning = reasoning
+        self.jsonSchema = jsonSchema
+    }
+
+    /// Every derived request is built through here.
+    ///
+    /// The three public helpers below used to rebuild the struct field by
+    /// field, which silently dropped any field added later -- `jsonSchema` was
+    /// lost that way the moment it existed, so a request that asked for
+    /// structured output validated, then generated free text. One builder that
+    /// carries every unmentioned field makes that impossible to repeat.
+    private func copy(messages: [GFTokenizer.Message]? = nil,
+                      tools: [GFTokenizer.FunctionDefinition]? = nil,
+                      stripCLIPrompt: Bool? = nil,
+                      workspace: String?? = nil,
+                      isEngineInternal: Bool? = nil,
+                      model: String?? = nil) -> ValidatedChatRequest {
+        ValidatedChatRequest(
+            messages: messages ?? self.messages,
+            tools: tools ?? self.tools,
+            stream: stream,
+            includeUsage: includeUsage,
+            generationConfig: generationConfig,
+            maximumCompletionTokens: maximumCompletionTokens,
+            stripCLIPrompt: stripCLIPrompt ?? self.stripCLIPrompt,
+            workspace: workspace ?? self.workspace,
+            isEngineInternal: isEngineInternal ?? self.isEngineInternal,
+            model: model ?? self.model,
+            reasoningNotes: reasoningNotes,
+            reasoning: reasoning,
+            jsonSchema: jsonSchema)
     }
 
     /// The post-strip view of this request: the same request carrying the
@@ -504,61 +543,25 @@ public struct ValidatedChatRequest: Sendable {
     /// The prompt cache must key on this view, not the raw request. Its
     /// entries describe a KV range that was prefilled from the filtered
     /// messages, and its continuation paths re-render the tail with the same
-    /// template — so matching on the raw messages would splice an unfiltered
+    /// template -- so matching on the raw messages would splice an unfiltered
     /// tail onto a filtered prefix (see `ServerPromptCache`).
     public func replacingMessages(
         _ messages: [GFTokenizer.Message],
         tools: [GFTokenizer.FunctionDefinition]
     ) -> ValidatedChatRequest {
-        ValidatedChatRequest(
-            messages: messages,
-            tools: tools,
-            stream: stream,
-            includeUsage: includeUsage,
-            generationConfig: generationConfig,
-            maximumCompletionTokens: maximumCompletionTokens,
-            stripCLIPrompt: stripCLIPrompt,
-            workspace: workspace,
-            isEngineInternal: isEngineInternal,
-            model: model,
-            reasoningNotes: reasoningNotes,
-            reasoning: reasoning)
+        copy(messages: messages, tools: tools)
     }
 
     /// The memory workspace this request names, from the X-NVMAI-Workspace
     /// header. Nil takes the server's launch-time workspace, which is the
     /// usual case: one server, one checkout.
     public func withWorkspace(_ workspace: String?) -> ValidatedChatRequest {
-        ValidatedChatRequest(
-            messages: messages,
-            tools: tools,
-            stream: stream,
-            includeUsage: includeUsage,
-            generationConfig: generationConfig,
-            maximumCompletionTokens: maximumCompletionTokens,
-            stripCLIPrompt: stripCLIPrompt,
-            workspace: workspace,
-            isEngineInternal: isEngineInternal,
-            model: model,
-            reasoningNotes: reasoningNotes,
-            reasoning: reasoning)
+        copy(workspace: .some(workspace))
     }
 
     /// The same request, bound to the catalog model it was validated for.
     public func withModel(_ model: String) -> ValidatedChatRequest {
-        ValidatedChatRequest(
-            messages: messages,
-            tools: tools,
-            stream: stream,
-            includeUsage: includeUsage,
-            generationConfig: generationConfig,
-            maximumCompletionTokens: maximumCompletionTokens,
-            stripCLIPrompt: stripCLIPrompt,
-            workspace: workspace,
-            isEngineInternal: isEngineInternal,
-            model: model,
-            reasoningNotes: reasoningNotes,
-            reasoning: reasoning)
+        copy(model: .some(model))
     }
 }
 
@@ -657,17 +660,18 @@ public enum OpenAIRequestValidator {
                     + supported.map(\.displayName).joined(separator: ", ") + ")")
             }
         }
-        // Structured output has no decoder here, so a request for a format
-        // other than plain text is refused in the API's own error shape. This
-        // is the Chat Completions spelling of the Responses API's
-        // `text.format`, and it follows the same rule: only a *named* format
-        // other than `text` is refused, so `{"type": "text"}` (the API's
-        // default) and an unrecognized shape are not.
-        if let format = request.responseFormat, case .object(let dict) = format,
-           case .string(let type)? = dict["type"], type != "text" {
-            throw invalid(
-                "response_format \(type) is not supported; only plain text output is available",
-                "response_format", "unsupported_value")
+        // Structured output. The grammar constrains *every* token, so a
+        // thought cannot be generated beside the document -- the template's
+        // think block would have to be written as part of the JSON. Thinking
+        // is therefore off for a request that names a format, and the note
+        // says so rather than letting a client wonder why its level was
+        // ignored.
+        let jsonSchema = try structuredOutputSchema(request.responseFormat)
+        if jsonSchema != nil {
+            reasoning = RequestReasoning(thinkingMode: .off, effort: nil)
+            reasoningNotes.append(
+                "a JSON response format constrains every token, so thinking is off "
+                + "for this request")
         }
         // `parallel_tool_calls` is accepted and not enforced, on either value.
         // The decoder emits the calls the model produces, so the server cannot
@@ -786,7 +790,46 @@ public enum OpenAIRequestValidator {
                                     maximumCompletionTokens: maximum,
                                     stripCLIPrompt: stripCLIPrompt,
                                     reasoningNotes: reasoningNotes,
-                                    reasoning: reasoning)
+                                    reasoning: reasoning,
+                                    jsonSchema: jsonSchema)
+    }
+
+    /// The compiled schema a `response_format` asks for, or nil for plain text.
+    ///
+    /// Chat Completions' own spelling is the one parsed. The Responses surface
+    /// and the Messages API reshape theirs into it before validation, so the
+    /// rule lives in exactly one place: `{"type": "text"}` (the API's own
+    /// default) and an unrecognized *shape* stay accepted, a `json_object`
+    /// means an object at the top level, and a `json_schema` is compiled by
+    /// `JSONSchemaNode` -- which refuses, by name, every keyword a byte-level
+    /// grammar cannot promise.
+    static func structuredOutputSchema(_ format: JSONValue?) throws -> JSONSchemaNode? {
+        guard let format, case .object(let dict) = format,
+              case .string(let type)? = dict["type"] else {
+            return nil
+        }
+        switch type {
+        case "text":
+            return nil
+        case "json_object":
+            return .object(properties: [:], required: [], additional: true)
+        case "json_schema":
+            guard case .object(let wrapper)? = dict["json_schema"],
+                  let schema = wrapper["schema"] else {
+                throw invalid("json_schema requires json_schema.schema",
+                              "response_format.json_schema.schema", "invalid_value")
+            }
+            do {
+                return try JSONSchemaNode.compile(schema)
+            } catch let error as JSONSchemaCompileError {
+                throw invalid(error.description, "response_format.json_schema.schema",
+                              "unsupported_value")
+            }
+        default:
+            throw invalid(
+                "response_format \(type) is not supported; use text, json_object or json_schema",
+                "response_format", "unsupported_value")
+        }
     }
 
     private static func validateTool(_ tool: OpenAITool) throws -> GFTokenizer.FunctionDefinition {

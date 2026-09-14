@@ -98,14 +98,21 @@ misconfigured client believe it was talking to a model it was not.
   blocks a client sends back are not rendered into the prompt, so Anthropic's
   `context_management` edits (clearing old thinking) are accepted and have
   nothing to do.
-- **Structured output** (`response_format`, `text.format: json_schema`,
-  `output_config.format`) is refused; the decoder has no grammar constraint.
-  Each surface refuses only a *named* format other than plain text, so
-  `{"type": "text"}` — the API's own default — is accepted, and a request for
-  JSON is answered with an error rather than unconstrained prose. This is the
-  one place where the same rule has three spellings: `response_format.type`
-  (Chat Completions), `text.format.type` (Responses) and `output_config.format`
-  (Messages).
+- **Structured output** (`response_format`, `text.format`,
+  `output_config.format`) is **enforced**, not requested: a byte-level JSON
+  grammar masks the sampler, so the model can only emit a document the schema
+  allows. `{"type": "json_object"}` means an object at the top level;
+  `{"type": "json_schema", ...}` compiles the schema to that grammar and
+  refuses, by name, every keyword it cannot promise (the subset is listed in
+  [Structured output](structured-output.md)). `{"type": "text"}` and an
+  unrecognized shape stay plain text. This is the one place the same rule has
+  three spellings — `response_format` (Chat Completions), `text.format`
+  (Responses) and `output_config.format` (Messages) — and all three are
+  normalized into the Chat Completions spelling before one validator parses
+  them. Thinking is **off** for such a request: the grammar constrains every
+  token, so a thought would have to be written as part of the document. The
+  server says so in its reasoning note rather than ignoring the level a client
+  asked for.
 - **Logprobs**, `n > 1`, `background: true`, prompt templates, hosted
   conversations, containers and MCP servers are refused by name.
 - **Output cap.** Omitting `max_tokens` / `max_output_tokens` lets the model

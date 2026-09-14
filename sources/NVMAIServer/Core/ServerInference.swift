@@ -551,6 +551,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
     private let context: MetalContext
     private let model: Model
     private let tokenizer: GFTokenizer
+    /// The tokenizer's vocabulary as byte strings, built the first time a
+    /// request asks for structured output and kept for the life of the model.
+    /// The bytes of a token id do not change with the reasoning level a request
+    /// re-renders at, so one table serves every request this session handles.
+    private var jsonTokenTable: JSONTokenTable?
     /// Where the tokenizer came from and the reasoning it was rendered at.
     ///
     /// Kept so a request that asks for a different thinking mode or effort can
@@ -1179,6 +1184,13 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             request.maximumCompletionTokens,
             maxContext - effectivePromptIDs.count)
         config.stopStrings = []
+        // Structured output is a per-request grammar: a fresh constraint per
+        // request (its state is the document parsed so far), over a table that
+        // is built once per model.
+        if let node = request.jsonSchema {
+            config.constraint = JSONConstraint(table: structuredOutputTable(), node: node,
+                                               vocab: model.config.vocabSize)
+        }
 
         // The full render, not the cache-trimmed suffix, decides whether the
         // generation prompt left a thought open; both end in the same
@@ -1200,7 +1212,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
         var decodingError: Error?
         var shouldStop = false
 
+        // MTP drafts several tokens ahead of the sampler and never consults a
+        // grammar, so a constrained request takes the ordinary decode path
+        // (`runRawCompletion` refuses the MTP producer outright).
         let activeProducer: any LogitProducer = if config.isPureGreedy,
+                                                   config.constraint == nil,
                                                    let mtpDecoder,
                                                    promptIDs.count + config.maxNewTokens
                                                     <= mtpDecoder.draftMaxContext {
@@ -1510,6 +1526,14 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             tokenizer: tokenizer, messages: messages, tools: filteredTools,
             usesToolTemplate: usesToolTemplate(messages: filteredMessages,
                                                tools: filteredTools)).count
+    }
+
+    /// The vocabulary-as-bytes table, built on first use.
+    private func structuredOutputTable() -> JSONTokenTable {
+        if let jsonTokenTable { return jsonTokenTable }
+        let table = JSONTokenTable(tokenizer: tokenizer)
+        jsonTokenTable = table
+        return table
     }
 
     /// The tokenizer this request should be rendered with.

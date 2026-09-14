@@ -95,6 +95,14 @@ public func runRawCompletion(producer: any LogitProducer,
                              shouldStop: () -> Bool = { false },
                              onProgress: (RawDecodeProgress) -> Void) async throws -> RawDecodeResult {
     if let mtp = producer as? StreamingMTPDecoder {
+        // A grammar is a per-token contract with the sampler, and the MTP path
+        // drafts several tokens ahead of it; its own sampling never consults a
+        // mask. Serving a schema through MTP would emit unconstrained tokens,
+        // so the request takes the ordinary path instead.
+        guard config.constraint == nil else {
+            throw GeneratorError.invalidGenerationConfig(
+                "constrained decoding does not support the MTP decode path")
+        }
         return try await runStreamingMTPCompletion(
             decoder: mtp,
             tokenizer: tokenizer,
@@ -115,6 +123,12 @@ public func runRawCompletion(producer: any LogitProducer,
     guard !fusedGreedy || config.isPureGreedy else {
         throw PrefillError.unsupportedPrefillSeed(
             "the fused-head producer cannot serve this sampling configuration; use a logits head")
+    }
+    // The fused head picks its token without ever writing the logits buffer a
+    // mask would edit, so a constrained request must take the logits path.
+    guard !fusedGreedy || config.constraint == nil else {
+        throw GeneratorError.invalidGenerationConfig(
+            "constrained decoding needs the logits head; the fused greedy head cannot be masked")
     }
 
     let cachedPromptTokens: Int
@@ -242,6 +256,14 @@ public func runRawCompletion(producer: any LogitProducer,
         }
         fusedRunner?.totalLoopSampleNanos &+= clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - tSample
         generated += 1
+        // The mask was built from the state before this token; move the
+        // grammar over it now, so the next position's mask is the next
+        // position's. A rejection here cannot be the model's fault -- the
+        // sampler only ever saw allowed ids -- so it is reported, never
+        // shrugged off, exactly like an out-of-range id.
+        if let constraint = config.constraint, !constraint.observe(tokenID) {
+            throw GeneratorError.constrainedDecodeViolation(id: tokenID)
+        }
         uncommittedBoundaryTokenIDs = [tokenID]
         toolCallMarkers.observe(tokenID,
                                 start: tokenizer.toolCallStartID,

@@ -251,19 +251,32 @@ import Testing
         }
     }
 
-    @Test func prefillAndStructuredOutputAreRefused() throws {
+    @Test func prefillIsRefused() throws {
         #expect(throws: ServerRequestError.self) {
             try map("""
             {"model":"m","max_tokens":8,
              "messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"The answer is"}]}
             """)
         }
-        #expect(throws: ServerRequestError.self) {
-            try map("""
-            {"model":"m","max_tokens":8,"output_config":{"format":{"type":"json_schema","schema":{}}},
-             "messages":[{"role":"user","content":"hi"}]}
-            """)
-        }
+    }
+
+    /// `output_config.format` is this surface's spelling of structured output.
+    /// It used to be refused outright; it is now reshaped into the Chat
+    /// Completions spelling, which is the one the validator parses.
+    @Test func structuredOutputIsCarriedIntoTheChatRequest() throws {
+        let chat = try map("""
+        {"model":"m","max_tokens":8,"output_config":{"format":{"type":"json_schema","schema":{}}},
+         "messages":[{"role":"user","content":"hi"}]}
+        """)
+        #expect(chat.responseFormat == .object([
+            "type": .string("json_schema"),
+            "json_schema": .object(["schema": .object([:])]),
+        ]))
+        let object = try map("""
+        {"model":"m","max_tokens":8,"output_config":{"format":{"type":"json_object"}},
+         "messages":[{"role":"user","content":"hi"}]}
+        """)
+        #expect(object.responseFormat == .object(["type": .string("json_object")]))
     }
 
     @Test func stopReasonsFollowTheCompletion() {

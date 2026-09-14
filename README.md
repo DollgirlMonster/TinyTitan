@@ -101,6 +101,13 @@ tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
   `count_tokens`, streaming), so Codex, Claude Code and the OpenAI and
   Anthropic SDKs all talk to the same model; see
   [docs/server-api.md](docs/server-api.md).
+- **Enforced structured output:** a request may ask for JSON — `response_format`
+  on Chat Completions, `text.format` on the Responses API,
+  `output_config.format` on Messages — and the server compiles the schema into a
+  byte-level grammar that masks the sampler on both engines, so the model can
+  only emit a document the schema allows rather than being asked nicely for one.
+  The supported schema subset is small and explicit, and everything outside it
+  is refused by name; see [docs/structured-output.md](docs/structured-output.md).
 - **Tested coding CLIs:** The launch workflow supports Codex, Claude Code, Qwen
   Code, OpenCode and the Zed editor against the local server; the coder benchmark
   scores the four that can be prompted (Claude Code through a loopback Anthropic

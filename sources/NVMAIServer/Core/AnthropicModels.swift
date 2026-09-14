@@ -377,6 +377,38 @@ public enum AnthropicMapper {
         }
     }
 
+    /// This surface's `output_config.format`, reshaped into the Chat
+    /// Completions `response_format` spelling the one validator parses.
+    ///
+    /// Anthropic's object carries the schema directly
+    /// (`{"type": "json_schema", "schema": {...}}`); Chat Completions nests it
+    /// under `json_schema`. Nil -- plain text -- is also what an unrecognized
+    /// shape means, which is how it has always been treated.
+    static func responseFormat(_ format: JSONValue?) throws -> JSONValue? {
+        guard let format, case .object(let dict) = format,
+              case .string(let type)? = dict["type"] else {
+            return nil
+        }
+        switch type {
+        case "text":
+            return nil
+        case "json_object":
+            return format
+        case "json_schema":
+            guard let schema = dict["schema"] else {
+                throw invalid("json_schema requires a schema", "output_config.format.schema")
+            }
+            var wrapper: [String: JSONValue] = ["schema": schema]
+            if let name = dict["name"] { wrapper["name"] = name }
+            return .object(["type": .string("json_schema"),
+                            "json_schema": .object(wrapper)])
+        default:
+            throw unsupported(
+                "output_config.format \(type) is not supported; use json_object or json_schema",
+                "output_config.format.type")
+        }
+    }
+
     /// Build the chat-completions request for a Messages request, so the one
     /// validator and the one generation path serve both APIs. No server profile
     /// is taken: everything the served model contributes is applied by the
@@ -402,9 +434,13 @@ public enum AnthropicMapper {
         if request.outputFormat != nil {
             throw unsupported("structured output formats are not supported", "output_format")
         }
-        if case .object(let config)? = request.outputConfig, config["format"] != nil {
-            throw unsupported("structured output formats are not supported", "output_config.format")
-        }
+        // `output_config.format` is this surface's spelling of the same rule
+        // Chat Completions puts in `response_format`; it is reshaped into that
+        // spelling so the one validator parses it.
+        let outputFormat: JSONValue?
+        if case .object(let config)? = request.outputConfig { outputFormat = config["format"] }
+        else { outputFormat = nil }
+        let responseFormat = try AnthropicMapper.responseFormat(outputFormat)
         if request.container != nil {
             throw unsupported("containers are not supported", "container")
         }
@@ -489,7 +525,8 @@ public enum AnthropicMapper {
             logprobs: nil,
             presencePenalty: nil,
             frequencyPenalty: nil,
-            reasoningEffort: thinkingLevel?.rawValue)
+            reasoningEffort: thinkingLevel?.rawValue,
+            responseFormat: responseFormat)
     }
 
     /// The count_tokens body, as a Messages request without generation.
