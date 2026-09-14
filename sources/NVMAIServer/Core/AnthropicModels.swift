@@ -432,7 +432,13 @@ public enum AnthropicMapper {
             throw invalid("top_p must be between 0 and 1", "top_p")
         }
         if request.outputFormat != nil {
-            throw unsupported("structured output formats are not supported", "output_format")
+            // Not the same field as `output_config.format`, which is the
+            // spelling this surface's structured output uses. `output_format`
+            // is a legacy name from a draft of the API; accepting it would be
+            // guessing at a contract nobody publishes.
+            throw unsupported(
+                "output_format is not supported; structured output goes in output_config.format",
+                "output_format")
         }
         // `output_config.format` is this surface's spelling of the same rule
         // Chat Completions puts in `response_format`; it is reshaped into that
