@@ -23,10 +23,11 @@
 #              (minimal, low, medium, high, xhigh, max). The dense Qwen 3.5
 #              models define the binary thinking switch, so their levels are
 #              exactly off|on -- off for a direct answer, on to reason first.
-#   <ram>      the routed-expert cache budget: 1, 2, 4, 8, 16 or 32 (GB).
-#              Omit it to use the install's own measured profile. The CPU
-#              engine has no expert cache, so it does not ask and the flag
-#              does not apply there.
+#   <ram>      the routed-expert cache budget: 1, 2, 4, 8, 16 or 32 (GB),
+#              capped at half of this Mac's physical memory. Omit it to use the
+#              install's own measured profile, which the runtime holds to the
+#              same ceiling. The CPU engine has no expert cache, so it does not
+#              ask and the flag does not apply there.
 #
 # Flags (override the positional form, and work in any order):
 #
@@ -43,7 +44,8 @@
 #   --mode <fast|full>       fast strips CLI boilerplate; full keeps tools
 #   --answers <default|concise>
 #   --thinking <level>
-#   --ram <1|2|4|8|16|32>   expert-cache budget in GB (GPU models only)
+#   --ram <1|2|4|8|16|32>   expert-cache budget in GB (GPU models only), capped
+#              at half of this Mac's physical memory
 #   --context <n|native|max> native 262144, or 524288/1048576 with --yarn
 #   --kv <4|8|16>   KV-cache precision (default 8)
 #   --yarn          enable YaRN context scaling
@@ -64,13 +66,17 @@
 # native 262,144-token context, a 256 MiB multi-prefix prompt cache, 8-bit KV
 # and MTP off. Everything tuned per model and quantization -- the expert-cache
 # budget, prefetch and its I/O tier, the prefill chunk, sampling -- comes from
-# the install's own ModelProfile row, clamped to this machine's RAM, so the
-# launcher never overrides a measured optimum unless you pass --ram. CPU
-# models take none of the pinned flags: that backend has no prompt cache, no
+# the install's own ModelProfile row, so the launcher never overrides a measured
+# optimum. The expert-cache budget is additionally capped at half of this Mac's
+# physical memory, on the default path and on --ram alike: the slot cache is
+# wired and cannot be paged out, so the dense weights, the KV cache, the prompt
+# cache and everything else the person is running have to fit beside it.
+# CPU models take none of the pinned flags: that backend has no prompt cache, no
 # quantized KV and no expert cache, so --kv, --context, --yarn and --ram are
 # reported as not applying rather than passed or dropped in silence.
 #
 # Overrides: NVMAI_PORT, NVMAI_THINKING_MODE, NVMAI_CATALOG_JSON,
+# NVMAI_PHYSICAL_RAM_BYTES (the RAM-ceiling test seam),
 # NVMAI_LAUNCHER_DRY_RUN=1, and the per-client ones below.
 # NVMAI_LAUNCHER_ASSUME_TTY=1 answers the interactive questions from a pipe
 # while still starting nothing (it is the test seam for this script's
@@ -632,26 +638,76 @@ ram_tier() {
   echo "$(( 10#$value ))"
 }
 
+# Half of physical memory, the ceiling for the expert cache on every path.
+#
+# The slot cache is wired and cannot be paged out, so it is not the only
+# resident claim: the dense weights, the KV cache, the prompt cache, macOS and
+# whatever else the person is running all have to fit in what is left. Half of
+# physical memory is the same ceiling `RuntimeConfiguration
+# .affordableExpertCacheBudget` applies to the install's own profile, and this
+# script has to apply it too because an explicit budget is passed straight
+# through as `--ram-budget`, which the runtime takes verbatim.
+#
+# `NVMAI_PHYSICAL_RAM_BYTES` is the test seam: this mapping has to be checkable
+# on a machine of any size.
+physical_ram_bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"
+if [[ -n "${NVMAI_PHYSICAL_RAM_BYTES:-}" ]]; then
+  physical_ram_bytes="$NVMAI_PHYSICAL_RAM_BYTES"
+fi
+case "$physical_ram_bytes" in
+  *[!0-9]*|"") physical_ram_bytes=0 ;;
+esac
+physical_ram_gb=$(( (physical_ram_bytes + 1073741823) / 1073741824 ))
+ram_ceiling_gb=$(( physical_ram_bytes / 2 / 1073741824 ))
+# An unreadable size means no ceiling rather than a ceiling of 1 GB: the same
+# thing the runtime's own guard does, and the launcher must not invent a limit
+# it cannot justify.
+(( physical_ram_bytes > 0 )) || ram_ceiling_gb=0
+
+ram_capped_from=""
+cap_ram_to_ceiling() {
+  # Report rather than refuse: the runtime clamps its own default the same way,
+  # and a benchmark that asked for a size this Mac cannot hold has to keep
+  # running on the size the default path would have chosen anyway.
+  (( ram_ceiling_gb > 0 )) || return 0
+  (( ram_gb > ram_ceiling_gb )) || return 0
+  ram_capped_from="$ram_gb"
+  echo "NOTE: ${ram_gb} GB is more than half of this Mac's ${physical_ram_gb} GB of" >&2
+  echo "      memory. The expert cache is wired and cannot be paged out, so the" >&2
+  echo "      rest of the system has to fit beside it; using ${ram_ceiling_gb} GB." >&2
+  ram_gb="$ram_ceiling_gb"
+}
+
 if [[ -n "$RAM_ARG" ]]; then
   if ! ram_gb="$(ram_tier "$RAM_ARG")"; then
     echo "unknown RAM limit: $RAM_ARG (1, 2, 4, 8, 16 or 32 GB)" >&2
     exit 2
   fi
+  if [[ "$ENGINE" != "cpu" ]]; then cap_ram_to_ceiling; fi
 elif [[ "$ENGINE" == "cpu" ]]; then
   # Nothing to ask: the CPU engine holds the whole model resident and has no
   # routed-expert cache, so a budget would be a number that changes nothing.
   ram_gb=""
 elif (( ! INTERACTIVE )); then
-  # Unattended or dry run: keep the install's own measured profile.
+  # Unattended or dry run: keep the install's own measured profile. The runtime
+  # holds it to half of physical memory, the same ceiling this script applies to
+  # an explicit --ram.
   ram_gb=""
 else
   echo ""
   echo "RAM limit for the expert cache?"
   echo "  More memory means fewer SSD reads and faster answers, and less"
   echo "  left for everything else on the Mac."
+  if (( ram_ceiling_gb > 0 )); then
+    echo "  It is wired, so it cannot be paged out; only half of this Mac's"
+    echo "  ${physical_ram_gb} GB is offered."
+    ceiling_hint="at most ${ram_ceiling_gb} GB here"
+  else
+    ceiling_hint="recommended"
+  fi
   echo "  1) 1 GB    2) 2 GB    3) 4 GB"
   echo "  4) 8 GB    5) 16 GB   6) 32 GB"
-  echo "  7) Model default (measured per install; recommended)"
+  echo "  7) Model default (measured per install; ${ceiling_hint})"
   printf "Choice [1-7] (default 7): "
   read -r ram_choice || exit 1
   case "${ram_choice:-7}" in
@@ -660,9 +716,18 @@ else
     7) ram_gb="" ;;
     *) echo "invalid choice: $ram_choice" >&2; exit 2 ;;
   esac
+  if [[ -n "$ram_gb" ]]; then cap_ram_to_ceiling; fi
 fi
-ram_note="model default (measured)"
-if [[ -n "$ram_gb" ]]; then ram_note="${ram_gb} GB (your choice)"; fi
+if (( ram_ceiling_gb > 0 )); then
+  ram_note="model default (measured; at most ${ram_ceiling_gb} GB on this Mac)"
+else
+  ram_note="model default (measured)"
+fi
+if [[ -n "$ram_capped_from" ]]; then
+  ram_note="${ram_gb} GB (capped from ${ram_capped_from} GB: half of this Mac's RAM)"
+elif [[ -n "$ram_gb" ]]; then
+  ram_note="${ram_gb} GB (your choice)"
+fi
 
 # A CPU model ignores the routed-expert cache entirely, so say what the number
 # does rather than leaving a budget that never takes effect.

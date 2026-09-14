@@ -77,7 +77,8 @@ Every model installs at **4-bit and 8-bit**:
   provider config to the model the server advertises. It asks what to launch
   from one list of every installed model and quantization (GPU and CPU), the
   thinking level that model supports, and an optional RAM limit for the expert
-  cache (1/2/4/8/16/32 GB; the default is the install's own measured profile).
+  cache (1/2/4/8/16/32 GB, capped at half of the Mac's physical memory; the
+  default is the install's own measured profile).
   It serves on `127.0.0.1:8080` (`NVMAI_PORT` overrides it), and every other
   installed model stays available by name through the API; the server switches
   on demand, keeping one model resident at a time.
@@ -85,7 +86,7 @@ Every model installs at **4-bit and 8-bit**:
 ```bash
 tools/server_launcher.sh                                    # interactive
 tools/server_launcher.sh --client codex --model ornith 4     # server + Codex
-tools/server_launcher.sh --client zed --model qwen38 4 --ram 16
+tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
 ```
 
 - **Persistent agent memory (optional):** With `NVMAI_MEMORY=1` the model gets
@@ -122,9 +123,11 @@ tools/server_launcher.sh --client zed --model qwen38 4 --ram 16
 
 - **Bounded expert RAM:** The resident expert cache is sized per family from
   the model's own expert stride and clamped to half of physical memory, so a
-  smaller Mac is not handed a budget tuned on a larger one. `--ram-budget`
-  overrides it with any size. Model state, KV cache, and runtime scratch use
-  additional memory.
+  smaller Mac is not handed a budget tuned on a larger one. It is wired, so it
+  cannot be paged out and everything else the Mac is running has to fit beside
+  it: the launcher holds `--ram` to that same half, and reports when it caps a
+  larger request, while the server's own `--ram-budget` takes exactly what it
+  is given. Model state, KV cache, and runtime scratch use additional memory.
 - **Long context:** Native RoPE supports up to 262K tokens, while optional YaRN
   extends the context to 512K or 1M tokens.
 - **Compressed KV cache:** Live attention state can use 16-bit, 8-bit, or 4-bit
