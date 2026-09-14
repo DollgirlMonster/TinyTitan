@@ -1,199 +1,148 @@
-# Handover: after the rename, structured output and the thinking fix
+# Handover: after release 5.5, the first release under the TinyTitan name
 
 **Paste this into the next session:**
 
 > Continue the TinyTitan work in this checkout. Read `AGENTS.md`, then
-> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. The project is
-> now called TinyTitan everywhere — package, targets, binaries, environment
-> variables and the GitHub repository — and structured output is enforced by a
-> grammar rather than refused; `main` is well past the published `v5.4`.
-> **If the checkout folder has been renamed from `~/Downloads/NVMAI`, every one of
-> the 11 install receipts is invalid**: re-issue them before any model run (the
-> command is below). **Verification uses only the installs already under
-> `models/`** — never download, convert, repack or re-install a model to make a
-> gate pass, and never fetch one of the installs the operator deleted. Report
-> measurements, not assurances.
+> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.5 is cut and
+> published** (`v5.5` → `a1ad1be`); the project is TinyTitan everywhere, and the
+> two features it ships — JSON enforced by a grammar and a per-request thinking
+> switch — are described in `docs/release-notes-v5.5.md`. The eleven installs
+> under `models/` have receipts **valid for this folder**, because a rename
+> invalidates them; re-issue with `--verify-install` if the folder moves again.
+> **Verification uses only the installs already under `models/`** — never
+> download, convert, repack or re-install a model to make a gate pass, and never
+> fetch one of the installs the operator deleted. Report measurements, not
+> assurances.
 
-This is the only current brief: the three earlier handovers
-(`handover-post-5.4.md`, `handover-kat-coder.md`, `handover-dropbox-exit.md`)
-were deleted on 2026-09-14 so nothing competes with it, and the traps from them
-that still bite are folded in below.
+This is the only current brief. It supersedes the handover that preceded it,
+whose traps still bite and are folded in below.
 
 ## Where the work stands
 
 | Piece | State |
 | --- | --- |
-| Repository | `Pummelchen/TinyTitan`, renamed 2026-09-14; the old URL redirects |
-| Checkout folder | **still `~/Downloads/NVMAI`** until the operator renames it; `.git` is clean and level with `origin/main` |
-| `main` | `549079a`; the last release is `v5.4` → `41efbc5`, so everything since is **unreleased** |
-| Models | **11 installs, 461 GB.** 10 of the gate's 16 golden targets have an install; the six absent are the pruned MoE families |
-| Goldens stored | 16 (ten MoE + six dense `qwen3.5-*`) |
-| Receipts | path-bound to each `models/<dir>`; **a folder rename invalidates all 11** — none load until they are re-issued |
-| `.build` | fresh release build, but it now produces **new binary names** (`TinyTitanServer`, `TinyTitanMac`, `TinyTitanCLI`, `TinyTitanRepack`, `TinyTitanDecodeService`, `TinyTitanBench`); stale `NVMAI*` binaries may still sit beside them |
-| Wiki | renamed and pushed (`8fc5bd4`); its clone at `.qwen/wiki` is clean but **stale at `077137d`** — pull before editing |
-| CodeQL | **clean.** The analysis on `a1b9e34` reports 0 results (`8a1def0`, before the scratch-path fix, reported 11); alerts open 0, fixed 11 |
-| CI | on `549079a` (the rename) the **`test` job passed**; the `thread-sanitizer` job was cancelled by the push after it, and the run on this document was still going when it was written — `gh run list --branch main` |
-
-**The pruned installs stay pruned.** Ornith 1.5, Qwen 3.6 and Qwen-AgentWorld 35B
-(6 targets plus sidecars) were deleted for disk, and `release.sh` names every
-target it could not check rather than hiding it.
+| Repository | `Pummelchen/TinyTitan` (renamed 2026-09-14; the old URL redirects) |
+| Checkout folder | `~/Downloads/TinyTitan` — **renamed from `~/Downloads/NVMAI`**, which invalidated every receipt and `.build`'s debug half |
+| `main` | `a1ad1be`, level with `origin/main`, and `v5.5` is that commit |
+| Release | **5.5 published** — `tinytitan-5.5-macos-arm64.tar.gz`, 26,094,346 bytes, sha256 `1e6f10bb…`; notes' digest matches the uploaded `.sha256` |
+| Models | **11 installs, 461 GB**; receipts re-issued 2026-09-14, so all load again |
+| Goldens stored | 16 (ten MoE + six dense); **10 checked here** (katcoder-4/8, qwen38-4/8, qwen35-{2b,4b,9b}-{4,8}); the six pruned MoE targets are reported not checked |
+| `.build` | release rebuilt after the rename; the stale **debug** tree was removed and rebuilt during the 5.5 dry run |
+| Wiki | `.qwen/wiki`, remote renamed to `TinyTitan.wiki.git`, level with `origin/master` at the 5.5 Changelog and tracker commits |
+| DeepSeek Harness | `web` profile runs `dsh-tinytitan` from this checkout; route provider `tinytitan` (10 models); `qwen38` preset's compaction row points at `dsh-tinytitan/backend` |
+| CI | the `test` job is green on the release commits; **the `thread-sanitizer` job fails on a data race it reports at `HTTPServerSupport.swift:106`** — see below |
 
 ## What this session landed
 
-1. **Thinking on the Messages API is the request's own** (`a8e7e65`).
-   `requestedThinking` replaced the load-time `validateThinking`: `disabled` is a
-   real off, `enabled` maps Anthropic's `budget_tokens` onto the OpenAI ladder
-   (<4k low, <16k medium, else xhigh), `adaptive` still means "you decide". The
-   dead `profile` parameter came off `chatRequest`/`chatRequest(counting:)`.
-2. **Structured output is enforced, not refused** (`6b33000`; message fix
-   `33c7ecb`). `response_format`, the Responses `text.format` and the Messages
-   `output_config.format` compile into a byte-level JSON grammar that masks the
-   sampler on both engines. Runtime pieces: `LogitMask`, `JSONGrammar`,
-   `JSONSchemaNode`, `JSONTokenTable`, `JSONConstraint` under
-   `sources/TinyTitan/Runtime/Generation/`. The schema subset is
-   `type`/`properties`/`required`/`additionalProperties`/`items`/`enum`/`const`;
-   everything else is refused by name at request time. Thinking is off for a
-   constrained request, because the grammar constrains every token. Read
-   `docs/structured-output.md` — including what it does **not** claim (a response
-   truncated by `max_tokens` is a truncated document). Verified on the real
-   install as well: `{"type":"boolean"}` → `false`, `{"enum":["HELLO"]}` →
-   `"HELLO"`, `{"type":"json_object"}` → `{"name": "red", "hex": "#FF0000"}`,
-   on the GPU engine and `--cpu`, and through `/v1/messages` and `/v1/responses`.
-3. **The project is TinyTitan** (`d9313b9`, plus `549079a` for the one defect the
-   mechanical pass introduced). 513 tracked files and 581 paths, by one rule
-   (`NVMAI_` → `TINYTITAN_`, `NVMAI` → `TinyTitan`, `nvmai` → `tinytitan`). The
-   published release notes (`docs/release-notes-v5.0` … `v5.4`) and the wiki
-   `Changelog` entries keep the name they shipped under, on purpose. Brand
-   assets: `assets/tinytitan-hero.png` (the README and the wiki Home lead with
-   it) and `tinytitan-app-icon.png`, regenerated from it by
-   `tools/make_app_icon.py`.
-
-## Do this first if the folder was renamed
-
-```bash
-for d in models/*/; do
-  swift run -c release TinyTitanRepack --verify-install --input-gturbo "$d"
-done
-```
-
-Each receipt is bound to the absolute path it was installed to, so a renamed
-checkout makes every install fail with `trusted receipt invalid: model directory
-mismatch`. That is not corruption and needs no re-download; the command above
-re-hashes the payload against the manifest and rebinds the receipt in place.
-Never hand-edit a receipt — the path binding is what detects a moved or swapped
-directory. All 11 re-issue cleanly (the MTP sidecar carries a receipt too).
-
-## How verification works here
-
-`models/` is deliberately smaller than the supported set, so a gate verifies
-**only what is installed there** and says what it could not check.
-`tools/release.sh` implements that: absence is reported and collected,
-`--publish` requires the notes to name every unchecked target, an installed model
-that no `check_golden` line covers is a hard error unless declared in
-`NON_GOLDEN_INSTALLS` (only the MTP sidecar today), and the install set under
-`models/` is fingerprinted before and after so a gate cannot install or rewrite a
-model to pass. `docs/release-process.md` is the prose.
-
-- `tools/golden-baseline.sh --check <target>` is the only check that exercises
-  real inference. It counts as a model run: macOS 26+, no other model process,
-  acceptable `memory_pressure -Q`, a completed `.gturbo` install. Run one
-  model-using test at a time, and `swift test --no-parallel` for the suite.
-- A baseline can only be **captured while its model is installed**, and the
-  checked set moves with whatever is on the machine. Never delete a stored
-  baseline because its model is currently absent, and never re-capture one to
-  make a mismatch go away.
-- The golden gate drives `.build/release/TinyTitanCLI`, so a release needs a
-  normal `swift build -c release` **first** — `release.sh` says so explicitly
-  rather than reporting it as a per-target "mismatch". `--publish` re-runs every
-  gate from scratch, so budget two full passes.
-- Every benchmark and test script starts its server through
-  `tools/server_launcher.sh` (`benchmark/tinytitan_profile.py:server_command()`
-  builds that invocation). The launcher's pins are the server's own defaults,
-  which is the only reason the stored baselines survive the indirection.
-- A release announcement lives in the wiki `Changelog.md`, **not** the README:
-  there is no `## New in X.Y` callout in the README and one should not come back.
+1. **5.5 is published** (`6f469e1` prep, `a1ad1be` notes). Gates on the tagged
+   commit: four lint gates clean (2059 scanned), **1523 tests in 234 suites**,
+   a warning-free clean scratch build, and **all ten installed golden baselines
+   byte-identical**. The six absent baselines are named in the notes, and
+   `models/` was fingerprinted before and after the golden phase.
+2. **The rename's receipts are re-issued.** All eleven bound
+   `/Users/andreborchert/Downloads/NVMAI/models/…`, so every install would have
+   failed with `trusted receipt invalid: model directory mismatch`. Re-issued in
+   place (461 GB re-hashed, no re-download), then proved by a real generation on
+   `qwen3.5_2B_4Bit`.
+3. **The DeepSeek Harness bundle is back, under the new name.** The `web`
+   profile depended on the deleted
+   `file:/Users/andreborchert/Downloads/NVMAI/plugins/dsh-nvmai`; it now runs
+   `dsh-tinytitan` from this checkout, which refreshed the route to provider
+   `tinytitan`, generated the `tinytitan` preset, re-pointed the `qwen38` preset's
+   compaction row, and left no `NVMAI` reference in `~/.dsh/settings.yaml`.
+4. **A route-writer defect found and fixed.** `tools/dsh_route.sh --write` left
+   its own three-line generated header above the section it replaced, so a
+   refresh — which the bundle does at **every harness boot** — added three stale
+   comment lines each time. A rewrite is now byte-identical and
+   `benchmark/test_dsh_route.py` pins it (11 tests).
+5. **The route no longer needs a checkout.** `plugins/dsh-tinytitan/src/generate.js`
+   discovers a `TinyTitanServer` binary and a `models/` directory, runs
+   `--catalog`, and writes the same block and the same settings surgery as the
+   shell tool — pinned byte-for-byte to `tools/dsh_route.sh --print` by its own
+   tests. The shell tool still wins wherever it exists, so a checkout user has
+   one source of truth; the generator is the catalogue case. `node --test` is 34
+   tests, all passing, none skipped.
 
 ## What is open
 
-1. **The DeepSeek Harness bundle — held, and now doubly stale.** The copy
-   installed under `~/.dsh` is still the `dsh-nvmai` bundle, and its `file:`
-   dependency points at the pre-rename folder. Re-install
-   `plugins/dsh-tinytitan/` and regenerate the route
-   (`tools/dsh_route.sh --write`, whose provider id is now `tinytitan`), then
-   check that the `qwen38` preset's compaction row still names the bundle's
-   backend. The plugin was deliberately not re-installed this session.
-2. **Publishing the plugin to the DeepSeek Harness catalogue** (held): a
-   self-contained route discovery so no checkout is needed, the peer range
-   widened to `^0.1.5-rc.2 || ^0.1.6-rc.1`, a `repository` field, the licence
-   settled (the repo is Apache-2.0, the plugin says MIT), `screenshots.json`,
-   then the one-file catalogue PR.
-3. **No release has been cut for any of this.** `main` carries two features and a
-   rename past `v5.4`. A release means a version bump, notes, a golden gate over
-   the ten installed targets, and the runbook in `docs/release-process.md`; the
-   rename also changes the archive's own contents (binary names), which the notes
-   must say.
-4. Carried forward unchanged: the CPU side-engine as memory's resident helper
-   (store and guard ship, the scheduler is designed but unmeasured); the Qwen 3.8
-   port items (QSA indexer selections to the GPU, a higher expert slot budget,
-   the n-gram gather a token ahead); the app features from issue #5 (image
-   upload — every supported model is text-only, conversation history, LaTeX);
-   and the hardware blockers in tracker section 3 (validation on M1/M2/M4/M5/M6,
-   ANE across generations, long-context parity past the exactness window).
+1. **The `thread-sanitizer` CI job is red — a data race it reports in
+   `SSEOutbox.next()`.** The job's tests *pass* (`1523 tests in 234 suites`) and
+   the job fails on `ThreadSanitizer: reported 1 warnings`:
+   `SUMMARY: ThreadSanitizer: data race HTTPServerSupport.swift:106 in closure #1
+   in SSEOutbox.next()`, a write by a GCD worker racing a read by
+   `UnsafeContinuation.resume` on the NIO event loop, inside the `SSEOutbox`
+   allocated at `HTTPServerHandler+Responses.swift:107`. Three things are known:
+   the class's own state is **fully lock-guarded** (`frames`, `pendingDrain`,
+   `closed`, `overflowed`, `abandoned`, `closeAfterDrain`, `drainCancelled` are
+   only touched under `NSLock`); the read frame is compiler-generated/NIO, not
+   this project's code; and it **does not reproduce locally** — a targeted
+   `swift test --no-parallel --sanitize=thread --filter ResponsesAPIHTTPTests`
+   (9 tests) and the **full** instrumented suite (`1523 tests in 234 suites`,
+   392 s, exit 0) both come back clean on this M3. So it is either a
+   scheduler-sensitive interleaving on the CI runner or a Swift-concurrency
+   continuation false positive — not yet triaged. Nothing in 5.5 touched Swift,
+   and this job had never run to completion before (each earlier run was
+   cancelled by a later push). Decide between a real race, a documented
+   suppression, and a narrowed TSan scope; do not make CI green by deleting the
+   job.
+2. **Publishing `plugins/dsh-tinytitan` to the harness catalogue** (still held,
+   but the code half is now done). The route refresh **no longer needs a
+   checkout**: `plugins/dsh-tinytitan/src/generate.js` builds the same block
+   in-process by running the discovered `TinyTitanServer --catalog`, and its
+   output is pinned **byte-for-byte** to `tools/dsh_route.sh --print` by
+   `test/generate.test.js` against the real catalog (and a synthetic one). The
+   shell tool stays authoritative wherever a checkout exists; the generator is
+   used only when it is absent or `selfContained: true`. What remains is
+   operator-facing: **the catalogue file could not be located** in
+   `deepseek-ai/deepseek-harness` (a tree search found no catalogue, marketplace
+   or `screenshots.json`), **the licence is unsettled** (the package says MIT,
+   the repository Apache-2.0), and the two upstream asks in
+   `docs/dsh-upstream-asks.md` have not been posted.
+3. **The expert cache cannot be unwired on the models that wire it.**
+   `TINYTITAN_KEEP_WIRED` can only turn it *on*, and the Qwen3.8/35B profile rows
+   already set it, so on a 24 GB Mac the 12 GiB cache cannot be paged out
+   (measured: 14.72 GB RSS, 11% system memory free). A `TINYTITAN_KEEP_WIRED=0`
+   path trades the TTFT win for a pageable cache.
+4. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
+   the GPU, a higher expert slot budget, the n-gram gather a token ahead); the
+   app features from issue #5 (image upload — every supported model is text-only,
+   conversation history, LaTeX); and the hardware blockers in tracker section 3
+   (validation on M1/M2/M4/M5/M6, ANE across generations, long-context parity
+   past the exactness window).
 
 ## Traps worth carrying forward
 
-- **A folder rename invalidates every install receipt.** The first thing the next
-  session will hit; see the loop above.
-- **The rename's one real defect was a SwiftPM bundle prefix.** Resource bundles
-  are named after the *package* plus the target, so they are
-  `TinyTitan_TinyTitanMac.bundle`; the blanket `NVMAI_` → `TINYTITAN_` rule had
-  turned the install script's glob into `TINYTITAN_*.bundle`, which matches
-  nothing and would have shipped an app without its resources. When a mechanical
-  rename meets a string that is both an acronym and a prefix, check it against
-  the artefact that produces it.
-- **The wordmarks were split across coloured spans**, so `NVMAI` never appeared as
-  one string and the mechanical pass left them reading `NVM` + `AI`. Anything a
-  grep says is renamed should be looked at, not trusted.
-- **CI cancels the previous run when a new commit is pushed.** A big push (the
-  rename) therefore erased the CI evidence for the commit before it.
-- **Untracked leftovers still carry the old name**: `.pytest_cache/`,
-  `benchmark/.pytest_cache/`, `benchmark/mock/` (regenerated by tests),
-  `benchmark/benchmark-results/capital-of-paris-20260911T1935/README.md` (a local
-  measurement record) and `.build/releases/nvmai-release-5.4/`. None are tracked
-  and none need fixing, but a grep over the working tree will show them.
-- **The checkout's `.qwen/wiki` is another session's clone and is stale.** The
-  wiki was renamed and pushed from a separate clone; pull `.qwen/wiki` before
-  editing it or the edits will collide with the rename.
-- **`main` is pushed to concurrently, and `release.sh` needs `HEAD` to *be* the
-  tag.** `git fetch` before tagging, and expect to force-move an unpublished tag.
-  Do not assume `models/` or `.github/` is yours alone: during 5.4 another session
-  landed three upstream commits mid-release and owns the repository's CodeQL.
-- **A release-note value known only at publish time must be a placeholder**
-  (`SHA256_PENDING`, `ARCHIVE_BYTES_PENDING`); `--publish` rebuilds from scratch
-  and refuses to publish unless the notes carry the placeholder or the real value.
-- **Say what a guard actually reads, not what it intends.** The immutability
-  guard was described as catching any change to `models/` while it only hashed
-  receipts — a stray `*.install.lock` from an aborted install sat inside that
-  blind spot. It fingerprints the top-level entries too now.
-- **A wrapped shell list is not a space-delimited list.** `NON_GOLDEN_INSTALLS`
-  spans several lines; a guard matching `*" $name "*` misses a name that ends a
-  line. That cost a full dry run before the check folded the whitespace.
-- **A launcher a harness starts must own its server.** On the `--client server`
-  path the launcher once waited and exited *before* installing its cleanup trap,
-  so a signalled harness orphaned the model process — and this project's own
-  guard then refuses to run beside one.
-- **The coder harness's clients pay a multi-minute cold prefill.** Codex abandons
-  a stream that has produced nothing for five minutes and retries, and a retry is
-  another cold prefill, so the round could never finish. The harness sets
-  `stream_idle_timeout_ms` and disables retries for codex. Expect the coder round
-  to take hours, not minutes. Related: a key read from a TOML file must sit
-  *before* the table header, or it is silently scoped to that table.
-- **Two workflows analysing the same language upload the same SARIF category.**
-  The repository has one `codeql.yml`, pinned to `--arch arm64` because these
-  sources use `Float16`, which x86_64 refuses. Check before adding another.
-- **A `paths-ignore` does not filter a compiled language**; the fix for the
-  eleven `swift-huggingface` alerts was building outside the checkout
-  (`--scratch-path`), not the config file.
-- Report measurements, not assurances: commit, hardware and RAM, macOS, Swift
-  version, the exact command, the exit code, the timing footer, and every
-  protocol deviation.
+- **Renaming the checkout invalidates every install receipt and `.build`'s debug
+  half.** Receipts bind absolute paths; re-issue with
+  `swift run -c release TinyTitanRepack --verify-install --input-gturbo <dir>`
+  and never hand-edit one. The debug tree is compiled against absolute paths too
+  — after the rename, 7,312 files named the old path and `swift test` died with
+  `precompiled file …_Builtin_stdbool….pcm was compiled with module cache path
+  '/Users/andreborchert/Downloads/NVMAI/…'` **before a single test ran**;
+  `release.sh` reports that as `swift test did not report a passing run`, which
+  reads like a failing test. Remove `.build/arm64-apple-macosx/debug` and let it
+  rebuild.
+- **A release tag that is not yet published may be force-moved.** The dry run's
+  numbers must be in the notes, so the sequence is: commit prep → tag → dry run →
+  fill in `### Verification` → commit → `git tag -f` → `git push --force origin
+  vX.Y` → `--publish`. `--publish` re-runs every gate and rebuilds the archive,
+  so **the published digest and size are never the dry run's** (5.5: 26,093,424
+  bytes dry, 26,094,346 published) — that is what the placeholders are for.
+- **A `file:` plugin install is a copy.** After editing
+  `plugins/dsh-tinytitan/`, re-install it
+  (`dsh plugin --profile web remove dsh-tinytitan`, then `add
+  file:<checkout>/plugins/dsh-tinytitan`) or the harness keeps running the copy.
+- **The wiki is a second repository with its own history.** Pull `.qwen/wiki`
+  before editing it; the tracker and the Changelog are separate commits; the
+  fine-grained PAT can read it but was rejected for push, so use the `gh`
+  credential helper (`gh auth setup-git`).
+- **Verification is what is installed.** `models/` is pruned for disk on purpose;
+  a target with no install is reported *not checked* and named in the notes, and
+  nothing is fetched to change that. A stored baseline is never deleted because
+  its model is currently absent.
+- **`release.sh` needs `HEAD` to *be* the tag** and a release build at
+  `.build/arm64-apple-macosx/release/TinyTitanCLI` to exist **before** it starts.
+  The golden phase refuses to run beside any model process.
+- **Say what a guard actually reads, not what it intends**, and **test a claim
+  rather than trusting it** — both defects that reached a release in this project
+  were claims broader or more specific than the code.

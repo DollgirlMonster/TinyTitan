@@ -1,10 +1,13 @@
 # Bundle patch: mounts this plugin's own row at the profile root, which is what
 # runs its apply() — the llm-pi-ai route is refreshed from the checkout's
-# tools/dsh_route.sh, and the compaction preset is generated. No adapter is
-# registered: the harness's own llm-pi-ai adapter serves the models, so this row
-# adds configuration, not a protocol implementation.
+# tools/dsh_route.sh (or, with no checkout, from the built-in generator), and the
+# compaction preset is generated. No adapter is registered: the harness's own
+# llm-pi-ai adapter serves the models, so this row adds configuration, not a
+# protocol implementation.
 #
-# Every field is optional; these are the defaults written out.
+# Every field is optional; these are the defaults written out. `serverBinary`
+# and `modelsDir` are deliberately absent: they default to discovery plus
+# TINYTITAN_SERVER / TINYTITAN_MODELS_DIR.
 - insert:
     - id: dsh-tinytitan
       name: dsh-tinytitan
@@ -12,6 +15,7 @@
         port: 8080
         provider: tinytitan
         registerRoute: true
+        selfContained: false
         writeCompactionPreset: true
         adoptDefaultPreset: true
         setDefaultWhenUnset: true

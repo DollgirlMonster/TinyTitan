@@ -113,6 +113,11 @@ export function resolveConfig(config = {}) {
   const presetId = String(config.presetId ?? DEFAULT_PRESET_ID).trim();
   if (presetId.length === 0) throw new Error("dsh-tinytitan: presetId must not be empty");
   const repoRoot = findRepoRoot({ explicit: config.repoRoot, env: process.env });
+  // The self-contained generator's discovery order starts at explicit config and
+  // then the environment; resolving both here keeps route.js free of the
+  // fallback rules. Empty strings mean "not set", as with every other field.
+  const serverBinary = config.serverBinary || process.env.TINYTITAN_SERVER || null;
+  const modelsDir = config.modelsDir || process.env.TINYTITAN_MODELS_DIR || null;
   return {
     port,
     provider,
@@ -120,6 +125,11 @@ export function resolveConfig(config = {}) {
     repoRoot: repoRoot.root,
     repoFound: repoRoot.found,
     dshHome: String(config.dshHome ?? defaultDshHome()),
+    serverBinary: serverBinary === null ? null : String(serverBinary),
+    modelsDir: modelsDir === null ? null : String(modelsDir),
+    // Force the built-in generator even where tools/dsh_route.sh exists. The
+    // checkout tool stays the default source of truth, so this is opt-in.
+    selfContained: config.selfContained === true,
     // Three switches, so an operator can take one job at a time:
     registerRoute: config.registerRoute !== false,
     writeCompactionPreset: config.writeCompactionPreset !== false,

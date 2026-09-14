@@ -13,6 +13,11 @@ Two jobs, both at boot, both idempotent:
    get wrong by hand (`thinkingFormat: chat-template`, the keyless-route auth
    header, the long stream idle timeout). The plugin runs it, so the harness's
    model picker follows `models/` instead of a copy someone typed once.
+   A plugin installed from a catalogue is a plain package beside no checkout, so
+   there is no script to run: only then the same block is generated in-process
+   from the server's own catalog (`generate.js`), and the log says so. Wherever
+   `tools/dsh_route.sh` exists it stays the source of truth, so a checkout user
+   has one implementation, not two.
 2. **Mounts a compaction backend that does not think.** Compaction and session
    titles are marked `purpose: "compaction"` / `"session-title"` and name no
    reasoning level, so the harness fills in the route's default. On a local
@@ -49,7 +54,8 @@ running the copy it made.
 ## Configure
 
 Every field is optional; these are the defaults the `cordis.patch.yml` row writes
-out, and `TINYTITAN_PORT` / `TINYTITAN_REPO` / `DSH_HOME` are the environment fallbacks.
+out, and `TINYTITAN_PORT` / `TINYTITAN_REPO` / `TINYTITAN_SERVER` /
+`TINYTITAN_MODELS_DIR` / `DSH_HOME` are the environment fallbacks.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -57,11 +63,21 @@ out, and `TINYTITAN_PORT` / `TINYTITAN_REPO` / `DSH_HOME` are the environment fa
 | `provider` | `tinytitan` | the `llm-pi-ai` provider route name |
 | `presetId` | `tinytitan` | the agent preset this plugin generates |
 | `registerRoute` | `true` | refresh the route block from `tools/dsh_route.sh` |
+| `selfContained` | `false` | use the built-in generator even where `tools/dsh_route.sh` exists |
+| `serverBinary` | discovered | the `TinyTitanServer` the built-in generator runs (`$TINYTITAN_SERVER`) |
+| `modelsDir` | `<repoRoot>/models` | the installs it describes (`$TINYTITAN_MODELS_DIR`) |
 | `writeCompactionPreset` | `true` | generate the preset / adopt the default's row |
 | `adoptDefaultPreset` | `true` | re-point the current default preset's stock row |
 | `setDefaultWhenUnset` | `true` | set `agent-presets.default` only when absent |
 | `repoRoot` | this checkout | where `tools/dsh_route.sh` lives |
 | `dshHome` | `$DSH_HOME` or `~/.dsh` | settings and presets |
+
+The built-in generator looks for the server at `serverBinary`, then
+`TINYTITAN_SERVER`, then `TinyTitanServer` on `PATH`, then
+`~/Applications/TinyTitan.app/Contents/MacOS/TinyTitanServer`, then the checkout's
+release build; it looks for models at `modelsDir`, then `TINYTITAN_MODELS_DIR`,
+then `<repoRoot>/models`. It refuses to write when the settings file does not
+exist, and it makes no backup when the refresh would not change a byte.
 
 ## What it does not do
 
@@ -94,7 +110,12 @@ Then re-point the preset you keep at `@deepseek-ai/dsh-compaction-basic` (a
 cd plugins/dsh-tinytitan && node --test test/
 ```
 
-Twenty tests, no harness packages required: the compaction seam is exercised
+Thirty-four tests, no harness packages required: the compaction seam is exercised
 against a stub base, the preset and settings surgery against temporary homes, and
-the route call against a stubbed runner. The `dsh-tinytitan/backend` import itself is
-resolved from the profile's own `node_modules` once installed.
+the route call against a stubbed runner. The built-in generator's block is
+compared byte-for-byte with `tools/dsh_route.sh --print` — on the real catalog
+when the checkout's server binary is built, and on a synthetic catalog (mixed
+backends, re-sorted thinking levels) whenever the shell tool is present; both
+comparisons skip with a clear message when the pieces are absent, so the suite
+stays runnable elsewhere. The `dsh-tinytitan/backend` import itself is resolved
+from the profile's own `node_modules` once installed.

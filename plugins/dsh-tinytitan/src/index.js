@@ -8,7 +8,9 @@
  *    these models — there is no adapter here — and this checkout's
  *    `tools/dsh_route.sh` is the one place that turns the installed models into
  *    that route's block. Running it means the model picker follows `models/`
- *    instead of a copy someone typed once.
+ *    instead of a copy someone typed once. A catalogue install has no checkout
+ *    to run, so `generate.js` produces the same block in-process from the
+ *    server's catalog; the shell tool stays authoritative wherever it exists.
  * 2. **Mounts a compaction backend that does not think.** Compaction and session
  *    titles name no reasoning level, so they inherit the route's default; on a
  *    local thinking model that spends a summariser's own output cap on thinking
@@ -37,6 +39,15 @@ export {
   resolveConfig,
 } from "./config.js";
 export { registerRoute, routeScript } from "./route.js";
+export {
+  applyRouteToSettings,
+  catalogRows,
+  findModelsDir,
+  findServerBinary,
+  generateBlock,
+  generateRoute,
+  writeRouteSettings,
+} from "./generate.js";
 export {
   COMPACTION_BACKEND,
   defaultPreset,
