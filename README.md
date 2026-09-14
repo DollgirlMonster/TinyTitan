@@ -1,3 +1,5 @@
+NVMAI is now TinyTitan ! 🚀
+
 <p align="center">
   <img width="480" alt="TinyTitan — the fastest SSD streamer for AI on Mac" src="assets/tinytitan-hero.png" />
 </p>
