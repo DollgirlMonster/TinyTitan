@@ -18,7 +18,7 @@ What is new in each release lives in the
 ## Benchmarks
 
 Peak decode on a base 8-core M3 MacBook Pro with 24 GB. `—` means the CPU engine
-does not serve that model: the MoE families stream their experts on the GPU path,
+does not serve that model: the MoE families stream their experts on the GPU + ANE path,
 and only the dense Qwen 3.5 models run on either engine.
 
 | Model | Quantization | GPU | CPU |
@@ -40,30 +40,11 @@ and only the dense Qwen 3.5 models run on either engine.
 | Qwen3.8-Flash-Next 125B-A6B | 4-bit | **5.46 tok/s** | — |
 | Qwen3.8-Flash-Next 125B-A6B | 8-bit | **2.10 tok/s** | — |
 
-How these were measured, and what they are not:
-
-- The 35B and 125B rows are 512-token greedy generations through
-  `benchmark/nvmai_maxthroughput.py`, taking the highest rate over its four
-  prompts. KAT is the most expert-locality-sensitive of the 35B family — its
-  8-bit build streams 36.9 GB of experts from SSD — and ranges 11.34–17.86 tok/s
-  at 4-bit and 1.00–6.91 at 8-bit depending on the prompt.
-- The dense Qwen 3.5 rows are **not** 512-token peaks: they are the
-  short-generation rates recorded by
-  [One Prompt, Every Model](https://github.com/Pummelchen/NVMAI/wiki/Capital-of-Paris-Smartness),
-  which ran each install on both engines. Read them against each other, not
-  against the rows above.
-- The CPU engine holds the model resident instead of streaming experts from SSD,
-  so the 9B is the one to watch: at 8.9 GB of weights it can exceed the RAM of
-  an 8 GB machine and spend its time paging. Prefer 4-bit there, and the GPU
-  wherever the model fits.
-- Everything here was measured on this project's base M3 with 24 GB, and these
-  are measurements of that machine and configuration rather than ceilings.
 
 
 ### Supported LLMs
 
-Sorted by size, largest first. Every model installs at **4-bit and 8-bit**
-(6-bit was withdrawn in 3.9).
+Every model installs at **4-bit and 8-bit**
 
 - **Qwen3.8-Flash-Next 125B-A6B**
 - **KAT-Coder-V2.5-Dev 35B-A3B**
@@ -74,11 +55,6 @@ Sorted by size, largest first. Every model installs at **4-bit and 8-bit**
 - **Qwen 3.5 4B**
 - **Qwen 3.5 2B**
 
-The dense Qwen 3.5 models run on either engine and the rest stream experts on
-the GPU path, and Ornith 1.5 8-bit is the default install. Install commands,
-per-model notes and the sampling each checkpoint asks for are in
-[Getting Started](https://github.com/Pummelchen/NVMAI/wiki/Getting-Started) and
-[Runtime Controls](https://github.com/Pummelchen/NVMAI/wiki/Runtime-Controls).
 
 
 ### Usage
