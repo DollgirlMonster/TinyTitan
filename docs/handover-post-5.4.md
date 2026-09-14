@@ -15,8 +15,11 @@
 5.4 is published (`v5.4` → `41efbc5`;
 [release](https://github.com/Pummelchen/NVMAI/releases/tag/v5.4), archive
 24,770,200 bytes, sha256 `def50d3e…`). It first shipped the 5.3 content to users,
-because 5.3 was tagged and never published. `main` is **15 commits past the tag**
-— tooling, a server change, a test fix — so the tag is not `main`.
+because 5.3 was tagged and never published. `main` is **well past the tag** —
+tooling, a server change, a test fix, and this handover — so the tag is not
+`main`; `git log --oneline v5.4..HEAD` is the delta. (Deliberately no count or
+HEAD hash here: this file's own commit changes both, which is how an earlier
+handover came to state a number its commit had already invalidated.)
 
 | Piece | State |
 | --- | --- |
@@ -25,7 +28,7 @@ because 5.3 was tagged and never published. `main` is **15 commits past the tag*
 | Goldens stored | **16** — the ten MoE files plus the six dense `qwen3.5-*` files captured 2026-09-14 |
 | Receipts | all 11 re-issued on 2026-09-14 — they had been bound to the dead Dropbox path, so **none loaded** before that |
 | `.build` | **stale.** The release binaries predate the server change, so run `swift build -c release` before any golden or release run |
-| Wiki | `.qwen/wiki` on `master`, in sync (`87e9050` at handover) |
+| Wiki | `.qwen/wiki` on `master`, clean and level with `origin/master` |
 | CI | green on `5032f23`: **1474 tests in 228 suites**, both the `test` and `thread-sanitizer` jobs |
 
 **The pruned installs are intentional and stay pruned.** Ornith 1.5, Qwen 3.6 and
