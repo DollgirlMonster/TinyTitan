@@ -92,6 +92,13 @@ Everything below is in the wiki tracker; this is the short list.
 3. **Requested app features from issue #5** — image upload (a runtime feature:
    every supported model is text-only today), conversation history, LaTeX
    rendering.
+4. **The Chat Completions surface 500s on the `developer` role** — the installed
+   Qwen templates define only `system`/`user`/`assistant`/`tool`, and the chat
+   surface hands the role to the template unchanged, so an OpenAI-style client
+   that sends `developer` for a reasoning model gets `internal_error`
+   (`Jinja.TemplateException`). The Responses path merges it into the leading
+   system message and is unaffected. Found 2026-09-14 by connecting DeepSeek
+   Harness natively; tracker §2 has the reproduction.
 
 Closed since the first draft of this handover: the six dense installs now have
 baselines (`a5b9ae2`), so the gate checks ten targets here instead of four.

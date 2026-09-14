@@ -100,7 +100,9 @@ tools/server_launcher.sh --client zed --model qwen38 4 --ram 16
   Anthropic SDKs all talk to the same model; see
   [docs/server-api.md](docs/server-api.md).
 - **Tested coding CLIs:** The launch workflow supports Codex, Qwen Code, and
-  OpenCode against the local server.
+  OpenCode against the local server, and DeepSeek Harness reaches it through its
+  own `llm-pi-ai` provider route, with no plugin — see
+  [Connect a client](https://github.com/Pummelchen/NVMAI/wiki/OpenAI-Compatible-Server#connect-a-client).
 - **Mac app and tools:** NVMAI also provides a native Mac app, direct CLI
   generation, streaming responses, and client-authorized function-tool calls.
 
