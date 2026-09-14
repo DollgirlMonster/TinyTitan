@@ -55,6 +55,12 @@ jobs:
         with:
           languages: swift
           build-mode: manual
+          # Excludes `.build/**` — the SwiftPM checkouts of this project's
+          # dependencies, and the build products — from the results. Every
+          # alert the scan produced before this was a path-injection in
+          # `swift-huggingface`'s own cache code; the config file records why
+          # that code is out of scope for this repository.
+          config-file: .github/codeql/codeql-config.yml
 
       # The build must really happen: this is what the extractor observes.
       # Each target is built explicitly so the scan stays bounded, and every

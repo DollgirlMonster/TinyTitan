@@ -1,0 +1,22 @@
+# CodeQL configuration for this repository.
+#
+# Every open alert the Swift scan produced was a `swift/path-injection` in
+# `.build/checkouts/swift-huggingface/...` — the SwiftPM checkout of the
+# `swift-huggingface` dependency, which is what the installer downloads models
+# through. `.build/` is a build directory (`.gitignore` line 2): it holds no
+# repository source, it is reproducible from `Package.resolved`, and this
+# project neither owns nor ships that code, so a finding there is not fixable
+# here — and eleven of them buried whatever the scan had to say about this
+# repository's own sources.
+#
+# The flagged functions are not obviously wrong either: the cache write path
+# validates its filename with `validateFilename(_:withinDirectory:)` before it
+# creates a directory or writes a file, which the query cannot see through. A
+# genuine fix for the rest belongs upstream, in
+# https://github.com/huggingface/swift-huggingface.
+#
+# `paths-ignore` filters results rather than the build: the extractor still
+# observes every compiled target, so the repository's own sources stay covered.
+name: NVMAI CodeQL configuration
+paths-ignore:
+  - .build/**
