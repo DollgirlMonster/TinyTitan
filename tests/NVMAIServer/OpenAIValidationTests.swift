@@ -250,6 +250,51 @@ struct OpenAIValidationTests {
         let validated = try OpenAIRequestValidator.validate(request, modelID: "m")
         #expect(validated.tools.count == 1)
     }
+
+    /// The Chat Completions spelling of the Responses API's `text.format`.
+    /// Silently answering prose to a JSON-mode request is a client-visible lie,
+    /// so a *named* format other than `text` is refused; the API's own default
+    /// and an unrecognized shape are not.
+    @Test func refusesStructuredOutputFormats() throws {
+        for format in [#"{"type":"json_object"}"#,
+                       #"{"type":"json_schema","json_schema":{"name":"x","schema":{}}}"#] {
+            let data = Data(#"""
+            {"model":"m","messages":[{"role":"user","content":"hi"}],"response_format":\#(format)}
+            """#.utf8)
+            let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
+            #expect(throws: ServerRequestError.self) {
+                try OpenAIRequestValidator.validate(request, modelID: "m")
+            }
+        }
+    }
+
+    @Test func acceptsPlainTextResponseFormat() throws {
+        let data = Data(#"""
+        {"model":"m","messages":[{"role":"user","content":"hi"}],
+         "response_format":{"type":"text"}}
+        """#.utf8)
+        let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
+        let validated = try OpenAIRequestValidator.validate(request, modelID: "m")
+        #expect(validated.messages.count == 1)
+    }
+
+    /// Accepted, not enforced: the decoder emits the calls the model produces,
+    /// so a client that asks for one-at-a-time cannot be promised it — and
+    /// refusing the field would fail every client that sends it defensively
+    /// (the OpenAI SDKs default it; Codex sends `false` on every turn).
+    @Test func acceptsParallelToolCallsEitherWay() throws {
+        for value in ["true", "false"] {
+            let data = Data(#"""
+            {"model":"m","messages":[{"role":"user","content":"lookup"}],
+             "parallel_tool_calls":\#(value),
+             "tools":[{"type":"function","function":{"name":"lookup",
+                       "parameters":{"type":"object"}}}]}
+            """#.utf8)
+            let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
+            let validated = try OpenAIRequestValidator.validate(request, modelID: "m")
+            #expect(validated.tools.count == 1, "parallel_tool_calls=\(value) dropped the tools")
+        }
+    }
 }
 
 @Suite("Streaming stop matcher")

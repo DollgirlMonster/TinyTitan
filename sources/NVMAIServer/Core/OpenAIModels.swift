@@ -192,6 +192,11 @@ public struct OpenAIChatRequest: Codable, Equatable, Sendable {
     /// runtime does not implement would break that client for the rest of the
     /// session, which is the failure the effort mapping already exists to avoid.
     public let reasoningBudgetTokens: Int?
+    /// The requested output format. Decoded so a structured-output request can
+    /// be *refused* rather than silently answered as prose: a client that asks
+    /// for JSON and gets unconstrained text is worse off than one told no.
+    /// `{"type": "text"}`, the API's own default, is accepted.
+    public let responseFormat: JSONValue?
 
     /// Explicit, with the two thinking-control extras defaulted, so the protocol
     /// mappers that build a chat request from their own shapes keep compiling
@@ -218,7 +223,8 @@ public struct OpenAIChatRequest: Codable, Equatable, Sendable {
                 frequencyPenalty: Float? = nil,
                 reasoningEffort: String? = nil,
                 chatTemplateKwargs: OpenAIChatTemplateKwargs? = nil,
-                reasoningBudgetTokens: Int? = nil) {
+                reasoningBudgetTokens: Int? = nil,
+                responseFormat: JSONValue? = nil) {
         self.model = model
         self.messages = messages
         self.stream = stream
@@ -241,6 +247,7 @@ public struct OpenAIChatRequest: Codable, Equatable, Sendable {
         self.reasoningEffort = reasoningEffort
         self.chatTemplateKwargs = chatTemplateKwargs
         self.reasoningBudgetTokens = reasoningBudgetTokens
+        self.responseFormat = responseFormat
     }
 
     enum CodingKeys: String, CodingKey {
@@ -258,6 +265,7 @@ public struct OpenAIChatRequest: Codable, Equatable, Sendable {
         case reasoningEffort = "reasoning_effort"
         case chatTemplateKwargs = "chat_template_kwargs"
         case reasoningBudgetTokens = "reasoning_budget_tokens"
+        case responseFormat = "response_format"
     }
 }
 
@@ -649,10 +657,25 @@ public enum OpenAIRequestValidator {
                     + supported.map(\.displayName).joined(separator: ", ") + ")")
             }
         }
-        guard request.parallelToolCalls != false else {
-            throw invalid("parallel_tool_calls=false is not supported",
-                          "parallel_tool_calls", "unsupported_value")
+        // Structured output has no decoder here, so a request for a format
+        // other than plain text is refused in the API's own error shape. This
+        // is the Chat Completions spelling of the Responses API's
+        // `text.format`, and it follows the same rule: only a *named* format
+        // other than `text` is refused, so `{"type": "text"}` (the API's
+        // default) and an unrecognized shape are not.
+        if let format = request.responseFormat, case .object(let dict) = format,
+           case .string(let type)? = dict["type"], type != "text" {
+            throw invalid(
+                "response_format \(type) is not supported; only plain text output is available",
+                "response_format", "unsupported_value")
         }
+        // `parallel_tool_calls` is accepted and not enforced, on either value.
+        // The decoder emits the calls the model produces, so the server cannot
+        // promise one at a time; refusing the field would fail every client
+        // that sends it defensively (the OpenAI SDKs default it, Codex sends
+        // `false` on every turn) for a preference it cannot verify anyway. The
+        // Responses object echoes what it was given; Chat Completions has no
+        // field to echo into, which is why this is documented instead.
         // S17: include_usage is a streaming option; silently ignoring it on a
         // non-stream request hides a client bug.
         if request.streamOptions?.includeUsage == true, request.stream != true {

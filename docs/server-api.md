@@ -54,8 +54,13 @@ misconfigured client believe it was talking to a model it was not.
   back, as the API's does.
 - **Tool choice.** `auto` and `none` are honoured. Forcing a call —
   `required`, a named function, Anthropic's `any` / `tool` — is refused,
-  because the decoder cannot guarantee one. `parallel_tool_calls: false`
-  (Codex sends it always) is echoed and not enforced; Anthropic's
+  because the decoder cannot guarantee one. `parallel_tool_calls` is
+  **accepted and not enforced**, on either value: the decoder emits the calls
+  the model produces, so one-at-a-time cannot be promised — and refusing the
+  field would fail every client that sends it defensively (the OpenAI SDKs
+  default it, Codex sends `false` on every turn) for a preference it cannot
+  verify anyway. The Responses object echoes what it was given; Chat
+  Completions has no field to echo into. Anthropic's
   `disable_parallel_tool_use` is refused.
 - **Reasoning levels.** The server's own `--thinking` / `--reasoning-effort`
   decide what a model renders by default. A request may ask for a different
@@ -85,6 +90,12 @@ misconfigured client believe it was talking to a model it was not.
   nothing to do.
 - **Structured output** (`response_format`, `text.format: json_schema`,
   `output_config.format`) is refused; the decoder has no grammar constraint.
+  Each surface refuses only a *named* format other than plain text, so
+  `{"type": "text"}` — the API's own default — is accepted, and a request for
+  JSON is answered with an error rather than unconstrained prose. This is the
+  one place where the same rule has three spellings: `response_format.type`
+  (Chat Completions), `text.format.type` (Responses) and `output_config.format`
+  (Messages).
 - **Logprobs**, `n > 1`, `background: true`, prompt templates, hosted
   conversations, containers and MCP servers are refused by name.
 - **Output cap.** Omitting `max_tokens` / `max_output_tokens` lets the model
