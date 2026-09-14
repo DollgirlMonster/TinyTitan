@@ -13,6 +13,8 @@ from nvmai_profile import (
     DEFAULT_KV_BITS,
     DEFAULT_MODEL_PATH,
     DEFAULT_PROMPT_CACHE_MEMORY_MIB,
+    DEFAULT_PROMPT_CACHE_MODE,
+    catalog_id_for,
     request_model,
     server_command,
     server_environment,
@@ -21,42 +23,77 @@ from nvmai_profile import (
 
 
 class BenchmarkProfileTests(unittest.TestCase):
-    def test_server_command_matches_production_profile(self) -> None:
-        command = server_command("NVMAIServer", 8081)
-        self.assertEqual(DEFAULT_MODEL_PATH.name, "ornith-1.5_35B_A3B_8Bit")
-        self.assertEqual(command[command.index("--model") + 1], str(DEFAULT_MODEL_PATH))
-        self.assertEqual(
-            command[command.index("--max-context") + 1], str(DEFAULT_CONTEXT_TOKENS)
-        )
-        self.assertEqual(command[command.index("--prompt-cache-mode") + 1], "multi-prefix")
-        self.assertEqual(
-            command[command.index("--prompt-cache-memory-mib") + 1],
-            str(DEFAULT_PROMPT_CACHE_MEMORY_MIB),
-        )
-        self.assertEqual(
-            "--ram-budget" in command, DEFAULT_EXPERT_CACHE_BUDGET is not None
-        )
-        self.assertEqual(command[command.index("--kv-bits") + 1], str(DEFAULT_KV_BITS))
-        self.assertEqual(command[command.index("--rope-scaling") + 1], "none")
+    def installed_model(self):
+        """An install the harness can name, or skip.
+
+        A command names an install by the catalog id read from that install's
+        manifest, so the shape test needs one installed. A checkout is not
+        required to hold any particular one -- the operator prunes `models/`
+        deliberately -- so the protocol's own default is asserted as a constant
+        instead of by reading it.
+        """
+        candidates = sorted(DEFAULT_MODEL_PATH.parent.glob("*/manifest.json"))
+        if not candidates:
+            self.skipTest("no install under models/ to name")
+        return candidates[0].parent
+
+    def test_server_command_goes_through_the_launcher(self) -> None:
+        model = self.installed_model()
+        command = server_command("NVMAIServer", 8081, model=model)
+        # The harness never builds an NVMAIServer command line itself: it asks
+        # the user-facing launcher, so a benchmarked server is configured the
+        # way a user's server is -- catalog resolution plus the model's own
+        # measured profile -- and only ever from an install already on disk.
+        self.assertEqual(command[0], "bash")
+        self.assertTrue(command[1].endswith("tools/server_launcher.sh"))
+        self.assertEqual(command[command.index("--client") + 1], "server")
+        self.assertEqual(command[command.index("--model") + 1], catalog_id_for(model))
+        self.assertEqual(command[command.index("--port") + 1], "8081")
         self.assertEqual(command[command.index("--thinking") + 1], "off")
+        self.assertEqual(command[command.index("--engine") + 1], "gpu")
+        self.assertEqual(command[command.index("--kv") + 1], str(DEFAULT_KV_BITS))
+        # Production profile: the launcher's own multi-prefix cache, no draft
+        # head, and the model's measured expert-cache budget rather than a pin.
+        self.assertNotIn("--prompt-cache", command)
         self.assertNotIn("--mtp-model", command)
+        self.assertEqual("--ram" in command, DEFAULT_EXPERT_CACHE_BUDGET is not None)
+        # The protocol defaults are constants, and Ornith 1.5 8-bit may
+        # legitimately be absent from models/.
+        self.assertEqual(DEFAULT_MODEL_PATH.name, "ornith-1.5_35B_A3B_8Bit")
+        self.assertEqual(DEFAULT_CONTEXT_TOKENS, 262_144)
+        self.assertEqual(DEFAULT_PROMPT_CACHE_MODE, "multi-prefix")
+        self.assertEqual(DEFAULT_PROMPT_CACHE_MEMORY_MIB, 256)
 
     def test_explicit_cache_off_is_not_a_default(self) -> None:
-        command = server_command("NVMAIServer", 8081, cache_mode="off")
-        self.assertEqual(command[command.index("--prompt-cache-mode") + 1], "off")
-        self.assertEqual(command[command.index("--prompt-cache-memory-mib") + 1], "0")
+        command = server_command("NVMAIServer", 8081, model=self.installed_model(),
+                                 cache_mode="off")
+        self.assertEqual(command[command.index("--prompt-cache") + 1], "off")
 
     def test_shell_launchers_explicitly_enable_both_caches(self) -> None:
         launcher = (DEFAULT_MODEL_PATH.parents[1] / "tools/server_launcher.sh").read_text()
-        self.assertIn("--prompt-cache-mode multi-prefix", launcher)
+        # The launcher owns the prompt cache, and it can turn it off for the
+        # cache A/B harnesses: 256 MiB multi-prefix by default, 0 when off.
+        self.assertIn('prompt_cache_mode="multi-prefix"', launcher)
+        self.assertIn(f"prompt_cache_mib={DEFAULT_PROMPT_CACHE_MEMORY_MIB}", launcher)
+        self.assertIn("--prompt-cache) CACHE_ARG=", launcher)
         self.assertIn(
-            f"--prompt-cache-memory-mib {DEFAULT_PROMPT_CACHE_MEMORY_MIB}", launcher
+            'gpu_runtime=(--prompt-cache-mode "$prompt_cache_mode" '
+            '--prompt-cache-memory-mib "$prompt_cache_mib"',
+            launcher,
+        )
+        # MTP is a launcher flag too, so the speculative harnesses go through
+        # the same script rather than building their own command line.
+        self.assertIn("--mtp-model) MTP_MODEL_ARG=", launcher)
+        self.assertIn(
+            'gpu_runtime+=(--mtp-model "$MTP_MODEL_ARG" '
+            '--mtp-memory-mib "${MTP_MEMORY_ARG:-384}")',
+            launcher,
         )
         # The expert-cache budget is per-family (decodeTuning), so neither the
         # benchmark protocol nor a plain launcher run pins one size: the
         # runtime picks the model's own measured row. The launcher offers an
-        # explicit `--ram` override (1/2/4/8/16/32 GB), which must stay opt-in
-        # so the default path keeps the measured optimum.
+        # explicit `--ram` override, which must stay opt-in so the default path
+        # keeps the measured optimum.
         self.assertIn('gpu_runtime+=(--ram-budget "${ram_gb}G")', launcher)
         self.assertIn('if [[ -n "$ram_gb" && "$MODEL_BACKEND" != "cpu" ]]', launcher)
         self.assertIn('${NVMAI_THINKING_MODE:-off}', launcher)
@@ -88,7 +125,8 @@ class BenchmarkProfileTests(unittest.TestCase):
             configured_thinking_mode({"NVMAI_THINKING_MODE": "yes"}), "on")
         with self.assertRaises(ValueError):
             configured_thinking_mode({"NVMAI_THINKING_MODE": "medium"})
-        command = server_command("server", 8080, thinking_mode="on")
+        command = server_command("server", 8080, model=self.installed_model(),
+                                 thinking_mode="on")
         self.assertEqual(command[command.index("--thinking") + 1], "on")
         self.assertFalse(request_model().endswith("-fast"))
 

@@ -50,6 +50,13 @@
 #   --port <n>      default 8080 (NVMAI_PORT overrides)
 #   --memory        enable persistent agent memory for this project
 #   --dry-run       print the server command and client setup; start nothing
+#   --prompt-cache <multi-prefix|off>  prompt-state reuse (default multi-prefix,
+#              a 256 MiB cache). `off` is for the cache A/B harnesses, which
+#              have to be able to ask for the arm they measure.
+#   --mtp-model <dir>   attach a native speculative draft head. GPU only (the
+#              draft shares the target's embedding and head), and not a catalog
+#              entry, because a sidecar has no weights for the catalog to
+#              describe. `--mtp-memory-mib <n>` sets its budget (default 384).
 #   --help, -h
 #
 # What the server runs: every installed model is reachable by name through
@@ -100,6 +107,7 @@ if [[ "${NVMAI_LAUNCHER_ASSUME_TTY:-0}" == "1" ]]; then INTERACTIVE=1; fi
 
 CLIENT=""; MODE=""; MODEL_ARG=""; BITS=""; ANSWERS=""; THINKING_ARG=""
 RAM_ARG=""; CONTEXT_ARG=""; KV_ARG=""; YARN=0; PORT_ARG=""; MEMORY=0; ENGINE_ARG=""
+CACHE_ARG=""; MTP_MODEL_ARG=""; MTP_MEMORY_ARG=""
 positional=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -114,6 +122,16 @@ while [[ $# -gt 0 ]]; do
     --context)  CONTEXT_ARG="${2:?--context needs a value}"; shift 2 ;;
     --kv)       KV_ARG="${2:?--kv needs 4, 8 or 16}"; shift 2 ;;
     --yarn)     YARN=1; shift ;;
+    # The benchmark harnesses measure the prompt cache as a variable, so the
+    # launcher has to be able to turn it off; `multi-prefix` (the default) is
+    # the 256 MiB cache every published number was taken with.
+    --prompt-cache) CACHE_ARG="${2:?--prompt-cache needs multi-prefix or off}"; shift 2 ;;
+    # The native speculative draft head. It is not a catalog entry (a sidecar
+    # has no weights of its own for the catalog to describe), and it is the
+    # only way to reach the speculative path, so a harness that measures MTP
+    # could not otherwise go through this script at all.
+    --mtp-model) MTP_MODEL_ARG="${2:?--mtp-model needs a directory}"; shift 2 ;;
+    --mtp-memory-mib) MTP_MEMORY_ARG="${2:?--mtp-memory-mib needs a number}"; shift 2 ;;
     --port)     PORT_ARG="${2:?--port needs a number}"; shift 2 ;;
     --memory)   MEMORY=1; shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
@@ -602,15 +620,16 @@ think_word="$(thinking_label "$thinking_level")"
 # slot rungs. The runtime derives slots from the budget and the model's own
 # expert stride, so the same tier means fewer slots on a wider model.
 ram_tier() {
-  case "$1" in
-    1|1G|1g)   echo 1 ;;
-    2|2G|2g)   echo 2 ;;
-    4|4G|4g)   echo 4 ;;
-    8|8G|8g)   echo 8 ;;
-    16|16G|16g) echo 16 ;;
-    32|32G|32g) echo 32 ;;
-    *) return 1 ;;
+  # Any positive whole number of GB, with or without the "G" suffix, because the
+  # runtime's --ram-budget takes any size and the benchmark profile passes its
+  # own (NVMAI_BENCH_RAM_BUDGET). The 1/2/4/8/16/32 menu is still what the
+  # interactive question offers.
+  local value="${1%[Gg]}"
+  case "$value" in
+    *[!0-9]*|"") return 1 ;;
   esac
+  (( 10#$value >= 1 )) || return 1
+  echo "$(( 10#$value ))"
 }
 
 if [[ -n "$RAM_ARG" ]]; then
@@ -704,7 +723,14 @@ fi
 # ============================================================
 
 # Pinned for GPU models; per-install tuning comes from the profile.
-gpu_runtime=(--prompt-cache-mode multi-prefix --prompt-cache-memory-mib 256 --kv-bits "$kv_bits")
+prompt_cache_mode="multi-prefix"
+prompt_cache_mib=256
+case "$CACHE_ARG" in
+  ""|multi-prefix) ;;
+  off) prompt_cache_mode="off"; prompt_cache_mib=0 ;;
+  *) echo "unknown --prompt-cache: $CACHE_ARG (multi-prefix or off)" >&2; exit 2 ;;
+esac
+gpu_runtime=(--prompt-cache-mode "$prompt_cache_mode" --prompt-cache-memory-mib "$prompt_cache_mib" --kv-bits "$kv_bits")
 if [[ -n "$max_context" ]]; then
   gpu_runtime+=(--max-context "$max_context" --rope-scaling "$rope_scaling")
 elif [[ "$rope_scaling" == "none" ]]; then
@@ -712,6 +738,19 @@ elif [[ "$rope_scaling" == "none" ]]; then
 fi
 if [[ -n "$ram_gb" && "$MODEL_BACKEND" != "cpu" ]]; then
   gpu_runtime+=(--ram-budget "${ram_gb}G")
+fi
+# The draft head shares the target's embedding and head on the GPU path, so it
+# attaches there only; the CPU engine has no speculative path to attach to.
+if [[ -n "$MTP_MODEL_ARG" ]]; then
+  if [[ "$MODEL_BACKEND" == "cpu" ]]; then
+    echo "ERROR: --mtp-model does not apply to the CPU engine (no speculative path)" >&2
+    exit 2
+  fi
+  if [[ ! -f "$MTP_MODEL_ARG/manifest.json" ]]; then
+    echo "ERROR: MTP draft head not found at $MTP_MODEL_ARG" >&2
+    exit 2
+  fi
+  gpu_runtime+=(--mtp-model "$MTP_MODEL_ARG" --mtp-memory-mib "${MTP_MEMORY_ARG:-384}")
 fi
 
 if (( dynamic )); then
@@ -730,7 +769,9 @@ if [[ "$MODEL_BACKEND" == "cpu" ]]; then
   fi
 else
   server_cmd+=("${gpu_runtime[@]}")
-  runtime_note="context ${max_context:-262144} | KV ${kv_bits}-bit | cache on | MTP off"
+  mtp_note="off"
+  [[ -n "$MTP_MODEL_ARG" ]] && mtp_note="on (draft head)"
+  runtime_note="context ${max_context:-262144} | KV ${kv_bits}-bit | cache ${prompt_cache_mode} | MTP ${mtp_note}"
   if [[ -n "$ram_gb" ]]; then
     runtime_note="$runtime_note | expert cache ${ram_gb} GB (yours)"
   else
@@ -867,6 +908,13 @@ echo "Starting NVMAIServer ($MODEL_NAME ${MODEL_QUANT}-bit, $model_word, $mode_w
 
 "${server_cmd[@]}" &
 server_pid=$!
+
+# The trap belongs here, with the server, not only on the client path below.
+# A harness starts this script and later signals it; without a trap on this
+# path the backgrounded server is orphaned, which leaves a model process
+# running -- and this project's own guard then refuses the next golden or gate.
+cleanup() { kill "$server_pid" 2>/dev/null || true; }
+trap cleanup EXIT INT TERM
 
 # Wait for the API to answer, not for a fixed number of seconds.
 for _ in $(seq 1 240); do
@@ -1163,10 +1211,9 @@ echo "Launching $(client_label "$CLIENT")..."
 echo ""
 
 # The model keeps running after the client exits; the next launcher run stops
-# it on this port and starts fresh. The trap keeps the two lifetimes matched
-# when the person Ctrl-Cs the client instead.
-cleanup() { kill "$server_pid" 2>/dev/null || true; }
-trap cleanup EXIT INT TERM
+# it on this port and starts fresh. The trap was installed with the server
+# above, so the server-only path is covered too; this keeps the two lifetimes
+# matched when the person Ctrl-Cs the client instead.
 
 case "$CLIENT" in
   codex)    "$BIN" ;;

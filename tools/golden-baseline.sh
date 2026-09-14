@@ -48,6 +48,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLI="$ROOT/.build/arm64-apple-macosx/release/NVMAICLI"
 SERVER="$ROOT/.build/arm64-apple-macosx/release/NVMAIServer"
+LAUNCHER="$ROOT/tools/server_launcher.sh"
+
+# The launcher resolves a model key or the catalog id the server advertises
+# (`<modelID>_<bits>-Bit`), not a directory, so read the id the install itself
+# declares. python3 is already a dependency of this script.
+catalog_id_for() {
+  python3 - "$1" <<'PY'
+import json, pathlib, sys
+manifest = pathlib.Path(sys.argv[1]) / "manifest.json"
+data = json.loads(manifest.read_text())
+bits = data["quant"]["routedExpert"]["weightBits"]
+print(f'{data["modelID"]}_{bits}-Bit')
+PY
+}
 OUT_DIR="${OUT_DIR:-$ROOT/benchmark/golden}"
 
 PROMPT="${PROMPT:-Explain what a mutex is and when you would use one.}"
@@ -162,7 +176,20 @@ PY
 
   # Prompt caching is off so a rerun cannot answer from a cached prefix, which
   # would prove the cache works rather than that the paths agree.
-  "$SERVER" --model "$model" --port "$PORT" --prompt-cache-mode off \
+  #
+  # Started through the user-facing launcher, like every other harness, so the
+  # gate's server is configured the way a user's server is. The flags the
+  # launcher adds -- native 262,144 context, no YaRN, KV 8-bit, no MTP -- are
+  # the server's own defaults, which is all this invocation relied on before,
+  # and the launcher installs its cleanup trap with the server, so the pid
+  # captured below really does own it.
+  local catalog_id
+  if ! catalog_id="$(catalog_id_for "$model")"; then
+    echo "  server: FAILED — cannot read the catalog id from ${model#$ROOT/}"
+    rm -rf "$work"; return 1
+  fi
+  "$LAUNCHER" --client server --model "$catalog_id" --port "$PORT" \
+      --prompt-cache off --thinking off \
       > "$srv_log" 2>&1 &
   srv_pid=$!
 

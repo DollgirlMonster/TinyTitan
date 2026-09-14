@@ -61,6 +61,32 @@ def benchmark_log_path(name: str) -> str:
     return str(directory / name)
 
 
+def catalog_id_for(model: str | os.PathLike[str]) -> str:
+    """The catalog id of an install: `<modelID>_<bits>-Bit`.
+
+    The launcher resolves a model key or a catalog id, not a directory, and the
+    catalog id is exactly what the server advertises in `/v1/models` (it names
+    the routed-expert width). A harness that knows its install directory can
+    therefore name it precisely instead of guessing at a short key, and a new
+    family needs no entry here -- it is read from the install's own manifest.
+    """
+    manifest = pathlib.Path(model) / "manifest.json"
+    try:
+        data = json.loads(manifest.read_text())
+    except OSError as exc:
+        raise ValueError(f"install manifest unreadable at {manifest}: {exc}") from exc
+    model_id = data.get("modelID")
+    bits = data.get("quant", {}).get("routedExpert", {}).get("weightBits")
+    if not isinstance(model_id, str) or not isinstance(bits, int):
+        raise ValueError(
+            f"{manifest} declares no modelID / routedExpert.weightBits"
+        )
+    return f"{model_id}_{bits}-Bit"
+
+
+LAUNCHER = ROOT / "tools/server_launcher.sh"
+
+
 def server_command(
     binary: str | os.PathLike[str],
     port: int,
@@ -72,43 +98,48 @@ def server_command(
     mtp_model: str | os.PathLike[str] | None = None,
     engine: str = "gpu",
 ) -> list[str]:
-    """Build the standard native-context, cache-on command.
+    """Build the launcher invocation for the standard production profile.
 
-    `mtp_model` attaches a draft-head sidecar. It is the only way to reach
-    the speculative path -- there is no CLI flag for it -- so a harness that
-    cannot pass it cannot measure MTP at all.
+    Every harness starts its server through `tools/server_launcher.sh`, so a
+    benchmarked server is configured the way a user's server is: the catalog
+    resolves the install, the model's own `ModelProfile` supplies the expert
+    cache, prefetch and sampling, and the launcher refuses an engine the family
+    does not implement. That single seam is also what keeps the harnesses inside
+    the release policy -- the launcher only ever uses installs already under
+    `models/`.
 
-    `engine` selects the runtime the server loads into. The default is the
-    GPU, which is what every install but the dense Qwen 3.5 models uses; the
-    dense ones run on either engine, and `cpu` is the only way to measure one
-    without the GPU. `--cpu` also drops the expert-cache budget, which is a
-    GPU expert-streaming knob and means nothing to the CPU engine, so it is
-    omitted rather than passed and ignored.
+    `binary` is the release binary the caller resolved; the launcher starts that
+    same path, so this only checks that a path-shaped argument is really there.
+    `mtp_model` attaches a draft-head sidecar, the only way to reach the
+    speculative path. `engine` is cpu or gpu.
     """
-    prompt_cache_memory_mib = (
-        DEFAULT_PROMPT_CACHE_MEMORY_MIB if cache_mode != "off" else 0
-    )
     if thinking_mode not in SUPPORTED_THINKING_MODES:
         raise ValueError("thinking_mode must be off or on")
     if engine not in ("cpu", "gpu"):
         raise ValueError("engine must be cpu or gpu")
+    if cache_mode not in ("multi-prefix", "off"):
+        raise ValueError("cache_mode must be multi-prefix or off")
+    binary_path = pathlib.Path(binary)
+    if ("/" in str(binary) or binary_path.is_absolute()) and not binary_path.exists():
+        raise ValueError(f"release binary not found: {binary}")
     command = [
-        str(binary),
+        "bash",
+        str(LAUNCHER),
+        "--client", "server",
+        "--model", catalog_id_for(model),
         "--port", str(port),
-        "--model", str(model),
-        "--max-context", str(DEFAULT_CONTEXT_TOKENS),
-        "--rope-scaling", "none",
-        "--prompt-cache-mode", cache_mode,
-        "--prompt-cache-memory-mib", str(prompt_cache_memory_mib),
-        "--kv-bits", str(DEFAULT_KV_BITS),
         "--thinking", thinking_mode,
+        "--engine", engine,
+        "--kv", str(DEFAULT_KV_BITS),
     ]
-    if engine == "cpu":
-        command += ["--cpu"]
+    # multi-prefix is the launcher's default, so only the off arm is sent; both
+    # are spelled out in the launcher and neither is a hidden default here.
+    if cache_mode == "off":
+        command += ["--prompt-cache", "off"]
     if mtp_model is not None:
         command += ["--mtp-model", str(mtp_model)]
     if ram_budget is not None and engine == "gpu":
-        command += ["--ram-budget", str(ram_budget)]
+        command += ["--ram", str(ram_budget)]
     return command
 
 

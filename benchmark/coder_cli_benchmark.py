@@ -34,6 +34,7 @@ from nvmai_profile import (
     DEFAULT_CONTEXT_TOKENS,
     DEFAULT_KV_BITS,
     DEFAULT_THINKING_MODE,
+    catalog_id_for,
     server_command,
     server_environment,
 )
@@ -47,7 +48,17 @@ MODEL_PATHS = {
         4: ROOT / "models/ornith-1.5_35B_A3B_4Bit",
         8: ROOT / "models/ornith-1.5_35B_A3B_8Bit",
     },
+    # KAT-Coder-V2.5-Dev shares Qwen 3.6's geometry, so the coder round drives it
+    # the same way; `--model kat` selects it. The paths are the operator's
+    # installs under models/ and are never fetched: preflight fails on a missing
+    # one, which is what keeps this harness inside the release policy.
+    "kat": {
+        4: ROOT / "models/kat-coder-v2.5_35B_A3B_4Bit",
+        8: ROOT / "models/kat-coder-v2.5_35B_A3B_8Bit",
+    },
 }
+# Only Ornith ships an MTP draft head, so the `features` round's MTP track is
+# Ornith-only; `run_feature_round` skips that track for a family without one.
 MTP_PATHS = {
     "ornith": ROOT / "models/ornith-1.5_35B_A3B_MTP_4Bit",
 }
@@ -134,8 +145,16 @@ def terminate_client(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 
 def manifest_api_model(model_path: pathlib.Path) -> str:
-    manifest = json.loads((model_path / "manifest.json").read_text())
-    return re.sub(r"-(?:4|8)bit$", "", manifest["modelID"])
+    """The id the server advertises for an install.
+
+    Delegates to the shared profile helper, which reads the manifest's modelID
+    and its routed-expert width and builds `<modelID>_<bits>-Bit`. This used to
+    strip a trailing `-4bit`/`-8bit` from the modelID instead, which predates the
+    id scheme: KAT's modelID carries no such suffix, so the old guess produced
+    `kat-coder-v2.5` while the server advertises `kat-coder-v2.5_4-Bit`, and the
+    harness refused to start because the expected id was never advertised.
+    """
+    return catalog_id_for(model_path)
 
 
 def fixed_prompts() -> dict[str, str]:
@@ -217,9 +236,10 @@ def start_server(*, output: pathlib.Path, family: str, quant: int, port: int,
     command = server_command(
         SERVER, port, model=model,
         cache_mode="multi-prefix" if cache else "off",
+        # The draft head rides the shared seam as a parameter; the launcher owns
+        # where it lands on the command line and its 384 MiB budget.
+        mtp_model=MTP_PATHS[family] if mtp else None,
     )
-    if mtp:
-        command += ["--mtp-model", str(MTP_PATHS[family]), "--mtp-memory-mib", "384"]
     env = server_environment(concise=concise)
     log_path = output / "server" / f"{label}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -527,18 +547,18 @@ def run_coder_round(args: argparse.Namespace, output: pathlib.Path, prompts: dic
     done = completed_keys(results)
     for quant in args.quantizations:
         port = 18080 + quant
-        model_path = MODEL_PATHS["ornith"][quant]
+        model_path = MODEL_PATHS[args.model][quant]
         model = manifest_api_model(model_path)
         server = start_server(
-            output=output, family="ornith", quant=quant, port=port,
-            cache=True, concise=False, mtp=False, label=f"coder-ornith-q{quant}",
+            output=output, family=args.model, quant=quant, port=port,
+            cache=True, concise=False, mtp=False, label=f"coder-{args.model}-q{quant}",
         )
         adapter: RunningProcess | None = None
         try:
             base_url = f"http://127.0.0.1:{port}/v1"
             if "claude" in clients:
                 adapter = start_adapter(
-                    output, base_url, model, 19080 + quant, f"coder-ornith-q{quant}"
+                    output, base_url, model, 19080 + quant, f"coder-{args.model}-q{quant}"
                 )
             log_offset = server.log_path.stat().st_size
             cases = itertools.product(clients, args.prompts)
@@ -564,7 +584,7 @@ def run_coder_round(args: argparse.Namespace, output: pathlib.Path, prompts: dic
                     quality = quality_check(prompt_name, result["answer"], result["exit_code"])
                     record = {
                         "key": key, "round": "coder", "status": "ok" if result["exit_code"] == 0 else "failed",
-                        "phase": phase, "repetition": repetition, "family": "ornith",
+                        "phase": phase, "repetition": repetition, "family": args.model,
                         "quantization": quant, "cache": True, "mtp": False,
                         "fast": False, "concise": False,
                         "client": client, "prompt": prompt_name,
@@ -774,7 +794,7 @@ def run_feature_round(args: argparse.Namespace, output: pathlib.Path,
         if args.limit is not None and args.executed >= args.limit:
             return
         key = feature_key(
-            family="ornith", quant=quant, cache=cache, mtp=False, fast=fast,
+            family=args.model, quant=quant, cache=cache, mtp=False, fast=fast,
             concise=concise, prompt_name=prompt_name,
         )
         if key in done:
@@ -782,67 +802,74 @@ def run_feature_round(args: argparse.Namespace, output: pathlib.Path,
             continue
         port = 18180 + quant
         label = (
-            f"features-ornith-q{quant}-cache{int(cache)}-fast{int(fast)}-"
+            f"features-{args.model}-q{quant}-cache{int(cache)}-fast{int(fast)}-"
             f"concise{int(concise)}-{prompt_name}"
         )
         server = start_server(
-            output=output, family="ornith", quant=quant, port=port,
+            output=output, family=args.model, quant=quant, port=port,
             cache=cache, concise=concise, mtp=False, label=label,
         )
         try:
-            model = manifest_api_model(MODEL_PATHS["ornith"][quant])
+            model = manifest_api_model(MODEL_PATHS[args.model][quant])
             base_url = f"http://127.0.0.1:{port}/v1"
             offset = server.log_path.stat().st_size
             run_feature_case(
                 args=args, output=output, results=results, prompts=prompts,
-                family="ornith", quant=quant, cache=cache, fast=fast,
+                family=args.model, quant=quant, cache=cache, fast=fast,
                 concise=concise, mtp=False, prompt_name=prompt_name,
                 base_url=base_url, model=model, server=server, log_offset=offset,
             )
         finally:
             server.stop()
 
-    # Native Ornith MTP: off/on against both target quantizations. The one-layer
-    # draft shares the matching target embedding and head at runtime.
-    for quant, mtp, prompt_name in itertools.product(
-        args.quantizations, (False, True), args.prompts
-    ):
-        if args.limit is not None and args.executed >= args.limit:
-            return
-        key = feature_key(
-            family="ornith", quant=quant, cache=False, mtp=mtp, fast=False,
-            concise=False, prompt_name=prompt_name, track="mtp-comparison",
-        )
-        if key in done:
-            print(f"SKIP {key}", flush=True)
-            continue
-        port = 18280 + quant
-        label = f"features-ornith-q{quant}-mtp{int(mtp)}-{prompt_name}"
-        server = start_server(
-            output=output, family="ornith", quant=quant, port=port,
-            cache=False, concise=False, mtp=mtp, label=label,
-        )
-        try:
-            model = manifest_api_model(MODEL_PATHS["ornith"][quant])
-            base_url = f"http://127.0.0.1:{port}/v1"
-            offset = server.log_path.stat().st_size
-            run_feature_case(
-                args=args, output=output, results=results, prompts=prompts,
-                family="ornith", quant=quant, cache=False, fast=False,
-                concise=False, mtp=mtp, prompt_name=prompt_name,
-                base_url=base_url, model=model, server=server, log_offset=offset,
-                # Both sides of the MTP comparison must be pure-greedy or the
-                # draft path cannot engage.
-                temperature=0.0,
-                track="mtp-comparison",
+    # Native MTP: off/on against both target quantizations. The one-layer draft
+    # shares the matching target embedding and head at runtime. Only a family
+    # that ships a draft head has this track, so asking elsewhere is a skip
+    # rather than a KeyError.
+    if args.model not in MTP_PATHS:
+        print(f"SKIP mtp-comparison: {args.model} ships no draft head", flush=True)
+    else:
+        for quant, mtp, prompt_name in itertools.product(
+            args.quantizations, (False, True), args.prompts
+        ):
+            if args.limit is not None and args.executed >= args.limit:
+                return
+            key = feature_key(
+                family=args.model, quant=quant, cache=False, mtp=mtp, fast=False,
+                concise=False, prompt_name=prompt_name, track="mtp-comparison",
             )
-        finally:
-            server.stop()
+            if key in done:
+                print(f"SKIP {key}", flush=True)
+                continue
+            port = 18280 + quant
+            label = f"features-{args.model}-q{quant}-mtp{int(mtp)}-{prompt_name}"
+            server = start_server(
+                output=output, family=args.model, quant=quant, port=port,
+                cache=False, concise=False, mtp=mtp, label=label,
+            )
+            try:
+                model = manifest_api_model(MODEL_PATHS[args.model][quant])
+                base_url = f"http://127.0.0.1:{port}/v1"
+                offset = server.log_path.stat().st_size
+                run_feature_case(
+                    args=args, output=output, results=results, prompts=prompts,
+                    family=args.model, quant=quant, cache=False, fast=False,
+                    concise=False, mtp=mtp, prompt_name=prompt_name,
+                    base_url=base_url, model=model, server=server, log_offset=offset,
+                    # Both sides of the MTP comparison must be pure-greedy or the
+                    # draft path cannot engage.
+                    temperature=0.0,
+                    track="mtp-comparison",
+                )
+            finally:
+                server.stop()
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--round", choices=("coder", "features", "all"), default="coder")
+    parser.add_argument("--model", choices=tuple(MODEL_PATHS), default="ornith",
+                        help="which supported family's installs to run (default: ornith)")
     parser.add_argument("--output", type=pathlib.Path)
     parser.add_argument("--quantizations", nargs="+", type=int, choices=(4, 8), default=[8])
     parser.add_argument("--clients", nargs="+", choices=("codex", "qwen", "opencode", "claude"))
@@ -870,9 +897,9 @@ def main() -> int:
     for name, prompt in prompts.items():
         prompt_dir.mkdir(parents=True, exist_ok=True)
         (prompt_dir / f"{name}.txt").write_text(prompt)
-    required = [MODEL_PATHS["ornith"][quant] for quant in args.quantizations]
-    if args.round in ("features", "all"):
-        required += [MTP_PATHS["ornith"]]
+    required = [MODEL_PATHS[args.model][quant] for quant in args.quantizations]
+    if args.round in ("features", "all") and args.model in MTP_PATHS:
+        required += [MTP_PATHS[args.model]]
     environment = preflight(required)
     binaries = client_binaries()
     environment["client_versions"] = {
@@ -882,7 +909,7 @@ def main() -> int:
     environment["prompt_sha256"] = {name: sha256_text(value) for name, value in prompts.items()}
     environment["arguments"] = vars(args) | {"output": str(output)}
     environment["default_profile"] = {
-        "model": "ornith-1.5-35b-a3b-8bit",
+        "model": manifest_api_model(MODEL_PATHS[args.model][max(args.quantizations)]),
         "context_tokens": DEFAULT_CONTEXT_TOKENS,
         "prompt_cache": "multi-prefix",
         "kv_bits": DEFAULT_KV_BITS,
