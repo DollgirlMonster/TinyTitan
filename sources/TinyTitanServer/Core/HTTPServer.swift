@@ -64,6 +64,7 @@ public actor TinyTitanHTTPServer {
 
     public init(modelID: String,
                 queueLimit: Int,
+                maxConcurrentSequences: Int = 1,
                 backend: any ServerInferenceBackend,
                 heartbeatInterval: TimeAmount = .seconds(5),
                 reasoningProfile: ServerReasoningProfile = .default,
@@ -72,7 +73,8 @@ public actor TinyTitanHTTPServer {
         self.group = group
         self.modelID = modelID
         self.backend = backend
-        self.coordinator = ServerCoordinator(queueLimit: queueLimit)
+        self.coordinator = ServerCoordinator(queueLimit: queueLimit,
+                                             width: maxConcurrentSequences)
         self.heartbeatInterval = heartbeatInterval
         self.reasoningProfile = reasoningProfile
         self.router = router

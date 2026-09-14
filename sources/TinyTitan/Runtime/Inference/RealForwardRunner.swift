@@ -145,6 +145,13 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     let ctx: MetalContext
     let kv: KVCacheManager?
     let cfg: ArchConfig
+    /// How many independent sequences this runner's KV and GDN stores hold.
+    /// One unless the server batches; `produce(…slot:)` selects the sequence.
+    public let slots: Int
+    /// Serializes forward steps so concurrent slots never share the runner's
+    /// scratch. Held around each `produce`/`prefillChunked`, not across a whole
+    /// generation.
+    let forwardStepGate = ForwardStepGate()
 
     // Kernels
     let embedInt4: EmbedLookupInt4
@@ -364,12 +371,16 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     var rdadviseAdaptivePosition: Int = -1
     var rdadviseAdaptivePositionBytes: UInt64 = 0
     public init(model: Model, context: MetalContext, maxContext: Int,
+                slots: Int = 1,
                 runtimeConfiguration: RuntimeConfiguration = .production,
                 enableSpeculativeGDN: Bool = false) throws {
         self.model = model
         self.ctx = context
         self.cfg = model.config
         self.maxContext = maxContext
+        precondition(slots > 0 && slots <= KVCacheManager.maximumSlots,
+                     "slots must be between 1 and \(KVCacheManager.maximumSlots)")
+        self.slots = slots
         try runtimeConfiguration.validate(maxContext: maxContext)
         let yarnParameters: YaRNRoPEParameters?
         if runtimeConfiguration.ropeScalingMode == .yarn {
@@ -498,6 +509,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         self.kv = try KVCacheManager(device: context.device,
                                      config: cfg,
                                      maxContext: maxContext,
+                                     slots: slots,
                                      fp16RingEnabled: useFP16Ring,
                                      precision: runtimeConfiguration.kvCachePrecision,
                                      slidingWindow: cfg.slidingWindow,
@@ -663,6 +675,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             self.gdnState = try GDNStateManager(
                 device: context.device,
                 config: cfg,
+                slots: slots,
                 enableSpeculativeCheckpoint: enableSpeculativeGDN)
         } else {
             self.gdn = nil
@@ -970,6 +983,18 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         resetPLEState()
         qsaIndexer?.reset()
         resetTransientState()
+    }
+
+    /// Reset one slot's KV rows and GDN state, leaving the other sequences'
+    /// live state intact. Used when a single batched sequence fails. It does not
+    /// advise pages back to the OS (`KVCacheManager.reset(slot:)` only moves the
+    /// cursor), so it is safe while another slot is mid-step.
+    ///
+    /// PLE and QSA transient state is per-runner, not per-slot, and is left to
+    /// the whole-runner `reset()`.
+    public func reset(slot: Int) {
+        kv?.reset(slot: slot)
+        gdnState?.reset(slot: slot)
     }
 
     public var continuationPosition: Int {

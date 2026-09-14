@@ -150,8 +150,9 @@ final class GDN {
 
     /// Decode: conv over [tail | current row] with SiLU, shifting the tail in
     /// place. `convWeight` is the BF16 `[convDim, kernel]` tensor view region.
+    /// `tailOffset` selects a slot's region in a multi-sequence tail buffer.
     func encodeConvDecode(commandBuffer: MTLCommandBuffer,
-                          tail: MTLBuffer,
+                          tail: MTLBuffer, tailOffset: Int = 0,
                           qkv: MTLBuffer, qkvOffset: Int = 0,
                           convWeight: MTLBuffer, convWeightOffset: Int,
                           out: MTLBuffer, outOffset: Int = 0) throws {
@@ -159,7 +160,7 @@ final class GDN {
             throw MetalError.commandEncoderFailed
         }
         encoder.setComputePipelineState(convDecodePSO)
-        encoder.setBuffer(tail, offset: 0, index: 0)
+        encoder.setBuffer(tail, offset: tailOffset, index: 0)
         encoder.setBuffer(qkv, offset: qkvOffset, index: 1)
         encoder.setBuffer(convWeight, offset: convWeightOffset, index: 2)
         encoder.setBuffer(out, offset: outOffset, index: 3)
@@ -173,7 +174,7 @@ final class GDN {
 
     /// Prefill: conv over [tail | chunk rows]; the tail is read-only here.
     func encodeConvPrefill(commandBuffer: MTLCommandBuffer,
-                           tail: MTLBuffer,
+                           tail: MTLBuffer, tailOffset: Int = 0,
                            qkvRows: MTLBuffer, qkvRowsOffset: Int = 0,
                            convWeight: MTLBuffer, convWeightOffset: Int,
                            out: MTLBuffer, outOffset: Int = 0,
@@ -182,7 +183,7 @@ final class GDN {
             throw MetalError.commandEncoderFailed
         }
         encoder.setComputePipelineState(convPrefillPSO)
-        encoder.setBuffer(tail, offset: 0, index: 0)
+        encoder.setBuffer(tail, offset: tailOffset, index: 0)
         encoder.setBuffer(qkvRows, offset: qkvRowsOffset, index: 1)
         encoder.setBuffer(convWeight, offset: convWeightOffset, index: 2)
         encoder.setBuffer(out, offset: outOffset, index: 3)
@@ -199,14 +200,14 @@ final class GDN {
 
     /// After a prefill chunk: tail := last (kernel-1) raw rows of [tail | chunk].
     func encodeConvTailUpdate(commandBuffer: MTLCommandBuffer,
-                              tail: MTLBuffer,
+                              tail: MTLBuffer, tailOffset: Int = 0,
                               qkvRows: MTLBuffer, qkvRowsOffset: Int = 0,
                               rows: Int) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
         encoder.setComputePipelineState(convTailUpdatePSO)
-        encoder.setBuffer(tail, offset: 0, index: 0)
+        encoder.setBuffer(tail, offset: tailOffset, index: 0)
         encoder.setBuffer(qkvRows, offset: qkvRowsOffset, index: 1)
         var channels = UInt32(config.qkvDim)
         var taps = UInt32(config.convKernelSize)
@@ -222,16 +223,16 @@ final class GDN {
     /// Capture the conv tail after the first (confirmed) row while the normal
     /// two-row update continues to the speculative final state.
     func encodeConvTailCheckpoint(commandBuffer: MTLCommandBuffer,
-                                  tail: MTLBuffer,
+                                  tail: MTLBuffer, tailOffset: Int = 0,
                                   qkvRows: MTLBuffer,
-                                  checkpoint: MTLBuffer) throws {
+                                  checkpoint: MTLBuffer, checkpointOffset: Int = 0) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
         encoder.setComputePipelineState(convTailCheckpointPSO)
-        encoder.setBuffer(tail, offset: 0, index: 0)
+        encoder.setBuffer(tail, offset: tailOffset, index: 0)
         encoder.setBuffer(qkvRows, offset: 0, index: 1)
-        encoder.setBuffer(checkpoint, offset: 0, index: 2)
+        encoder.setBuffer(checkpoint, offset: checkpointOffset, index: 2)
         var channels = UInt32(config.qkvDim)
         var taps = UInt32(config.convKernelSize)
         encoder.setBytes(&channels, length: MemoryLayout<UInt32>.size, index: 3)
@@ -267,14 +268,15 @@ final class GDN {
     }
 
     /// Decode: one gated delta rule step. `state` is FP32 [Hv, Dv, Dk],
-    /// updated in place; `y` receives [Hv * Dv] FP16.
+    /// updated in place; `y` receives [Hv * Dv] FP16. `stateOffset` selects a
+    /// slot's region in a multi-sequence state buffer.
     func encodeDeltaStepDecode(commandBuffer: MTLCommandBuffer,
                                convOut: MTLBuffer, convOutOffset: Int = 0,
                                aProj: MTLBuffer, aProjOffset: Int = 0,
                                bProj: MTLBuffer, bProjOffset: Int = 0,
                                aLog: MTLBuffer, aLogOffset: Int,
                                dtBias: MTLBuffer, dtBiasOffset: Int,
-                               state: MTLBuffer,
+                               state: MTLBuffer, stateOffset: Int = 0,
                                y: MTLBuffer, yOffset: Int = 0) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
@@ -285,7 +287,7 @@ final class GDN {
         encoder.setBuffer(bProj, offset: bProjOffset, index: 2)
         encoder.setBuffer(aLog, offset: aLogOffset, index: 3)
         encoder.setBuffer(dtBias, offset: dtBiasOffset, index: 4)
-        encoder.setBuffer(state, offset: 0, index: 5)
+        encoder.setBuffer(state, offset: stateOffset, index: 5)
         encoder.setBuffer(y, offset: yOffset, index: 6)
         setHeadDims(encoder, startingAt: 7)
         encoder.dispatchThreadgroups(
@@ -304,8 +306,9 @@ final class GDN {
                                 bProj: MTLBuffer, bProjOffset: Int = 0,
                                 aLog: MTLBuffer, aLogOffset: Int,
                                 dtBias: MTLBuffer, dtBiasOffset: Int,
-                                state: MTLBuffer,
+                                state: MTLBuffer, stateOffset: Int = 0,
                                 checkpointState: MTLBuffer? = nil,
+                                checkpointStateOffset: Int = 0,
                                 y: MTLBuffer, yOffset: Int = 0,
                                 rows: Int) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
@@ -317,14 +320,20 @@ final class GDN {
         encoder.setBuffer(bProj, offset: bProjOffset, index: 2)
         encoder.setBuffer(aLog, offset: aLogOffset, index: 3)
         encoder.setBuffer(dtBias, offset: dtBiasOffset, index: 4)
-        encoder.setBuffer(state, offset: 0, index: 5)
+        encoder.setBuffer(state, offset: stateOffset, index: 5)
         encoder.setBuffer(y, offset: yOffset, index: 6)
         setHeadDims(encoder, startingAt: 7)
         var rowCount = UInt32(rows)
         var rowStride = UInt32(config.qkvDim)
         encoder.setBytes(&rowCount, length: MemoryLayout<UInt32>.size, index: 11)
         encoder.setBytes(&rowStride, length: MemoryLayout<UInt32>.size, index: 12)
-        encoder.setBuffer(checkpointState ?? state, offset: 0, index: 13)
+        // The disabled-checkpoint path binds `state` again, so it must use the
+        // same slot offset; binding offset 0 there would read another slot.
+        if let checkpointState {
+            encoder.setBuffer(checkpointState, offset: checkpointStateOffset, index: 13)
+        } else {
+            encoder.setBuffer(state, offset: stateOffset, index: 13)
+        }
         var checkpointEnabled = checkpointState != nil
         encoder.setBytes(&checkpointEnabled, length: MemoryLayout<Bool>.size, index: 14)
         encoder.dispatchThreadgroups(

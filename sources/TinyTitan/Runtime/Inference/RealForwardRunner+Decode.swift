@@ -8,26 +8,58 @@ import Metal
 /// per file, no signature or behavior changes.
 extension RealForwardRunner {
     public func produce(token: Int32, position: Int, into logits: MTLBuffer) async throws {
+        try await produce(token: token, position: position, slot: 0, into: logits)
+    }
+
+    /// Decode one token for sequence `slot`. Slot 0 is the single-sequence path
+    /// every existing caller takes; another slot reads and writes that slot's
+    /// own KV region and GDN state, so a batched step can advance several
+    /// sequences through one runner without aliasing.
+    public func produce(token: Int32, position: Int, slot: Int,
+                        into logits: MTLBuffer) async throws {
         try prefillChunkState.requireClean(operation: "produce")
-        try await produceToken(token: token,
-                               position: position,
-                               into: logits,
-                               emitHead: true,
-                               outputMode: .greedyIfAvailable)
+        try await forwardStepGate.acquire()
+        do {
+            try await produceToken(token: token,
+                                   position: position,
+                                   slot: slot,
+                                   into: logits,
+                                   emitHead: true,
+                                   outputMode: .greedyIfAvailable)
+        } catch {
+            await forwardStepGate.release()
+            throw error
+        }
+        await forwardStepGate.release()
+    }
+
+    /// Decode one row per slot in `rows`, each row's logits landing in the
+    /// matching buffer of `logits`. The rows advance in call order; the
+    /// token-wise stages are still run per row (not yet fused across the
+    /// batch), so this is the correctness-first batched entry point.
+    public func produceBatch(_ rows: [(token: Int32, position: Int, slot: Int)],
+                             logits: [MTLBuffer]) async throws {
+        precondition(rows.count == logits.count,
+                     "one logits buffer per batch row")
+        for (row, buffer) in zip(rows, logits) {
+            try await produce(token: row.token, position: row.position,
+                              slot: row.slot, into: buffer)
+        }
     }
 
     /// lint:allow-long the orchestrator for one decode step, in the same
     /// shape as executePrefillChunk: embed, the per-layer dispatch, the head.
     func produceToken(token: Int32,
                               position: Int,
+                              slot: Int,
                               into logits: MTLBuffer,
                               emitHead: Bool,
                               outputMode: PrefillOutputMode) async throws {
         let tPreamble = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-        let kvPosition = kv?.position ?? 0
+        let kvPosition = kv?.position(slot: slot) ?? 0
         guard kvPosition == position else {
             throw PrefillError.prefillCursorMismatch(
-                "produce cursor \(kvPosition) != position \(position)")
+                "produce cursor \(kvPosition) != position \(position) for slot \(slot)")
         }
         // Decode must not share RAM with an idle ANE context (Track A):
         // prompts that end exactly on a chunk boundary reach here with the
@@ -75,7 +107,7 @@ extension RealForwardRunner {
         let tReserve = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         totalPreamblePinNanos &+= tReserve - tPin
         totalPreambleReleaseNanos = model.expertCachePinQueueWaitNanos
-        try kv?.reserve(tokens: position + 1)
+        try kv?.reserve(tokens: position + 1, slot: slot)
         totalPreambleReserveNanos &+= clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - tReserve
         guard position < maxContext else {
             throw PrefillError.prefillCursorMismatch(
@@ -255,6 +287,7 @@ extension RealForwardRunner {
             try encodeDecodeAttention(attnCB: &attnCB, tailCB: tailCB,
                                       softmaxCB: &softmaxCB,
                                       layer: L, position: position,
+                                      slot: slot,
                                       isLinear: isLinear, rmsEps: eps,
                                       keepMask: keepMask)
             try encodeResidualExitDecode(commandBuffer: tailCB,
@@ -573,7 +606,7 @@ extension RealForwardRunner {
             }
         }
 
-        kv?.advance()
+        kv?.advance(slot: slot, by: 1)
     }
 
     /// Gated-DeltaNet linear attention (layer mask 2), one decode step.
@@ -613,7 +646,8 @@ extension RealForwardRunner {
         cb = next
     }
 
-    func encodeLinearAttentionDecode(_ cb: inout MTLCommandBuffer, layer L: Int) throws {
+    func encodeLinearAttentionDecode(_ cb: inout MTLCommandBuffer, layer L: Int,
+                                     slot: Int = 0) throws {
         guard let gdn, let gdnState, let gdnQKVRaw, let gdnConvOut,
               let gdnZ, let gdnA, let gdnB, let gdnY, let gdnOut else {
             throw ModelError.internalInconsistency(
@@ -670,8 +704,9 @@ extension RealForwardRunner {
         try rotate(&cb, role: "gdn.inproj")
 
         if !ablated("conv") {
+        let tail = gdnState.convTailSlot(layer: L, slot: slot)
         try gdn.encodeConvDecode(commandBuffer: cb,
-                                 tail: gdnState.convTailBuffer(layer: L),
+                                 tail: tail.buffer, tailOffset: tail.offset,
                                  qkv: gdnQKVRaw,
                                  convWeight: convW.buffer,
                                  convWeightOffset: Int(convW.offset),
@@ -683,13 +718,14 @@ extension RealForwardRunner {
         }
         try rotate(&cb, role: "gdn.qknorm")
         if !ablated("delta") {
+        let state = gdnState.stateSlot(layer: L, slot: slot)
         try gdn.encodeDeltaStepDecode(commandBuffer: cb,
                                       convOut: gdnConvOut,
                                       aProj: gdnA,
                                       bProj: gdnB,
                                       aLog: aLog.buffer, aLogOffset: Int(aLog.offset),
                                       dtBias: dtBias.buffer, dtBiasOffset: Int(dtBias.offset),
-                                      state: gdnState.stateBuffer(layer: L),
+                                      state: state.buffer, stateOffset: state.offset,
                                       y: gdnY)
         }
         try rotate(&cb, role: "gdn.delta")
@@ -765,6 +801,7 @@ extension RealForwardRunner {
     func encodeGatedFullAttentionDecode(_ cb: inout MTLCommandBuffer,
                                                 layer L: Int,
                                                 position: Int,
+                                                slot: Int = 0,
                                                 seqLen: UInt32,
                                                 keepMask: MTLBuffer? = nil) throws {
         guard let elementwise, let rope, let qPackedScratch, let attnGateScratch else {
@@ -781,8 +818,8 @@ extension RealForwardRunner {
         let numKV = cfg.numFullKVHeads
         let qDim = UInt32(cfg.numHeads * headDim)
         let kvDim = UInt32(numKV * headDim)
-        let kSlot = kv.kSlot(layer: L, position: position)
-        let vSlot = kv.vSlot(layer: L, position: position)
+        let kSlot = kv.kSlot(layer: L, position: position, slot: slot)
+        let vSlot = kv.vSlot(layer: L, position: position, slot: slot)
         let quantizedKV = kv.precision.isQuantized
         let kWrite = quantizedKV ? (buffer: kStage, offset: 0) : kSlot
         let vWrite = quantizedKV ? (buffer: vStage, offset: 0) : vSlot
@@ -836,11 +873,11 @@ extension RealForwardRunner {
                               theta: Float(cfg.fullRopeTheta))
         if quantizedKV {
             try encodeQuantizedKV(commandBuffer: cb, kv: kv, layer: L,
-                                  position: position, keySource: kStage,
+                                  position: position, slot: slot, keySource: kStage,
                                   valueSource: vStage, elementCount: Int(kvDim))
         }
-        let keyView = kv.keyView(layer: L, validTokenCount: Int(seqLen))
-        let valueView = kv.valueView(layer: L, validTokenCount: Int(seqLen))
+        let keyView = kv.keyView(layer: L, slot: slot, validTokenCount: Int(seqLen))
+        let valueView = kv.valueView(layer: L, slot: slot, validTokenCount: Int(seqLen))
         try attention.encodeFull(commandBuffer: cb,
                              q: qScratch,
                              k: keyView.buffer, kOffset: keyView.offset,
@@ -1014,6 +1051,7 @@ extension RealForwardRunner {
         softmaxCB: inout MTLCommandBuffer?,
         layer L: Int,
         position: Int,
+        slot: Int = 0,
         isLinear: Bool,
         rmsEps eps: Float,
         keepMask: MTLBuffer? = nil
@@ -1027,18 +1065,21 @@ extension RealForwardRunner {
         let seqLen   = UInt32(position + 1)
         if isLinear {
             // Gated-DeltaNet linear attention: no KV slots, no RoPE — a
-            // fixed-size recurrent state updated in place.
-            try encodeLinearAttentionDecode(&attnCB, layer: L)
+            // fixed-size recurrent state updated in place, one per slot.
+            try encodeLinearAttentionDecode(&attnCB, layer: L, slot: slot)
         } else if cfg.attnOutputGate {
             // Qwen full attention: packed [query ; gate] q_proj, real
             // v_proj, no V norm, NeoX sub-dim RoPE, sigmoid output gate.
             try encodeGatedFullAttentionDecode(&attnCB, layer: L,
                                                position: position,
+                                               slot: slot,
                                                seqLen: seqLen,
                                                keepMask: keepMask)
         } else {
-            let kSlot = kv?.kSlot(layer: L, position: position) ?? (buffer: kStage, offset: 0)
-            let vSlot = kv?.vSlot(layer: L, position: position) ?? (buffer: vStage, offset: 0)
+            let kSlot = kv?.kSlot(layer: L, position: position, slot: slot)
+                ?? (buffer: kStage, offset: 0)
+            let vSlot = kv?.vSlot(layer: L, position: position, slot: slot)
+                ?? (buffer: vStage, offset: 0)
             let quantizedKV = kv?.precision.isQuantized == true
             let kWrite = quantizedKV ? (buffer: kStage, offset: 0) : kSlot
             let vWrite = quantizedKV ? (buffer: vStage, offset: 0) : vSlot
@@ -1120,11 +1161,11 @@ extension RealForwardRunner {
             }
             if quantizedKV {
                 try encodeQuantizedKV(commandBuffer: attnCB, kv: kv, layer: L,
-                                      position: position, keySource: kStage,
+                                      position: position, slot: slot, keySource: kStage,
                                       valueSource: vStage, elementCount: Int(kvDim))
             }
-            let keyView = kv.keyView(layer: L, validTokenCount: Int(seqLen))
-            let valueView = kv.valueView(layer: L, validTokenCount: Int(seqLen))
+            let keyView = kv.keyView(layer: L, slot: slot, validTokenCount: Int(seqLen))
+            let valueView = kv.valueView(layer: L, slot: slot, validTokenCount: Int(seqLen))
             guard let attentionCB = ctx.queue.makeCommandBuffer() else {
                 throw ModelError.residentBufferWrapFailed
             }
@@ -1148,8 +1189,8 @@ extension RealForwardRunner {
                     : 0
                 try attention.encodeSWA(commandBuffer: attentionCB,
                                     q: qScratch,
-                                    k: kSlot.buffer, kOffset: 0,
-                                    v: vSlot.buffer, vOffset: 0,
+                                    k: kSlot.buffer, kOffset: keyView.offset,
+                                    v: vSlot.buffer, vOffset: valueView.offset,
                                     out: attnOut,
                                     headDim: UInt32(headDimL),
                                     numQHeads: UInt32(cfg.numHeads),

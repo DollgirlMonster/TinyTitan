@@ -11,6 +11,9 @@ public struct ServerArguments: Equatable, Sendable {
     public let modelIDOverride: String?
     public let maxContext: Int
     public let queueLimit: Int
+    /// Generations that may run at once through the batched engine. One is the
+    /// historical single-generation server; the excess still queues.
+    public let maxConcurrentSequences: Int
     public let promptCacheMode: ServerPromptCacheMode
     public let promptCacheMaximumEntries: Int
     public let promptCacheMemoryMiB: Int
@@ -119,6 +122,10 @@ public struct ServerArguments: Equatable, Sendable {
                              With YaRN: 524288 or 1048576 (default 1048576).
       --rope-scaling <mode>  Context scaling: none or yarn (default none).
       --queue-limit <count>  Maximum queued requests (default 4).
+      --max-concurrent-sequences <count>
+                             Generations served at once, 1...4 (default 4).
+                             Requests beyond this plus --queue-limit are shed
+                             with 429. The prompt cache is off above 1.
       --prompt-cache-mode <off|single-prefix|multi-prefix>
                              Prompt KV reuse mode (default multi-prefix).
       --prompt-cache-entries <count>
@@ -194,6 +201,7 @@ public struct ServerArguments: Equatable, Sendable {
         var maxContext = 262_144
         var maxContextWasSet = false
         var queueLimit = 4
+        var maxConcurrentSequences = 4
         var promptCacheMode: ServerPromptCacheMode = .multiPrefix
         var promptCacheMaximumEntries = 4
         var promptCacheMemoryMiB = 256
@@ -291,6 +299,12 @@ public struct ServerArguments: Equatable, Sendable {
                     throw ServerArgumentError.invalid("--queue-limit must be between 1 and 64")
                 }
                 queueLimit = parsed
+            case "--max-concurrent-sequences":
+                guard let parsed = Int(value), (1...4).contains(parsed) else {
+                    throw ServerArgumentError.invalid(
+                        "--max-concurrent-sequences must be between 1 and 4")
+                }
+                maxConcurrentSequences = parsed
             case "--prompt-cache-mode":
                 guard let parsed = ServerPromptCacheMode(rawValue: value) else {
                     throw ServerArgumentError.invalid(
@@ -436,6 +450,7 @@ public struct ServerArguments: Equatable, Sendable {
                                modelIDOverride: modelIDOverride,
                                maxContext: maxContext,
                                queueLimit: queueLimit,
+                               maxConcurrentSequences: maxConcurrentSequences,
                                promptCacheMode: promptCacheMode,
                                promptCacheMaximumEntries: promptCacheMaximumEntries,
                                promptCacheMemoryMiB: promptCacheMemoryMiB,

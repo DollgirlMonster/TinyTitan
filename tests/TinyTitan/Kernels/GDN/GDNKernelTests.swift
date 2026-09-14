@@ -101,7 +101,9 @@ import TinyTitanValidationSupport
                                       convW: MTLBuffer, aLog: MTLBuffer,
                                       dtBias: MTLBuffer, normW: MTLBuffer,
                                       convOut: MTLBuffer, yBuf: MTLBuffer,
-                                      outBuf: MTLBuffer) throws -> [Float] {
+                                      outBuf: MTLBuffer,
+                                      tailOffset: Int = 0,
+                                      stateOffset: Int = 0) throws -> [Float] {
         let cfg = Self.cfg
         guard let qkv = Fp16Buffer.make(ctx.device, halves: fixture.qkvRows[row].map { Float16($0) }),
               let aProj = Fp16Buffer.make(ctx.device, halves: fixture.aRows[row].map { Float16($0) }),
@@ -111,7 +113,8 @@ import TinyTitanValidationSupport
             throw MetalError.noDevice
         }
         guard let cb = ctx.queue.makeCommandBuffer() else { throw MetalError.noQueue }
-        try gdn.encodeConvDecode(commandBuffer: cb, tail: tail, qkv: qkv,
+        try gdn.encodeConvDecode(commandBuffer: cb, tail: tail, tailOffset: tailOffset,
+                             qkv: qkv,
                              convWeight: convW, convWeightOffset: 0,
                              out: convOut)
         try gdn.encodeQKNorm(commandBuffer: cb, convOut: convOut)
@@ -119,7 +122,7 @@ import TinyTitanValidationSupport
                                   aProj: aProj, bProj: bProj,
                                   aLog: aLog, aLogOffset: 0,
                                   dtBias: dtBias, dtBiasOffset: 0,
-                                  state: state, y: yBuf)
+                                  state: state, stateOffset: stateOffset, y: yBuf)
         try gdn.encodeGatedNorm(commandBuffer: cb, y: yBuf, z: zBuf,
                             weight: normW, weightOffset: 0, out: outBuf)
         cb.commit()
@@ -178,6 +181,71 @@ import TinyTitanValidationSupport
             maxStateErr = max(maxStateErr, abs(statePtr[i] - reference.state[i]))
         }
         #expect(maxStateErr <= 5e-2, "state divergence \(maxStateErr)")
+    }
+
+    /// A slot's recurrent state and conv tail live at a byte offset in a shared
+    /// buffer. The decode kernels must bind that offset: if they wrote at offset
+    /// 0 instead, two batched sequences would share one recurrence and both
+    /// outputs would be silently wrong rather than failing.
+    @Test func decodeStepHonoursSlotOffsets() throws {
+        let cfg = Self.cfg
+        let fixture = Fixture(rows: 1, seed: 0x5107)
+        let ctx = try MetalContext()
+        let gdn = try GDN(context: ctx, config: cfg)
+
+        let tailSlot = (cfg.convKernelSize - 1) * cfg.qkvDim * 2
+        let stateCount = cfg.numVHeads * cfg.valueHeadDim * cfg.keyHeadDim
+        let stateSlot = stateCount * 4
+        guard let twoTail = ctx.device.makeBuffer(length: 2 * tailSlot,
+                                                  options: .storageModeShared),
+              let twoState = ctx.device.makeBuffer(length: 2 * stateSlot,
+                                                   options: .storageModeShared),
+              let oneTail = ctx.device.makeBuffer(length: tailSlot,
+                                                  options: .storageModeShared),
+              let oneState = ctx.device.makeBuffer(length: stateSlot,
+                                                   options: .storageModeShared),
+              let convW = Self.makeBF16Buffer(ctx.device, values: fixture.convW),
+              let aLog = Self.makeBF16Buffer(ctx.device, values: fixture.aLog),
+              let dtBias = Self.makeBF16Buffer(ctx.device, values: fixture.dtBias),
+              let normW = Self.makeBF16Buffer(ctx.device, values: fixture.normW),
+              let convOut = Fp16Buffer.make(ctx.device, count: cfg.qkvDim),
+              let yBuf = Fp16Buffer.make(ctx.device, count: cfg.valueDim),
+              let outBuf = Fp16Buffer.make(ctx.device, count: cfg.valueDim) else {
+            Issue.record("Failed to allocate buffers"); return
+        }
+        memset(twoTail.contents(), 0, 2 * tailSlot)
+        memset(twoState.contents(), 0, 2 * stateSlot)
+        memset(oneTail.contents(), 0, tailSlot)
+        memset(oneState.contents(), 0, stateSlot)
+
+        // Same step twice: once in a lone slot at offset 0, once in slot 1 of a
+        // two-slot buffer. Both start from zero, so the results must be equal.
+        let reference = try Self.gpuDecodeStep(
+            ctx: ctx, gdn: gdn, fixture: fixture, row: 0,
+            tail: oneTail, state: oneState, convW: convW, aLog: aLog,
+            dtBias: dtBias, normW: normW, convOut: convOut,
+            yBuf: yBuf, outBuf: outBuf)
+        let slotted = try Self.gpuDecodeStep(
+            ctx: ctx, gdn: gdn, fixture: fixture, row: 0,
+            tail: twoTail, state: twoState, convW: convW, aLog: aLog,
+            dtBias: dtBias, normW: normW, convOut: convOut,
+            yBuf: yBuf, outBuf: outBuf,
+            tailOffset: tailSlot, stateOffset: stateSlot)
+
+        for i in 0..<cfg.valueDim {
+            #expect(abs(slotted[i] - reference[i]) <= 1e-6,
+                    "slot 1 output \(i): \(slotted[i]) vs \(reference[i])")
+        }
+        let twoStatePtr = twoState.contents().bindMemory(to: Float.self,
+                                                         capacity: 2 * stateCount)
+        let oneStatePtr = oneState.contents().bindMemory(to: Float.self,
+                                                         capacity: stateCount)
+        for i in 0..<stateCount {
+            #expect(twoStatePtr[stateCount + i] == oneStatePtr[i],
+                    "slot 1 state \(i) differs from the lone-slot state")
+            #expect(twoStatePtr[i] == 0,
+                    "slot 0 state \(i) was written by slot 1's step")
+        }
     }
 
     @Test func prefillChunkMatchesSequentialDecode() throws {

@@ -40,6 +40,31 @@ struct ServerCoordinatorTests {
         #expect(await coordinator.queuedCount == 0)
     }
 
+    /// Width 2 runs two generations at once, queues the third behind the
+    /// `queueLimit`, and sheds the one after that — the batched admission rule.
+    @Test func widthRunsSeveralAtOnceAndQueuesTheRest() async throws {
+        let coordinator = ServerCoordinator(queueLimit: 1, width: 2)
+        let release = AsyncSemaphore()
+
+        let a = Task { try await coordinator.run { await release.wait(); return 1 } }
+        let b = Task { try await coordinator.run { await release.wait(); return 2 } }
+        try await waitUntil(timeout: .seconds(5)) { await coordinator.runningCount == 2 }
+
+        let queued = Task { try await coordinator.run { 3 } }
+        try await waitUntil(timeout: .seconds(5)) { await coordinator.queuedCount == 1 }
+        await #expect(throws: ServerRequestError.queueFull) {
+            try await coordinator.run { 4 }
+        }
+
+        await release.signal()
+        #expect(try await a.value == 1)
+        #expect(try await b.value == 2)
+        // The queued one takes the freed slot without waiting again.
+        #expect(try await queued.value == 3)
+        #expect(await coordinator.runningCount == 0)
+        #expect(await coordinator.queuedCount == 0)
+    }
+
     /// Bounded poll so a state that never reaches `condition` fails fast
     /// instead of spinning forever.
     private func waitUntil(timeout: Duration,

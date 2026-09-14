@@ -26,17 +26,48 @@ public final class GDNStateManager {
     public let stateBytesPerLayer: Int
     public let convTailBytesPerLayer: Int
 
+    /// How many independent sequences share this state. Each slot owns a
+    /// contiguous region of every layer's state and conv-tail buffer, so a
+    /// batched decode step advances one recurrence per sequence. Defaults to
+    /// one, and at `slots == 1` every region is at offset 0 exactly as before.
+    public let slots: Int
+
+    /// Hard cap, mirroring `KVCacheManager.maximumSlots`.
+    public static let maximumSlots = 8
+
     private static let fp32Size = 4
     private static let fp16Size = 2
 
+    /// Worst-case bytes `slots` sequences' recurrent state and conv tails
+    /// occupy. Unlike KV this does not grow with context: it is the same at
+    /// load time and at the context limit.
+    public static func worstCaseBytes(config: ArchConfig, slots: Int = 1) -> Int {
+        precondition(slots > 0, "slots must be positive")
+        let linear = config.linearAttention
+        let stateBytes = linear.numVHeads * linear.valueHeadDim
+            * linear.keyHeadDim * fp32Size
+        let convTailBytes = max(0, linear.convKernelSize - 1)
+            * linear.qkvDim * fp16Size
+        let linearLayers = (0..<config.numLayers)
+            .filter { config.layerIsLinear($0) }
+            .count
+        return slots * linearLayers * (stateBytes + convTailBytes)
+    }
+
     public init(device: MTLDevice, config: ArchConfig,
+                slots: Int = 1,
                 enableSpeculativeCheckpoint: Bool = false) throws {
+        precondition(slots > 0 && slots <= Self.maximumSlots,
+                     "slots must be between 1 and \(Self.maximumSlots)")
         self.config = config
+        self.slots = slots
         let la = config.linearAttention
         let stateBytes = la.numVHeads * la.valueHeadDim * la.keyHeadDim * Self.fp32Size
         let convTailBytes = max(0, la.convKernelSize - 1) * la.qkvDim * Self.fp16Size
         self.stateBytesPerLayer = stateBytes
         self.convTailBytesPerLayer = convTailBytes
+        let stateBufferBytes = stateBytes * slots
+        let convTailBufferBytes = convTailBytes * slots
 
         var states: [MTLBuffer?] = []
         var tails: [MTLBuffer?] = []
@@ -59,12 +90,12 @@ public final class GDNStateManager {
                 throw ModelError.internalInconsistency(
                     detail: "linear layer \(layer) present but linearAttention config is empty")
             }
-            guard let state = device.makeBuffer(length: stateBytes,
+            guard let state = device.makeBuffer(length: stateBufferBytes,
                                                 options: .storageModeShared) else {
                 throw ModelError.residentBufferWrapFailed
             }
             state.label = "gdn.state.layer\(layer)"
-            guard let tail = device.makeBuffer(length: convTailBytes,
+            guard let tail = device.makeBuffer(length: convTailBufferBytes,
                                                options: .storageModeShared) else {
                 throw ModelError.residentBufferWrapFailed
             }
@@ -73,10 +104,10 @@ public final class GDNStateManager {
             tails.append(tail)
             if enableSpeculativeCheckpoint {
                 guard let speculativeState = device.makeBuffer(
-                    length: stateBytes,
+                    length: stateBufferBytes,
                     options: .storageModeShared),
                       let speculativeTail = device.makeBuffer(
-                    length: convTailBytes,
+                    length: convTailBufferBytes,
                     options: .storageModeShared) else {
                     throw ModelError.residentBufferWrapFailed
                 }
@@ -126,11 +157,55 @@ public final class GDNStateManager {
         return buffer
     }
 
+    /// Byte offset of slot `slot`'s delta-rule state in its layer's buffer.
+    public func stateOffset(layer: Int, slot: Int) -> Int {
+        validateSlot(slot)
+        return slot * stateBytesPerLayer
+    }
+
+    /// Byte offset of slot `slot`'s conv tail in its layer's buffer.
+    public func convTailOffset(layer: Int, slot: Int) -> Int {
+        validateSlot(slot)
+        return slot * convTailBytesPerLayer
+    }
+
+    /// Slot `slot`'s state buffer and the offset the kernel must bind it at.
+    public func stateSlot(layer: Int, slot: Int) -> (buffer: MTLBuffer, offset: Int) {
+        (stateBuffer(layer: layer), stateOffset(layer: layer, slot: slot))
+    }
+
+    /// Slot `slot`'s conv-tail buffer and the offset the kernel must bind it at.
+    public func convTailSlot(layer: Int, slot: Int) -> (buffer: MTLBuffer, offset: Int) {
+        (convTailBuffer(layer: layer), convTailOffset(layer: layer, slot: slot))
+    }
+
+    private func validateSlot(_ slot: Int) {
+        precondition(slot >= 0 && slot < slots,
+                     "slot \(slot) is out of range 0..<\(slots)")
+    }
+
     public func isLinear(layer: Int) -> Bool { stateBuffers[layer] != nil }
 
     /// Reset all recurrent state to the empty-context value (zeros).
     public func reset() {
         zeroAll()
+    }
+
+    /// Reset one slot's recurrent state to zeros without touching the others.
+    /// The recurrence and the conv both define the empty-context state as
+    /// zeros, so a recycled batch slot starts clean.
+    public func reset(slot: Int) {
+        validateSlot(slot)
+        let stateRange = slot * stateBytesPerLayer
+        let tailRange = slot * convTailBytesPerLayer
+        for layer in 0..<config.numLayers {
+            if let state = stateBuffers[layer] {
+                memset(state.contents() + stateRange, 0, stateBytesPerLayer)
+            }
+            if let tail = convTailBuffers[layer] {
+                memset(tail.contents() + tailRange, 0, convTailBytesPerLayer)
+            }
+        }
     }
 
     func snapshotSegmentLengths() -> [Int] {

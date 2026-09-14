@@ -72,6 +72,10 @@ enum ServerModelIdentity {
 public struct ModelSessionPlan: Sendable {
     public let modelDirectory: URL
     public let maxContext: Int
+    /// How many sequences the session's runner and per-slot scratch support.
+    /// One is the historical single-generation server; the coordinator's width
+    /// is kept equal to it.
+    public let slots: Int
     public let promptCacheMode: ServerPromptCacheMode
     public let promptCacheMaximumEntries: Int
     public let promptCacheMemoryLimitBytes: Int
@@ -92,6 +96,7 @@ public struct ModelSessionPlan: Sendable {
 
     public init(modelDirectory: URL,
                 maxContext: Int,
+                slots: Int = 1,
                 promptCacheMode: ServerPromptCacheMode,
                 promptCacheMaximumEntries: Int,
                 promptCacheMemoryLimitBytes: Int,
@@ -108,6 +113,7 @@ public struct ModelSessionPlan: Sendable {
                 mtpMemoryMiB: Int) {
         self.modelDirectory = modelDirectory
         self.maxContext = maxContext
+        self.slots = slots
         self.promptCacheMode = promptCacheMode
         self.promptCacheMaximumEntries = promptCacheMaximumEntries
         self.promptCacheMemoryLimitBytes = promptCacheMemoryLimitBytes
@@ -130,6 +136,7 @@ public struct ModelSessionPlan: Sendable {
         try await ServerModelSession.load(
             modelDirectory: modelDirectory,
             maxContext: maxContext,
+            slots: slots,
             promptCacheMode: promptCacheMode,
             promptCacheMaximumEntries: promptCacheMaximumEntries,
             promptCacheMemoryLimitBytes: promptCacheMemoryLimitBytes,
@@ -186,6 +193,7 @@ public struct ModelSessionPlan: Sendable {
             prefillChunkTokens: resolvedChunk,
             promptCacheMode: ServerModelSession.effectivePromptCacheMode(
                 requested: promptCacheMode,
-                mtpEnabled: mtpModelDirectory != nil))
+                mtpEnabled: mtpModelDirectory != nil,
+                slots: mtpModelDirectory == nil ? slots : 1))
     }
 }

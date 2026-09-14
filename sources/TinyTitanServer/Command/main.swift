@@ -44,9 +44,14 @@ do {
     // Built lazily: the CPU engine serves an affine snapshot, which has no
     // manifest and would be rejected by a plan that expects an install.
     // Constructing it eagerly printed that rejection on every CPU launch.
+    // Batched serving: one runner with this many KV/GDN slots, and a
+    // coordinator that admits that many at once. MTP is single-sequence (its
+    // draft state is one stream), so it caps the width at one.
+    let concurrency = arguments.mtpModel == nil ? arguments.maxConcurrentSequences : 1
     let makePlan = { ModelSessionPlan(
         modelDirectory: modelURL,
         maxContext: arguments.maxContext,
+        slots: concurrency,
         promptCacheMode: arguments.promptCacheMode,
         promptCacheMaximumEntries: arguments.promptCacheMaximumEntries,
         promptCacheMemoryLimitBytes: arguments.promptCacheMemoryMiB * 1_048_576,
@@ -166,6 +171,7 @@ do {
     let server = TinyTitanHTTPServer(
         modelID: facts.modelID,
         queueLimit: arguments.queueLimit,
+        maxConcurrentSequences: concurrency,
         backend: servingBackend,
         reasoningProfile: try reasoningProfile ?? makePlan().reasoningProfile(),
         router: router)

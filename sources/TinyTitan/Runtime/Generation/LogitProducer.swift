@@ -8,6 +8,19 @@ public protocol LogitProducer: AnyObject, Sendable {
     func reset()
     /// Run one token at `position`, leaving FP16 logits in `logits`.
     func produce(token: Int32, position: Int, into logits: MTLBuffer) async throws
+    /// Slot-aware decode: run one token into sequence `slot`'s KV and GDN
+    /// regions. Required (not merely an extension) so a slot-aware producer is
+    /// reached through the existential `any LogitProducer`; the default serves
+    /// the single-sequence producers that have no slots.
+    func produce(token: Int32, position: Int, slot: Int,
+                 into logits: MTLBuffer) async throws
+}
+
+public extension LogitProducer {
+    func produce(token: Int32, position: Int, slot: Int,
+                 into logits: MTLBuffer) async throws {
+        try await produce(token: token, position: position, into: logits)
+    }
 }
 
 public protocol ContinuableLogitProducer: LogitProducer {

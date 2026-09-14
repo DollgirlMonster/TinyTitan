@@ -10,7 +10,8 @@ import TinyTitanValidationSupport
 /// graph, and the KV-cache + GDN-state reset interplay.
 @Suite struct QwenRunnerTests {
 
-    private func makeRunner(weightBits: Int = 4) throws -> (URL, MetalContext, RealForwardRunner) {
+    private func makeRunner(weightBits: Int = 4,
+                            slots: Int = 1) throws -> (URL, MetalContext, RealForwardRunner) {
         let dir = try QwenToySynthetic.write(weightBits: weightBits)
         let ctx = try MetalContext()
         let model = try Model.load(directoryURL: dir,
@@ -18,7 +19,8 @@ import TinyTitanValidationSupport
                                    expecting: .qwenToy())
         let runner = try RealForwardRunner(model: model,
                                            context: ctx,
-                                           maxContext: 64)
+                                           maxContext: 64,
+                                           slots: slots)
         return (dir, ctx, runner)
     }
 
@@ -90,6 +92,63 @@ import TinyTitanValidationSupport
         }
     }
 
+    /// Two sequences decoding through one runner, interleaved token by token in
+    /// their own KV and GDN slots, must produce exactly what each sequence
+    /// produces alone. If any slot offset were dropped — the KV region base, the
+    /// GDN state offset, the conv tail — the two would share state and this
+    /// comparison would drift rather than fail loudly.
+    @Test(arguments: [8])
+    func batchedDecodeKeepsSlotsIndependent(bits: Int) async throws {
+        let aTokens: [Int32] = [11, 7, 5]
+        let bTokens: [Int32] = [3, 9, 4]
+        let vocab = 1024
+
+        /// One sequence alone in slot 0, returning the logits after each token.
+        func alone(_ tokens: [Int32]) async throws -> [[Float]] {
+            let (dir, ctx, runner) = try makeRunner(weightBits: bits)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let logits = try makeLogits(ctx, vocab: vocab)
+            var out: [[Float]] = []
+            for (position, token) in tokens.enumerated() {
+                try await runner.produce(token: token, position: position, into: logits)
+                out.append(Fp16Buffer.read(logits, count: vocab))
+            }
+            return out
+        }
+
+        let referenceA = try await alone(aTokens)
+        let referenceB = try await alone(bTokens)
+
+        let (dir, ctx, runner) = try makeRunner(weightBits: bits, slots: 2)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(runner.slots == 2)
+        let logits = try makeLogits(ctx, vocab: vocab)
+        var gotA: [[Float]] = []
+        var gotB: [[Float]] = []
+        for position in 0..<max(aTokens.count, bTokens.count) {
+            if position < aTokens.count {
+                try await runner.produce(token: aTokens[position], position: position,
+                                         slot: 0, into: logits)
+                gotA.append(Fp16Buffer.read(logits, count: vocab))
+            }
+            if position < bTokens.count {
+                try await runner.produce(token: bTokens[position], position: position,
+                                         slot: 1, into: logits)
+                gotB.append(Fp16Buffer.read(logits, count: vocab))
+            }
+        }
+
+        for (slot, pair) in [("0", (referenceA, gotA)), ("1", (referenceB, gotB))] {
+            #expect(pair.0.count == pair.1.count)
+            for (step, (want, got)) in zip(pair.0, pair.1).enumerated() {
+                for (i, (w, g)) in zip(want, got).enumerated() {
+                    #expect(abs(w - g) <= 1e-3,
+                            "slot \(slot) step \(step) logit \(i): \(g) vs \(w)")
+                }
+            }
+        }
+    }
+
     private func makeLogits(_ ctx: MetalContext, vocab: Int) throws -> MTLBuffer {
         guard let buf = ctx.device.makeBuffer(
             length: vocab * MemoryLayout<Float16>.stride,
@@ -97,6 +156,86 @@ import TinyTitanValidationSupport
             throw ModelError.residentBufferWrapFailed
         }
         return buf
+    }
+
+    /// Two sequences driven **concurrently** through one runner must still
+    /// produce each sequence's solo logits. They share the runner's scratch, so
+    /// this only holds because `ForwardStepGate` serializes the forward step;
+    /// without it the two would interleave inside a token and corrupt both.
+    @Test(arguments: [8])
+    func concurrentSlotsSerializeThroughTheStepGate(bits: Int) async throws {
+        let aTokens: [Int32] = [11, 7, 5]
+        let bTokens: [Int32] = [3, 9, 4]
+        let vocab = 1024
+
+        func alone(_ tokens: [Int32]) async throws -> [[Float]] {
+            let (dir, ctx, runner) = try makeRunner(weightBits: bits)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let logits = try makeLogits(ctx, vocab: vocab)
+            var out: [[Float]] = []
+            for (position, token) in tokens.enumerated() {
+                try await runner.produce(token: token, position: position, into: logits)
+                out.append(Fp16Buffer.read(logits, count: vocab))
+            }
+            return out
+        }
+
+        let referenceA = try await alone(aTokens)
+        let referenceB = try await alone(bTokens)
+
+        let (dir, ctx, runner) = try makeRunner(weightBits: bits, slots: 2)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Each task makes its own logits buffer: an MTLBuffer is not Sendable,
+        // so one built outside and captured by a `sending` closure is rejected.
+        let (gotA, gotB) = try await withThrowingTaskGroup(
+            of: (Int, [[Float]]).self
+        ) { group in
+            group.addTask {
+                guard let logits = ctx.device.makeBuffer(
+                    length: vocab * MemoryLayout<Float16>.stride,
+                    options: .storageModeShared) else {
+                    throw ModelError.residentBufferWrapFailed
+                }
+                var rows: [[Float]] = []
+                for (position, token) in aTokens.enumerated() {
+                    try await runner.produce(token: token, position: position,
+                                             slot: 0, into: logits)
+                    rows.append(Fp16Buffer.read(logits, count: vocab))
+                }
+                return (0, rows)
+            }
+            group.addTask {
+                guard let logits = ctx.device.makeBuffer(
+                    length: vocab * MemoryLayout<Float16>.stride,
+                    options: .storageModeShared) else {
+                    throw ModelError.residentBufferWrapFailed
+                }
+                var rows: [[Float]] = []
+                for (position, token) in bTokens.enumerated() {
+                    try await runner.produce(token: token, position: position,
+                                             slot: 1, into: logits)
+                    rows.append(Fp16Buffer.read(logits, count: vocab))
+                }
+                return (1, rows)
+            }
+            var a: [[Float]] = []
+            var b: [[Float]] = []
+            for try await (slot, rows) in group {
+                if slot == 0 { a = rows } else { b = rows }
+            }
+            return (a, b)
+        }
+
+        for (slot, pair) in [("0", (referenceA, gotA)), ("1", (referenceB, gotB))] {
+            #expect(pair.0.count == pair.1.count)
+            for (step, (want, got)) in zip(pair.0, pair.1).enumerated() {
+                for (i, (w, g)) in zip(want, got).enumerated() {
+                    #expect(abs(w - g) <= 1e-3,
+                            "slot \(slot) step \(step) logit \(i): \(g) vs \(w)")
+                }
+            }
+        }
     }
 
     /// (a) Runner init with the qwen arch: GDN kernels, state manager, and

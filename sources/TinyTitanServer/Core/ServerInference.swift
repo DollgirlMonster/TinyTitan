@@ -399,8 +399,13 @@ public actor ServerCoordinator {
     }
 
     private let queueLimit: Int
+    /// How many generations may run at once. One is the historical
+    /// single-generation server; more lets the batched slots through while the
+    /// excess still queues. The engine's `ForwardStepGate` keeps their forward
+    /// passes from interleaving.
+    private let width: Int
     private var admittedCount = 0
-    private var active = false
+    private var activeCount = 0
     private var waiters: [Waiter] = []
     private var shuttingDown = false
     /// Raised for the duration of every client generation. The side-engine
@@ -408,8 +413,9 @@ public actor ServerCoordinator {
     /// four in the gaps.
     public nonisolated let generating = GenerationSignal()
 
-    public init(queueLimit: Int) {
+    public init(queueLimit: Int, width: Int = 1) {
         self.queueLimit = queueLimit
+        self.width = max(1, width)
     }
 
     public func run<T: Sendable>(
@@ -429,9 +435,10 @@ public actor ServerCoordinator {
     ) async throws -> T {
         try Task.checkCancellation()
         guard !shuttingDown else { throw CancellationError() }
-        // S6: at most queueLimit queued behind one active request, i.e. up to
-        // queueLimit + 1 admitted.
-        guard admittedCount <= queueLimit else {
+        // S6: at most `width` running and `queueLimit` queued behind them, so
+        // `width + queueLimit` admitted. Width 1 reproduces the original
+        // single-generation bound exactly.
+        guard admittedCount < width + queueLimit else {
             // Shed load rather than queue without bound.
             throw ServerRequestError.queueFull
         }
@@ -450,8 +457,8 @@ public actor ServerCoordinator {
     private func acquire(onQueued: @escaping @Sendable () -> Void) async throws {
         try Task.checkCancellation()
         guard !shuttingDown else { throw CancellationError() }
-        if !active {
-            active = true
+        if activeCount < width {
+            activeCount += 1
             return
         }
         guard waiters.count < queueLimit else { throw ServerRequestError.queueFull }
@@ -478,7 +485,7 @@ public actor ServerCoordinator {
 
     private func release() {
         if waiters.isEmpty {
-            active = false
+            activeCount = max(0, activeCount - 1)
         } else {
             waiters.removeFirst().continuation.resume()
         }
@@ -494,7 +501,11 @@ public actor ServerCoordinator {
     }
 
     public var queuedCount: Int { waiters.count }
-    public var isActive: Bool { active }
+    public var isActive: Bool { activeCount > 0 }
+    /// Running generations, for tests and the readiness view.
+    public var runningCount: Int { activeCount }
+    /// The admission width this coordinator was built with.
+    public var concurrencyWidth: Int { width }
 }
 
 /// Snapshot of the runner's lifetime stage counters at request start, so the
@@ -566,7 +577,14 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
     private nonisolated let loadedReasoning: RequestReasoning
     private let runner: RealForwardRunner
     private let mtpDecoder: StreamingMTPDecoder?
-    private let scratch: RawCompletionScratch
+    /// One raw-completion scratch per slot: its own logits/probs/token buffers
+    /// and its own sampler, so concurrent slots cannot sample from each other's
+    /// logits.
+    private let scratches: [RawCompletionScratch]
+    /// Slots not currently held by a generation. Bounded by the coordinator's
+    /// width; the waiter queue is a safety net if width ever exceeds slots.
+    private var freeSlots: [Int]
+    private var slotWaiters: [SlotWaiter] = []
     private let prefillConfig: PrefillRuntimeConfig
     // Long prompts are prefilled chunk by chunk — small enough to keep expert
     // reads tight.
@@ -574,6 +592,8 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
     /// Routed-expert slots per layer actually in force, so the ready banner can
     /// report the streaming budget rather than leaving the user to infer it.
     public nonisolated let expertCacheSlots: Int
+    /// How many sequences this session runs at once.
+    public nonisolated let slots: Int
     private let maxContext: Int
     public nonisolated let promptCacheMode: ServerPromptCacheMode
     private let promptCacheDomain: ServerPromptCacheDomain
@@ -584,16 +604,28 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
     /// concise mode is off. Selected per quantization (see ConcisePrompt).
     private nonisolated let concisePrompt: String?
 
-    /// A pure function of its two arguments, so a caller can reproduce the
+    private struct SlotWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
+
+    /// A pure function of its arguments, so a caller can reproduce the
     /// effective cache mode for the startup banner without loading a model.
     public static func effectivePromptCacheMode(
         requested: ServerPromptCacheMode,
-        mtpEnabled: Bool
+        mtpEnabled: Bool,
+        slots: Int = 1
     ) -> ServerPromptCacheMode {
         // A target-only snapshot cannot restore the draft stream. Keeping a
         // cache allocated while MTP is active would spend memory on entries
         // that must never be consumed or published.
-        mtpEnabled ? .off : requested
+        guard !mtpEnabled else { return .off }
+        // The cache holds one sequence's KV prefix, and its snapshot/restore and
+        // `activePromptCacheEntryID` are session-wide. With more than one slot
+        // that entry could be restored into the wrong sequence, which produces
+        // plausible wrong output rather than an error, so batching runs with the
+        // cache off and re-prefills each turn until it is slot-keyed.
+        return slots > 1 ? .off : requested
     }
 
     /// lint:allow-long a sequential construction pipeline: tokenizer, Metal
@@ -602,6 +634,7 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
     /// tuple straight back into the next -- the same shape as Model.load.
     public static func load(modelDirectory: URL,
                             maxContext: Int,
+                            slots: Int = 1,
                             promptCacheMode: ServerPromptCacheMode = .multiPrefix,
                             promptCacheMaximumEntries: Int = 4,
                             promptCacheMemoryLimitBytes: Int = 256 * 1_048_576,
@@ -722,6 +755,34 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             ropeScalingMode: ropeScalingMode,
             yarnContextTokens: ropeScalingMode == .yarn
                 ? maxContext : RuntimeConfiguration.defaultYaRNContextTokens)
+        // MTP owns the target's runner and is single-sequence, so it cannot
+        // batch. Otherwise the requested width is capped by what the worst-case
+        // per-slot stores can hold beside the wired expert cache: the whole
+        // point of the cap is that the cache cannot be paged out to rescue an
+        // over-commit. The clamp is per load, so a catalog switch re-evaluates
+        // it against the model actually being loaded.
+        let requestedSlots = mtpModelDirectory == nil ? slots : 1
+        let perSlotBytes = BatchedMemoryBudget.perSlotBytes(
+            config: model.config,
+            maxContext: maxContext,
+            precision: runtime.kvCachePrecision,
+            fp16RingEnabled: runtime.fp16RingEnabled,
+            slidingWindow: model.config.slidingWindow,
+            maxPrefillChunkTokens: runtime.prefillChunkTokens,
+            vocab: model.config.vocabSize)
+        let slotBudget = BatchedMemoryBudget.slotBudgetBytes(
+            physicalMemory: ProcessInfo.processInfo.physicalMemory,
+            expertCacheBudgetBytes: expertCacheBudgetBytes ?? tunedBudget)
+        let effectiveSlots = BatchedMemoryBudget.effectiveSlots(
+            requested: requestedSlots,
+            perSlotBytes: perSlotBytes,
+            budgetBytes: slotBudget)
+        if effectiveSlots < requestedSlots {
+            FileHandle.standardError.write(Data(
+                ("TinyTitan batch width \(requestedSlots) exceeds the memory budget "
+                    + "(per-slot \(perSlotBytes / 1_048_576) MiB, budget "
+                    + "\(slotBudget / 1_048_576) MiB); serving \(effectiveSlots) at once\n").utf8))
+        }
         let mtpDecoder: StreamingMTPDecoder?
         let runner: RealForwardRunner
         if let mtpModelDirectory {
@@ -753,10 +814,13 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             runner = try RealForwardRunner(model: model,
                                            context: context,
                                            maxContext: maxContext,
+                                           slots: effectiveSlots,
                                            runtimeConfiguration: runtime)
         }
-        let scratch = try RawCompletionScratch(context: context, vocab: model.config.vocabSize,
-                                               logitSoftcap: Float(model.config.finalLogitSoftcap))
+        let scratches = try (0..<effectiveSlots).map { _ in
+            try RawCompletionScratch(context: context, vocab: model.config.vocabSize,
+                                     logitSoftcap: Float(model.config.finalLogitSoftcap))
+        }
         let templateDigest = SHA256.hash(data: try Data(contentsOf: templateURL))
             .map { String(format: "%02x", $0) }
             .joined()
@@ -784,7 +848,8 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             templateSHA256: templateDigest)
         let effectivePromptCacheMode = Self.effectivePromptCacheMode(
             requested: promptCacheMode,
-            mtpEnabled: mtpDecoder != nil)
+            mtpEnabled: mtpDecoder != nil,
+            slots: effectiveSlots)
         let promptStateStore: ServerPromptStateStore?
         let promptCache: ServerPromptCache
         if effectivePromptCacheMode == .multiPrefix {
@@ -816,9 +881,10 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
                                       effort: reasoningEffort),
                                   runner: runner,
                                   mtpDecoder: mtpDecoder,
-                                  scratch: scratch,
+                                  scratches: scratches,
                                   prefillConfig: runtime.prefillConfig,
                                   expertCacheSlots: loadSlots,
+                                  slots: effectiveSlots,
                                   maxContext: maxContext,
                                   promptCacheMode: effectivePromptCacheMode,
                                   promptCacheDomain: promptCacheDomain,
@@ -835,9 +901,10 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
                  loadedReasoning: RequestReasoning,
                  runner: RealForwardRunner,
                  mtpDecoder: StreamingMTPDecoder?,
-                 scratch: RawCompletionScratch,
+                 scratches: [RawCompletionScratch],
                  prefillConfig: PrefillRuntimeConfig,
                  expertCacheSlots: Int,
+                 slots: Int,
                  maxContext: Int,
                  promptCacheMode: ServerPromptCacheMode,
                  promptCacheDomain: ServerPromptCacheDomain,
@@ -859,7 +926,9 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             weightBits: model.routedExpertWeightBits)
         self.runner = runner
         self.mtpDecoder = mtpDecoder
-        self.scratch = scratch
+        self.scratches = scratches
+        self.slots = max(1, slots)
+        self.freeSlots = Array(0..<max(1, slots))
         self.prefillConfig = prefillConfig
         self.prefillChunkTokens = prefillConfig.chunkTokens
         self.expertCacheSlots = expertCacheSlots
@@ -869,6 +938,39 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
         self.promptCache = promptCache
         self.promptStateStore = promptStateStore
         self.concisePrompt = concisePrompt
+    }
+
+    /// Take a slot for one generation. Actor-isolated, so the free list and the
+    /// waiter queue never race; the coordinator's width normally keeps a slot
+    /// free, and the wait exists only so a wider coordinator degrades to
+    /// queueing instead of failing.
+    private func acquireSlot() async throws -> Int {
+        if let slot = freeSlots.popLast() { return slot }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                slotWaiters.append(SlotWaiter(id: id, continuation: continuation))
+            }
+        } onCancel: {
+            Task { await self.cancelSlotWaiter(id) }
+        }
+        if Task.isCancelled { throw CancellationError() }
+        guard let slot = freeSlots.popLast() else {
+            throw ServerRequestError.queueFull
+        }
+        return slot
+    }
+
+    private func cancelSlotWaiter(_ id: UUID) {
+        guard let index = slotWaiters.firstIndex(where: { $0.id == id }) else { return }
+        slotWaiters.remove(at: index).continuation.resume(throwing: CancellationError())
+    }
+
+    private func releaseSlot(_ slot: Int) {
+        freeSlots.append(slot)
+        if !slotWaiters.isEmpty {
+            slotWaiters.removeFirst().continuation.resume()
+        }
     }
 
     /// TINYTITAN_CONCISE_MODE=1 (or "on") enables concise mode; the per-quant
@@ -1094,6 +1196,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
         _ request: ValidatedChatRequest,
         onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void
     ) async throws -> ServerCompletion {
+        // One slot per in-flight generation. The coordinator bounds concurrency
+        // to this session's width, so a slot is normally free immediately; the
+        // wait is a safety net if the two ever disagree.
+        let slot = try await acquireSlot()
+        defer { releaseSlot(slot) }
         // Stage-split measurement (TINYTITAN_RUNNER_STATS): snapshot the runner's
         // lifetime counters so the footer can report this request's delta.
         let runnerSnapshot = RunnerCounterSnapshot(
@@ -1139,7 +1246,13 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
                     promptCache.invalidate()
                 }
                 activePromptCacheEntryID = nil
-                runner.reset()
+                // One sequence failed; only its slot's KV/GDN is suspect. A
+                // whole-runner reset would wipe the other slots' live state.
+                if slots > 1 {
+                    runner.reset(slot: slot)
+                } else {
+                    runner.reset()
+                }
                 mtpDecoder?.reset()
             }
         }
@@ -1246,9 +1359,10 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             promptIds: activePromptIDs,
             config: config,
             context: context,
-            scratch: scratch,
+            scratch: scratches[slot],
             prefillConfig: prefillConfig,
             start: activeStart,
+            slot: slot,
             // A watchdog stop is polled here, between tokens, alongside the
             // stop-string matcher's own flag.
             shouldStop: { shouldStop || watchdogs.wantsStop }) { progress in

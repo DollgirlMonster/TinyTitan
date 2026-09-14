@@ -12,11 +12,13 @@ import Metal
     private let config = ArchConfig.qwen36_35B_A3B
 
     private func makeManager(maxContext: Int,
+                             slots: Int = 1,
                              fp16RingEnabled: Bool = false) throws -> (MetalContext, KVCacheManager) {
         let ctx = try MetalContext()
         let kv = try KVCacheManager(device: ctx.device,
                                     config: config,
                                     maxContext: maxContext,
+                                    slots: slots,
                                     fp16RingEnabled: fp16RingEnabled,
                                     slidingWindow: config.slidingWindow,
                                     maxPrefillChunkTokens: 128)
@@ -203,6 +205,82 @@ import Metal
         #expect(throws: InferenceStateSnapshotError.self) {
             try kv.rewind(to: 13)
         }
+    }
+
+    /// One slot is exactly the pre-slot layout: region base 0 and a store sized
+    /// for one sequence. This is the invariant that keeps the existing
+    /// single-sequence path byte-identical, so it is asserted rather than
+    /// assumed.
+    @Test func oneSlotKeepsTheOriginalLayout() throws {
+        let (_, kv) = try makeManager(maxContext: 128, slots: 1)
+        let stride = kv.stride(layer: 3)
+        #expect(kv.slots == 1)
+        #expect(kv.bufferLength(layer: 3) == kv.capacity(layer: 3) * stride)
+        #expect(kv.kSlot(layer: 3, position: 0).offset == 0)
+        #expect(kv.kSlot(layer: 3, position: 5).offset == 5 * stride)
+        #expect(kv.keyView(layer: 3, slot: 0, validTokenCount: 0).offset == 0)
+        #expect(kv.keyView(layer: 3, validTokenCount: 7).offset == 0)
+    }
+
+    /// Each slot owns a disjoint region of every layer buffer, one capacity
+    /// apart, so a batched decode step cannot alias two sequences' rows.
+    @Test func slotsGetDisjointRegions() throws {
+        let (_, kv) = try makeManager(maxContext: 128, slots: 4)
+        let capacity = kv.capacity(layer: 3)
+        let stride = kv.stride(layer: 3)
+        #expect(kv.bufferLength(layer: 3) == 4 * capacity * stride)
+        for slot in 0..<4 {
+            let expected = (slot * capacity + 3) * stride
+            #expect(kv.kSlot(layer: 3, position: 3, slot: slot).offset == expected)
+            #expect(kv.vSlot(layer: 3, position: 3, slot: slot).offset == expected)
+            #expect(kv.keyView(layer: 3, slot: slot, validTokenCount: 3).offset
+                        == slot * capacity * stride)
+        }
+    }
+
+    /// Slot cursors advance, rewind and reset independently.
+    @Test func slotCursorsAreIndependent() throws {
+        let (_, kv) = try makeManager(maxContext: 128, slots: 2)
+        kv.advance(by: 7)
+        kv.advance(slot: 1, by: 3)
+        #expect(kv.position == 7)
+        #expect(kv.position(slot: 0) == 7)
+        #expect(kv.position(slot: 1) == 3)
+
+        kv.reset(slot: 1)
+        #expect(kv.position(slot: 1) == 0)
+        #expect(kv.position(slot: 0) == 7, "resetting one slot must not move another")
+
+        try kv.rewind(slot: 0, to: 2)
+        #expect(kv.position(slot: 0) == 2)
+        #expect(kv.position(slot: 1) == 0)
+    }
+
+    /// Growth reallocates one shared store, so it must carry every slot's live
+    /// rows to each slot's new region — not just the one that asked to grow.
+    @Test func growthPreservesEverySlotsRows() throws {
+        let (_, kv) = try makeManager(maxContext: 9_000, slots: 2)
+        let stride = kv.stride(layer: 3)
+        let before = kv.capacity(layer: 3)
+        // Give each slot one live row: growth copies `min(capacity, cursor)`
+        // rows per slot, so a marker in a slot with a zero cursor is correctly
+        // dropped rather than carried.
+        kv.advance(slot: 0, by: 1)
+        kv.advance(slot: 1, by: 1)
+        let s0 = kv.kSlot(layer: 3, position: 0, slot: 0)
+        let s1 = kv.kSlot(layer: 3, position: 0, slot: 1)
+        #expect(s1.offset - s0.offset == before * stride)
+        memset(s0.buffer.contents() + s0.offset, 0xA0, 1)
+        memset(s1.buffer.contents() + s1.offset, 0xB0, 1)
+
+        try kv.reserve(tokens: 8_500, slot: 0)
+        let after = kv.capacity(layer: 3)
+        #expect(after > before, "precondition: the reserve grew the store")
+        let r0 = kv.kSlot(layer: 3, position: 0, slot: 0)
+        let r1 = kv.kSlot(layer: 3, position: 0, slot: 1)
+        #expect(r1.offset - r0.offset == after * stride)
+        #expect(r0.buffer.contents().load(fromByteOffset: r0.offset, as: UInt8.self) == 0xA0)
+        #expect(r1.buffer.contents().load(fromByteOffset: r1.offset, as: UInt8.self) == 0xB0)
     }
 
 }

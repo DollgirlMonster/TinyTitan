@@ -53,6 +53,41 @@ private func withRouter<T>(log: RoutingEventLog, delay: Duration? = nil,
     }
 }
 
+/// Holds every generation until `releaseAll`, recording the peak number running
+/// at once. Used to observe the coordinator's admission width through HTTP.
+private actor ConcurrencyProbe: ServerInferenceBackend {
+    let maximumContext = 262_144
+    private var active = 0
+    private var peak = 0
+    private var open = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func generate(
+        _ request: ValidatedChatRequest,
+        onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void
+    ) async throws -> ServerCompletion {
+        active += 1
+        peak = max(peak, active)
+        if !open {
+            await withCheckedContinuation { waiters.append($0) }
+        }
+        active -= 1
+        onEvent(.content("ok"))
+        return ServerCompletion(
+            content: "ok", toolCalls: [], finishReason: "stop",
+            usage: OpenAIUsage(promptTokens: 1, completionTokens: 1, totalTokens: 2))
+    }
+
+    func peakConcurrency() -> Int { peak }
+
+    func releaseAll() {
+        open = true
+        let held = waiters
+        waiters.removeAll()
+        for waiter in held { waiter.resume() }
+    }
+}
+
 @Suite("Dynamic serving over HTTP", .serialized)
 struct DynamicServingHTTPTests {
     private let anthropic = ["anthropic-version": "2023-06-01"]
@@ -197,6 +232,55 @@ struct DynamicServingHTTPTests {
         #expect(log.maxConcurrentGenerations == 1)
     }
 
+    /// With a width of four, four generations run at once through one server;
+    /// the fifth queues behind the `queueLimit` of one and the sixth is shed
+    /// with 429. The batched admission rule, observed at the HTTP boundary.
+    ///
+    /// Kept to five concurrent requests because URLSession opens at most six
+    /// connections per host: a wider fan-out would never reach the server.
+    @Test func fourGenerationsRunAtOnceAndTheSixthIsShed() async throws {
+        let probe = ConcurrencyProbe()
+        let server = TinyTitanHTTPServer(modelID: "test-model", queueLimit: 1,
+                                         maxConcurrentSequences: 4, backend: probe)
+        let channel = try await server.start(port: 0)
+        let port = try #require(channel.localAddress?.port)
+        do {
+            let statuses = try await withThrowingTaskGroup(of: Int.self) { group in
+                for _ in 0..<5 {
+                    group.addTask {
+                        try await send(port, "POST", "/v1/chat/completions",
+                                       json: chat("test-model")).1.statusCode
+                    }
+                }
+                // Wait until all five are admitted: four running (held by the
+                // probe) and one queued behind them.
+                let deadline = ContinuousClock.now + .seconds(10)
+                while ContinuousClock.now < deadline {
+                    let peak = await probe.peakConcurrency()
+                    let queued = await server.queuedRequestCount
+                    if peak >= 4 && queued >= 1 { break }
+                    try? await Task.sleep(for: .milliseconds(5))
+                }
+                // Sent while all five are still admitted and held, so it cannot
+                // be admitted whatever the scheduling order.
+                let sixth = try await send(port, "POST", "/v1/chat/completions",
+                                           json: chat("test-model")).1.statusCode
+                #expect(sixth == 429)
+                await probe.releaseAll()
+                var out: [Int] = []
+                for try await status in group { out.append(status) }
+                return out
+            }
+            #expect(statuses == Array(repeating: 200, count: 5))
+            #expect(await probe.peakConcurrency() == 4,
+                    "exactly the configured width ran at once")
+            try await server.shutdown()
+        } catch {
+            try await server.shutdown()
+            throw error
+        }
+    }
+
     @Test func fourConcurrentRequestsAcrossModelsAllComplete() async throws {
         let log = RoutingEventLog()
         let names = ["alpha_4-Bit", "small-2b", "alpha_4-Bit", "flash_8-Bit"]
@@ -290,5 +374,30 @@ struct DynamicServingArgumentTests {
     /// concurrent clients without shedding any.
     @Test func theDefaultQueueAdmitsFourClients() throws {
         #expect(try parse(["--model", "/m"]).queueLimit + 1 >= 4)
+    }
+
+    /// The batched width defaults to four and is bounded to 1...4.
+    @Test func concurrentSequenceCountDefaultsToFourAndIsBounded() throws {
+        #expect(try parse(["--model", "/m"]).maxConcurrentSequences == 4)
+        #expect(try parse(["--model", "/m", "--max-concurrent-sequences", "1"])
+                    .maxConcurrentSequences == 1)
+        for bad in ["0", "5", "-1"] {
+            #expect(throws: ServerArgumentError.self) {
+                try parse(["--model", "/m", "--max-concurrent-sequences", bad])
+            }
+        }
+    }
+
+    /// More than one slot turns the single-sequence prompt cache off rather
+    /// than risk restoring a prefix into the wrong slot; MTP does the same.
+    @Test func batchingDisablesTheSessionWidePromptCache() {
+        #expect(ServerModelSession.effectivePromptCacheMode(
+            requested: .multiPrefix, mtpEnabled: false, slots: 1) == .multiPrefix)
+        #expect(ServerModelSession.effectivePromptCacheMode(
+            requested: .multiPrefix, mtpEnabled: false, slots: 4) == .off)
+        #expect(ServerModelSession.effectivePromptCacheMode(
+            requested: .singlePrefix, mtpEnabled: false, slots: 2) == .off)
+        #expect(ServerModelSession.effectivePromptCacheMode(
+            requested: .multiPrefix, mtpEnabled: true, slots: 1) == .off)
     }
 }

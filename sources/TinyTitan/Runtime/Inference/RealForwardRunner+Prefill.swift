@@ -40,6 +40,7 @@ extension RealForwardRunner {
             try Task.checkCancellation()
             try await produceToken(token: token,
                                    position: position,
+                                   slot: 0,
                                    into: logits,
                                    emitHead: offset == tokens.count - 1,
                                    outputMode: outputMode)
@@ -102,6 +103,28 @@ extension RealForwardRunner {
                                config: PrefillRuntimeConfig,
                                into logits: MTLBuffer,
                                onProgress: (Int) -> Void) async throws -> PrefillResult {
+        // Prefill shares the runner's scratch with decode, so a batched slot
+        // must not run a chunk while another slot is decoding. One gate covers
+        // both; a prefill holds it for its whole burst.
+        try await forwardStepGate.acquire()
+        do {
+            let result = try await runPrefillChunked(
+                tokens: tokens, startPosition: startPosition, outputMode: outputMode,
+                config: config, into: logits, onProgress: onProgress)
+            await forwardStepGate.release()
+            return result
+        } catch {
+            await forwardStepGate.release()
+            throw error
+        }
+    }
+
+    func runPrefillChunked(tokens: ArraySlice<Int32>,
+                           startPosition: Int,
+                           outputMode: PrefillOutputMode,
+                           config: PrefillRuntimeConfig,
+                           into logits: MTLBuffer,
+                           onProgress: (Int) -> Void) async throws -> PrefillResult {
         try prefillChunkState.requireClean(operation: "prefillChunked")
         defer { resetExpertUseCountsAfterPrefill() }
         // The chunked path does not go through `produceToken`, so it needs
@@ -703,6 +726,7 @@ extension RealForwardRunner {
                                    kv: KVCacheManager,
                                    layer: Int,
                                    position: Int,
+                                   slot: Int = 0,
                                    keySource: MTLBuffer,
                                    valueSource: MTLBuffer,
                                    elementCount: Int) throws {
@@ -714,14 +738,16 @@ extension RealForwardRunner {
             commandBuffer: commandBuffer,
             source: keySource,
             sourceTokenStrideElements: elementCount,
-            destination: kv.keyRangeView(layer: layer, start: position, count: 1),
+            destination: kv.keyRangeView(layer: layer, start: position, count: 1,
+                                         slot: slot),
             tokenCount: 1,
             elementCount: elementCount)
         try kvQuantizer.encode(
             commandBuffer: commandBuffer,
             source: valueSource,
             sourceTokenStrideElements: elementCount,
-            destination: kv.valueRangeView(layer: layer, start: position, count: 1),
+            destination: kv.valueRangeView(layer: layer, start: position, count: 1,
+                                           slot: slot),
             tokenCount: 1,
             elementCount: elementCount)
     }

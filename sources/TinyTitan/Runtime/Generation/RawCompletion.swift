@@ -92,9 +92,16 @@ public func runRawCompletion(producer: any LogitProducer,
                              scratch: RawCompletionScratch,
                              prefillConfig: PrefillRuntimeConfig = .defaultChunked,
                              start: RawCompletionStart = .reset,
+                             slot: Int = 0,
                              shouldStop: () -> Bool = { false },
                              onProgress: (RawDecodeProgress) -> Void) async throws -> RawDecodeResult {
     if let mtp = producer as? StreamingMTPDecoder {
+        // One draft decoder drafts for one sequence; a batched slot has no MTP
+        // state of its own yet (see the plan's MTP note).
+        guard slot == 0 else {
+            throw GeneratorError.invalidGenerationConfig(
+                "the MTP decode path is single-sequence; slot \(slot) is not supported")
+        }
         // A grammar is a per-token contract with the sampler, and the MTP path
         // drafts several tokens ahead of it; its own sampling never consults a
         // mask. Serving a schema through MTP would emit unconstrained tokens,
@@ -184,7 +191,12 @@ public func runRawCompletion(producer: any LogitProducer,
     var position = cachedPromptTokens
     var prefillSeed: PrefillSeed?
     let prefillTokens = promptIds[cachedPromptTokens...]
-    switch prefillConfig.mode {
+    // Only slot 0 can use chunked prefill: that path writes slot 0's KV region
+    // (slot-aware chunked prefill is not implemented yet). Another slot prefills
+    // by running its prompt through the decode step, which is slot-aware. Slot 0
+    // keeps the chunked fast path, so the single-sequence behaviour is unchanged.
+    let prefillMode: PrefillRuntimeConfig.Mode = slot == 0 ? prefillConfig.mode : .off
+    switch prefillMode {
     case .chunked where producer is any ChunkedPrefillRunner:
         // lint:allow-force the `where` clause one line above is the guard; a
         // producer without the conformance falls through to plain `.chunked`.
@@ -214,7 +226,8 @@ public func runRawCompletion(producer: any LogitProducer,
     case .off:
         for t in prefillTokens {
             try Task.checkCancellation()
-            try await producer.produce(token: t, position: position, into: scratch.logits)
+            try await producer.produce(token: t, position: position, slot: slot,
+                                       into: scratch.logits)
             position += 1
             history.append(t)
             onProgress(.prefill(done: position, total: promptIds.count))
@@ -312,7 +325,8 @@ public func runRawCompletion(producer: any LogitProducer,
             let now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
             fusedRunner.totalLoopOtherNanos &+= now - loopMark
         }
-        try await producer.produce(token: tokenID, position: position, into: scratch.logits)
+        try await producer.produce(token: tokenID, position: position, slot: slot,
+                                   into: scratch.logits)
         loopMark = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         position += 1
         uncommittedBoundaryTokenIDs.removeAll(keepingCapacity: true)
