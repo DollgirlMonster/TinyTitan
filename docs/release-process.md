@@ -167,6 +167,40 @@ pinned. Every `gh` call is pinned because in a fork `gh` defaults to the
 *parent* repository: `gh release list` would show another project's releases and
 `gh release create` fails with a misleading "tag has not been pushed".
 
+## 4b. Internal-speed benchmark (mandatory)
+
+Every release records the engine's own speeds and compares them with the
+previous release's record. This is the step that catches a speed regression —
+a kernel that got slower, a bandwidth that dropped, prefill or decode that
+traded throughput away — before anyone experiences it. It is data collection,
+not a performance claim: do not put a ceiling in the notes.
+
+```bash
+# on the release machine, with the release build and the 4B install present
+tools/internal-speeds.py --record --label vX.Y \
+  --baseline benchmark/internal-speeds/<previous>.json
+```
+
+It measures GPU kernel bandwidth (QKV GEMV, routed MoE, GDN in-projection), CPU
+int8 affine GEMV bandwidth, prefill and decode tok/s, time to first token, the
+effective decode bandwidth, and a quality proxy on the fixed prompt
+*"difference swift vs c++ in detail"*. The full field list is in
+`benchmark/internal-speeds/README.md`.
+
+**The gate:** the command exits non-zero when any bandwidth or tokens-per-second
+metric regressed by more than 10%, or when TTFT/decode/total seconds rose by
+more than 10% (`--threshold` to change it). A non-zero exit blocks the release
+until the regression is fixed or explained in `### Verification` in the notes
+with the metric, both values and the reason. A *changed* greedy response hash is
+reported as a note, not a failure — a deliberate numerics change moves it, and
+`### Verification` should say so.
+
+Commit the new `benchmark/internal-speeds/<label>.json` with the release. Do
+not overwrite an older record: the diff against it is the point, and the record
+is only valid for one (machine, build, model) triple. If the 4B install is
+absent, the step is reported as **not checked** like a missing golden — never
+"fixed" by installing a model for it, and never skipped silently.
+
 ## 5. When a golden gate refuses (the trap that looks like a failure)
 
 If the log shows this, **no golden was compared**:
@@ -324,6 +358,9 @@ machine it was measured on, and leave previous releases' tables alone.
       `models/` holds exactly the installs you intend to verify
 - [ ] Dry run green: lint, the serial suite, **every installed golden**, a
       warning-free clean build
+- [ ] **Internal-speed benchmark recorded and compared** against the previous
+      release (`tools/internal-speeds.py --record --label vX.Y --baseline …`);
+      no metric past the 10% threshold, and the new record committed
 - [ ] **No model was downloaded, converted, repacked or re-installed** to make a
       check run; the golden phase left `models/` byte-identical (`release.sh`
       enforces this)
