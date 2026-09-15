@@ -79,7 +79,26 @@ Which width to export is a function of the prompt, so a model can carry several
 | under 1,024 tokens | none — the GPU wins | "hello" (5 tokens): GPU 0.11 s vs a padded chunk costing tens of seconds |
 | 1,024 – 4,095 | **`ane_prefill-1024`** (this is what makes the band reachable) | dense 2B, ~2,500 tokens: GPU 23.33 s → ANE 17.88 s, **1.30×** |
 | 4,096 – 16,384 | `ane_prefill` (4,096) | `v5.5-ane-matrix-3`, ~4,300 tokens, per model below |
-| over 16,384 | a larger `--max-history` (coverage = max history + chunk) | — |
+| over 16,384 | a larger `--max-history` (coverage = max history + chunk) | see below |
+
+**The default sidecar covers prompts up to `max(histories) + chunk` = 16,384
+tokens.** Past that the chunk at `startPosition` 16,384 has no `h16384` variant,
+so it falls back — and because a chunk may only run on the ANE when every prior
+chunk's shadow rows exist, the *rest of that request* stays on the GPU too. For
+long-context work, export a wider sidecar:
+
+```bash
+~/.venvs/coreml-py311/bin/python tools/export_ane_prefill.py \
+  --model models/<install> --chunk 4096 --max-history 32768
+```
+
+That raises the ceiling to 36,864 tokens. The export is not free and not
+guaranteed: it compiles one more variant per covered layer, and the ANE can
+refuse a shape that large — which is what issue #7 was. The exporter now fails
+loudly and writes nothing in that case, so the attempt is safe to make; a
+refusal means the smaller `--max-history` stays. On this machine (M3) it does
+not refuse: a one-layer `--max-history 32768` export compiled all nine variants
+and recorded `maxPromptTokens: 36864`. The refusal in issue #7 was an M5.
 
 `v5.5-ane-matrix-3` — 23,000-character prompt (4,333 tokens), chunk 4,096,
 two measured runs per arm after a discarded warm-up each, on an M3 24 GB:
