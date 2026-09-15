@@ -100,6 +100,14 @@ refusal means the smaller `--max-history` stays. On this machine (M3) it does
 not refuse: a one-layer `--max-history 32768` export compiled all nine variants
 and recorded `maxPromptTokens: 36864`. The refusal in issue #7 was an M5.
 
+**1,024 or 2,048 for the mid band? Both were measured, and 1,024 wins the
+tie.** On the dense 2B at ~2,500 tokens, chunk 1,024 gave 23.33 s → 17.88 s
+(1.30×) and chunk 2,048 gave 22.73 s → 17.52 s (1.30×) — the same result inside
+the noise. So 1,024 is the width to ship: it wins the same, and it also covers
+1,024–2,047 tokens, which a 2,048 chunk cannot serve at all. A second mid-band
+width buys nothing, and the two records (`ane-chunk1024-2b-4bit.json`,
+`ane-chunk2048-2b-4bit.json`) are both kept so the claim can be re-run.
+
 `v5.5-ane-matrix-3` — 23,000-character prompt (4,333 tokens), chunk 4,096,
 two measured runs per arm after a discarded warm-up each, on an M3 24 GB:
 

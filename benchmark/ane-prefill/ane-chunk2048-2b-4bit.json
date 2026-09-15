@@ -1,0 +1,34 @@
+{
+  "recorded_at": "2026-09-15T20:38:24+00:00",
+  "prompt_characters": 13300,
+  "prefill_chunk": 2048,
+  "max_new_tokens": 1,
+  "repeats_per_arm": 2,
+  "results": [
+    {
+      "model": "qwen3.5_2B_4Bit",
+      "off": {
+        "prefill_seconds_median": 22.729999999999997,
+        "prefill_tokens": 2506,
+        "used_ane": true,
+        "runs": 2,
+        "digests": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "head": ""
+      },
+      "on": {
+        "prefill_seconds_median": 17.52,
+        "prefill_tokens": 2506,
+        "used_ane": true,
+        "runs": 2,
+        "digests": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "head": ""
+      },
+      "speedup": 1.2973744292237441,
+      "saved_seconds": 5.209999999999997
+    }
+  ]
+}
