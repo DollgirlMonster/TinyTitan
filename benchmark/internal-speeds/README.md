@@ -31,6 +31,8 @@ exit is the release gate; see `docs/release-process.md`.
 | `generation.ttft_seconds` | time to first token = prefill seconds (the first token is sampled at the end of prefill) |
 | `generation.effective_decode_gbps` | weight bytes × decode tokens / decode seconds — every token re-reads the weights, so this is the model-level bandwidth |
 | `ane.prefill_tokens_per_second` | only when the model ships an `ane_prefill` sidecar; otherwise recorded as not applicable, with the model's family and whether the exporter could serve it |
+| `ane.effective_prefill_gbps` | the model's declared bytes × chunks / prefill seconds. End-to-end, not ANE-only: the ANE attends and the routed experts still run on the GPU, and one wall time cannot separate them |
+| `ane.chunks`, `ane.model_total_bytes` | the ingredients of that bandwidth; `model_total_bytes` is the manifest's own total, so a MoE's `packed_experts/` counts (AgentWorld 4-bit: 1.92 GB of 20.08 GB is `model_weights.bin`) |
 | `quality.*` | the response, its SHA-256, keyword coverage and trigram repetition |
 
 The prompt is fixed — *"difference swift vs c++ in detail"* — and generation is
@@ -50,6 +52,10 @@ tools/internal-speeds.py --record --label v5.6-4b
 tools/internal-speeds.py --record --label v5.6-agentworld \
   --model models/qwen-agentworld_35B_A3B_4Bit
 ```
+
+Without `--label`, the file is named from `git describe` — bare for the default
+model, and suffixed with the model's directory name for any other, so a second
+model can never overwrite the 4B's record.
 
 **The ANE row needs a qwen36 install and a sidecar.** The sidecar exporter
 (`tools/export_ane_prefill.py`) supports the qwen36 family only — its attention

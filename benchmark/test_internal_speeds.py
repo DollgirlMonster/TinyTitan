@@ -47,6 +47,32 @@ def record(model: str, prompt: str = internal_speeds.DEFAULT_PROMPT) -> dict:
             "quality": {"keyword_coverage": 0.5, "response_sha256": "abc"}}
 
 
+class AnePromptTests(unittest.TestCase):
+    def test_the_prompt_is_long_enough_for_more_than_one_ane_chunk(self):
+        # ~4 characters per token is the pessimistic end for English; the
+        # measurement must fill at least one 4,096-token chunk.
+        prompt = internal_speeds.ane_prompt()
+        self.assertGreaterEqual(len(prompt), 20_000)
+        self.assertTrue(prompt.startswith(internal_speeds.ANE_PROMPT_SENTENCE))
+        self.assertEqual(prompt, internal_speeds.ane_prompt())  # deterministic
+
+    def test_a_fallback_line_is_reported_as_not_using_the_ane(self):
+        used, fallback = internal_speeds.ane_usage(
+            "loading model\n"
+            "TinyTitan ane-prefill fallback: chunk at 0 (+8) outside sidecar "
+            "coverage (chunk 4096, max prompt 16384); using the GPU path\n"
+            "[stop=eos prefill=8tok/0.21s new=4tok decode=0.3s tok/s=13.3]\n")
+        self.assertFalse(used)
+        self.assertIn("using the GPU path", fallback)
+
+    def test_a_clean_run_is_reported_as_using_the_ane(self):
+        used, fallback = internal_speeds.ane_usage(
+            "loading model\n"
+            "[stop=eos prefill=8192tok/3.10s new=1tok decode=0.1s tok/s=10.0]\n")
+        self.assertTrue(used)
+        self.assertIsNone(fallback)
+
+
 class MissingAneReasonTests(unittest.TestCase):
     def test_qwen36_without_a_sidecar_is_not_called_another_family(self):
         reason = internal_speeds.missing_ane_reason(
@@ -133,6 +159,59 @@ class ModelFamilyTests(unittest.TestCase):
         self.assertIsNone(internal_speeds.model_family("models/m"))
         (model / "manifest.json").write_text("{not json")
         self.assertIsNone(internal_speeds.model_family("models/m"))
+
+
+class ModelTotalBytesTests(unittest.TestCase):
+    """A MoE keeps most of its bytes outside `model_weights.bin`."""
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.real_root = internal_speeds.ROOT
+        internal_speeds.ROOT = self.dir
+        self.addCleanup(setattr, internal_speeds, "ROOT", self.real_root)
+        self.model = self.dir / "models" / "m"
+        self.model.mkdir(parents=True)
+
+    def declare(self, files: dict) -> None:
+        (self.model / "manifest.json").write_text(json.dumps({"files": files}))
+
+    def test_sums_every_declared_file_including_the_packed_experts(self):
+        self.declare({"model_weights.bin": {"size": 1_000},
+                      "packed_experts/layer_00.bin": {"size": 9_000}})
+        self.assertEqual(internal_speeds.model_total_bytes("models/m"), 10_000)
+
+    def test_falls_back_to_the_resident_weights_without_a_usable_manifest(self):
+        (self.model / "model_weights.bin").write_bytes(b"x" * 512)
+        self.assertEqual(internal_speeds.model_total_bytes("models/m"), 512)
+        self.declare({})
+        self.assertEqual(internal_speeds.model_total_bytes("models/m"), 512)
+
+    def test_a_declared_zero_total_falls_back_rather_than_reporting_zero(self):
+        (self.model / "model_weights.bin").write_bytes(b"x" * 64)
+        self.declare({"model_weights.bin": {"size": 0}})
+        self.assertEqual(internal_speeds.model_total_bytes("models/m"), 64)
+
+    def test_nothing_to_measure_is_zero(self):
+        self.assertEqual(internal_speeds.model_total_bytes("models/m"), 0)
+
+
+class DefaultLabelTests(unittest.TestCase):
+    """Two models recorded at one commit must not resolve to one file."""
+
+    def test_the_default_model_keeps_the_bare_describe(self):
+        self.assertEqual(
+            internal_speeds.default_label("v5.6-3-gabc",
+                                          internal_speeds.DEFAULT_MODEL),
+            "v5.6-3-gabc")
+
+    def test_another_model_is_suffixed_so_it_cannot_clobber_the_baseline(self):
+        label = internal_speeds.default_label(
+            "v5.6-3-gabc", "models/qwen-agentworld_35B_A3B_4Bit")
+        self.assertEqual(label, "v5.6-3-gabc-qwen-agentworld_35B_A3B_4Bit")
+        self.assertNotEqual(
+            label, internal_speeds.default_label("v5.6-3-gabc",
+                                                 internal_speeds.DEFAULT_MODEL))
 
 
 class CompareTests(unittest.TestCase):

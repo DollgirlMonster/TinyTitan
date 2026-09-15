@@ -54,6 +54,21 @@ DEFAULT_PROMPT = "difference swift vs c++ in detail"
 DEFAULT_MAX_NEW = 256
 DEFAULT_THRESHOLD = 10.0
 
+# The ANE prefill sidecar is a fixed 4,096-token program, and the runtime only
+# routes a chunk to it when the configured prefill chunk matches and the chunk
+# is full (a short prompt is padded at ~2 s of ANE work against under a second
+# on the GPU, so it falls back on purpose). Measuring ANE prefill therefore
+# needs a prompt that fills a chunk and an explicit 4,096 chunk; the fixed
+# short prompt's ANE row would otherwise report the GPU fallback under an ANE
+# label.
+ANE_PREFILL_CHUNK = 4096
+ANE_PROMPT_CHARACTERS = 32_000
+ANE_PROMPT_SENTENCE = (
+    "Swift and C++ differ in memory management, dispatch, compilation and type "
+    "safety, and a fair comparison names each axis before it judges either "
+    "language. ")
+ANE_FALLBACK_MARKER = "ane-prefill fallback"
+
 FOOTER = re.compile(
     r"\[stop=(\S+) prefill=(\d+)tok/([\d.]+)s "
     r"new=(\d+)tok decode=([\d.]+)s tok/s=([\d.]+)\]")
@@ -83,6 +98,7 @@ PERF_METRICS = {
     "generation.decode_seconds": "lower",
     "generation.total_seconds": "lower",
     "ane.prefill_tokens_per_second": "higher",
+    "ane.effective_prefill_gbps": "higher",
 }
 
 
@@ -108,6 +124,27 @@ def model_family(model: str) -> str | None:
     return arch.get("family") if isinstance(arch, dict) else None
 
 
+def model_total_bytes(model: str) -> int:
+    """Every byte the manifest declares, falling back to the resident weights.
+
+    `model_weights.bin` is the whole model only for a dense install. A MoE keeps
+    the routed experts in `packed_experts/` — AgentWorld 4-bit declares 1.92 GB
+    of 20.08 GB — and those are the bytes a prefill chunk actually sweeps.
+    """
+    try:
+        manifest = json.loads((ROOT / model / "manifest.json").read_text())
+        files = manifest.get("files")
+        if isinstance(files, dict) and files:
+            total = sum(int(entry.get("size", 0)) for entry in files.values()
+                        if isinstance(entry, dict))
+            if total > 0:
+                return total
+    except (OSError, ValueError, TypeError):
+        pass
+    weights = ROOT / model / "model_weights.bin"
+    return weights.stat().st_size if weights.exists() else 0
+
+
 def missing_ane_reason(model: str, family: str | None) -> str:
     """Why no ANE number was recorded, in terms of what was observed.
 
@@ -120,6 +157,24 @@ def missing_ane_reason(model: str, family: str | None) -> str:
         reason += (f" — the exporter supports the qwen36 family only, and "
                    f"this model is {family}")
     return reason
+
+
+def ane_prompt() -> str:
+    """A deterministic prompt long enough to fill an ANE chunk."""
+    repeats = ANE_PROMPT_CHARACTERS // len(ANE_PROMPT_SENTENCE) + 1
+    return (ANE_PROMPT_SENTENCE * repeats)[:ANE_PROMPT_CHARACTERS]
+
+
+def ane_usage(stderr: str) -> tuple[bool, str | None]:
+    """Did the ANE path run? Returns (used, fallback line when it did not).
+
+    The runtime prints one fallback line per request when a chunk is not
+    eligible, so its absence is the evidence that the ANE served the prefill.
+    """
+    for line in stderr.splitlines():
+        if ANE_FALLBACK_MARKER in line:
+            return False, line.strip()
+    return True, None
 
 
 def measure_kernel(kernel: str, iterations: int) -> dict:
@@ -169,15 +224,16 @@ def parse_footer(stderr: str) -> dict | None:
 
 
 def measure_generation(model: str, prompt: str, max_new: int,
-                       ane: bool = False) -> dict:
+                       ane: bool = False, prefill_chunk: int | None = None) -> dict:
     import os
     env = os.environ.copy()
     if ane:
         env["TINYTITAN_PREFILL_ANE"] = "on"
-    code, out, err = run(
-        [str(CLI), "--model", model, "--prompt", prompt,
-         "--max-new", str(max_new), "--temperature", "0"],
-        env=env, timeout=3600)
+    command = [str(CLI), "--model", model, "--prompt", prompt,
+               "--max-new", str(max_new), "--temperature", "0"]
+    if prefill_chunk is not None:
+        command += ["--prefill-chunk", str(prefill_chunk)]
+    code, out, err = run(command, env=env, timeout=3600)
     if code != 0:
         return {"error": f"cli exit {code}", "stderr": err[-800:]}
     measured = parse_footer(err)
@@ -207,6 +263,25 @@ def measure_generation(model: str, prompt: str, max_new: int,
         "response_characters": len(text),
         "response_tokens": measured["decode_tokens"],
     })
+    if ane:
+        # A prefill chunk sweeps the whole weight set -- 4,096 tokens at top-8
+        # touch every routed expert -- so the traffic is the model's declared
+        # bytes per chunk, not the resident weights. It is an end-to-end prefill
+        # bandwidth (the ANE attends, the experts still run on the GPU and
+        # stream from disk), not an ANE-only figure, which one wall time cannot
+        # separate.
+        chunks = max(1, -(-prefill_tokens // ANE_PREFILL_CHUNK))
+        total_bytes = model_total_bytes(model)
+        measured["chunks"] = chunks
+        measured["model_total_bytes"] = total_bytes
+        measured["effective_prefill_gbps"] = (
+            total_bytes * chunks / prefill_seconds / 1e9
+            if prefill_seconds else 0.0)
+        # A fallback line means the number is the GPU's, under an ANE label.
+        # Say so rather than record it as an ANE result.
+        measured["used_ane"], fallback = ane_usage(err)
+        if fallback:
+            measured["fallback_reason"] = fallback
     return measured
 
 
@@ -264,8 +339,12 @@ def measure(model: str, prompt: str, max_new: int,
     family = model_family(model)
     if sidecar.exists():
         print("measuring ANE prefill (sidecar present)...", flush=True)
-        ane = measure_generation(model, prompt, max_new, ane=True)
-        ane["applicable"] = "error" not in ane
+        ane = measure_generation(model, ane_prompt(), 1, ane=True,
+                                 prefill_chunk=ANE_PREFILL_CHUNK)
+        ane["applicable"] = "error" not in ane and ane.get("used_ane", False)
+        if "error" not in ane and not ane.get("used_ane", False):
+            ane["reason"] = ("the runtime did not route the chunk to the ANE: "
+                             + ane.get("fallback_reason", ""))
     else:
         ane = {"applicable": False,
                "reason": missing_ane_reason(model, family)}
@@ -338,6 +417,19 @@ def compare(baseline: dict, candidate: dict, threshold: float) -> bool:
     return ok
 
 
+def default_label(describe: str, model: str) -> str:
+    """The record's file name: checkout state, plus the model when it is not the
+    mandatory one.
+
+    Two models recorded at the same commit must not resolve to one file — the
+    4B's record is the release gate's baseline and must not be overwritten by an
+    extra model's.
+    """
+    if model == DEFAULT_MODEL:
+        return describe
+    return f"{describe}-{pathlib.Path(model).name}"
+
+
 def newest_baseline(out: pathlib.Path, model: str,
                     prompt: str) -> str | None:
     """The newest previous record for the same model and prompt.
@@ -382,7 +474,9 @@ def main() -> int:
 
     record = measure(args.model, args.prompt, args.max_new, args.iterations)
     RESULTS.mkdir(parents=True, exist_ok=True)
-    label = args.label or record["environment"]["git_describe"] or "unlabeled"
+    label = (args.label
+             or default_label(record["environment"]["git_describe"], args.model)
+             or "unlabeled")
     out = RESULTS / f"{label}.json"
     out.write_text(json.dumps(record, indent=2) + "\n")
     print(f"wrote {out.relative_to(ROOT)}")
