@@ -13,10 +13,16 @@
 [![Last Commit](https://img.shields.io/github/last-commit/Pummelchen/TinyTitan?style=flat-square&logo=git&label=Last%20Commit&color=2ea44f)](https://github.com/Pummelchen/TinyTitan/commits/main)
 [![Contact](https://img.shields.io/badge/Contact-0xa0b1%40gmail.com-blue?style=flat-square&logo=gmail&logoColor=white)](mailto:0xa0b1@gmail.com)
 
-TinyTitan is the fastest SSD streamer for AI models on Mac.
+TinyTitan is the fastest SSD streamer for AI models on a Mac.
 
 What is new in each release lives in the
 [Changelog](https://github.com/Pummelchen/TinyTitan/wiki/Changelog).
+
+
+New Research Project: [TinyTitan Datacenter](https://github.com/Pummelchen/TinyTitan_Datacenter) - Run large MOE LLM models on a distributed cluster of Mac Mini/Studio's
+while keeping them on SSD/NVMe.
+
+
 
 ## Benchmarks
 
