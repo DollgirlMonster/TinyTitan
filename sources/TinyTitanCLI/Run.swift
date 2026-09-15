@@ -189,7 +189,17 @@ public func run(args: Args,
                 break
             }
             switch model.config.family {
-            case .qwen36:
+            case .qwen36, .qwen35Dense:
+                // The ANE sidecar is a fixed 4,096-token program and
+                // `eligibleChunk` routes a chunk to it only when the configured
+                // chunk is exactly that size, so a family left on the 128
+                // default can never reach the ANE at all — which is why the
+                // dense Qwen 3.5 installs saw no ANE prefill despite shipping a
+                // default-on switch. Measured on the dense 2B: chunk size does
+                // not change the GPU path's output (byte-identical greedy text
+                // at 128 and at 4,096) and prefill time is flat, so this is a
+                // scheduling choice that makes the ANE reachable, not a
+                // numerics change.
                 prefillChunkTokens = RuntimeConfiguration.qwenLongPrefillChunkTokens
             case .qwen38flash:
                 // Measured on a 1,761-token prompt, interleaved A/B/B/A:
