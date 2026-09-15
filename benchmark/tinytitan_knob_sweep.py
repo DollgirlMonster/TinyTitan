@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tinytitan_profile import benchmark_log_path, server_command, server_environment  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-BIN = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+BIN = ROOT / ".build/release/TinyTitanServer"
 MODEL = os.environ.get("TINYTITAN_BENCH_MODEL",
                        str(ROOT / "models/qwen3.8-flash-next_125B_A6B_4Bit"))
 PORT = 8131

@@ -232,7 +232,7 @@ def preflight(max_gpu_percent: int) -> None:
 
 def launch(quant: str, port: int, log_name: str,
            sampler_path: str | None = None) -> subprocess.Popen:
-    binary = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+    binary = ROOT / ".build/release/TinyTitanServer"
     if not binary.exists():
         raise SystemExit(f"missing release binary: {binary}")
     cmd = server_command(binary, port,

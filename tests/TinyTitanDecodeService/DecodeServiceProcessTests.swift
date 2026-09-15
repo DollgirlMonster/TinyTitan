@@ -127,11 +127,22 @@ import TinyTitanDecodeProtocol
         }
     }
 
+    /// Where the decode-service binary may sit under `.build`, most likely
+    /// first. `debug/` is the stable SwiftPM spelling; the triple-named
+    /// directory is only what an older layout produced, and it is kept as a
+    /// fallback rather than dropped, because the older layout is still one of
+    /// the toolchains this project supports.
+    private static let serviceBinaryCandidates = [
+        "debug/TinyTitanDecodeService",
+        // lint:allow-arch-path an older SwiftPM layout names the directory after the target triple
+        "arm64-apple-macosx/debug/TinyTitanDecodeService",
+    ]
+
     private static func locateServiceBinary() throws -> URL {
         var directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         for _ in 0..<6 {
-            for relative in ["arm64-apple-macosx/debug/TinyTitanDecodeService",
-                             "debug/TinyTitanDecodeService"] {
+            // The stable path first: a stale arch-specific tree would win here.
+            for relative in Self.serviceBinaryCandidates {
                 let candidate = directory
                     .appendingPathComponent(".build")
                     .appendingPathComponent(relative)

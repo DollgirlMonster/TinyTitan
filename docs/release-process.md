@@ -18,7 +18,7 @@ release notes are `docs/release-notes-vX.Y.md`.
 | Memory | `memory_pressure -Q` | The golden baselines load real models |
 | **No model process** | `pgrep -fl 'TinyTitanServer\|TinyTitanMac\|TinyTitanDecodeService\|TinyTitanCLI\|TinyTitanPackageTests\|swiftpm-testing-helper\|mlx_lm\|mlx-lm'` | The golden gate refuses to run beside one; see §5 |
 | `gh` authenticated | `gh auth status` | Publishing uses it; it must be the repo owner's account |
-| A release build exists | `ls .build/arm64-apple-macosx/release/TinyTitanCLI` | The golden gate drives that binary and runs *before* the clean scratch build; `release.sh` refuses to start without it |
+| A release build exists | `ls .build/release/TinyTitanCLI` | The golden gate drives that binary and runs *before* the clean scratch build; `release.sh` refuses to start without it |
 | The installs to verify | `ls models/*/verified-install.json` | The gate verifies only what is installed, and never fetches a model; see §5 |
 | Clean tree, HEAD on the tag | `git status --porcelain` | `release.sh` enforces both |
 
@@ -377,7 +377,7 @@ machine it was measured on, and leave previous releases' tables alone.
       `SHA256_PENDING` **and** `ARCHIVE_BYTES_PENDING` — never a size copied out
       of a dry run
 - [ ] Tree clean, `git tag -a vX.Y`, tag pushed, `release.sh` preconditions pass
-- [ ] A release build exists (`.build/arm64-apple-macosx/release/TinyTitanCLI`) and
+- [ ] A release build exists (`.build/release/TinyTitanCLI`) and
       `models/` holds exactly the installs you intend to verify
 - [ ] Dry run green: lint, the serial suite, **every installed golden**, a
       warning-free clean build

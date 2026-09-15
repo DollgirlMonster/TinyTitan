@@ -8,10 +8,14 @@
 # Checks:
 #   force-cast   no `as!` / `try!` in sources/ without an audited opt-out
 #   func-length  no NEW function longer than MAX_FUNC_LINES (ratcheted)
+#   arch-path    no hardcoded SwiftPM triple in a build path (see below)
 #
 # Opting out of force-cast: put `lint:allow-force <reason>` in a comment on
 # the line immediately above. The reason is mandatory and is what a reviewer
 # reads — an opt-out without one fails the same as no opt-out at all.
+#
+# Opting out of arch-path: `lint:allow-arch-path <reason>` on the line above,
+# for a deliberate compatibility fallback rather than a build path.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -336,13 +340,63 @@ PY
   fi
 }
 
+# --- arch-triple build paths ------------------------------------------------
+# SwiftPM's product directory is not a fixed name. The layout moved from
+# `.build/<triple>/release` to `.build/release -> out/Products/Release`, so a
+# script that pins the triple points at nothing on a machine that built with a
+# newer toolchain — or, worse, at a stale binary left behind by an older one,
+# where an `-x` guard passes and the wrong executable runs quietly. Both
+# happened: tools/install_models.sh refused to install on a fresh clone
+# (issue #8) while this checkout would have run a two-day-old TinyTitanRepack.
+# `.build/release` is the stable spelling on both layouts.
+check_arch_path() {
+  echo "== arch-path: no hardcoded SwiftPM triple in a build path =="
+  local out rc
+  out="$(cd "$ROOT" && python3 - <<'PY'
+import pathlib
+import re
+import sys
+
+PATTERN = re.compile(r"arm64-apple-macosx")   # lint:allow-arch-path the gate names the literal it forbids
+ALLOW = re.compile(r"lint:allow-arch-path\s+\S+")
+SKIP = {".build", ".qwen", ".git", "releases", "__pycache__"}
+bad = []
+for ext in ("*.sh", "*.py", "*.swift"):
+    for path in pathlib.Path(".").rglob(ext):
+        if SKIP & set(path.parts):
+            continue
+        lines = path.read_text(errors="replace").splitlines()
+        for index, line in enumerate(lines):
+            if not PATTERN.search(line) or ALLOW.search(line):
+                continue
+            if index and ALLOW.search(lines[index - 1]):
+                continue          # the reason sits on the line above
+            bad.append(f"{path}:{index + 1}: {line.strip()[:90]}")
+if bad:
+    print("FAIL: hardcoded SwiftPM triple in a build path; use .build/release")
+    for entry in bad:
+        print("  " + entry)
+    sys.exit(1)
+print("ok (none)")
+PY
+)"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "$out" | sed 's/^/  /'
+    status=1
+  else
+    echo "  $(echo "$out" | tail -1)"
+  fi
+}
+
 case "$want" in
-  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order ;;
+  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path ;;
   force-cast)  check_force_cast ;;
   func-length) check_func_length ;;
   sendable)    check_unchecked_sendable ;;
   converter)   check_converter_expert_order ;;
-  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter)" >&2; exit 2 ;;
+  arch-path)   check_arch_path ;;
+  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path)" >&2; exit 2 ;;
 esac
 
 exit $status

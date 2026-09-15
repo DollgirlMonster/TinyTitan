@@ -145,7 +145,7 @@ whose traps still bite and are folded in below.
   `precompiled file …_Builtin_stdbool….pcm was compiled with module cache path
   '/Users/andreborchert/Downloads/NVMAI/…'` **before a single test ran**;
   `release.sh` reports that as `swift test did not report a passing run`, which
-  reads like a failing test. Remove `.build/arm64-apple-macosx/debug` and let it
+  reads like a failing test. Remove `.build/debug` and let it
   rebuild.
 - **A release tag that is not yet published may be force-moved.** The dry run's
   numbers must be in the notes, so the sequence is: commit prep → tag → dry run →
@@ -166,7 +166,7 @@ whose traps still bite and are folded in below.
   nothing is fetched to change that. A stored baseline is never deleted because
   its model is currently absent.
 - **`release.sh` needs `HEAD` to *be* the tag** and a release build at
-  `.build/arm64-apple-macosx/release/TinyTitanCLI` to exist **before** it starts.
+  `.build/release/TinyTitanCLI` to exist **before** it starts.
   The golden phase refuses to run beside any model process.
 - **Say what a guard actually reads, not what it intends**, and **test a claim
   rather than trusting it** — both defects that reached a release in this project

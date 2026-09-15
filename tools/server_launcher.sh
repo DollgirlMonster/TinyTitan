@@ -90,7 +90,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARY="$BASE_DIR/.build/arm64-apple-macosx/release/TinyTitanServer"
+BINARY="$BASE_DIR/.build/release/TinyTitanServer"
 MODELS_DIR="${TINYTITAN_MODELS_DIR:-$BASE_DIR/models}"
 # One catalogue for the model list, the install paths and the port.
 # shellcheck source=tools/tinytitan_models.sh

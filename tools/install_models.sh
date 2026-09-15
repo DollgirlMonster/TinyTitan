@@ -13,7 +13,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$ROOT/.build/arm64-apple-macosx/release/TinyTitanRepack"
+BIN="$ROOT/.build/release/TinyTitanRepack"
 MODELS="$ROOT/models"
 
 # The converters need a Python with numpy/ml_dtypes/safetensors at 3.10 or

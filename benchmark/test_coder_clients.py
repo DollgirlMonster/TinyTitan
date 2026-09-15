@@ -24,7 +24,7 @@ import coder_cli_benchmark as harness
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "tools/server_launcher.sh"
-SERVER = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+SERVER = ROOT / ".build/release/TinyTitanServer"
 MODELS = ROOT / "models"
 
 

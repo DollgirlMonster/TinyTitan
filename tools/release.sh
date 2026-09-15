@@ -57,8 +57,8 @@ step "preconditions"
 # in .build (golden-baseline.sh exits 2 without it), so a missing release build
 # used to surface as per-target "golden baseline mismatch" lines. Demand it
 # first, where the message can say what to actually run.
-[ -x "$ROOT/.build/arm64-apple-macosx/release/TinyTitanCLI" ] \
-  || die "no release build at .build/arm64-apple-macosx/release/TinyTitanCLI; run: swift build -c release (the golden gate drives that binary)"
+[ -x "$ROOT/.build/release/TinyTitanCLI" ] \
+  || die "no release build at .build/release/TinyTitanCLI; run: swift build -c release (the golden gate drives that binary)"
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || die "tag $TAG does not exist locally"
 [ "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)" ] \
   || die "HEAD is not $TAG; check out the tagged commit before releasing"
@@ -239,7 +239,7 @@ rm -rf "$SCRATCH"
 swift build -c release --scratch-path "$SCRATCH" 2>&1 | tee "$STAGE_ROOT.buildlog" | tail -1
 grep -qE '^[^ ]+\.(swift|metal|c|h|m|mm):[0-9]+:[0-9]+: warning:' "$STAGE_ROOT.buildlog" \
   && die "release build emitted compiler warnings"
-BIN="$SCRATCH/arm64-apple-macosx/release"
+BIN="$SCRATCH/release"
 [ -x "$BIN/TinyTitanServer" ] || die "build produced no TinyTitanServer"
 
 # --- stage ------------------------------------------------------------------

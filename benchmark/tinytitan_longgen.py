@@ -16,7 +16,7 @@ from tinytitan_profile import (
 )
 
 BASE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-BIN = os.path.join(BASE, ".build", "arm64-apple-macosx", "release", "TinyTitanServer")
+BIN = os.path.join(BASE, ".build", "release", "TinyTitanServer")
 PORT = 8114
 PROMPT = (
     "Write a Python function that computes the Levenshtein distance between "

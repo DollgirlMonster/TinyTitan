@@ -270,7 +270,7 @@ def run_tinytitan(prompt: str) -> tuple[float | None, float | None, str]:
     # everywhere else in this repository.
     import http.client
     port = 8123
-    binary = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+    binary = ROOT / ".build/release/TinyTitanServer"
     log = ROOT / ".build/vs-competitors-tinytitan.log"
     with open(log, "w") as fh:
         proc = subprocess.Popen(

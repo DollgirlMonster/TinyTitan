@@ -68,7 +68,7 @@ VERIFY_ARM = "pair"  # TINYTITAN_MTP_VERIFY for the mtp-on arm
 
 
 def launch(quant: str, mtp: bool, log_name: str) -> subprocess.Popen:
-    binary = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+    binary = ROOT / ".build/release/TinyTitanServer"
     cmd = [str(binary),
            "--port", str(PORT),
            "--model", str(MTP_MODELS[quant]),

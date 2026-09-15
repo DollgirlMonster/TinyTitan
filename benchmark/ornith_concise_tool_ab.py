@@ -37,7 +37,7 @@ from tinytitan_profile import (
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SERVER = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+SERVER = ROOT / ".build/release/TinyTitanServer"
 DEFAULT_OUTPUT = ROOT / ".build/ornith-concise-tool-ab"
 DEFAULT_PORT = 18340
 SAMPLING = {

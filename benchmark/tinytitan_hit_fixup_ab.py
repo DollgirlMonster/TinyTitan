@@ -30,7 +30,7 @@ from tinytitan_profile import (
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SERVER = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+SERVER = ROOT / ".build/release/TinyTitanServer"
 PORT = 8112
 PROCESS_PATTERN = (
     "TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|"

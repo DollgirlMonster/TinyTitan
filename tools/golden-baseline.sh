@@ -47,8 +47,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CLI="$ROOT/.build/arm64-apple-macosx/release/TinyTitanCLI"
-SERVER="$ROOT/.build/arm64-apple-macosx/release/TinyTitanServer"
+CLI="$ROOT/.build/release/TinyTitanCLI"
+SERVER="$ROOT/.build/release/TinyTitanServer"
 LAUNCHER="$ROOT/tools/server_launcher.sh"
 
 # The launcher resolves a model key or the catalog id the server advertises

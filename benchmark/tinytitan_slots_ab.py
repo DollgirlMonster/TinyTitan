@@ -18,7 +18,7 @@ from tinytitan_profile import (
 )
 
 BASE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-BIN = os.path.join(BASE, ".build", "arm64-apple-macosx", "release", "TinyTitanServer")
+BIN = os.path.join(BASE, ".build", "release", "TinyTitanServer")
 MODEL = os.environ.get("TINYTITAN_BENCH_MODEL",
                        str(DEFAULT_MODEL_PATH))
 PORT = 8115

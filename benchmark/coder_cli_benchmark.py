@@ -41,7 +41,7 @@ from tinytitan_profile import (
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SERVER = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+SERVER = ROOT / ".build/release/TinyTitanServer"
 ADAPTER = ROOT / "benchmark/claude_openai_adapter.py"
 CLIENTS_LIBRARY = ROOT / "tools/tinytitan_models.sh"
 MODEL_PATHS = {

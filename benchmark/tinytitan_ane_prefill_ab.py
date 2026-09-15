@@ -72,7 +72,7 @@ def build_prompt() -> str:
 
 
 def launch(quant: str, ane: bool, log_name: str) -> None:
-    binary = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+    binary = ROOT / ".build/release/TinyTitanServer"
     cmd = server_command(binary, PORT, model=MODELS[quant], cache_mode="off")
     env = server_environment()
     env["TINYTITAN_PREFILL_ANE"] = "on" if ane else "off"

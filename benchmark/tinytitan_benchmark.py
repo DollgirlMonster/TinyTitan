@@ -456,8 +456,7 @@ def run_config(cache_mode, mtp_config, config_label, port, verify=True,
 
 
 def launch_server(base_dir, port, main_model, mtp_model, cache_mode, mtp_config):
-    binary = os.path.join(base_dir, ".build", "arm64-apple-macosx",
-                          "release", "TinyTitanServer")
+    binary = os.path.join(base_dir, ".build", "release", "TinyTitanServer")
     cmd = server_command(binary, port, model=main_model, cache_mode=cache_mode)
     if mtp_config == "on":
         cmd += ["--mtp-model", mtp_model, "--mtp-memory-mib", "384"]

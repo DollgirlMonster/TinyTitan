@@ -118,7 +118,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=str(DEFAULT_MODEL_PATH))
     ap.add_argument("--cli", default=None,
-                    help="path to TinyTitanCLI (default: .build/arm64-apple-macosx/release/TinyTitanCLI)")
+                    help="path to TinyTitanCLI (default: .build/release/TinyTitanCLI)")
     ap.add_argument("--sweep", choices=["slots", "chunk", "both"], default="both")
     ap.add_argument("--slots", default=",".join(map(str, DEFAULT_SLOTS)))
     ap.add_argument("--chunks", default=",".join(map(str, DEFAULT_CHUNKS)))
@@ -129,7 +129,7 @@ def main():
     args = ap.parse_args()
 
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cli = args.cli or os.path.join(base, ".build", "arm64-apple-macosx", "release", "TinyTitanCLI")
+    cli = args.cli or os.path.join(base, ".build", "release", "TinyTitanCLI")
     if not os.path.isfile(cli):
         sys.exit("TinyTitanCLI not found at %s — run `swift build -c release` first" % cli)
 

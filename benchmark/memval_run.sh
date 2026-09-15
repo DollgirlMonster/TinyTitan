@@ -72,7 +72,7 @@ FIRST_RUN="${TINYTITAN_MEMVAL_FIRST_RUN:-1}"
 # production; here the harness waits for the log line, so keep it short.
 IDLE="${TINYTITAN_MEMVAL_CONSOLIDATION_IDLE:-5}"
 
-BINARY="$ROOT/.build/arm64-apple-macosx/release/TinyTitanServer"
+BINARY="$ROOT/.build/release/TinyTitanServer"
 if [[ ! -x "$BINARY" ]]; then
   echo "ERROR: no release binary at $BINARY; run: swift build -c release --product TinyTitanServer" >&2
   exit 1

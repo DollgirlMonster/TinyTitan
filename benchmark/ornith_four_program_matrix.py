@@ -31,7 +31,7 @@ from tinytitan_profile import DEFAULT_API_MODEL, server_command, server_environm
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SERVER = ROOT / ".build/arm64-apple-macosx/release/TinyTitanServer"
+SERVER = ROOT / ".build/release/TinyTitanServer"
 DEFAULT_OUTPUT = ROOT / ".build/ornith-four-program-matrix"
 DEFAULT_PORT = 18350
 MODEL_PATHS = {
