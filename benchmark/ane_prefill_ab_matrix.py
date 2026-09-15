@@ -110,13 +110,27 @@ def run_arm(model: str, ane: bool, timeout: int = 3600) -> dict:
 
 
 def measure(model: str, pairs: int) -> dict:
-    """Warm both arms, then interleave off/on/on/off `pairs` times."""
-    for ane in (False, True):
-        warm = run_arm(model, ane)
-        if "error" in warm:
-            return {"model": model, "arms": {"off": [], "on": []},
-                    "error": f"{'on' if ane else 'off'} warm-up: {warm['error']}"}
+    """Warm both arms, then interleave off/on/on/off `pairs` times.
+
+    The OFF arm is measured once *before* the ANE arm is attempted, so a model
+    the ANE cannot serve — no sidecar, or one whose geometry the runtime
+    refuses — still reports its GPU prefill time instead of only the refusal.
+    That is the Qwen 3.8 case: it runs, and the ANE is structurally unavailable
+    because its sparse indexer is not what a dense sidecar computes.
+    """
     arms: dict[str, list[dict]] = {"off": [], "on": []}
+    warm_off = run_arm(model, False)
+    if "error" in warm_off:
+        return {"model": model, "arms": arms,
+                "error": f"off warm-up: {warm_off['error']}"}
+    arms["off"].append(run_arm(model, False))
+    if "error" in arms["off"][-1]:
+        return {"model": model, "arms": arms,
+                "error": f"off arm: {arms['off'][-1]['error']}"}
+    warm_on = run_arm(model, True)
+    if "error" in warm_on:
+        return {"model": model, "arms": arms, "ane_unavailable": warm_on["error"]}
+    arms["on"].append(run_arm(model, True))
     for _ in range(pairs):
         for ane in (False, True, True, False):
             run = run_arm(model, ane)
@@ -132,10 +146,13 @@ def summarize(record: dict) -> dict:
     if "error" in record:
         out["error"] = record["error"]
         return out
+    if "ane_unavailable" in record:
+        out["ane_unavailable"] = record["ane_unavailable"]
     for name, runs in record["arms"].items():
         good = [r for r in runs if "error" not in r]
         if not good:
-            out[name] = {"error": runs[0].get("error", "no runs")}
+            out[name] = {"error": runs[0].get("error", "no runs") if runs
+                         else "no runs"}
             continue
         out[name] = {
             "prefill_seconds_median": statistics.median(
@@ -177,7 +194,9 @@ def main() -> int:
         off = r["off"].get("prefill_seconds_median")
         on = r["on"].get("prefill_seconds_median")
         note = ""
-        if r["on"].get("used_ane") is False:
+        if "ane_unavailable" in r:
+            note = f"ANE unavailable: {r['ane_unavailable'][:70]}"
+        elif r["on"].get("used_ane") is False:
             note = "ANE arm fell back to the GPU"
         elif not r["off"].get("used_ane", True):
             note = "OFF arm reported an ANE fallback (unexpected)"

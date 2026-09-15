@@ -71,6 +71,17 @@ class SummaryTests(unittest.TestCase):
         self.assertFalse(summary["on"]["used_ane"])
         self.assertNotIn("speedup", summary)
 
+    def test_a_model_the_ane_cannot_serve_keeps_its_gpu_time(self):
+        # Qwen 3.8: no sidecar is possible (its sparse indexer is not what a
+        # dense sidecar computes), so the refusal must not cost the GPU number.
+        summary = ab.summarize({
+            "model": "qwen3.8-flash-next_125B_A6B_4Bit",
+            "arms": {"off": [arm(200.0)], "on": []},
+            "ane_unavailable": "no sidecar"})
+        self.assertAlmostEqual(summary["off"]["prefill_seconds_median"], 200.0)
+        self.assertEqual(summary["ane_unavailable"], "no sidecar")
+        self.assertNotIn("speedup", summary)
+
     def test_a_failed_measurement_is_reported_not_summarized(self):
         summary = ab.summarize({"model": "m", "arms": {"off": [], "on": []},
                                 "error": "off warm-up: no sidecar"})
