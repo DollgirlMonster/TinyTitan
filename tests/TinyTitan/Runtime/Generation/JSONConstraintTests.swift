@@ -62,7 +62,7 @@ import Foundation
     /// Ids with no bytes are never offered, whatever the position: emitting one
     /// would advance the document by nothing.
     @Test func byteLessIdsAreNeverAllowed() {
-        var constraint = constraint()
+        let constraint = constraint()
         for _ in 0..<6 {
             let mask = constraint.allowedMask()
             for id in Int32(11)..<Int32(16) { #expect(!mask.contains(id)) }

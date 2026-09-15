@@ -1,15 +1,15 @@
 # The Swift language standard
 
 What this tree is written to, what the compiler enforces, and what was
-deliberately left for its own pass. Measured on 2026-09-11 with the toolchain
-below; the numbers come from builds, not from reading release notes.
+deliberately left for its own pass. Measured on 2026-09-11 with Swift 6.3.3;
+the numbers come from builds, not from reading release notes.
 
 ## The baseline
 
 | | |
 | --- | --- |
-| Toolchain | Apple Swift **6.3.3** (`swiftlang-6.3.3.1.3`), macOS 26.6.2, arm64 |
-| Manifest | `// swift-tools-version: 6.3` |
+| Toolchain | Apple Swift **6.4** (`swiftlang-6.4.0.34.1`), macOS 27.0, arm64 |
+| Manifest | `// swift-tools-version: 6.4` |
 | Language mode | `swiftLanguageModes: [.v6]` -- Swift 6 mode, so strict concurrency and the graduated 6.0/6.1/6.2 features are already errors, not warnings |
 
 Features that are no longer "upcoming" -- they graduated into language mode 6
