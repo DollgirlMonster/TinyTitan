@@ -478,8 +478,12 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         // sidecar (>= one full 4,096-token chunk) can decode to different --
         // equally valid -- greedy text. Shorter prompts never reach it and
         // are unaffected, which is why the golden baselines still hold.
+        // Any family may carry a sidecar now: the graph is built from the
+        // model's own geometry and `ANEPrefillAttention.init` refuses one that
+        // does not match this model, so the gate is the sidecar itself rather
+        // than a family name. A family the exporter cannot serve (3.8, whose
+        // sparse indexer dense attention cannot stand in for) simply has none.
         let wantsANE = try RuntimePrefillANE.environmentValue() == .on
-            && model.config.family == .qwen36
         if wantsANE {
             do {
                 self.anePrefill = try ANEPrefillAttention(
@@ -487,7 +491,9 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
                     device: context.device,
                     hiddenSize: model.config.hiddenSize,
                     kvDim: model.config.numFullKVHeads * model.config.fullHeadDim,
-                    weightsSha256: model.weightsDigestFromManifest)
+                    weightsSha256: model.weightsDigestFromManifest,
+                    family: model.config.family,
+                    fullAttentionLayerMask: model.config.fullAttentionLayerMask)
             } catch {
                 // An explicit request must fail loudly with the export
                 // command; the default must degrade to the GPU, because a

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import json
 import os
 import pathlib
@@ -46,21 +47,137 @@ import numpy as np
 import coremltools as ct
 from coremltools.converters.mil import Builder as mb
 
-# Qwen3.5-MoE 35B-A3B full-attention geometry.
-D = 2048
-N_Q_HEADS = 16
-N_KV_HEADS = 2
-HEAD_DIM = 256
-Q_DIM = N_Q_HEADS * HEAD_DIM
-KV_DIM = N_KV_HEADS * HEAD_DIM
-ROTARY = 64
-THETA = 10_000_000.0
-SCALE = 0.0625
-EPS = 1e-6
+# The chunk the sidecar is built around. The runtime routes a chunk to the ANE
+# only when its configured prefill chunk is exactly this and the chunk is full,
+# so this is a contract with `ANEPrefillAttention.eligibleChunk`, not a tunable.
 CHUNK = 4096
+EPS = 1e-6
 NEG = -30000.0
-FULL_LAYERS = list(range(3, 40, 4))
 EXPORT_VERSION = 1
+
+# Families whose full-attention block this graph reproduces. `qwen38flash` is
+# deliberately absent: its full-attention layers carry a QSA sparse indexer
+# (`self_attn.indexer.*`) whose selection the graph does not compute, and dense
+# attention matches that selection only through 2,051 visible keys
+# (`QSAExactness.maximumExactVisibleKeys`). Past that the runtime refuses dense
+# attention rather than attend to keys the model would have dropped — and long
+# prompts are the only ones where the ANE pays, so a sidecar here would either
+# be unused or silently wrong.
+SUPPORTED_FAMILIES = ("qwen36", "qwen3_5_dense")
+
+
+@dataclasses.dataclass(frozen=True)
+class Geometry:
+    """The attention geometry a sidecar is built and validated against.
+
+    The supported families share one attention block — packed q+gate, q/k
+    RMSNorm, GQA, NeoX rope on `partialRotaryFactor * headDim`, additive causal
+    mask — and differ only in these numbers and the tensor-name prefix. The
+    exporter used to hard-code the 35B-A3B row (D=2048, 16/2 heads), which is
+    why no other family could ever have a sidecar.
+    """
+    family: str
+    prefix: str
+    hidden: int
+    q_heads: int
+    kv_heads: int
+    head_dim: int
+    rotary: int
+    theta: float
+    scale: float
+    chunk: int
+    layers: tuple[int, ...]
+
+    @property
+    def q_dim(self) -> int:
+        return self.q_heads * self.head_dim
+
+    @property
+    def kv_dim(self) -> int:
+        return self.kv_heads * self.head_dim
+
+    def as_metadata(self) -> dict:
+        return {
+            "family": self.family,
+            "hiddenSize": self.hidden,
+            "numHeads": self.q_heads,
+            "numKVHeads": self.kv_heads,
+            "headDim": self.head_dim,
+            "rotaryDim": self.rotary,
+            "ropeTheta": self.theta,
+            "attentionScale": self.scale,
+            "chunkTokens": self.chunk,
+            "fullAttentionLayers": list(self.layers),
+        }
+
+
+def _attention_prefix(entries: dict[str, dict], layer: int) -> str:
+    """The tensor-name prefix this model uses, read from its own index.
+
+    `language_model.model.layers.N.self_attn.*` for the qwen36 and dense
+    families, `model.language_model.layers.N.self_attn.*` for the 3.8 one — so
+    it is discovered rather than assumed.
+    """
+    suffix = f".layers.{layer}.self_attn.q_proj.weight"
+    for name in entries:
+        if name.endswith(suffix):
+            return name[: -len(suffix)] + ".layers."
+    raise SystemExit(
+        f"no tensor named *{suffix} in model_weights.bin; this is not a "
+        f"supported .gturbo attention layout")
+
+
+def geometry_for(manifest: dict, entries: dict[str, dict]) -> Geometry:
+    """Derive the geometry from the model itself.
+
+    Everything the graph needs is in the manifest's `arch`, and every guard
+    below refuses a model whose attention block differs from the one this graph
+    computes — a refusal is cheap, and a graph that silently computes a
+    *different* attention produces fluent nonsense that nothing downstream
+    flags.
+    """
+    arch = manifest["arch"]
+    family = arch["family"]
+    if family not in SUPPORTED_FAMILIES:
+        detail = ""
+        if family.startswith("qwen38"):
+            detail = (" — its QSA sparse indexer makes dense attention inexact "
+                      "past 2,051 keys, so the sidecar would be wrong exactly "
+                      "where the ANE pays")
+        raise SystemExit(
+            f"ANE prefill export supports {', '.join(SUPPORTED_FAMILIES)}; "
+            f"this model is {family}{detail}")
+    # Each guard refuses a model whose attention block differs from the one this
+    # graph computes. A refusal is cheap; a graph that silently computes a
+    # *different* attention produces fluent nonsense nothing downstream flags.
+    if arch.get("attentionKEqV"):
+        raise SystemExit("attentionKEqV models are not supported: the graph "
+                         "computes K and V separately")
+    if arch.get("ropeNeoxSubdim") is False:
+        raise SystemExit("non-NeoX rope is not supported: the graph applies "
+                         "rope in NeoX order")
+    if arch.get("slidingWindow"):
+        raise SystemExit(f"slidingWindow={arch['slidingWindow']} is not "
+                         f"supported: the graph has no sliding-window mask")
+    mask = arch["fullAttentionLayerMask"]
+    layers = tuple(i for i, v in enumerate(mask) if int(v) == 1)
+    if not layers:
+        raise SystemExit("fullAttentionLayerMask selects no full-attention layer")
+    head_dim = int(arch.get("fullHeadDim") or arch["headDim"])
+    rotary = int(round(float(arch["partialRotaryFactor"]) * head_dim))
+    return Geometry(
+        family=family,
+        prefix=_attention_prefix(entries, layers[0]),
+        hidden=int(arch["hiddenSize"]),
+        q_heads=int(arch["numHeads"]),
+        kv_heads=int(arch.get("numFullKVHeads") or arch["numKVHeads"]),
+        head_dim=head_dim,
+        rotary=rotary,
+        theta=float(arch.get("fullRopeTheta") or arch["ropeTheta"]),
+        scale=float(arch["attentionScale"]),
+        chunk=CHUNK,
+        layers=layers,
+    )
 
 # Core ML does not raise when the Neural Engine refuses to compile a model: it
 # logs the failure on the native stderr and then runs the program on the CPU.
@@ -139,12 +256,41 @@ def bf16_to_f32(raw: bytes) -> np.ndarray:
     return (u16.astype(np.uint32) << 16).view(np.float32)
 
 
-def load_tensor(handle, entry, weight_bits: int = 4) -> np.ndarray:
+def tensor_weight_bits(manifest: dict, full_name: str, fallback: int) -> int:
+    """The width a tensor is stored at: its per-tensor override, else its slot.
+
+    The manifest's `quant` object holds the five slot defaults *and* one entry
+    per tensor that deviates, keyed by stem — the same table the runtime
+    resolves a role's width from (`Model.roleWeightBits`). The dense Qwen 3.5
+    installs are the reason it exists: they declare a 4-bit attention slot but
+    store `k_proj`/`v_proj` at 8 bits, and reading those as nibbles yields
+    confident nonsense.
+    """
+    stem = (full_name[: -len(".weight")] if full_name.endswith(".weight")
+            else full_name)
+    slot = (manifest.get("quant") or {}).get(stem)
+    if isinstance(slot, dict) and "weightBits" in slot:
+        return int(slot["weightBits"])
+    return fallback
+
+
+def load_tensor(handle, entry, weight_bits: int = 4,
+                name: str = "tensor") -> np.ndarray:
     rows, cols = entry["shape"][0], entry["shape"][1]
     if entry["dtype"] == 1:                                   # bf16
         handle.seek(entry["offset"])
         flat = bf16_to_f32(handle.read(entry["size"]))
         return flat.reshape([d for d in entry["shape"] if d] or [flat.size])
+    # The declared width and the stored byte count must agree. They disagree
+    # only if a manifest lies about its own payload, which is worth stopping
+    # for: the dequantization below is silent about it.
+    elements = rows * cols
+    expected = elements // 2 if weight_bits == 4 else elements
+    if elements and entry["size"] != expected:
+        raise SystemExit(
+            f"{name}: manifest says {weight_bits}-bit but the tensor is "
+            f"{entry['size']} bytes for {elements} elements (expected "
+            f"{expected}); refusing to guess its width")
     handle.seek(entry["offset"])
     packed = np.frombuffer(handle.read(entry["size"]), dtype=np.uint8)
     if weight_bits == 8:
@@ -155,7 +301,7 @@ def load_tensor(handle, entry, weight_bits: int = 4) -> np.ndarray:
         q[:, 0::2] = (packed & 0x0F).astype(np.float32)
         q[:, 1::2] = (packed >> 4).astype(np.float32)
     else:
-        raise SystemExit(f"unsupported attention weightBits {weight_bits}")
+        raise SystemExit(f"{name}: unsupported weightBits {weight_bits}")
     handle.seek(entry["scale"][0])
     scales = bf16_to_f32(handle.read(entry["scale"][1])).reshape(rows, cols // 64)
     handle.seek(entry["bias"][0])
@@ -163,12 +309,16 @@ def load_tensor(handle, entry, weight_bits: int = 4) -> np.ndarray:
     return q * np.repeat(scales, 64, axis=1) + np.repeat(biases, 64, axis=1)
 
 
-def load_layer_weights(handle, entries, layer: int,
-                       weight_bits: int = 4) -> dict[str, np.ndarray]:
-    prefix = f"language_model.model.layers.{layer}.self_attn."
+def load_layer_weights(handle, entries, layer: int, geom: Geometry,
+                       manifest: dict) -> dict[str, np.ndarray]:
+    prefix = f"{geom.prefix}{layer}.self_attn."
+    fallback = int(manifest["quant"]["attention"]["weightBits"])
     def get(name):
-        return load_tensor(handle, entries[prefix + name],
-                           weight_bits=weight_bits)
+        full = prefix + name
+        return load_tensor(handle, entries[full],
+                           weight_bits=tensor_weight_bits(manifest, full,
+                                                          fallback),
+                           name=full)
     return {
         "wq": get("q_proj.weight").astype(np.float16),
         "wk": get("k_proj.weight").astype(np.float16),
@@ -179,27 +329,41 @@ def load_layer_weights(handle, entries, layer: int,
     }
 
 
-def rope_tables(start: int) -> tuple[np.ndarray, np.ndarray]:
-    half = ROTARY // 2
-    inv = THETA ** (-np.arange(half, dtype=np.float64) * 2 / ROTARY)
-    pos = np.arange(start, start + CHUNK, dtype=np.float64)[:, None] * inv[None, :]
+def rope_tables(start: int, geom: Geometry) -> tuple[np.ndarray, np.ndarray]:
+    rotary = geom.rotary
+    half = rotary // 2
+    inv = geom.theta ** (-np.arange(half, dtype=np.float64) * 2 / rotary)
+    pos = np.arange(start, start + geom.chunk,
+                    dtype=np.float64)[:, None] * inv[None, :]
     return (np.cos(pos).astype(np.float16), np.sin(pos).astype(np.float16))
 
 
-def build_variant(history: int, weights: dict[str, np.ndarray]):
-    """One (chunk=4096, history) function. Inputs are token-major so the
-    runtime can wrap its staging buffers zero-copy:
-      normed  [4096, 2048]  post-input-norm hidden
-      k_hist  [H, 512]      rotated+normed K rows already in the cache
-      v_hist  [H, 512]
+def build_variant(history: int, weights: dict[str, np.ndarray],
+                  geom: Geometry):
+    """One (chunk, history) function for this model's geometry. Inputs are
+    token-major so the runtime can wrap its staging buffers zero-copy:
+      normed  [chunk, hidden]        post-input-norm hidden
+      k_hist  [H, kvDim]             rotated+normed K rows already in the cache
+      v_hist  [H, kvDim]
     Outputs, token-major for the same reason:
-      out     [4096, 2048]  attention branch output (pre-residual)
-      k_new   [4096, 512]   rotated+normed K of this chunk (cache layout)
-      v_new   [4096, 512]
+      out     [chunk, hidden]        attention branch output (pre-residual)
+      k_new   [chunk, kvDim]         rotated+normed K of this chunk (cache layout)
+      v_new   [chunk, kvDim]
     """
-    t = CHUNK
+    # The graph body is written in terms of these names; binding them to the
+    # model's geometry here is the whole difference between a qwen36 sidecar and
+    # a dense one.
+    D = geom.hidden
+    N_Q_HEADS = geom.q_heads
+    N_KV_HEADS = geom.kv_heads
+    HEAD_DIM = geom.head_dim
+    Q_DIM = geom.q_dim
+    KV_DIM = geom.kv_dim
+    ROTARY = geom.rotary
+    SCALE = geom.scale
+    t = geom.chunk
     total = history + t
-    cos_np, sin_np = rope_tables(history)
+    cos_np, sin_np = rope_tables(history, geom)
     fp16 = ct.converters.mil.mil.types.fp16
     specs = [mb.TensorSpec(shape=(t, D), dtype=fp16)]
     if history > 0:
@@ -348,12 +512,21 @@ def main() -> int:
     if args.max_history % CHUNK != 0:
         raise SystemExit("--max-history must be a multiple of 4096")
     histories = list(range(0, args.max_history + 1, CHUNK))
-    layers = ([int(x) for x in args.layers.split(",")] if args.layers
-              else FULL_LAYERS)
 
     manifest = json.load(open(model_dir / "manifest.json"))
-    if manifest["arch"]["family"] != "qwen36":
-        raise SystemExit("ANE prefill export supports the qwen36 family only")
+    entries = read_index(weights_bin)
+    geom = geometry_for(manifest, entries)
+    layers = ([int(x) for x in args.layers.split(",")] if args.layers
+              else list(geom.layers))
+    unknown = [L for L in layers if L not in geom.layers]
+    if unknown:
+        raise SystemExit(
+            f"--layers names {unknown}, which are not full-attention layers of "
+            f"this model ({list(geom.layers)})")
+    print(f"{geom.family}: hidden {geom.hidden}, "
+          f"{geom.q_heads}q/{geom.kv_heads}kv x {geom.head_dim}, "
+          f"rope {geom.rotary}, theta {geom.theta:g}, scale {geom.scale:g}, "
+          f"{len(geom.layers)} full-attention layers", flush=True)
     # Attention weights are 4-bit in the 4-bit build and 8-bit in the 8-bit
     # build; both dequantize to the same fp16 graph, so only the unpack
     # differs. The sidecar itself is fp16 either way.
@@ -367,12 +540,11 @@ def main() -> int:
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir()
-    entries = read_index(weights_bin)
     handle = open(weights_bin, "rb")
     try:
         for layer in layers:
-            weights = load_layer_weights(handle, entries, layer,
-                                         weight_bits=weight_bits)
+            weights = load_layer_weights(handle, entries, layer, geom,
+                                         manifest)
             stage = staging / f".stage_layer_{layer}"
             if stage.exists():
                 shutil.rmtree(stage)
@@ -381,7 +553,7 @@ def main() -> int:
             for history in histories:
                 variant = run_checked(
                     f"layer {layer} h{history} convert",
-                    lambda history=history: build_variant(history, weights))
+                    lambda history=history: build_variant(history, weights, geom))
                 variant_path = stage / f"h{history}.mlpackage"
                 run_checked(f"layer {layer} h{history} save",
                             lambda: variant.save(str(variant_path)))
@@ -398,11 +570,15 @@ def main() -> int:
 
         meta = {
             "version": EXPORT_VERSION,
-            "family": "qwen36",
+            "family": geom.family,
             "sourceWeightBits": weight_bits,
             "chunkTokens": CHUNK,
             "histories": histories,
             "layers": layers,
+            # The geometry the graph was built for. The runtime refuses a
+            # sidecar that does not match the model it is loaded for: a
+            # mismatch would compute a *different* attention, plausibly.
+            "geometry": geom.as_metadata(),
             # Binds the sidecar to the exact weights it was built from. The
             # runtime refuses a mismatch: a sidecar from different weights would
             # compute plausible-looking but wrong attention.

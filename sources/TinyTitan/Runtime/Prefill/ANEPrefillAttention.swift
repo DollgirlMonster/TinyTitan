@@ -78,12 +78,28 @@ private struct LoadedModelBox: @unchecked Sendable {
 /// unchecked-invariant: driven exclusively by the single-flight prefill loop
 /// of one runner; buffers and lazy caches are never touched concurrently.
 final class ANEPrefillAttention: @unchecked Sendable {
+    /// The geometry the sidecar's Core ML graph was built for. The exporter
+    /// records it and `init` refuses a sidecar that does not match the model:
+    /// a mismatch computes a *different* attention, and plausibly.
+    struct SidecarGeometry: Decodable {
+        let family: String
+        let hiddenSize: Int
+        let numHeads: Int
+        let numKVHeads: Int
+        let headDim: Int
+        let chunkTokens: Int
+        let fullAttentionLayers: [Int]?
+    }
+
     struct SidecarMetadata: Decodable {
         let version: Int
         let family: String
         let chunkTokens: Int
         let histories: [Int]
         let layers: [Int]
+        /// Present from the generalized exporter on; absent in a sidecar built
+        /// while the graph was hard-coded to the 35B-A3B geometry.
+        let geometry: SidecarGeometry?
         /// SHA-256 of the `model_weights.bin` the sidecar was exported from,
         /// copied out of that model's install receipt at export time.
         let weightsSha256: String?
@@ -147,8 +163,13 @@ final class ANEPrefillAttention: @unchecked Sendable {
     ///   nothing downstream would catch it — so the binding is checked here
     ///   and fails closed. Nil skips the check (no receipt available) and says
     ///   so, rather than silently trusting.
+    /// - Parameters family, fullAttentionLayerMask: the model the sidecar is
+    ///   being loaded for. The sidecar's recorded geometry must match it; a
+    ///   mismatch is refused rather than run, because a graph built for another
+    ///   width or head count computes a different attention and says nothing.
     init(modelDirectory: URL, device: MTLDevice,
-         hiddenSize: Int, kvDim: Int, weightsSha256: String?) throws {
+         hiddenSize: Int, kvDim: Int, weightsSha256: String?,
+         family: ModelFamily, fullAttentionLayerMask: [UInt8]) throws {
         let dir = modelDirectory.appendingPathComponent("ane_prefill")
         let metaURL = dir.appendingPathComponent("ane_prefill.json")
         guard FileManager.default.fileExists(atPath: metaURL.path) else {
@@ -162,9 +183,37 @@ final class ANEPrefillAttention: @unchecked Sendable {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill sidecar version \(meta.version) != supported \(Self.expectedVersion); re-export")
         }
-        guard meta.family == "qwen36" else {
+        // One geometry per sidecar. The graph's weights, head split, rope and
+        // GQA expansion are all built from these numbers, so a sidecar that
+        // disagrees with the model is not "close enough": it computes a
+        // different attention. Refusing sends the runner to the GPU path.
+        guard let geometry = meta.geometry else {
             throw PrefillError.chunkedUnsupported(
-                "ANE prefill sidecar family '\(meta.family)' is not qwen36")
+                "ANE prefill sidecar records no geometry (it predates the "
+                + "generalized exporter); re-export it for this model")
+        }
+        guard geometry.family == family.rawValue,
+              meta.family == family.rawValue else {
+            throw PrefillError.chunkedUnsupported(
+                "ANE prefill sidecar is for family '\(geometry.family)' but this "
+                + "model is '\(family.rawValue)'; re-export it for this model")
+        }
+        guard geometry.hiddenSize == hiddenSize,
+              geometry.numKVHeads * geometry.headDim == kvDim,
+              geometry.chunkTokens == meta.chunkTokens else {
+            throw PrefillError.chunkedUnsupported(
+                "ANE prefill sidecar geometry (hidden \(geometry.hiddenSize), "
+                + "\(geometry.numKVHeads)x\(geometry.headDim) kv, chunk "
+                + "\(geometry.chunkTokens)) does not match this model (hidden "
+                + "\(hiddenSize), kvDim \(kvDim), chunk \(meta.chunkTokens))")
+        }
+        for layer in meta.layers {
+            guard layer >= 0, layer < fullAttentionLayerMask.count,
+                  fullAttentionLayerMask[layer] == 1 else {
+                throw PrefillError.chunkedUnsupported(
+                    "ANE prefill sidecar covers layer \(layer), which is not a "
+                    + "full-attention layer of this model")
+            }
         }
         // Issue #7: a sidecar whose variants the ANE refused to compile loads
         // fine and then runs the whole prefill on the CPU, ~38x slower than the
