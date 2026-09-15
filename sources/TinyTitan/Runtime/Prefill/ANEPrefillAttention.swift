@@ -87,6 +87,11 @@ final class ANEPrefillAttention: @unchecked Sendable {
         /// SHA-256 of the `model_weights.bin` the sidecar was exported from,
         /// copied out of that model's install receipt at export time.
         let weightsSha256: String?
+        /// True only when the exporter watched the Neural Engine compile every
+        /// variant and saw no compiler error. Core ML reports such a failure on
+        /// the native stderr and still exits 0, so a sidecar from an exporter
+        /// without this flag may silently run the whole prefill on the CPU.
+        let aneCompileVerified: Bool?
     }
 
     static let expectedVersion = 1
@@ -160,6 +165,18 @@ final class ANEPrefillAttention: @unchecked Sendable {
         guard meta.family == "qwen36" else {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill sidecar family '\(meta.family)' is not qwen36")
+        }
+        // Issue #7: a sidecar whose variants the ANE refused to compile loads
+        // fine and then runs the whole prefill on the CPU, ~38x slower than the
+        // GPU path. Only an exporter that verified the compilation sets this.
+        // Refusing here means the GPU path is used instead (or, with
+        // TINYTITAN_PREFILL_ANE=on, the load fails with the reason).
+        guard meta.aneCompileVerified == true else {
+            throw PrefillError.chunkedUnsupported(
+                "ANE prefill sidecar does not record a verified ANE compilation "
+                + "(aneCompileVerified is missing or false); the Neural Engine "
+                + "may have refused it and prefill would run on the CPU at ~38x "
+                + "the GPU cost. Re-export with tools/export_ane_prefill.py.")
         }
         if let weightsSha256, let exported = meta.weightsSha256 {
             guard exported.lowercased() == weightsSha256.lowercased() else {

@@ -22,15 +22,25 @@ Why these choices (all measured, see docs/v4.4-decode-width-plan.md Track A):
 
   ~/.venvs/coreml-py311/bin/python tools/export_ane_prefill.py \
       --model models/ornith-1.5_35B_A3B_4Bit --max-history 12288
+
+Exits non-zero, writes nothing, and leaves any existing sidecar untouched when
+the Neural Engine refuses to compile a variant. Core ML reports that failure on
+the native stderr and otherwise exits 0, so without this an export could
+"succeed" into a sidecar that the runtime then runs on the CPU at ~38x the GPU
+prefill cost (issue #7). A successful export records `aneCompileVerified` in
+`ane_prefill.json`, and the runtime refuses a sidecar that lacks it.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import pathlib
 import shutil
 import struct
 import sys
+import tempfile
 
 import numpy as np
 import coremltools as ct
@@ -51,6 +61,57 @@ CHUNK = 4096
 NEG = -30000.0
 FULL_LAYERS = list(range(3, 40, 4))
 EXPORT_VERSION = 1
+
+# Core ML does not raise when the Neural Engine refuses to compile a model: it
+# logs the failure on the native stderr and then runs the program on the CPU.
+# An export that exits 0 with these in its log writes a sidecar that is 38x
+# slower at prefill than the GPU path (issue #7), so the exporter treats them
+# as a hard failure.
+ANE_COMPILE_ERROR_MARKERS = (
+    "ANECCompile() FAILED",
+    "MILCompilerForANE error",
+    "failed to compile ANE model",
+    "E5RT encountered an STL exception",
+)
+
+
+class ANEExportError(RuntimeError):
+    """The Neural Engine refused to compile a variant the exporter built."""
+
+
+@contextlib.contextmanager
+def _capture_native_stderr():
+    """Capture the C++ stderr coremltools writes ANE compiler errors to."""
+    saved = os.dup(2)
+    spill = tempfile.TemporaryFile()
+    os.dup2(spill.fileno(), 2)
+    try:
+        yield spill
+    finally:
+        sys.stderr.flush()
+        os.dup2(saved, 2)
+        os.close(saved)
+
+
+def run_checked(what, call):
+    """Run `call`, fail loudly if the ANE compiler rejected the result.
+
+    The captured stderr is echoed back, so a clean run looks exactly as it did
+    before; only a run that produced compiler errors changes behaviour.
+    """
+    with _capture_native_stderr() as spill:
+        result = call()
+    spill.seek(0)
+    log = spill.read().decode("utf-8", "replace")
+    spill.close()
+    if log:
+        sys.stderr.write(log)
+    failed = [marker for marker in ANE_COMPILE_ERROR_MARKERS if marker in log]
+    if failed:
+        raise ANEExportError(
+            f"{what}: the Neural Engine refused to compile this variant "
+            f"({', '.join(failed)}). The sidecar was not written.")
+    return result
 
 
 def read_index(path: pathlib.Path) -> dict[str, dict]:
@@ -299,51 +360,84 @@ def main() -> int:
     weight_bits = manifest["quant"]["attention"]["weightBits"]
 
     out_dir = model_dir / "ane_prefill"
-    out_dir.mkdir(exist_ok=True)
+    # Build beside the live sidecar and swap only after every layer has
+    # compiled, so a failed export leaves the previous sidecar untouched and
+    # never leaves a half-written one for the runtime to load.
+    staging = model_dir / f".ane_prefill.export-{os.getpid()}"
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir()
     entries = read_index(weights_bin)
     handle = open(weights_bin, "rb")
-    for layer in layers:
-        weights = load_layer_weights(handle, entries, layer,
-                                     weight_bits=weight_bits)
-        stage = out_dir / f".stage_layer_{layer}"
-        if stage.exists():
+    try:
+        for layer in layers:
+            weights = load_layer_weights(handle, entries, layer,
+                                         weight_bits=weight_bits)
+            stage = staging / f".stage_layer_{layer}"
+            if stage.exists():
+                shutil.rmtree(stage)
+            stage.mkdir()
+            desc = ct.utils.MultiFunctionDescriptor()
+            for history in histories:
+                variant = run_checked(
+                    f"layer {layer} h{history} convert",
+                    lambda history=history: build_variant(history, weights))
+                variant_path = stage / f"h{history}.mlpackage"
+                run_checked(f"layer {layer} h{history} save",
+                            lambda: variant.save(str(variant_path)))
+                desc.add_function(str(variant_path),
+                                  src_function_name="main",
+                                  target_function_name=f"h{history}")
+                print(f"layer {layer}: built h{history}", flush=True)
+            desc.default_function_name = "h0"
+            final = staging / f"layer_{layer}.mlpackage"
+            run_checked(f"layer {layer} multifunction",
+                        lambda: ct.utils.save_multifunction(desc, str(final)))
             shutil.rmtree(stage)
-        stage.mkdir()
-        desc = ct.utils.MultiFunctionDescriptor()
-        for history in histories:
-            variant = build_variant(history, weights)
-            variant_path = stage / f"h{history}.mlpackage"
-            variant.save(str(variant_path))
-            desc.add_function(str(variant_path),
-                              src_function_name="main",
-                              target_function_name=f"h{history}")
-            print(f"layer {layer}: built h{history}", flush=True)
-        desc.default_function_name = "h0"
-        final = out_dir / f"layer_{layer}.mlpackage"
-        if final.exists():
-            shutil.rmtree(final)
-        ct.utils.save_multifunction(desc, str(final))
-        shutil.rmtree(stage)
-        print(f"layer {layer}: wrote {final}", flush=True)
-    handle.close()
+            print(f"layer {layer}: wrote {final}", flush=True)
 
-    meta = {
-        "version": EXPORT_VERSION,
-        "family": "qwen36",
-        "sourceWeightBits": weight_bits,
-        "chunkTokens": CHUNK,
-        "histories": histories,
-        "layers": layers,
-        # Binds the sidecar to the exact weights it was built from. The
-        # runtime refuses a mismatch: a sidecar from different weights would
-        # compute plausible-looking but wrong attention.
-        "weightsSha256": manifest["files"]["model_weights.bin"]["sha256"],
-    }
-    with open(out_dir / "ane_prefill.json", "w") as fh:
-        json.dump(meta, fh, indent=2)
-    print(f"wrote {out_dir / 'ane_prefill.json'}")
-    return 0
+        meta = {
+            "version": EXPORT_VERSION,
+            "family": "qwen36",
+            "sourceWeightBits": weight_bits,
+            "chunkTokens": CHUNK,
+            "histories": histories,
+            "layers": layers,
+            # Binds the sidecar to the exact weights it was built from. The
+            # runtime refuses a mismatch: a sidecar from different weights would
+            # compute plausible-looking but wrong attention.
+            "weightsSha256": manifest["files"]["model_weights.bin"]["sha256"],
+            # The runtime requires this flag. A sidecar that predates it (or
+            # was written by a failing export) is refused, so the ~38x
+            # CPU-fallback prefill of issue #7 cannot happen.
+            "aneCompileVerified": True,
+        }
+        with open(staging / "ane_prefill.json", "w") as fh:
+            json.dump(meta, fh, indent=2)
+
+        previous = model_dir / f".ane_prefill.previous-{os.getpid()}"
+        if previous.exists():
+            shutil.rmtree(previous)
+        if out_dir.exists():
+            os.replace(out_dir, previous)
+        os.replace(staging, out_dir)
+        if previous.exists():
+            shutil.rmtree(previous)
+        print(f"wrote {out_dir / 'ane_prefill.json'}")
+        return 0
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    finally:
+        handle.close()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except ANEExportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        print("error: the ANE sidecar was NOT updated; re-run with a smaller "
+              "--max-history (8192 exports cleanly) or on a machine whose ANE "
+              "accepts the model.", file=sys.stderr)
+        sys.exit(2)

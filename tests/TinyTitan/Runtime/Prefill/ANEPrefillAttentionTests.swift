@@ -50,7 +50,9 @@ import Testing
         defer { try? FileManager.default.removeItem(at: dir) }
         let meta: [String: Any] = [
             "version": 1, "family": "qwen36", "chunkTokens": 4096,
-            "histories": [0], "layers": [3], "weightsSha256": String(repeating: "a", count: 64),
+            "histories": [0], "layers": [3],
+            "weightsSha256": String(repeating: "a", count: 64),
+            "aneCompileVerified": true,
         ]
         try JSONSerialization.data(withJSONObject: meta)
             .write(to: sidecar.appendingPathComponent("ane_prefill.json"))
@@ -78,7 +80,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: dir) }
         let meta: [String: Any] = [
             "version": 1, "family": "qwen36", "chunkTokens": 4096,
-            "histories": [0, 4096], "layers": [3, 7],
+            "histories": [0, 4096], "layers": [3, 7], "aneCompileVerified": true,
         ]
         try JSONSerialization.data(withJSONObject: meta)
             .write(to: sidecar.appendingPathComponent("ane_prefill.json"))
@@ -115,6 +117,50 @@ import Testing
         #expect(ane.shadowTokens == 0)
     }
 
+    /// Issue #7: an exporter that did not watch the ANE compile can write a
+    /// sidecar the ANE refuses, which Core ML then runs on the CPU at ~38x the
+    /// GPU prefill cost while exiting 0. The runtime must not trust it.
+    @Test func sidecarWithoutVerifiedANECompilationIsRejected() throws {
+        let ctx = try MetalContext()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-test-\(UUID().uuidString)")
+        let sidecar = dir.appendingPathComponent("ane_prefill")
+        try FileManager.default.createDirectory(
+            at: sidecar, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let metaURL = sidecar.appendingPathComponent("ane_prefill.json")
+        func write(_ meta: [String: Any]) throws {
+            try JSONSerialization.data(withJSONObject: meta).write(to: metaURL)
+        }
+        let base: [String: Any] = [
+            "version": 1, "family": "qwen36", "chunkTokens": 4096,
+            "histories": [0], "layers": [3],
+        ]
+        // Missing flag (any sidecar written before this check): refused.
+        try write(base)
+        #expect(throws: PrefillError.self) {
+            _ = try ANEPrefillAttention(modelDirectory: dir, device: ctx.device,
+                                        hiddenSize: 2048, kvDim: 512,
+                                        weightsSha256: nil)
+        }
+        // Explicitly false (an export that saw the ANE refuse): refused.
+        var failed = base
+        failed["aneCompileVerified"] = false
+        try write(failed)
+        #expect(throws: PrefillError.self) {
+            _ = try ANEPrefillAttention(modelDirectory: dir, device: ctx.device,
+                                        hiddenSize: 2048, kvDim: 512,
+                                        weightsSha256: nil)
+        }
+        // Verified: loads.
+        var verified = base
+        verified["aneCompileVerified"] = true
+        try write(verified)
+        _ = try ANEPrefillAttention(modelDirectory: dir, device: ctx.device,
+                                    hiddenSize: 2048, kvDim: 512,
+                                    weightsSha256: nil)
+    }
+
     @Test func shadowAppendSkipsPartialChunksAndStoresFullOnes() throws {
         let ctx = try MetalContext()
         let dir = FileManager.default.temporaryDirectory
@@ -125,7 +171,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: dir) }
         let meta: [String: Any] = [
             "version": 1, "family": "qwen36", "chunkTokens": 8,
-            "histories": [0, 8], "layers": [3],
+            "histories": [0, 8], "layers": [3], "aneCompileVerified": true,
         ]
         try JSONSerialization.data(withJSONObject: meta)
             .write(to: sidecar.appendingPathComponent("ane_prefill.json"))
