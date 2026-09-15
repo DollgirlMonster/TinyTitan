@@ -547,6 +547,30 @@ private struct RunnerCounterSnapshot {
     let expertStreaming: ExpertStreamingStatistics
 }
 
+/// Per-generation decode state that `runRawCompletion`'s progress closure
+/// mutates. Boxed so the closure captures a reference the compiler can send
+/// into the nonisolated call; Swift 6.4 rejects sending the captured mutable
+/// struct itself.
+///
+/// unchecked-invariant: one box per generation, and the coordinator plus the
+/// session's slot pool guarantee one generation per occurrence, so exactly one
+/// task ever touches a given box.
+private final class GenerationDecodeState: @unchecked Sendable {
+    /// The decoder is per-generation state too, and holding it here is what
+    /// lets the progress closure capture only this box: a closure that also
+    /// captured the decoder directly is not Sendable, and Swift 6.4 refuses to
+    /// send it into the nonisolated completion call.
+    let decoder: StructuredAssistantDecoder
+    var output: AssistantOutput
+    var decodingError: Error?
+    var shouldStop = false
+
+    init(decoder: StructuredAssistantDecoder, output: AssistantOutput) {
+        self.decoder = decoder
+        self.output = output
+    }
+}
+
 public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
     /// Manifest-derived API model identifier used when --model-id is absent.
     public nonisolated let defaultModelID: String
@@ -1322,12 +1346,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
         // The stall clock starts at the first visible token, so a long
         // thought before the answer cannot trip it. Reasoning is watched for
         // loops alone, in a window of its own.
-        var output = AssistantOutput(stops: request.generationConfig.stopStrings,
-                                     onEvent: onEvent,
-                                     observeVisible: { watchdogs.observe($0) },
-                                     observeReasoning: { watchdogs.observeReasoning($0) })
-        var decodingError: Error?
-        var shouldStop = false
+        let state = GenerationDecodeState(decoder: decoder, output: AssistantOutput(
+            stops: request.generationConfig.stopStrings,
+            onEvent: onEvent,
+            observeVisible: { watchdogs.observe($0) },
+            observeReasoning: { watchdogs.observeReasoning($0) }))
 
         // MTP drafts several tokens ahead of the sampler and never consults a
         // grammar, so a constrained request takes the ordinary decode path
@@ -1345,9 +1368,12 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             ? .reset : completionStart
         let activePromptIDs = activeProducer is StreamingMTPDecoder
             ? promptIDs : effectivePromptIDs
-        func publish(_ events: [StructuredAssistantEvent], isToken: Bool = true) {
-            output.publish(events, isToken: isToken)
-            if output.isStopped { shouldStop = true }
+        // `@Sendable`: `runRawCompletion` is @concurrent, so a progress closure
+        // that is still actor-isolated cannot be sent into it (Swift 6.4).
+        // Everything these touch lives in the Sendable box above.
+        let publish: @Sendable ([StructuredAssistantEvent], Bool) -> Void = { events, isToken in
+            state.output.publish(events, isToken: isToken)
+            if state.output.isStopped { state.shouldStop = true }
         }
         // `renderTokenizer` is the one this request's reasoning resolves to, and
         // it is already what rendered the prompt and what the assistant decoder
@@ -1369,20 +1395,20 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             slot: slot,
             // A watchdog stop is polled here, between tokens, alongside the
             // stop-string matcher's own flag.
-            shouldStop: { shouldStop || watchdogs.wantsStop }) { progress in
-                guard decodingError == nil else { return }
+            shouldStop: { @Sendable in state.shouldStop || watchdogs.wantsStop }) { @Sendable progress in
+                guard state.decodingError == nil else { return }
                 do {
                     switch progress {
                     case .prefill:
                         break
                     case .token(_, let tokenID, let delta):
-                        publish(try decoder.consume(tokenID: tokenID, delta: delta))
+                        publish(try state.decoder.consume(tokenID: tokenID, delta: delta), true)
                     case .tail(let text):
-                        publish(try decoder.consumeTail(text), isToken: false)
+                        publish(try state.decoder.consumeTail(text), false)
                     }
                 } catch {
-                    decodingError = error
-                    shouldStop = true
+                    state.decodingError = error
+                    state.shouldStop = true
                 }
         }
         emitGenerationDiagnostics(activeProducer: activeProducer,
@@ -1400,15 +1426,15 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
                     effectivePromptIDs: effectivePromptIDs,
                     result: result,
                     maxCompletionTokens: config.maxNewTokens,
-                    decodedCalls: output.calls.count,
-                    visibleBytes: output.content.utf8.count,
-                    stopStringMatched: output.isStopped,
+                    decodedCalls: state.output.calls.count,
+                    visibleBytes: state.output.content.utf8.count,
+                    stopStringMatched: state.output.isStopped,
                     toolStartID: tokenizer.toolCallStartID,
                     toolEndID: tokenizer.toolCallEndID,
                     toolResponseID: tokenizer.toolResponseID,
                     toolResponseEndID: tokenizer.toolResponseEndID))
         }
-        if let decodingError {
+        if let decodingError = state.decodingError {
             throw structuredFailure(
                 kind: .decoderConsume,
                 cause: .classify(decodingError))
@@ -1420,12 +1446,12 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
                 kind: .decoderFinish,
                 cause: .classify(error))
         }
-        if needsToolTemplate, result.reason == .toolCalls, output.calls.isEmpty {
+        if needsToolTemplate, result.reason == .toolCalls, state.output.calls.isEmpty {
             throw structuredFailure(kind: .orphanToolResponse, cause: .none)
         }
-        output.finish()
-        var content = output.content
-        let calls = output.calls
+        state.output.finish()
+        var content = state.output.content
+        let calls = state.output.calls
         var reason: String
         if !calls.isEmpty {
             reason = "tool_calls"
@@ -1460,7 +1486,7 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
             content: generated,
             calls: calls,
             result: result,
-            stopStringFiltered: output.isStopped)
+            stopStringFiltered: state.output.isStopped)
         completed = true
         return ServerCompletion(
             content: content,
@@ -1474,15 +1500,15 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
                                completionTokens: result.newTokens,
                                totalTokens: result.prefillTokens + result.newTokens,
                                cachedTokens: result.cachedPromptTokens,
-                               reasoningTokens: output.reasoningTokens),
+                               reasoningTokens: state.output.reasoningTokens),
             watchdogTrips: watchdogs.trips,
-            stopSequence: output.matchedStop,
-            reasoning: output.reasoning,
+            stopSequence: state.output.matchedStop,
+            reasoning: state.output.reasoning,
             // The render's mode, not the loaded session's: a request that
             // switched thinking off per request is the one whose thought is
             // unrequested.
             unrequestedReasoning: renderTokenizer.thinkingMode.isEnabled
-                ? 0 : output.reasoning.count)
+                ? 0 : state.output.reasoning.count)
     }
 
     /// Publish this turn's KV range to the prompt cache, and persist a snapshot
