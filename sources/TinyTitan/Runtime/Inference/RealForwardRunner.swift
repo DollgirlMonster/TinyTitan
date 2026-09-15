@@ -493,7 +493,8 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
                     kvDim: model.config.numFullKVHeads * model.config.fullHeadDim,
                     weightsSha256: model.weightsDigestFromManifest,
                     family: model.config.family,
-                    fullAttentionLayerMask: model.config.fullAttentionLayerMask)
+                    fullAttentionLayerMask: model.config.fullAttentionLayerMask,
+                    sparseIndexer: model.config.sparseIndexer)
             } catch {
                 // An explicit request must fail loudly with the export
                 // command; the default must degrade to the GPU, because a

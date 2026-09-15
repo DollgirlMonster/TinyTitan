@@ -56,7 +56,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                         hiddenSize: 2048, kvDim: 512,
                                         weightsSha256: nil,
                                         family: .qwen36,
-                                        fullAttentionLayerMask: fullMask(layers: [3]))
+                                        fullAttentionLayerMask: fullMask(layers: [3]),
+                                        sparseIndexer: .none)
         }
     }
 
@@ -83,13 +84,15 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                     hiddenSize: 2048, kvDim: 512,
                                     weightsSha256: String(repeating: "A", count: 64),
                                     family: .qwen36,
-                                    fullAttentionLayerMask: fullMask(layers: [3]))
+                                    fullAttentionLayerMask: fullMask(layers: [3]),
+                                        sparseIndexer: .none)
         #expect(throws: PrefillError.self) {
             _ = try ANEPrefillAttention(modelDirectory: dir, device: ctx.device,
                                         hiddenSize: 2048, kvDim: 512,
                                         weightsSha256: String(repeating: "b", count: 64),
                                         family: .qwen36,
-                                        fullAttentionLayerMask: fullMask(layers: [3]))
+                                        fullAttentionLayerMask: fullMask(layers: [3]),
+                                        sparseIndexer: .none)
         }
     }
 
@@ -119,7 +122,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                         hiddenSize: 2048, kvDim: 512,
                                         weightsSha256: nil,
                                         family: .qwen36,
-                                        fullAttentionLayerMask: fullMask(layers: [3, 7]))
+                                        fullAttentionLayerMask: fullMask(layers: [3, 7]),
+                                        sparseIndexer: .none)
         }
         // No geometry block at all (a sidecar from the qwen36-only exporter).
         let legacy: [String: Any] = [
@@ -150,6 +154,54 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
         try load()
     }
 
+    /// Qwen 3.8: a sparse-indexed family cannot be served by a dense sidecar,
+    /// and the arithmetic says there is no window where it could — the smallest
+    /// chunk the ANE accepts is a full 4,096 tokens, already past the 2,051
+    /// visible keys where dense attention matches the indexer's selection.
+    ///
+    /// The sidecar and the model match exactly here, so the refusal can only
+    /// come from the indexer; the same sidecar loads with `.none`.
+    @Test func aSparseIndexedModelIsRefusedEvenWithAMatchingSidecar() throws {
+        let ctx = try MetalContext()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-test-\(UUID().uuidString)")
+        let sidecar = dir.appendingPathComponent("ane_prefill")
+        try FileManager.default.createDirectory(
+            at: sidecar, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let meta: [String: Any] = [
+            "version": 1, "family": "qwen36", "chunkTokens": 4096,
+            "histories": [0], "layers": [3],
+            "geometry": sidecarGeometry(), "aneCompileVerified": true,
+        ]
+        try JSONSerialization.data(withJSONObject: meta)
+            .write(to: sidecar.appendingPathComponent("ane_prefill.json"))
+
+        let indexer = SparseIndexerConfig(numHeads: 24, numKVHeads: 2,
+                                          headDim: 256, budget: 2048,
+                                          compressRatio: 4)
+        #expect(QSAExactness(indexer).maximumExactVisibleKeys == 2_051)
+        do {
+            _ = try ANEPrefillAttention(
+                modelDirectory: dir, device: ctx.device,
+                hiddenSize: 2048, kvDim: 512, weightsSha256: nil,
+                family: .qwen36, fullAttentionLayerMask: fullMask(layers: [3]),
+                sparseIndexer: indexer)
+            Issue.record("a sparse-indexed model was allowed to load a sidecar")
+        } catch {
+            // The indexer's guard, not one of the geometry guards.
+            #expect("\(error)".contains("sparse-indexed"))
+            #expect("\(error)".contains("\(QSAExactness(indexer).maximumExactVisibleKeys)"))
+        }
+
+        // Same sidecar, no indexer: it loads.
+        _ = try ANEPrefillAttention(
+            modelDirectory: dir, device: ctx.device,
+            hiddenSize: 2048, kvDim: 512, weightsSha256: nil,
+            family: .qwen36, fullAttentionLayerMask: fullMask(layers: [3]),
+            sparseIndexer: .none)
+    }
+
     /// Eligibility and shadow continuity, using a synthetic sidecar manifest
     /// so no Core ML package or model weights are involved.
     @Test func chunkEligibilityEnforcesAlignmentCoverageAndContinuity() throws {
@@ -172,7 +224,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                           hiddenSize: 2048, kvDim: 512,
                                           weightsSha256: nil,
                                           family: .qwen36,
-                                          fullAttentionLayerMask: fullMask(layers: [3, 7]))
+                                          fullAttentionLayerMask: fullMask(layers: [3, 7]),
+                                        sparseIndexer: .none)
         #expect(ane.maxPromptTokens == 8192)
         #expect(ane.coveredLayers == Set([3, 7]))
 
@@ -227,7 +280,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                         hiddenSize: 2048, kvDim: 512,
                                         weightsSha256: nil,
                                         family: .qwen36,
-                                        fullAttentionLayerMask: fullMask(layers: [3]))
+                                        fullAttentionLayerMask: fullMask(layers: [3]),
+                                        sparseIndexer: .none)
         }
         // Missing flag (any sidecar written before this check): refused.
         try write(base)
@@ -265,7 +319,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                           hiddenSize: 16, kvDim: 4,
                                           weightsSha256: nil,
                                           family: .qwen36,
-                                          fullAttentionLayerMask: fullMask(layers: [3], count: 8))
+                                          fullAttentionLayerMask: fullMask(layers: [3], count: 8),
+                                        sparseIndexer: .none)
         let kPtr = ane.stagingK.contents().bindMemory(to: Float16.self,
                                                       capacity: 8 * 4)
         for index in 0..<(8 * 4) { kPtr[index] = Float16(index) }

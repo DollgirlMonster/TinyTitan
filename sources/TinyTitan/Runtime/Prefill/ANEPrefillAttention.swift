@@ -169,7 +169,8 @@ final class ANEPrefillAttention: @unchecked Sendable {
     ///   width or head count computes a different attention and says nothing.
     init(modelDirectory: URL, device: MTLDevice,
          hiddenSize: Int, kvDim: Int, weightsSha256: String?,
-         family: ModelFamily, fullAttentionLayerMask: [UInt8]) throws {
+         family: ModelFamily, fullAttentionLayerMask: [UInt8],
+         sparseIndexer: SparseIndexerConfig) throws {
         let dir = modelDirectory.appendingPathComponent("ane_prefill")
         let metaURL = dir.appendingPathComponent("ane_prefill.json")
         guard FileManager.default.fileExists(atPath: metaURL.path) else {
@@ -182,6 +183,24 @@ final class ANEPrefillAttention: @unchecked Sendable {
         guard meta.version == Self.expectedVersion else {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill sidecar version \(meta.version) != supported \(Self.expectedVersion); re-export")
+        }
+        // A sparse-indexed family is not something a dense sidecar can stand in
+        // for, and the arithmetic says there is no window where it could:
+        // dense attention matches the indexer's selection only through
+        // `keptBlocks * compressRatio + (compressRatio - 1)` visible keys —
+        // 2,051 for the shipped Qwen 3.8 geometry — and the smallest chunk the
+        // ANE accepts is a full 4,096, already past it. The exporter refuses to
+        // build such a sidecar; the runtime refuses to load one rather than
+        // depend on that, because past the window dense attention attends to
+        // keys the model drops, silently and with plausible output.
+        guard !sparseIndexer.enabled else {
+            let exact = QSAExactness(sparseIndexer).maximumExactVisibleKeys
+            throw PrefillError.chunkedUnsupported(
+                "ANE prefill cannot serve a sparse-indexed model: a full "
+                + "\(meta.chunkTokens)-token chunk is already past the \(exact) "
+                + "visible keys where dense attention matches this model's "
+                + "selection, so the sidecar would attend to keys the model "
+                + "drops. This family stays on the GPU.")
         }
         // One geometry per sidecar. The graph's weights, head split, rope and
         // GQA expansion are all built from these numbers, so a sidecar that
