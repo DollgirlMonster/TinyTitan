@@ -187,6 +187,21 @@ effective decode bandwidth, and a quality proxy on the fixed prompt
 *"difference swift vs c++ in detail"*. The full field list is in
 `benchmark/internal-speeds/README.md`.
 
+**Records are per (model, prompt).** The mandatory record is the 4B; an ANE
+prefill number exists only for a qwen36 install that ships an `ane_prefill`
+sidecar (the exporter's geometry is that family's), so record such an install as
+an additional record when one is present:
+
+```bash
+tools/internal-speeds.py --record --label vX.Y-<model> \
+  --model models/<qwen36 install>
+```
+
+With no `--baseline`, the comparison picks the newest previous record for the
+**same model and prompt**, so extra records never become the 4B's baseline. A
+model with no install is reported **not checked** — never fetched to fill a row.
+The ANE row of a dense install is recorded not applicable with the reason.
+
 **The gate:** the command exits non-zero when any bandwidth or tokens-per-second
 metric regressed by more than 10%, or when TTFT/decode/total seconds rose by
 more than 10% (`--threshold` to change it). A non-zero exit blocks the release

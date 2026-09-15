@@ -10,7 +10,8 @@ against this one and a speed regression is caught before it ships:
   model prefill tok/s, decode tok/s, TTFT, total seconds, and the effective
         decode bandwidth (weight bytes / decode seconds)
   ANE   prefill tok/s when the model ships an ANE sidecar; recorded as not
-        applicable otherwise (the dense Qwen 3.5 4B has no qwen36 exporter)
+        applicable with the reason otherwise (the sidecar exporter is
+        qwen36-only, so a dense install cannot have one)
   text  the response, its SHA-256, and a small quality proxy: length, keyword
         coverage and trigram repetition
 
@@ -24,6 +25,12 @@ Usage:
 `--record --baseline <previous>` measures, writes the new record, prints the
 comparison, and exits non-zero when a performance metric regressed by more than
 the threshold. That is the release gate; see docs/release-process.md.
+
+Records are per (model, prompt): with no `--baseline`, the comparison picks the
+newest previous record **for the same model and prompt**, because a 125B MoE's
+decode rate is not a baseline for the 4B's. Different models are recorded side
+by side — the ANE prefill number only exists for a qwen36 install with a
+sidecar — and are never compared against one another.
 """
 from __future__ import annotations
 
@@ -89,6 +96,30 @@ def run(cmd: list[str], env: dict | None = None,
 def git(*args: str) -> str:
     code, out, _ = run(["git", *args], timeout=30)
     return out.strip() if code == 0 else ""
+
+
+def model_family(model: str) -> str | None:
+    """The manifest's architecture family, or None when it cannot be read."""
+    try:
+        manifest = json.loads((ROOT / model / "manifest.json").read_text())
+    except (OSError, ValueError):
+        return None
+    arch = manifest.get("arch")
+    return arch.get("family") if isinstance(arch, dict) else None
+
+
+def missing_ane_reason(model: str, family: str | None) -> str:
+    """Why no ANE number was recorded, in terms of what was observed.
+
+    A qwen36 install with no sidecar yet and a dense install the exporter can
+    never serve are different situations and must not read alike.
+    """
+    reason = (f"no ANE prefill sidecar at {model}/ane_prefill; export one "
+              f"with tools/export_ane_prefill.py --model {model}")
+    if family != "qwen36":
+        reason += (f" — the exporter supports the qwen36 family only, and "
+                   f"this model is {family}")
+    return reason
 
 
 def measure_kernel(kernel: str, iterations: int) -> dict:
@@ -230,17 +261,14 @@ def measure(model: str, prompt: str, max_new: int,
 
     model_dir = ROOT / model
     sidecar = model_dir / "ane_prefill/ane_prefill.json"
+    family = model_family(model)
     if sidecar.exists():
         print("measuring ANE prefill (sidecar present)...", flush=True)
         ane = measure_generation(model, prompt, max_new, ane=True)
         ane["applicable"] = "error" not in ane
     else:
-        ane = {
-            "applicable": False,
-            "reason": ("no ANE prefill sidecar: tools/export_ane_prefill.py "
-                       "supports the qwen36 family only, and this model is "
-                       "not qwen36"),
-        }
+        ane = {"applicable": False,
+               "reason": missing_ane_reason(model, family)}
 
     env = environment()
     try:
@@ -253,7 +281,8 @@ def measure(model: str, prompt: str, max_new: int,
     return {
         "schema": 1,
         "environment": env,
-        "model": {"path": model, "prompt": prompt, "max_new_tokens": max_new},
+        "model": {"path": model, "family": family, "prompt": prompt,
+                  "max_new_tokens": max_new},
         "gpu": gpu,
         "cpu": cpu,
         "generation": generation,
@@ -309,6 +338,26 @@ def compare(baseline: dict, candidate: dict, threshold: float) -> bool:
     return ok
 
 
+def newest_baseline(out: pathlib.Path, model: str,
+                    prompt: str) -> str | None:
+    """The newest previous record for the same model and prompt.
+
+    Records are separate files per model (only a qwen36 install can have an ANE
+    sidecar), so the newest file on disk is not necessarily a comparable one.
+    """
+    for path in sorted(RESULTS.glob("*.json"), reverse=True):
+        if path.resolve() == out.resolve():
+            continue
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        recorded = record.get("model") or {}
+        if recorded.get("path") == model and recorded.get("prompt") == prompt:
+            return str(path)
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--record", action="store_true")
@@ -355,13 +404,16 @@ def main() -> int:
 
     baseline_path = args.baseline
     if baseline_path is None:
-        # Default to the newest previous record so a release always compares
-        # against something without being told which file.
-        previous = sorted(RESULTS.glob("*.json"))
-        previous = [p for p in previous if p.resolve() != out.resolve()]
-        if previous:
-            baseline_path = str(previous[-1])
-            print(f"comparing against the newest previous record: {baseline_path}")
+        # Default to the newest previous record *of the same run shape* so a
+        # release always compares against something without being told which
+        # file, and never against a different model's numbers.
+        baseline_path = newest_baseline(out, args.model, args.prompt)
+        if baseline_path:
+            print(f"comparing against the newest previous record for this "
+                  f"model and prompt: {baseline_path}")
+        else:
+            print(f"no previous record for {args.model} on this prompt; this "
+                  f"is the first, so there is nothing to compare", file=sys.stderr)
     if baseline_path:
         baseline = json.load(open(baseline_path))
         print()
