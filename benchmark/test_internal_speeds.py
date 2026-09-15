@@ -105,11 +105,24 @@ class MissingAneReasonTests(unittest.TestCase):
         # The exporter *can* serve this model; only the sidecar is absent.
         self.assertNotIn("supports the qwen36 family only", reason)
 
-    def test_dense_model_is_told_the_exporter_cannot_serve_it(self):
+    def test_a_dense_model_is_told_to_export_a_sidecar(self):
+        # Since the exporter reads its geometry from the manifest, the dense
+        # family is servable — the absence is a missing sidecar, not a family
+        # the exporter cannot describe.
         reason = internal_speeds.missing_ane_reason(
             "models/qwen3.5_4B_4Bit", "qwen3_5_dense")
-        self.assertIn("supports the qwen36 family only", reason)
-        self.assertIn("qwen3_5_dense", reason)
+        self.assertIn("export_ane_prefill.py", reason)
+        self.assertNotIn("no graph for", reason)
+
+    def test_qwen38_is_told_the_ane_cannot_serve_it_at_all(self):
+        for family in ("qwen38flash", "qwen38flash_mtp"):
+            with self.subTest(family=family):
+                reason = internal_speeds.missing_ane_reason(
+                    "models/qwen3.8-flash-next_125B_A6B_4Bit", family)
+                self.assertIn("sparse indexer", reason)
+                self.assertIn("2,051", reason)
+                # Not a missing sidecar: none can be built.
+                self.assertNotIn("export one", reason)
 
 
 class NewestBaselineTests(unittest.TestCase):

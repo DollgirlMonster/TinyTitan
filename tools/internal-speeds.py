@@ -145,17 +145,24 @@ def model_total_bytes(model: str) -> int:
     return weights.stat().st_size if weights.exists() else 0
 
 
-def missing_ane_reason(model: str, family: str | None) -> str:
-    """Why no ANE number was recorded, in terms of what was observed.
+# Families the exporter can build a sidecar for, because the Core ML graph
+# computes their attention block. `qwen38flash` is deliberately not one of them:
+# its full-attention layers select keys with a sparse indexer, and dense
+# attention matches that selection only through 2,051 visible keys — so its ANE
+# row is structurally absent rather than merely unmeasured.
+ANE_EXPORTABLE_FAMILIES = ("qwen36", "qwen3_5_dense")
 
-    A qwen36 install with no sidecar yet and a dense install the exporter can
-    never serve are different situations and must not read alike.
-    """
+
+def missing_ane_reason(model: str, family: str | None) -> str:
+    """Why no ANE number was recorded, in terms of what was observed."""
+    if family in ("qwen38flash", "qwen38flash_mtp"):
+        return (f"ANE prefill cannot serve a {family} model: its full-attention "
+                f"layers select keys with a sparse indexer, and a dense sidecar "
+                f"would attend to keys the model drops past 2,051 visible keys")
     reason = (f"no ANE prefill sidecar at {model}/ane_prefill; export one "
               f"with tools/export_ane_prefill.py --model {model}")
-    if family != "qwen36":
-        reason += (f" — the exporter supports the qwen36 family only, and "
-                   f"this model is {family}")
+    if family and family not in ANE_EXPORTABLE_FAMILIES:
+        reason += f" — the exporter has no graph for the {family} family"
     return reason
 
 

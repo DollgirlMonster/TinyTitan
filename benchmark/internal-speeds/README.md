@@ -57,17 +57,24 @@ Without `--label`, the file is named from `git describe` — bare for the defaul
 model, and suffixed with the model's directory name for any other, so a second
 model can never overwrite the 4B's record.
 
-**The ANE row needs a qwen36 install and a sidecar.** The sidecar exporter
-(`tools/export_ane_prefill.py`) supports the qwen36 family only — its attention
-geometry is that family's — so a dense install (2B/4B/9B, `qwen3_5_dense`) can
-never show an ANE number, and its record says so. For an installed qwen36 model,
-export first and then record:
+**The ANE row needs a sidecar, and a sidecar needs a family the graph can
+describe.** `tools/export_ane_prefill.py` now reads the attention geometry from
+the model's own manifest, so it serves both the qwen36 MoE family and the dense
+Qwen 3.5 family. Qwen 3.8 is the exception and it is structural, not a missing
+step: its full-attention layers select keys with a sparse indexer, and dense
+attention matches that selection only through 2,051 visible keys, so the record
+says so instead of quoting a dense number the model would never produce.
+
+The ANE also needs a **4,096-token prefill chunk** and a prompt that fills one:
+a shorter prompt is one partial chunk and deliberately stays on the GPU, and the
+dense family is on 4,096 by default for exactly this reason. Export first, then
+record:
 
 ```bash
 ~/.venvs/coreml-py311/bin/python tools/export_ane_prefill.py \
-  --model models/qwen-agentworld_35B_A3B_4Bit --max-history 12288
-tools/internal-speeds.py --record --label v5.6-agentworld \
-  --model models/qwen-agentworld_35B_A3B_4Bit
+  --model models/qwen3.5_4B_4Bit --max-history 12288
+tools/internal-speeds.py --record --label v5.6-4b \
+  --model models/qwen3.5_4B_4Bit
 ```
 
 The sidecar lives in the model directory (`<model>/ane_prefill/`) and is not in

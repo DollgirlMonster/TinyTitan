@@ -188,19 +188,27 @@ effective decode bandwidth, and a quality proxy on the fixed prompt
 `benchmark/internal-speeds/README.md`.
 
 **Records are per (model, prompt).** The mandatory record is the 4B; an ANE
-prefill number exists only for a qwen36 install that ships an `ane_prefill`
-sidecar (the exporter's geometry is that family's), so record such an install as
-an additional record when one is present:
+prefill number exists for any install whose family the sidecar exporter can
+describe — the qwen36 MoE family and the dense Qwen 3.5 family, since the
+exporter now reads its geometry from the model's manifest. Record such an
+install as an additional record when a sidecar is present:
 
 ```bash
 tools/internal-speeds.py --record --label vX.Y-<model> \
-  --model models/<qwen36 install>
+  --model models/<install with a sidecar>
 ```
+
+Qwen 3.8 is the standing exception and it is structural: its full-attention
+layers select keys with a sparse indexer, and dense attention matches that
+selection only through 2,051 visible keys, so the ANE cannot serve it and the
+record says so rather than quoting a dense number. The ANE also requires a
+4,096-token prefill chunk and a prompt that fills one; a model left on a smaller
+chunk cannot reach it at all.
 
 With no `--baseline`, the comparison picks the newest previous record for the
 **same model and prompt**, so extra records never become the 4B's baseline. A
 model with no install is reported **not checked** — never fetched to fill a row.
-The ANE row of a dense install is recorded not applicable with the reason.
+An ANE row with no sidecar is recorded not applicable, with the reason.
 
 **The gate:** the command exits non-zero when any bandwidth or tokens-per-second
 metric regressed by more than 10%, or when TTFT/decode/total seconds rose by
