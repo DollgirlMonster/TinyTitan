@@ -171,6 +171,26 @@ def summarize(record: dict) -> dict:
     return out
 
 
+def format_row(r: dict) -> str:
+    if "error" in r:
+        return (f"{r['model']:<44} {'-':>9} {'-':>9} {'-':>8} {'-':>9}  "
+                f"{r['error']}")
+    off = r["off"].get("prefill_seconds_median")
+    on = r["on"].get("prefill_seconds_median")
+    note = ""
+    if "ane_unavailable" in r:
+        note = f"ANE unavailable: {r['ane_unavailable'][:70]}"
+    elif r["on"].get("used_ane") is False:
+        note = "ANE arm fell back to the GPU"
+    elif not r["off"].get("used_ane", True):
+        note = "OFF arm reported an ANE fallback (unexpected)"
+    return (f"{r['model']:<44} "
+            f"{f'{off:.2f}' if off is not None else '-':>9} "
+            f"{f'{on:.2f}' if on is not None else '-':>9} "
+            f"{r.get('speedup', 0):>8.3f} "
+            f"{str(r.get('on', {}).get('used_ane')):>9}  {note}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", nargs="+", required=True,
@@ -182,29 +202,17 @@ def main() -> int:
                         help="write benchmark/ane-prefill/<label>.json")
     args = parser.parse_args()
 
-    results = [summarize(measure(name, args.pairs)) for name in args.models]
+    header = (f"{'model':<44} {'off s':>9} {'on s':>9} {'speedup':>8} "
+              f"{'ANE used':>9}  note")
+    print(header, flush=True)
 
-    print(f"\n{'model':<44} {'off s':>9} {'on s':>9} {'speedup':>8} "
-          f"{'ANE used':>9}  note")
-    for r in results:
-        if "error" in r:
-            print(f"{r['model']:<44} {'-':>9} {'-':>9} {'-':>8} {'-':>9}  "
-                  f"{r['error']}")
-            continue
-        off = r["off"].get("prefill_seconds_median")
-        on = r["on"].get("prefill_seconds_median")
-        note = ""
-        if "ane_unavailable" in r:
-            note = f"ANE unavailable: {r['ane_unavailable'][:70]}"
-        elif r["on"].get("used_ane") is False:
-            note = "ANE arm fell back to the GPU"
-        elif not r["off"].get("used_ane", True):
-            note = "OFF arm reported an ANE fallback (unexpected)"
-        print(f"{r['model']:<44} "
-              f"{off if off is not None else '-':>9} "
-              f"{on if on is not None else '-':>9} "
-              f"{r.get('speedup', 0):>8.3f} "
-              f"{str(r.get('on', {}).get('used_ane')):>9}  {note}")
+    # Each model is printed as it finishes: a full matrix is hours of prefill,
+    # and a table that only appears at the end reports nothing for most of it.
+    results = []
+    for name in args.models:
+        result = summarize(measure(name, args.pairs))
+        results.append(result)
+        print(format_row(result), flush=True)
 
     if args.record:
         RESULTS.mkdir(parents=True, exist_ok=True)
