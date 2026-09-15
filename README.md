@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img width="480" alt="TinyTitan — the fastest SSD streamer for AI on Mac" src="assets/tinytitan-hero.png" />
+  <img width="1254" height="1254" alt="TinyTitan" src="https://github.com/user-attachments/assets/b18d7469-d546-4e74-83fa-1fc6d768d7f4" />
 </p>
 
 # TinyTitan
