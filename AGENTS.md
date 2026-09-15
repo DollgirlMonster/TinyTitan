@@ -4,7 +4,11 @@ Swift and Metal inference for Qwen-family MoE and dense text models on Apple
 Silicon, streaming routed experts from SSD so a model larger than RAM still
 runs. Supported at 4-bit and 8-bit: Qwen3.8-Flash-Next 125B-A6B,
 KAT-Coder-V2.5-Dev 35B-A3B, Qwen-AgentWorld 35B-A3B, Ornith 1.5 35B-A3B and
-Qwen 3.6 35B-A3B, plus the dense Qwen 3.5 2B/4B/9B on either engine. Ornith 1.5
+Qwen 3.6 35B-A3B, plus the dense Qwen 3.5 2B/4B/9B on either engine. All three
+Qwen 3.5 sizes are **dense** — no routed experts, nothing streamed from SSD —
+and each mixes attention (every fourth layer full, the rest gated-DeltaNet
+linear) and, at 4-bit, precision; the 9B is the untied-head build. Named simply
+`Qwen 3.5 <size> <bits>`, keys `qwen35-2b/4b/9b`. Ornith 1.5
 8-bit is the default install and the default golden target; 6-bit is a
 withdrawn legacy format.
 
@@ -85,15 +89,17 @@ Run package tests serially (`swift test --no-parallel`), passing any extra
 arguments like `--filter` through. Run only one app, CLI, or model-using test
 at a time.
 
-`tools/lint.sh` runs the four gates CI enforces beyond the compiler: no `as!` /
+`tools/lint.sh` runs the five gates CI enforces beyond the compiler: no `as!` /
 `try!` under `sources/` without a `lint:allow-force <reason>` comment above it;
 no function over 120 lines without an inline `lint:allow-long <reason>` — the
 ratchet file `tools/func-length-baseline.txt` is currently **empty**, because
 every long function carries its own justification, and the gate fails on a
 stale exemption row as well as on a new offender; every `@unchecked Sendable`
-carrying an `unchecked-invariant:` note; and a `converter` probe that files
-routed experts by index rather than arrival order. `tools/lint.sh <mode>` runs a
-single gate (`force-cast`, `func-length`, `sendable`, `converter`).
+carrying an `unchecked-invariant:` note; a `converter` probe that files
+routed experts by index rather than arrival order; and no hardcoded SwiftPM
+target triple in a build path, which points at nothing on a newer toolchain or
+at a stale binary on this one. `tools/lint.sh <mode>` runs a
+single gate (`force-cast`, `func-length`, `sendable`, `converter`, `arch-path`).
 
 `tools/golden-baseline.sh --check <target>` compares greedy, fixed-seed
 generation against `benchmark/golden/`. It is the only check that exercises real
@@ -120,8 +126,9 @@ Cutting a release is a runbook, not improvisation: `docs/release-process.md`
 holds the order (notes, changelog, version, tag, dry run, publish), the
 machine preconditions, and what `release.sh`'s failure messages actually mean —
 including a golden gate that reports a *refused* start as a "mismatch".
-Adding a model is the other runbook: `docs/adding-a-model.md` lists the eight
-places a new checkpoint has to be wired, the disk each width needs, the
+Adding a model is the other runbook: `docs/adding-a-model.md` lists the nine
+places a new checkpoint has to be wired — the last being its ANE prefill sidecar
+— the disk each width needs, the
 verification bar before it may be called supported, and how to re-issue install
 receipts after the checkout moves. Work in flight is handed over in
 `docs/handover-<name>.md`; `docs/handover-tinytitan.md` is the current one and

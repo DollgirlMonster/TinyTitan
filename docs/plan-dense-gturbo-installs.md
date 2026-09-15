@@ -14,6 +14,47 @@ was not where it was recorded: the reader was right and the *writer* was
 dropping data. That is corrected and explained below. Every claim carries the
 source it came from.
 
+## What the three are, in one place (read from the installed manifests)
+
+Written down because it gets asked: all three are **dense**, and all three are
+**mixed** — but neither word means what it usually does beside the MoE families.
+
+| | 2B | 4B | 9B |
+| --- | ---: | ---: | ---: |
+| `family` | `qwen3_5_dense` | `qwen3_5_dense` | `qwen3_5_dense` |
+| hidden / ffn | 2048 / 6144 | 2560 / 9216 | 4096 / 12288 |
+| layers | 24 | 32 | 32 |
+| q / kv heads | 8 / 2 | 16 / 4 | 16 / 4 |
+| full-attention layers | 6 | 8 | 8 |
+| routed experts | **0** | **0** | **0** |
+| output projection | tied | tied | **untied (`lm_head`)** |
+
+- **Dense, and not a mixture of experts.** `numExperts: 0`,
+  `expertsPerLayer: 0`, and `packed_experts/` holds nothing but `layout.json` —
+  no expert payload, no expert stride. Nothing streams from SSD, so the whole
+  model is resident, which is why the CPU engine can run it and why its prefill
+  is compute-bound rather than I/O-bound. **The 9B is not a mixed MoE**; no model
+  in this family is.
+- **Mixed attention.** `fullAttentionLayerMask` is the same `[2, 2, 2, 1]`
+  pattern in all three: every fourth layer is full attention, the other three are
+  gated-DeltaNet linear attention. That is why the ANE prefill covers 6 of 24
+  layers on the 2B and 8 of 32 on the 4B and 9B — dense prefill is not one
+  kernel's story.
+- **Mixed precision at 4-bit.** The `attention` slot says 4-bit, while `k_proj`
+  and `v_proj` carry per-tensor 8-bit overrides (151 on the 2B, 201 on the 4B,
+  202 on the 9B) and `embedding`, `router` and `sharedExpert` are 8-bit slots.
+  The 8-bit builds are uniform. Reading a role's width from its slot rather than
+  from the tensor is the mistake this family exists to catch.
+- **The 9B is the untied-head case.** It carries an `lm_head`; the 2B and 4B tie
+  their output to the embedding. That is the property that proves the converter
+  and both engines follow the size's flag instead of assuming one.
+- **No vision tower is installed.** The 9B's source checkpoint is the
+  vision-language build, but the repacked install carries no `visual.*` tensor —
+  text-only, like every other supported model.
+- **Named simply**: `Qwen 3.5 2B 4-Bit`, `Qwen 3.5 4B 8-Bit` and so on — size
+  and width, no architecture words — with the launcher keys `qwen35-2b`,
+  `qwen35-4b`, `qwen35-9b`.
+
 ## Where it actually got to (2026-09-11)
 
 **Stages 1 and 2 are done, and the migration is done.** `TinyTitanRepack
