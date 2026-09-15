@@ -19,7 +19,7 @@ What is new in each release lives in the
 [Changelog](https://github.com/Pummelchen/TinyTitan/wiki/Changelog).
 
 
-New Research Project: [TinyTitan Datacenter](https://github.com/Pummelchen/TinyTitan_Datacenter) - Run large MOE LLM models on a distributed cluster of Mac Mini/Studio's
+New Research Project: <br> [TinyTitan Datacenter](https://github.com/Pummelchen/TinyTitan_Datacenter) - Run large MOE LLM models on a distributed cluster of Mac Mini/Studio's
 while keeping them on SSD/NVMe.
 
 
