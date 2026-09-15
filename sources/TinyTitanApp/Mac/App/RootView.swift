@@ -54,6 +54,15 @@ struct RootView: View {
                 conversationView
             }
         }
+        // The switch notice belongs to the window, not to one of these states.
+        // It is needed most exactly when the selected model is *missing* and the
+        // install view is what is on screen — the state the report came from —
+        // so it cannot live inside the conversation chrome.
+        .overlay(alignment: .bottom) {
+            ModelSwitchBanner(model: model)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             StatusHUDView(model: model)
         }
@@ -103,7 +112,6 @@ struct RootView: View {
                 }
             }
             ModelActionBanner(model: model)
-            ModelSwitchBanner(model: model)
             PromptComposerView(model: model)
         }
         .padding(.horizontal, 20)
