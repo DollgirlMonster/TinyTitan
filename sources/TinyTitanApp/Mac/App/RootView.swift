@@ -103,6 +103,7 @@ struct RootView: View {
                 }
             }
             ModelActionBanner(model: model)
+            ModelSwitchBanner(model: model)
             PromptComposerView(model: model)
         }
         .padding(.horizontal, 20)

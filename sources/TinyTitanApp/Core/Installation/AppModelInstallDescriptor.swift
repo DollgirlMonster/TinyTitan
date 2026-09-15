@@ -225,32 +225,97 @@ public struct AppModelInstallDescriptor: Equatable, Sendable {
     /// persisted `defaults write TinyTitan model <selector>` preference applies.
     public static var selected: AppModelInstallDescriptor {
         let environmentValue = ProcessInfo.processInfo.environment["TURBO_FIELDFARE_MODEL"]
-        let preferenceValue = UserDefaults(suiteName: "TinyTitan")?
-            .string(forKey: "model")
-        return selectedDescriptor(for: environmentValue ?? preferenceValue)
+        return selectedDescriptor(
+            for: environmentValue ?? AppModelSelection.persistedSelector())
+    }
+
+    /// One row per build the Model menu offers, with the selector that names it.
+    ///
+    /// `selectedDescriptor(for:)` maps a selector to a build; this is the same
+    /// relation read the other way, which is what lets the app *write* a choice
+    /// back. It exists as one table rather than a second switch so the two
+    /// directions cannot drift, and a test asserts every row resolves to its
+    /// descriptor and that every recognizable build has a row — a model the
+    /// menu cannot name is a model the user cannot switch to.
+    public struct SelectableModel: Identifiable, Equatable, Sendable {
+        public let selector: String
+        public let descriptor: AppModelInstallDescriptor
+        public var id: String { selector }
+        public var displayName: String { descriptor.displayName }
+    }
+
+    public static let selectable: [SelectableModel] = [
+        SelectableModel(selector: "ornith15", descriptor: .ornith15Converted),
+        SelectableModel(selector: "ornith15-8bit", descriptor: .ornith15Converted8bit),
+        SelectableModel(selector: "qwen36", descriptor: .qwen36Converted),
+        SelectableModel(selector: "qwen36-8bit", descriptor: .qwen36Converted8bit),
+        SelectableModel(selector: "agentworld", descriptor: .agentworld),
+        SelectableModel(selector: "agentworld-8bit", descriptor: .agentworld8bit),
+        SelectableModel(selector: "katcoder", descriptor: .katcoder),
+        SelectableModel(selector: "katcoder-8bit", descriptor: .katcoder8bit),
+        SelectableModel(selector: "qwen38", descriptor: .qwen38),
+        SelectableModel(selector: "qwen38-8bit", descriptor: .qwen38_8bit),
+        // The MLX repacks the app can still download.
+        SelectableModel(selector: "ornith15-mlx", descriptor: .ornith15),
+        SelectableModel(selector: "ornith15-8bit-mlx", descriptor: .ornith15_8bit),
+        SelectableModel(selector: "qwen36-mlx", descriptor: .qwen36),
+        SelectableModel(selector: "qwen36-8bit-mlx", descriptor: .qwen36_8bit),
+        SelectableModel(selector: "qwen36-6bit", descriptor: .qwen36_6bit),
+    ]
+
+    /// The selector that names `descriptor` in `selectable`, if it is offered.
+    public static func selector(for descriptor: AppModelInstallDescriptor) -> String? {
+        selectable.first { $0.descriptor == descriptor }?.selector
     }
 
     static func selectedDescriptor(for selector: String?) -> AppModelInstallDescriptor {
+        guard let selector, !selector.isEmpty else { return .ornith15Converted8bit }
+        // The table first, then the aliases people and the docs actually type.
+        if let row = selectable.first(where: { $0.selector == selector }) {
+            return row.descriptor
+        }
         switch selector {
         // The eight installs `tools/install_models.sh` produces.
-        case "ornith15", "ornith": return .ornith15Converted
-        case "ornith15-8bit", "ornith-8bit": return .ornith15Converted8bit
-        case "qwen36", "qwen3.6": return .qwen36Converted
-        case "qwen36-8bit", "qwen3.6-8bit": return .qwen36Converted8bit
-        case "agentworld": return .agentworld
-        case "agentworld-8bit": return .agentworld8bit
-        case "katcoder", "kat", "kat-coder": return .katcoder
-        case "katcoder-8bit", "kat-8bit": return .katcoder8bit
-        case "qwen38", "qwen3.8": return .qwen38
-        case "qwen38-8bit", "qwen3.8-8bit": return .qwen38_8bit
-        // The MLX repacks the app can still download.
-        case "ornith15-mlx": return .ornith15
-        case "ornith15-8bit-mlx": return .ornith15_8bit
-        case "qwen36-mlx": return .qwen36
-        case "qwen36-8bit-mlx": return .qwen36_8bit
-        case "qwen36-6bit": return .qwen36_6bit
+        case "ornith": return .ornith15Converted
+        case "ornith-8bit": return .ornith15Converted8bit
+        case "qwen3.6": return .qwen36Converted
+        case "qwen3.6-8bit": return .qwen36Converted8bit
+        case "kat", "kat-coder": return .katcoder
+        case "kat-8bit": return .katcoder8bit
+        case "qwen3.8": return .qwen38
+        case "qwen3.8-8bit": return .qwen38_8bit
         default: return .ornith15Converted8bit
         }
+    }
+}
+
+/// Reading and writing the persisted model selector.
+///
+/// The app reads this preference at launch and used to have no way to write it,
+/// which is what made the model look unchangeable. It is one small type so both
+/// directions go through the same key and suite, and so a test can use its own
+/// domain instead of the operator's.
+public enum AppModelSelection {
+    public static let suiteName = "TinyTitan"
+    public static let key = "model"
+
+    /// The preference domain the app reads. A fresh `UserDefaults` handle each
+    /// call, so a value written by `defaults write` after launch is visible.
+    public static func defaults(suite: String = suiteName) -> UserDefaults? {
+        UserDefaults(suiteName: suite)
+    }
+
+    public static func persistedSelector(in defaults: UserDefaults?) -> String? {
+        defaults?.string(forKey: key)
+    }
+
+    public static func persistedSelector() -> String? {
+        persistedSelector(in: defaults())
+    }
+
+    public static func setPersistedSelector(_ selector: String,
+                                            in defaults: UserDefaults?) {
+        defaults?.set(selector, forKey: key)
     }
 }
 

@@ -72,6 +72,21 @@ struct TinyTitanMacApp: App {
                     .disabled(!model.canReloadModel)
                 Button("Unload Model", action: model.unloadModel)
                     .disabled(!model.canUnloadModel)
+                Divider()
+                Menu("Change Model") {
+                    // One row per build, checked against the one in use. The app
+                    // reads this preference at launch and had no way to write
+                    // it, so the model could not be changed from the UI at all.
+                    ForEach(AppModelInstallDescriptor.selectable) { row in
+                        Toggle(row.displayName, isOn: Binding(
+                            get: { model.installDescriptor == row.descriptor },
+                            set: { _ in
+                                model.selectModel(row.descriptor,
+                                                  selector: row.selector)
+                            }))
+                    }
+                }
+                .disabled(!model.canChangeModel)
             }
             CommandMenu("Settings") {
                 Picker("Send Message With", selection: newlineShortcutBinding) {

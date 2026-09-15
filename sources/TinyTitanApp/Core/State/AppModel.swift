@@ -13,6 +13,9 @@ public final class AppModel {
     }
 
     public var modelPathText: String
+    /// Set when the user picks a different build in the Model menu: the choice
+    /// is persisted for the next launch, and this is what tells them so.
+    public private(set) var modelSwitchNotice: String?
     public var promptText: String = ""
     public private(set) var outputPromptText: String = ""
     public var outputText: String = ""
@@ -416,6 +419,36 @@ public final class AppModel {
     public func reloadModel() {
         guard canReloadModel else { return }
         beginLoad()
+    }
+
+    /// Whether the Model menu may change which build the app will use.
+    ///
+    /// Not while a generation or an install is in flight: the choice is
+    /// persisted for the next launch, and a prompt that is mid-run belongs to
+    /// the model that answered it.
+    public var canChangeModel: Bool {
+        runState == .idle && !isInstallingModel
+    }
+
+    /// Records the build the user picked, for the next launch.
+    ///
+    /// The model directory is resolved when `AppModel` is created, and the
+    /// descriptor, the per-model settings file and the decode-service process
+    /// are all bound to it — there is no supported way to rebind them under a
+    /// running generation. So this writes the preference and says plainly that
+    /// reopening the app is what applies it, rather than half-switching into a
+    /// state where the window names one model and the runner holds another.
+    public func selectModel(_ descriptor: AppModelInstallDescriptor,
+                            selector: String,
+                            defaults: UserDefaults? = AppModelSelection.defaults()) {
+        guard canChangeModel else { return }
+        AppModelSelection.setPersistedSelector(selector, in: defaults)
+        modelSwitchNotice = "\(descriptor.displayName) will be used the next time "
+            + "TinyTitan opens. Quit and reopen to switch."
+    }
+
+    public func dismissModelSwitchNotice() {
+        modelSwitchNotice = nil
     }
 
     private func beginLoad() {
