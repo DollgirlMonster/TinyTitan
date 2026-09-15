@@ -40,6 +40,33 @@ import Testing
     }
   }
 
+  /// A selector a person can actually copy out of `models/` also works. The
+  /// directory names are what is in front of them; silently selecting Ornith
+  /// for one of those is the "changing the model does nothing" symptom again.
+  @Test func aModelDirectoryNameIsAcceptedAsASelector() {
+    #expect(AppModelInstallDescriptor.selectedDescriptor(
+      for: "qwen3.8-flash-next_125B_A6B_4Bit") == .qwen38)
+    #expect(AppModelInstallDescriptor.selectedDescriptor(
+      for: "qwen-agentworld_35B_A3B_4Bit") == .agentworld)
+    #expect(AppModelInstallDescriptor.selectedDescriptor(
+      for: "kat-coder-v2.5_35B_A3B_8Bit") == .katcoder8bit)
+  }
+
+  /// The dense Qwen 3.5 installs (2B/4B/9B, either engine) are a gap, not a
+  /// selector spelling: the app carries no descriptor for that family, so it
+  /// cannot name, load or list them — a `models/` directory name for one falls
+  /// through to the default. Recorded here so the limitation is a known one
+  /// rather than a surprise for whoever exports those builds.
+  @Test func aDenseInstallIsNotSelectable() {
+    for directory in ["qwen3.5_2B_4Bit", "qwen3.5_4B_8Bit", "qwen3.5_9B_4Bit"] {
+      #expect(AppModelInstallDescriptor.selectedDescriptor(for: directory)
+              .installDirectoryName == "ornith-1.5_35B_A3B_8Bit",
+              Comment(rawValue: directory))
+      #expect(AppModelInstallDescriptor.selector(
+        for: AppModelInstallDescriptor.selectedDescriptor(for: directory)) == "ornith15-8bit")
+    }
+  }
+
   /// The aliases people and the docs type keep working, and a selector nobody
   /// recognizes still lands on the default rather than failing — pinned here so
   /// that behaviour is a decision rather than an accident.

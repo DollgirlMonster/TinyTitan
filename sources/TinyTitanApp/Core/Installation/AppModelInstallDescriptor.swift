@@ -284,7 +284,19 @@ public struct AppModelInstallDescriptor: Equatable, Sendable {
         case "kat-8bit": return .katcoder8bit
         case "qwen3.8": return .qwen38
         case "qwen3.8-8bit": return .qwen38_8bit
-        default: return .ornith15Converted8bit
+        default:
+            // A `models/` directory name is what a person actually has in front
+            // of them, so accept it too. Without this, `defaults write TinyTitan
+            // model qwen3.8-flash-next_125B_A6B_4Bit` — a reasonable guess —
+            // silently selected Ornith instead, which reads as "changing the
+            // model does nothing".
+            if let row = selectable.first(where: {
+                $0.descriptor.installDirectoryName == selector
+            }) {
+                return row.descriptor
+            }
+            return all.first { $0.installDirectoryName == selector }
+                ?? .ornith15Converted8bit
         }
     }
 }

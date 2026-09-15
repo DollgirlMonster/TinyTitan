@@ -58,9 +58,14 @@ enum AppModelLocation {
         while true {
             let candidate = URL(fileURLWithPath: candidatePath, isDirectory: true)
             let package = candidate.appendingPathComponent("Package.swift").path
-            let appSources = candidate.appendingPathComponent(
-                "Sources/TinyTitanApp/Mac", isDirectory: true).path
-            if fileExists(package), fileExists(appSources) {
+            // `sources/` is what the package declares; `Sources/` is the
+            // spelling earlier releases used. Probing both matters on a
+            // case-sensitive volume, where only one of them exists: without it
+            // the app would miss the checkout and fall back to Application
+            // Support, where a CLI install never is.
+            let appSources = ["sources/TinyTitanApp/Mac", "Sources/TinyTitanApp/Mac"]
+                .map { candidate.appendingPathComponent($0, isDirectory: true).path }
+            if fileExists(package), appSources.contains(where: fileExists) {
                 return candidate
             }
             let parentPath = (candidatePath as NSString).deletingLastPathComponent
