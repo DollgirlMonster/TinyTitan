@@ -18,7 +18,7 @@ TinyTitan is the fastest SSD streamer for AI models on Mac.
 What is new in each release lives in the
 [Changelog](https://github.com/Pummelchen/TinyTitan/wiki/Changelog).
 
-Research Project: TinyTitan Datacenter(https://github.com/Pummelchen/TinyTitan_Datacenter) - Run large MOE LLM models on a distributed cluster of Mac Mini/Studio's 
+Research Project: [TinyTitan Datacenter](https://github.com/Pummelchen/TinyTitan_Datacenter) - Run large MOE LLM models on a distributed cluster of Mac Mini/Studio's
 while keeping them on SSD/NVMe.
 
 
