@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Independently verify an exported ANE sidecar's graph against NumPy.
+
+One question: does this sidecar's Core ML program compute the attention block
+the exporter meant to build? The exported layer is fed synthetic input and its
+output compared against a NumPy implementation written from the graph's own
+specification — packed q+gate, per-head q/k RMSNorm, NeoX rope on
+`partialRotaryFactor * headDim`, GQA expansion, additive causal mask.
+
+What this DOES verify is the **geometry**: the hidden width, the query and KV
+head counts, the rotary dimension, the output gate and the mask. That is the
+failure that matters, because a sidecar built for the wrong geometry does not
+crash — it computes a *different* attention and produces fluent nonsense that
+nothing downstream flags.
+
+What it does NOT verify is the **weight dequantization**: both sides read the
+tensors through the exporter's own loader, so a width error would cancel out.
+That is covered instead by `load_tensor` refusing a manifest whose declared
+width disagrees with the tensor's byte count.
+
+    ~/.venvs/coreml-py311/bin/python tools/verify_ane_sidecar.py \
+        --model models/qwen3.5_4B_4Bit
+
+Exits non-zero when the mean relative error exceeds `--max-relative-error`
+(default 2%; the design documents ~1% fp16 deviation from fp32).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import sys
+
+import numpy as np
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import importlib.util
+
+_spec = importlib.util.spec_from_file_location(
+    "export_ane_prefill", pathlib.Path(__file__).resolve().parent / "export_ane_prefill.py")
+ex = importlib.util.module_from_spec(_spec)
+sys.modules["export_ane_prefill"] = ex          # dataclasses resolves the module here
+_spec.loader.exec_module(ex)
+
+
+def reference(normed: np.ndarray, weights: dict, geom, mask: np.ndarray,
+              t: int) -> np.ndarray:
+    """The graph's arithmetic, in float32, from the graph's own definition."""
+    def rms_head(x, weight):
+        x = x.astype(np.float32)
+        ms = (x * x).mean(-1, keepdims=True)
+        return x / np.sqrt(ms + np.float32(ex.EPS)) * weight.astype(np.float32)
+
+    cos, sin = ex.rope_tables(0, geom)
+    cos = cos.astype(np.float32)
+    sin = sin.astype(np.float32)
+
+    def rope(x):                       # x: [t, heads, hd]
+        r = geom.rotary // 2
+        r1, r2, rest = x[..., :r], x[..., r:2 * r], x[..., 2 * r:]
+        return np.concatenate([r1 * cos[:, None, :] - r2 * sin[:, None, :],
+                               r2 * cos[:, None, :] + r1 * sin[:, None, :],
+                               rest], axis=-1)
+
+    hd, qh, kvh = geom.head_dim, geom.q_heads, geom.kv_heads
+    xn = normed.astype(np.float32)
+    packed = (xn @ weights["wq"].astype(np.float32).T).reshape(t, qh, 2 * hd)
+    q, gate = packed[..., :hd], packed[..., hd:]
+    k = (xn @ weights["wk"].astype(np.float32).T).reshape(t, kvh, hd)
+    v = (xn @ weights["wv"].astype(np.float32).T).reshape(t, kvh, hd)
+    q = rope(rms_head(q, weights["q_norm"]))
+    k = rope(rms_head(k, weights["k_norm"]))
+
+    rep = qh // kvh
+    k4 = np.repeat(k, rep, axis=1).transpose(1, 0, 2)[None]
+    v4 = np.repeat(v, rep, axis=1).transpose(1, 0, 2)[None]
+    q4 = q.transpose(1, 0, 2)[None]
+
+    scores = (q4 @ k4.transpose(0, 1, 3, 2)) * np.float32(geom.scale) \
+        + mask.astype(np.float32)
+    probs = np.exp(scores - scores.max(-1, keepdims=True))
+    probs /= probs.sum(-1, keepdims=True)
+    gated = (probs @ v4).transpose(0, 2, 1, 3) * (1.0 / (1.0 + np.exp(-gate)))
+    return gated.reshape(t, geom.q_dim) @ weights["wo"].astype(np.float32).T
+
+
+def causal_mask(t: int) -> np.ndarray:
+    mask = np.full((1, 1, t, t), ex.NEG, dtype=np.float32)
+    for row in range(t):
+        mask[0, 0, row, :row + 1] = 0.0
+    return mask
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", required=True,
+                        help="path to an installed .gturbo directory")
+    parser.add_argument("--layer", type=int, default=None,
+                        help="full-attention layer to check (default: the first)")
+    parser.add_argument("--max-relative-error", type=float, default=2.0)
+    parser.add_argument("--seed", type=int, default=7)
+    args = parser.parse_args()
+
+    import coremltools as ct
+
+    model = pathlib.Path(args.model)
+    if not (model / "ane_prefill" / "ane_prefill.json").exists():
+        raise SystemExit(f"{model} has no ane_prefill sidecar; export one first")
+    manifest = json.loads((model / "manifest.json").read_text())
+    entries = ex.read_index(model / "model_weights.bin")
+    geom = ex.geometry_for(manifest, entries)
+    sidecar = json.loads((model / "ane_prefill" / "ane_prefill.json").read_text())
+    layer = args.layer if args.layer is not None else sidecar["layers"][0]
+    if layer not in sidecar["layers"]:
+        raise SystemExit(f"layer {layer} is not in the sidecar {sidecar['layers']}")
+
+    print(f"{model.name}: {geom.family}, hidden {geom.hidden}, "
+          f"{geom.q_heads}q/{geom.kv_heads}kv x{geom.head_dim}, "
+          f"rope {geom.rotary}, layer {layer}")
+
+    t = geom.chunk
+    rng = np.random.default_rng(args.seed)
+    normed = rng.standard_normal((t, geom.hidden)).astype(np.float16)
+    mask = causal_mask(t)
+    with open(model / "model_weights.bin", "rb") as handle:
+        weights = ex.load_layer_weights(handle, entries, layer, geom, manifest)
+    expected = reference(normed, weights, geom, mask, t)
+
+    package = model / "ane_prefill" / f"layer_{layer}.mlpackage"
+    model_ml = ct.models.MLModel(str(package),
+                                 compute_units=ct.ComputeUnit.CPU_AND_NE,
+                                 function_name="h0")
+    got = model_ml.predict({"normed": normed,
+                            "mask": mask.astype(np.float16)})["out"]
+    got = np.asarray(got, dtype=np.float32).reshape(expected.shape)
+
+    mean_expected = float(np.abs(expected).mean())
+    relative = float(np.abs(got - expected).mean() / mean_expected * 100.0)
+    peak = float(np.abs(got - expected).max() / np.abs(expected).max() * 100.0)
+    print(f"  mean |expected| {mean_expected:.4f} | mean |diff| "
+          f"{np.abs(got - expected).mean():.5f}")
+    print(f"  relative error {relative:.3f} % (peak {peak:.3f} %)")
+    if relative > args.max_relative_error:
+        print(f"FAIL: above --max-relative-error {args.max_relative_error} %",
+              file=sys.stderr)
+        return 1
+    print("  ok — the graph computes this model's attention block")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
