@@ -27,6 +27,7 @@ Exits non-zero when the mean relative error exceeds `--max-relative-error`
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import pathlib
 import sys
@@ -97,6 +98,12 @@ def main() -> int:
                         help="path to an installed .gturbo directory")
     parser.add_argument("--layer", type=int, default=None,
                         help="full-attention layer to check (default: the first)")
+    parser.add_argument("--chunk", type=int, default=ex.CHUNK,
+                        help=f"which sidecar width to check (default "
+                             f"{ex.CHUNK}). A model can carry several — "
+                             f"ane_prefill-1024 beside ane_prefill — and "
+                             f"checking the wrong one would report a pass for a "
+                             f"graph nobody asked about")
     parser.add_argument("--max-relative-error", type=float, default=2.0)
     parser.add_argument("--seed", type=int, default=7)
     args = parser.parse_args()
@@ -104,12 +111,23 @@ def main() -> int:
     import coremltools as ct
 
     model = pathlib.Path(args.model)
-    if not (model / "ane_prefill" / "ane_prefill.json").exists():
-        raise SystemExit(f"{model} has no ane_prefill sidecar; export one first")
+    directory = model / ex.sidecar_directory(args.chunk)
+    if not (directory / "ane_prefill.json").exists():
+        raise SystemExit(f"{model} has no sidecar for chunk {args.chunk} "
+                         f"({directory.name}); export one first")
     manifest = json.loads((model / "manifest.json").read_text())
     entries = ex.read_index(model / "model_weights.bin")
-    geom = ex.geometry_for(manifest, entries)
-    sidecar = json.loads((model / "ane_prefill" / "ane_prefill.json").read_text())
+    # The chunk is part of the geometry the graph was built for, so it comes
+    # from the request, not from the manifest: `--chunk` selects both the
+    # directory and the shapes the reference must use.
+    geom = dataclasses.replace(ex.geometry_for(manifest, entries),
+                               chunk=args.chunk)
+    sidecar = json.loads((directory / "ane_prefill.json").read_text())
+    if sidecar.get("chunkTokens") != args.chunk:
+        raise SystemExit(f"{directory.name} holds a "
+                         f"{sidecar.get('chunkTokens')}-token sidecar, not "
+                         f"{args.chunk}; checking it would validate the wrong "
+                         f"graph")
     layer = args.layer if args.layer is not None else sidecar["layers"][0]
     if layer not in sidecar["layers"]:
         raise SystemExit(f"layer {layer} is not in the sidecar {sidecar['layers']}")
@@ -126,7 +144,7 @@ def main() -> int:
         weights = ex.load_layer_weights(handle, entries, layer, geom, manifest)
     expected = reference(normed, weights, geom, mask, t)
 
-    package = model / "ane_prefill" / f"layer_{layer}.mlpackage"
+    package = directory / f"layer_{layer}.mlpackage"
     model_ml = ct.models.MLModel(str(package),
                                  compute_units=ct.ComputeUnit.CPU_AND_NE,
                                  function_name="h0")

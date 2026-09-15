@@ -8,7 +8,7 @@ much does routing the full-attention prefill block to the Neural Engine save?**
 ```bash
 python3 benchmark/ane_prefill_ab_matrix.py \
   --models qwen3.5_2B_4Bit qwen3.5_4B_4Bit qwen-agentworld_35B_A3B_4Bit \
-  --pairs 1 --label v5.6 --record
+  --repeats 2 --label v5.6 --record
 ```
 
 The record is written **after every model**, so a run that is held or
@@ -20,10 +20,17 @@ plus `--skip-done`, which skips the models already stored (a model whose run
 
 One variable: `TINYTITAN_PREFILL_ANE`. Each model runs a discarded warm-up per
 arm — the first ANE run pays the Core ML compile, which on AgentWorld 4-bit was
-~68 s against an 86 s prefill — and then interleaved `off, on, on, off` blocks,
-so thermal drift and page-cache state land on both arms rather than on whichever
-ran second. The metric is **prefill seconds from the CLI's own footer**, on a
-fixed ~6,000-token prompt, `--prefill-chunk 4096`, greedy, one new token.
+~68 s against an 86 s prefill — and then `--repeats` measured runs per arm
+(default 2), alternating so drift lands on both. The metric is **prefill seconds
+from the CLI's own footer**, on a fixed prompt, `--prefill-chunk 4096`, greedy,
+one new token.
+
+**The prompt is deliberately just over one chunk** (~4,300 tokens, 23,000
+characters of the fixed paragraph): the ANE serves only a full 4,096-token
+chunk, so a shorter prompt measures two GPU arms and would report "1.0×" as if
+it were a finding about the ANE. The sweep says `prompt_too_short` instead. The
+prompt is the quadratic term, so shortening it is the main lever on run time —
+but ~21,750 characters is the floor.
 
 | Field | What it is |
 | --- | --- |
@@ -54,12 +61,32 @@ cache, and all of decode stay on the GPU. Two consequences worth holding onto:
 Three conditions must hold or the chunk silently stays on the GPU:
 
 1. a sidecar exists for the model and its recorded geometry matches (see below);
-2. the configured prefill chunk is exactly **4,096** — the sidecar is a fixed
-   4,096-token program. The dense Qwen 3.5 family is on 4,096 by default for
-   this reason; a family left on 128 can never reach the ANE at all;
-3. the chunk is **full**, or a continuation of a long prompt. A short prompt is
-   one partial chunk and deliberately stays on the GPU: padding it to 4,096
-   costs ~2 s of ANE work against under a second of GPU work.
+2. the configured prefill chunk **equals the sidecar's chunk** — the graph's
+   shapes are fixed by it, so a nearer width cannot be fed. The dense Qwen 3.5
+   family is on 4,096 by default; a family left on 128 can never reach the ANE
+   at all. The harness reports `prompt_too_short` rather than a misleading
+   "1.0×" when the prompt does not reach one full chunk;
+3. the chunk is **full**, or a continuation of a long prompt. A prompt under one
+   chunk has no shape to run and deliberately stays on the GPU.
+
+## The band table
+
+Which width to export is a function of the prompt, so a model can carry several
+(see `tools/ane_sidecars.sh`, and the runbook's wiring point 9):
+
+| Prompt | Sidecar to have | Measured |
+| --- | --- | --- |
+| under 1,024 tokens | none — the GPU wins | "hello" (5 tokens): GPU 0.11 s vs a padded chunk costing tens of seconds |
+| 1,024 – 4,095 | **`ane_prefill-1024`** (this is what makes the band reachable) | dense 2B, ~2,500 tokens: GPU 23.33 s → ANE 17.88 s, **1.30×** |
+| 4,096 – 16,384 | `ane_prefill` (4,096) | dense 2B: 79.0 s → 49.0 s, 1.61×; AgentWorld 35B-A3B: 177.5 s → 86.4 s, ~2.05× |
+| over 16,384 | a larger `--max-history` (coverage = max history + chunk) | — |
+
+The ANE's saving is a roughly **fixed amount of attention work**: on the dense
+2B it was 30.0 s at 4-bit and 30.2 s at 8-bit, so the *ratio* falls as the
+non-attention prefill (which the ANE never touches) grows.
+
+None of this is a switch. `TINYTITAN_PREFILL_ANE` is on by default for every
+GPU-path model; what varies is whether there is a sidecar the chunk can match.
 
 ## Which families can carry a sidecar
 

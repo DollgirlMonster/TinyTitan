@@ -107,7 +107,7 @@ skips a missing optional file rather than failing. But the *runtime* needs
 chat_template.jinja" — so a checkpoint that omits it needs a template supplied
 even though the converter would not complain.
 
-## 2. The eight wiring points
+## 2. The nine wiring points
 
 | # | Where | What |
 | --- | --- | --- |
@@ -119,6 +119,7 @@ even though the converter would not complain.
 | 6 | `ModelCatalog.swift` — `displayNames` | The served id → human name (`/v1/models` and the app read this) |
 | 7 | `AppModelInstallDescriptor.swift` | Two `converted(...)` descriptors, `all`, `installerTarget`, `selectedDescriptor` — **see §5 for the fingerprint** |
 | 8 | `tests/` | `ModelProfileTests.shipped` (and the table count) and the app test's build table |
+| 9 | ANE prefill sidecar | `tools/ane_sidecars.sh <install>` — export and verify it. A GPU-path install without one has no ANE prefill at all: the switch is on by default, the runtime asks for the sidecar, and finds nothing. Skip only where the exporter has no graph — `qwen38flash`, whose sparse indexer dense attention does not match past 2,051 visible keys |
 
 Validate 1 before any download:
 
