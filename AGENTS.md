@@ -83,7 +83,7 @@ the server is needed, and stop only a server you launched.
 
 ## Test rules
 
-Before a model run, require macOS 26+, Swift 6.3+, enough disk, acceptable `memory_pressure -Q`, a completed selected `.gturbo` installation, and no process from `pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'`. If a check fails, inform the user and stop; do not terminate apps or delete or reinstall the model.
+Before a model run, require macOS 26+, Swift 6.4+, enough disk, acceptable `memory_pressure -Q`, a completed selected `.gturbo` installation, and no process from `pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'`. If a check fails, inform the user and stop; do not terminate apps or delete or reinstall the model.
 
 Run package tests serially (`swift test --no-parallel`), passing any extra
 arguments like `--filter` through. Run only one app, CLI, or model-using test

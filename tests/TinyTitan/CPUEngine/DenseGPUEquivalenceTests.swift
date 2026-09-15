@@ -11,7 +11,7 @@ import Testing
 ///
 /// Skipped unless `TINYTITAN_DENSE_GPU_EQUIV=1`. It needs a release CLI and a real
 /// install, and it is a model run, so the preconditions in `AGENTS.md` apply
-/// (macOS 26+, Swift 6.3+, disk, acceptable `memory_pressure`, no other model
+/// (macOS 26+, Swift 6.4+, disk, acceptable `memory_pressure`, no other model
 /// process).
 ///
 /// Set `TINYTITAN_DENSE_EQUIV_MODEL` to choose the install; it defaults to the 2B

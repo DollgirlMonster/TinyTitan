@@ -42,7 +42,7 @@ below. They are exactly what the installer does.
 | --- | --- | --- |
 | **Apple Silicon Mac** (M1 or newer) | TinyTitan is built for these chips only |  menu → **About This Mac** → look for "Chip: Apple M…" |
 | **macOS 26 or later** | The project targets the current system | Same window — "macOS 26.x" |
-| **Xcode** (the full app, not just the command line tools) | Provides the Swift 6.3+ compiler | See step 1 |
+| **Xcode** (the full app, not just the command line tools) | Provides the Swift 6.4+ compiler | See step 1 |
 | **Free disk space** | Models are big; see the table below |  menu → **System Settings** → **General** → **Storage** |
 | **A stable internet connection** | The model is a large download | — |
 
@@ -98,7 +98,7 @@ Now check that Swift is available and new enough:
 swift --version
 ```
 
-You want to see **Swift 6.3** or higher. If you see an older version or
+You want to see **Swift 6.4** or higher. If you see an older version or
 "command not found", finish the Xcode install, open Xcode once so it can
 finish setting itself up, and try again.
 
@@ -262,4 +262,4 @@ requirement, stated exactly — is
 on the wiki.
 
 *TinyTitan 5.1 at the time of writing. Requirements reflect the project's
-documented minimums: Apple Silicon, macOS 26+, Swift 6.3+.*
+documented minimums: Apple Silicon, macOS 26+, Swift 6.4+.*

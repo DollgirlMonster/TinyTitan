@@ -173,8 +173,8 @@ if [[ -z "$swift_ver" ]]; then
   ask "Try the build anyway?" yes || exit 1
 elif (( $(printf '%s' "$swift_ver" | cut -d. -f1) < 6 )) \
   || { [[ "$(printf '%s' "$swift_ver" | cut -d. -f1)" == "6" ]] \
-       && (( $(printf '%s' "$swift_ver" | cut -d. -f2) < 3 )); }; then
-  die "TinyTitan needs Swift 6.3 or later; this Mac has $swift_ver.
+       && (( $(printf '%s' "$swift_ver" | cut -d. -f2) < 4 )); }; then
+  die "TinyTitan needs Swift 6.4 or later; this Mac has $swift_ver.
      Update Xcode from the App Store (or set it with xcode-select), then re-run."
 else
   ok "Swift $swift_ver"
