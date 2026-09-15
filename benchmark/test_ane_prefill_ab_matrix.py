@@ -118,9 +118,11 @@ class RecordTests(unittest.TestCase):
         self.assertNotIn("speedup", summary)
 
     def test_the_default_prompt_clears_one_chunk(self):
-        # ~5.3 characters per token for this text: the shipped default must
-        # reach a full 4,096-token chunk or the sweep measures nothing.
-        self.assertGreaterEqual(ab.PROMPT_CHARACTERS, 21_750)
+        # The floor follows the configured chunk, and the shipped default must
+        # clear it — otherwise the sweep measures two GPU arms.
+        floor = int(ab.PREFILL_CHUNK * ab.CHARACTERS_PER_TOKEN)
+        self.assertGreaterEqual(ab.PROMPT_CHARACTERS, floor)
+        self.assertGreaterEqual(23_000, int(1_024 * ab.CHARACTERS_PER_TOKEN))
 
     def test_a_failed_row_is_not_counted_as_done(self):
         # A refusal must stay re-attemptable: treating it as done would keep
