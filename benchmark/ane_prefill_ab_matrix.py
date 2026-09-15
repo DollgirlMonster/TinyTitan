@@ -191,6 +191,35 @@ def format_row(r: dict) -> str:
             f"{str(r.get('on', {}).get('used_ane')):>9}  {note}")
 
 
+def new_record(pairs: int) -> dict:
+    return {
+        "recorded_at": datetime.datetime.now(
+            datetime.timezone.utc).isoformat(timespec="seconds"),
+        "prompt_characters": PROMPT_CHARACTERS,
+        "prefill_chunk": PREFILL_CHUNK,
+        "pairs": pairs,
+        "results": [],
+    }
+
+
+def stored_models(record: dict) -> set[str]:
+    """Models already measured into this record, in the order they were stored.
+
+    A model whose run *failed* is not counted: a refusal is worth re-attempting
+    after whatever caused it is fixed, and treating it as done would silently
+    keep the failure.
+    """
+    return {r["model"] for r in record.get("results", []) if "error" not in r}
+
+
+def store_result(record: dict, result: dict) -> dict:
+    """Replace this model's row (or append it), keeping the others."""
+    kept = [r for r in record.get("results", []) if r["model"] != result["model"]]
+    kept.append(result)
+    record["results"] = kept
+    return record
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", nargs="+", required=True,
@@ -199,33 +228,52 @@ def main() -> int:
                         help="off/on/on/off blocks per model (default 1)")
     parser.add_argument("--label", default=None)
     parser.add_argument("--record", action="store_true",
-                        help="write benchmark/ane-prefill/<label>.json")
+                        help="write benchmark/ane-prefill/<label>.json, after "
+                             "every model so a held run keeps what it measured")
+    parser.add_argument("--skip-done", action="store_true",
+                        help="with --record, skip models already measured into "
+                             "the record (this is how a held run resumes)")
     args = parser.parse_args()
+
+    path = None
+    record = new_record(args.pairs)
+    if args.record:
+        RESULTS.mkdir(parents=True, exist_ok=True)
+        label = args.label or datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        path = RESULTS / f"{label}.json"
+        if path.exists() and args.skip_done:
+            try:
+                record = json.loads(path.read_text())
+                record.setdefault("results", [])
+            except ValueError:
+                record = new_record(args.pairs)
+    done = stored_models(record)
+    if args.skip_done and done:
+        print(f"resuming {path.name}: {len(done)} model(s) already measured",
+              flush=True)
 
     header = (f"{'model':<44} {'off s':>9} {'on s':>9} {'speedup':>8} "
               f"{'ANE used':>9}  note")
     print(header, flush=True)
 
-    # Each model is printed as it finishes: a full matrix is hours of prefill,
-    # and a table that only appears at the end reports nothing for most of it.
-    results = []
+    # Each model is printed *and stored* as it finishes: a full matrix is hours
+    # of prefill, and a run that is held or interrupted at hour two must not
+    # discard the rows it already earned.
     for name in args.models:
+        if args.skip_done and name in done:
+            print(f"{name:<44} skipped (already in {path.name})", flush=True)
+            continue
         result = summarize(measure(name, args.pairs))
-        results.append(result)
         print(format_row(result), flush=True)
+        if path is not None:
+            store_result(record, result)
+            record["recorded_at"] = datetime.datetime.now(
+                datetime.timezone.utc).isoformat(timespec="seconds")
+            # Whole-file rewrite after each model: the file is small and a
+            # partial row is worse than none.
+            path.write_text(json.dumps(record, indent=2) + "\n")
 
-    if args.record:
-        RESULTS.mkdir(parents=True, exist_ok=True)
-        label = args.label or datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-        path = RESULTS / f"{label}.json"
-        path.write_text(json.dumps({
-            "recorded_at": datetime.datetime.now(
-                datetime.timezone.utc).isoformat(timespec="seconds"),
-            "prompt_characters": PROMPT_CHARACTERS,
-            "prefill_chunk": PREFILL_CHUNK,
-            "pairs": args.pairs,
-            "results": results,
-        }, indent=2) + "\n")
+    if path is not None:
         print(f"\nwrote {path.relative_to(ROOT)}")
     return 0
 

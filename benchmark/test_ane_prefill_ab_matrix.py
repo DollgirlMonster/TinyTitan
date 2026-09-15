@@ -96,5 +96,33 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(summary["on"]["digests"], ["ane"])
 
 
+class RecordTests(unittest.TestCase):
+    """A held run must keep the rows it already earned, and resume cleanly."""
+
+    def test_a_new_record_carries_what_a_reader_needs(self):
+        record = ab.new_record(pairs=2)
+        self.assertEqual(record["pairs"], 2)
+        self.assertEqual(record["prefill_chunk"], ab.PREFILL_CHUNK)
+        self.assertEqual(record["prompt_characters"], ab.PROMPT_CHARACTERS)
+        self.assertEqual(record["results"], [])
+
+    def test_a_failed_row_is_not_counted_as_done(self):
+        # A refusal must stay re-attemptable: treating it as done would keep
+        # the failure forever.
+        record = {"results": [{"model": "qwen3.5_2B_4Bit", "off": {}},
+                              {"model": "m", "error": "no sidecar"}]}
+        self.assertEqual(ab.stored_models(record), {"qwen3.5_2B_4Bit"})
+
+    def test_storing_replaces_a_model_row_rather_than_duplicating_it(self):
+        record = {"results": [{"model": "a", "marker": 1}]}
+        ab.store_result(record, {"model": "a", "marker": 2})
+        self.assertEqual([r["marker"] for r in record["results"]], [2])
+
+    def test_storing_keeps_the_other_models(self):
+        record = {"results": [{"model": "a"}]}
+        ab.store_result(record, {"model": "b"})
+        self.assertEqual([r["model"] for r in record["results"]], ["a", "b"])
+
+
 if __name__ == "__main__":
     unittest.main()
