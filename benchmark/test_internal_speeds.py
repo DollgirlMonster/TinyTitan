@@ -73,6 +73,29 @@ class AnePromptTests(unittest.TestCase):
         self.assertIsNone(fallback)
 
 
+class AneCacheTests(unittest.TestCase):
+    """A cold ANE compile cache makes the first measured run incomparable."""
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.real_root = internal_speeds.ROOT
+        internal_speeds.ROOT = self.dir
+        self.addCleanup(setattr, internal_speeds, "ROOT", self.real_root)
+        self.sidecar = self.dir / "models" / "m" / "ane_prefill"
+        self.sidecar.mkdir(parents=True)
+
+    def test_no_compiled_directory_is_cold(self):
+        self.assertFalse(internal_speeds.ane_cache_is_warm("models/m"))
+
+    def test_any_compiled_version_counts_as_warm(self):
+        (self.sidecar / "compiled-v1").mkdir()
+        self.assertTrue(internal_speeds.ane_cache_is_warm("models/m"))
+
+    def test_a_missing_sidecar_is_cold_rather_than_an_error(self):
+        self.assertFalse(internal_speeds.ane_cache_is_warm("models/absent"))
+
+
 class MissingAneReasonTests(unittest.TestCase):
     def test_qwen36_without_a_sidecar_is_not_called_another_family(self):
         reason = internal_speeds.missing_ane_reason(

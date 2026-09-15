@@ -177,6 +177,15 @@ def ane_usage(stderr: str) -> tuple[bool, str | None]:
     return True, None
 
 
+def ane_cache_is_warm(model: str) -> bool:
+    """Has Core ML already compiled this model's sidecar for the ANE?
+
+    The runtime caches the compiled programs beside the sidecar, so a cold cache
+    means the first run also pays the compile and its rate is not comparable.
+    """
+    return bool(sorted((ROOT / model / "ane_prefill").glob("compiled-v*")))
+
+
 def measure_kernel(kernel: str, iterations: int) -> dict:
     code, out, err = run([str(BENCH), kernel, str(iterations)], timeout=600)
     log = out + err
@@ -339,8 +348,20 @@ def measure(model: str, prompt: str, max_new: int,
     family = model_family(model)
     if sidecar.exists():
         print("measuring ANE prefill (sidecar present)...", flush=True)
+        warm = ane_cache_is_warm(model)
+        if not warm:
+            # Core ML compiles the sidecar for the ANE on first use. On
+            # AgentWorld 4-bit that added ~68 s to a 86 s prefill, so a cold
+            # measurement reads as a ~44% regression against a warm one and
+            # would block a release that changed nothing. Warm it first and say
+            # the run was warmed.
+            print("  the ANE compile cache is cold; warming it first so the "
+                  "number is comparable", file=sys.stderr, flush=True)
+            measure_generation(model, ane_prompt(), 1, ane=True,
+                               prefill_chunk=ANE_PREFILL_CHUNK)
         ane = measure_generation(model, ane_prompt(), 1, ane=True,
                                  prefill_chunk=ANE_PREFILL_CHUNK)
+        ane["cache_was_warm"] = warm
         ane["applicable"] = "error" not in ane and ane.get("used_ane", False)
         if "error" not in ane and not ane.get("used_ane", False):
             ane["reason"] = ("the runtime did not route the chunk to the ANE: "
