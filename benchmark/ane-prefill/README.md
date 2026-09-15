@@ -78,8 +78,28 @@ Which width to export is a function of the prompt, so a model can carry several
 | --- | --- | --- |
 | under 1,024 tokens | none — the GPU wins | "hello" (5 tokens): GPU 0.11 s vs a padded chunk costing tens of seconds |
 | 1,024 – 4,095 | **`ane_prefill-1024`** (this is what makes the band reachable) | dense 2B, ~2,500 tokens: GPU 23.33 s → ANE 17.88 s, **1.30×** |
-| 4,096 – 16,384 | `ane_prefill` (4,096) | dense 2B: 79.0 s → 49.0 s, 1.61×; AgentWorld 35B-A3B: 177.5 s → 86.4 s, ~2.05× |
+| 4,096 – 16,384 | `ane_prefill` (4,096) | `v5.5-ane-matrix-3`, ~4,300 tokens, per model below |
 | over 16,384 | a larger `--max-history` (coverage = max history + chunk) | — |
+
+`v5.5-ane-matrix-3` — 23,000-character prompt (4,333 tokens), chunk 4,096,
+two measured runs per arm after a discarded warm-up each, on an M3 24 GB:
+
+| Model | ANE off | ANE on | Saved | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| qwen3.5 2B 4-bit | 49.8 s | 36.0 s | 13.8 s | 1.38× |
+| qwen3.5 2B 8-bit | 104.1 s | 91.6 s | 12.4 s | 1.14× |
+| qwen3.5 4B 4-bit | 140.6 s | 102.2 s | 38.5 s | 1.38× |
+| qwen3.5 4B 8-bit | 275.6 s | 218.1 s | 57.5 s | 1.26× |
+| qwen3.5 9B 4-bit | 210.7 s | 168.2 s | 42.5 s | 1.25× |
+| qwen3.5 9B 8-bit | 442.4 s | 392.9 s | 49.5 s | 1.13× |
+| AgentWorld 35B-A3B 4-bit | 106.5 s | 63.3 s | 43.2 s | **1.68×** |
+| Qwen 3.8 125B-A6B 4-bit | 175.1 s | — | — | no sidecar (sparse indexer) |
+
+Longer prompts move these ratios up: the same dense 2B at 6,027 tokens measured
+1.61×, and AgentWorld at 6,027 tokens ~2.05×, because the offloaded share is the
+quadratic one. Shorter prompts move them down, and the 8-bit rows are lower than
+their 4-bit siblings at the same length because the non-attention prefill the
+ANE never touches is heavier there.
 
 The ANE's saving is a roughly **fixed amount of attention work**: on the dense
 2B it was 30.0 s at 4-bit and 30.2 s at 8-bit, so the *ratio* falls as the
