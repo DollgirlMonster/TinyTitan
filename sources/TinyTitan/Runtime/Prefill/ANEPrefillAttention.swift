@@ -115,6 +115,26 @@ final class ANEPrefillAttention: @unchecked Sendable {
     /// infinity arithmetic into the ANE graph (whose fused SDPA op NaNs).
     static let maskNegative = Float16(-30000)
 
+    /// The sidecar directory for a configured prefill chunk.
+    ///
+    /// A model may carry one sidecar per chunk width — `ane_prefill-1024`
+    /// beside the historical `ane_prefill` (4,096) — because the width that
+    /// wins depends on the prompt: 4,096 for long ones, a smaller chunk to
+    /// reach the band below it at all. The configured chunk picks the
+    /// directory; `init` then insists the sidecar found there was built for
+    /// exactly that chunk, so a nearer width is refused rather than run.
+    static func sidecarDirectory(modelDirectory: URL,
+                                 configChunkTokens: Int) -> URL {
+        let specific = modelDirectory.appendingPathComponent(
+            "ane_prefill-\(configChunkTokens)", isDirectory: true)
+        let meta = specific.appendingPathComponent("ane_prefill.json")
+        if FileManager.default.fileExists(atPath: meta.path) {
+            return specific
+        }
+        return modelDirectory.appendingPathComponent("ane_prefill",
+                                                     isDirectory: true)
+    }
+
     let chunkTokens: Int
     let histories: Set<Int>
     let coveredLayers: Set<Int>
@@ -167,22 +187,42 @@ final class ANEPrefillAttention: @unchecked Sendable {
     ///   being loaded for. The sidecar's recorded geometry must match it; a
     ///   mismatch is refused rather than run, because a graph built for another
     ///   width or head count computes a different attention and says nothing.
+    /// - Parameter configChunkTokens: the runtime's configured prefill chunk.
+    ///   It selects *which* sidecar directory is loaded, and the one that is
+    ///   found must be built for exactly this chunk — the gate below is a
+    ///   contract with the graph's fixed shapes, so a nearer one is not usable.
     init(modelDirectory: URL, device: MTLDevice,
          hiddenSize: Int, kvDim: Int, weightsSha256: String?,
          family: ModelFamily, fullAttentionLayerMask: [UInt8],
-         sparseIndexer: SparseIndexerConfig) throws {
-        let dir = modelDirectory.appendingPathComponent("ane_prefill")
+         sparseIndexer: SparseIndexerConfig,
+         configChunkTokens: Int) throws {
+        let dir = Self.sidecarDirectory(modelDirectory: modelDirectory,
+                                        configChunkTokens: configChunkTokens)
         let metaURL = dir.appendingPathComponent("ane_prefill.json")
         guard FileManager.default.fileExists(atPath: metaURL.path) else {
             throw PrefillError.chunkedUnsupported(
                 "TINYTITAN_PREFILL_ANE=on but \(metaURL.path) is missing; run "
-                + "tools/export_ane_prefill.py for this model first")
+                + "tools/export_ane_prefill.py --model \(modelDirectory.path) "
+                + "--chunk \(configChunkTokens) for this model first")
         }
         let meta = try JSONDecoder().decode(
             SidecarMetadata.self, from: Data(contentsOf: metaURL))
         guard meta.version == Self.expectedVersion else {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill sidecar version \(meta.version) != supported \(Self.expectedVersion); re-export")
+        }
+        // The graph's shapes are fixed by its chunk, so only a sidecar built
+        // for the configured chunk can be fed. This is also what makes a
+        // multi-width model safe: the chunk-specific directory is preferred,
+        // and a fallback to the default one is refused here when it does not
+        // match.
+        guard meta.chunkTokens == configChunkTokens else {
+            throw PrefillError.chunkedUnsupported(
+                "ANE prefill sidecar in \(dir.lastPathComponent) is built for a "
+                + "\(meta.chunkTokens)-token chunk but the runtime's prefill "
+                + "chunk is \(configChunkTokens); export one for this width "
+                + "(tools/export_ane_prefill.py --chunk \(configChunkTokens)) "
+                + "or configure --prefill-chunk \(meta.chunkTokens)")
         }
         // A sparse-indexed family is not something a dense sidecar can stand in
         // for, and the arithmetic says there is no window where it could:

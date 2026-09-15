@@ -100,11 +100,27 @@ class RecordTests(unittest.TestCase):
     """A held run must keep the rows it already earned, and resume cleanly."""
 
     def test_a_new_record_carries_what_a_reader_needs(self):
-        record = ab.new_record(pairs=2)
-        self.assertEqual(record["pairs"], 2)
-        self.assertEqual(record["prefill_chunk"], ab.PREFILL_CHUNK)
-        self.assertEqual(record["prompt_characters"], ab.PROMPT_CHARACTERS)
+        record = ab.new_record(repeats=2, characters=23_000, max_new=1,
+                               chunk=1_024)
+        self.assertEqual(record["repeats_per_arm"], 2)
+        self.assertEqual(record["prompt_characters"], 23_000)
+        self.assertEqual(record["max_new_tokens"], 1)
+        self.assertEqual(record["prefill_chunk"], 1_024)  # the exported width
         self.assertEqual(record["results"], [])
+
+    def test_a_prompt_under_one_chunk_reports_no_speedup(self):
+        # Under 4,096 tokens the ANE cannot engage, so both arms are the GPU.
+        # Reporting "1.0x" would read as a finding about the ANE.
+        short = [dict(a, prefill_tokens=3_000) for a in [arm(50.0)]]
+        fast = [dict(a, prefill_tokens=3_000) for a in [arm(20.0)]]
+        summary = ab.summarize(record(short, fast))
+        self.assertIn("prompt_too_short", summary)
+        self.assertNotIn("speedup", summary)
+
+    def test_the_default_prompt_clears_one_chunk(self):
+        # ~5.3 characters per token for this text: the shipped default must
+        # reach a full 4,096-token chunk or the sweep measures nothing.
+        self.assertGreaterEqual(ab.PROMPT_CHARACTERS, 21_750)
 
     def test_a_failed_row_is_not_counted_as_done(self):
         # A refusal must stay re-attemptable: treating it as done would keep

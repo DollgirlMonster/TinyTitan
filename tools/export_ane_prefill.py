@@ -47,10 +47,14 @@ import numpy as np
 import coremltools as ct
 from coremltools.converters.mil import Builder as mb
 
-# The chunk the sidecar is built around. The runtime routes a chunk to the ANE
-# only when its configured prefill chunk is exactly this and the chunk is full,
-# so this is a contract with `ANEPrefillAttention.eligibleChunk`, not a tunable.
+# The chunk the sidecar is built around by default. The runtime routes a chunk
+# to the ANE only when its configured prefill chunk is exactly the sidecar's, so
+# this is a contract with `ANEPrefillAttention.eligibleChunk`, not a tunable.
 CHUNK = 4096
+# The chunk sizes the runtime will accept as a prefill chunk, copied from
+# `RuntimeConfiguration.allowedPrefillChunkTokens`: a sidecar whose chunk is not
+# in this set could never match a configuration and would be dead weight.
+PREFILL_CHUNK_CHOICES = (32, 64, 128, 256, 512, 1024, 2048, 4096)
 EPS = 1e-6
 NEG = -30000.0
 EXPORT_VERSION = 1
@@ -492,14 +496,34 @@ def build_variant(history: int, weights: dict[str, np.ndarray],
     return ct.models.MLModel(spec, weights_dir=model.weights_dir)
 
 
+def sidecar_directory(chunk: int) -> str:
+    """Where a sidecar for this chunk lives inside a model directory.
+
+    4,096 keeps the historical name, so existing installs and the runtime's
+    default lookup are unchanged. Any other width gets its own directory, which
+    is what lets one model carry more than one — the width that wins depends on
+    the prompt, and the runtime picks the directory matching its configured
+    prefill chunk.
+    """
+    return "ane_prefill" if chunk == CHUNK else f"ane_prefill-{chunk}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True,
                         help="path to the installed .gturbo directory")
     parser.add_argument("--max-history", type=int, default=12288,
-                        help="largest KV history variant (multiple of 4096); "
-                             "prompts beyond max-history+4096 tokens fall "
-                             "back to the GPU path")
+                        help="largest KV history variant (a multiple of "
+                             "--chunk); prompts beyond max-history+chunk "
+                             "tokens fall back to the GPU path")
+    parser.add_argument("--chunk", type=int, default=CHUNK,
+                        choices=PREFILL_CHUNK_CHOICES,
+                        help=f"chunk tokens the graph is built for (default "
+                             f"{CHUNK}; {', '.join(map(str, PREFILL_CHUNK_CHOICES))}). "
+                             f"The runtime routes a chunk to the sidecar only "
+                             f"when its configured prefill chunk equals this, "
+                             f"and a chunk below {CHUNK} is what makes the band "
+                             f"under {CHUNK} tokens reachable at all")
     parser.add_argument("--layers", default=None,
                         help="comma list of layer indices (default: all full-"
                              "attention layers)")
@@ -509,13 +533,20 @@ def main() -> int:
     weights_bin = model_dir / "model_weights.bin"
     if not weights_bin.exists():
         raise SystemExit(f"not a .gturbo directory: {model_dir}")
-    if args.max_history % CHUNK != 0:
-        raise SystemExit("--max-history must be a multiple of 4096")
-    histories = list(range(0, args.max_history + 1, CHUNK))
+    if args.max_history % args.chunk != 0:
+        raise SystemExit(f"--max-history must be a multiple of --chunk "
+                         f"({args.chunk})")
+    histories = list(range(0, args.max_history + 1, args.chunk))
 
     manifest = json.load(open(model_dir / "manifest.json"))
     entries = read_index(weights_bin)
-    geom = geometry_for(manifest, entries)
+    # The chunk is the operator's choice here and the runtime's gate later:
+    # `eligibleChunk` only routes a chunk to the sidecar when the configured
+    # prefill chunk equals this. A 4,096 chunk wins on long prompts (fewer
+    # boundaries, fewer per-layer model reloads); a smaller one is what makes
+    # the band below 4,096 tokens reachable at all.
+    geom = dataclasses.replace(geometry_for(manifest, entries),
+                               chunk=args.chunk)
     layers = ([int(x) for x in args.layers.split(",")] if args.layers
               else list(geom.layers))
     unknown = [L for L in layers if L not in geom.layers]
@@ -532,7 +563,7 @@ def main() -> int:
     # differs. The sidecar itself is fp16 either way.
     weight_bits = manifest["quant"]["attention"]["weightBits"]
 
-    out_dir = model_dir / "ane_prefill"
+    out_dir = model_dir / sidecar_directory(args.chunk)
     # Build beside the live sidecar and swap only after every layer has
     # compiled, so a failed export leaves the previous sidecar untouched and
     # never leaves a half-written one for the runtime to load.
@@ -572,7 +603,7 @@ def main() -> int:
             "version": EXPORT_VERSION,
             "family": geom.family,
             "sourceWeightBits": weight_bits,
-            "chunkTokens": CHUNK,
+            "chunkTokens": geom.chunk,
             "histories": histories,
             "layers": layers,
             # The geometry the graph was built for. The runtime refuses a

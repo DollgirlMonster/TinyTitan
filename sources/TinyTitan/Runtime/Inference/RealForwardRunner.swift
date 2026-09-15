@@ -494,7 +494,8 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
                     weightsSha256: model.weightsDigestFromManifest,
                     family: model.config.family,
                     fullAttentionLayerMask: model.config.fullAttentionLayerMask,
-                    sparseIndexer: model.config.sparseIndexer)
+                    sparseIndexer: model.config.sparseIndexer,
+                    configChunkTokens: runtimeConfiguration.prefillChunkTokens)
             } catch {
                 // An explicit request must fail loudly with the export
                 // command; the default must degrade to the GPU, because a

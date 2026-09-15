@@ -57,7 +57,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                         weightsSha256: nil,
                                         family: .qwen36,
                                         fullAttentionLayerMask: fullMask(layers: [3]),
-                                        sparseIndexer: .none)
+                                        sparseIndexer: .none,
+                                        configChunkTokens: 4096)
         }
     }
 
@@ -85,14 +86,16 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                     weightsSha256: String(repeating: "A", count: 64),
                                     family: .qwen36,
                                     fullAttentionLayerMask: fullMask(layers: [3]),
-                                        sparseIndexer: .none)
+                                        sparseIndexer: .none,
+                                        configChunkTokens: 4096)
         #expect(throws: PrefillError.self) {
             _ = try ANEPrefillAttention(modelDirectory: dir, device: ctx.device,
                                         hiddenSize: 2048, kvDim: 512,
                                         weightsSha256: String(repeating: "b", count: 64),
                                         family: .qwen36,
                                         fullAttentionLayerMask: fullMask(layers: [3]),
-                                        sparseIndexer: .none)
+                                        sparseIndexer: .none,
+                                        configChunkTokens: 4096)
         }
     }
 
@@ -123,7 +126,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                         weightsSha256: nil,
                                         family: .qwen36,
                                         fullAttentionLayerMask: fullMask(layers: [3, 7]),
-                                        sparseIndexer: .none)
+                                        sparseIndexer: .none,
+                                        configChunkTokens: 4096)
         }
         // No geometry block at all (a sidecar from the qwen36-only exporter).
         let legacy: [String: Any] = [
@@ -186,7 +190,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                 modelDirectory: dir, device: ctx.device,
                 hiddenSize: 2048, kvDim: 512, weightsSha256: nil,
                 family: .qwen36, fullAttentionLayerMask: fullMask(layers: [3]),
-                sparseIndexer: indexer)
+                sparseIndexer: indexer,
+                                        configChunkTokens: 4096)
             Issue.record("a sparse-indexed model was allowed to load a sidecar")
         } catch {
             // The indexer's guard, not one of the geometry guards.
@@ -199,7 +204,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
             modelDirectory: dir, device: ctx.device,
             hiddenSize: 2048, kvDim: 512, weightsSha256: nil,
             family: .qwen36, fullAttentionLayerMask: fullMask(layers: [3]),
-            sparseIndexer: .none)
+            sparseIndexer: .none,
+                                        configChunkTokens: 4096)
     }
 
     /// Eligibility and shadow continuity, using a synthetic sidecar manifest
@@ -225,7 +231,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                           weightsSha256: nil,
                                           family: .qwen36,
                                           fullAttentionLayerMask: fullMask(layers: [3, 7]),
-                                        sparseIndexer: .none)
+                                        sparseIndexer: .none,
+                                        configChunkTokens: 4096)
         #expect(ane.maxPromptTokens == 8192)
         #expect(ane.coveredLayers == Set([3, 7]))
 
@@ -281,7 +288,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                         weightsSha256: nil,
                                         family: .qwen36,
                                         fullAttentionLayerMask: fullMask(layers: [3]),
-                                        sparseIndexer: .none)
+                                        sparseIndexer: .none,
+                                        configChunkTokens: 4096)
         }
         // Missing flag (any sidecar written before this check): refused.
         try write(base)
@@ -296,6 +304,72 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
         verified["aneCompileVerified"] = true
         try write(verified)
         try load()
+    }
+
+    /// A model may carry one sidecar per chunk width, because the width that
+    /// wins depends on the prompt: 4,096 for long ones, a smaller chunk to
+    /// reach the band under it at all.
+    @Test func theConfiguredChunkSelectsTheSidecarDirectory() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fallback = dir.appendingPathComponent("ane_prefill")
+        let narrow = dir.appendingPathComponent("ane_prefill-1024")
+        try FileManager.default.createDirectory(at: fallback,
+                                                withIntermediateDirectories: true)
+
+        // Nothing chunk-specific: the default directory is used.
+        #expect(ANEPrefillAttention.sidecarDirectory(
+            modelDirectory: dir, configChunkTokens: 1024).lastPathComponent
+            == "ane_prefill")
+
+        // An empty directory is not a sidecar; the metadata file decides.
+        try FileManager.default.createDirectory(at: narrow,
+                                                withIntermediateDirectories: true)
+        #expect(ANEPrefillAttention.sidecarDirectory(
+            modelDirectory: dir, configChunkTokens: 1024).lastPathComponent
+            == "ane_prefill")
+
+        try JSONSerialization.data(withJSONObject: ["version": 1])
+            .write(to: narrow.appendingPathComponent("ane_prefill.json"))
+        #expect(ANEPrefillAttention.sidecarDirectory(
+            modelDirectory: dir, configChunkTokens: 1024).lastPathComponent
+            == "ane_prefill-1024")
+        // A different configured chunk still falls back to the default.
+        #expect(ANEPrefillAttention.sidecarDirectory(
+            modelDirectory: dir, configChunkTokens: 4096).lastPathComponent
+            == "ane_prefill")
+    }
+
+    /// The graph's shapes are fixed by its chunk, so a sidecar built for
+    /// another width cannot be fed — it is refused, not approximated.
+    @Test func aSidecarBuiltForAnotherChunkIsRefused() throws {
+        let ctx = try MetalContext()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ane-test-\(UUID().uuidString)")
+        let sidecar = dir.appendingPathComponent("ane_prefill")
+        try FileManager.default.createDirectory(at: sidecar,
+                                                withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let meta: [String: Any] = [
+            "version": 1, "family": "qwen36", "chunkTokens": 1024,
+            "histories": [0], "layers": [3],
+            "geometry": sidecarGeometry(chunkTokens: 1024),
+            "aneCompileVerified": true,
+        ]
+        try JSONSerialization.data(withJSONObject: meta)
+            .write(to: sidecar.appendingPathComponent("ane_prefill.json"))
+        do {
+            _ = try ANEPrefillAttention(
+                modelDirectory: dir, device: ctx.device,
+                hiddenSize: 2048, kvDim: 512, weightsSha256: nil,
+                family: .qwen36, fullAttentionLayerMask: fullMask(layers: [3]),
+                sparseIndexer: .none, configChunkTokens: 4096)
+            Issue.record("a 1,024-token sidecar loaded under a 4,096 chunk")
+        } catch {
+            // Names the fix, so the operator does not have to guess the width.
+            #expect("\(error)".contains("--chunk 4096"))
+        }
     }
 
     @Test func shadowAppendSkipsPartialChunksAndStoresFullOnes() throws {
@@ -320,7 +394,8 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
                                           weightsSha256: nil,
                                           family: .qwen36,
                                           fullAttentionLayerMask: fullMask(layers: [3], count: 8),
-                                        sparseIndexer: .none)
+                                          sparseIndexer: .none,
+                                          configChunkTokens: 8)
         let kPtr = ane.stagingK.contents().bindMemory(to: Float16.self,
                                                       capacity: 8 * 4)
         for index in 0..<(8 * 4) { kPtr[index] = Float16(index) }

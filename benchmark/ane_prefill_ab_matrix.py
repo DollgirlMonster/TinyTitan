@@ -40,6 +40,11 @@ RESULTS = ROOT / "benchmark/ane-prefill"
 PREFILL_CHUNK = 4096
 FALLBACK_MARKER = "ane-prefill fallback"
 NO_SIDECAR_MARKER = "is missing; run "
+# One token: prefill is the metric, and a longer continuation only adds decode
+# time. It does cost the digest its diagnostic value — with a single greedy
+# token both arms usually emit the same one — so treat the digests as a
+# determinism check, not as evidence the arms differ.
+MAX_NEW = 1
 
 FOOTER = re.compile(
     r"\[stop=(\S+) prefill=(\d+)tok/([\d.]+)s new=(\d+)tok decode=([\d.]+)s "
@@ -48,16 +53,21 @@ FOOTER = re.compile(
 # A fixed, self-contained body. Deriving it from repo files would make the
 # prompt length move whenever those files are edited, and prompt length is the
 # quadratic term this benchmark is about.
+#
+# It is deliberately *just* over one chunk (~4,300 tokens, measured at ~5.3
+# characters per token for this text): the ANE only serves a full 4,096-token
+# chunk, so a short prompt would measure two GPU arms and call one of them
+# "ANE". Shorter is faster; below ~21,750 characters it is meaningless.
 PARAGRAPH = (
     "Swift and C++ differ in memory management, dispatch, compilation and type "
     "safety, and a fair comparison names each axis before it judges either "
     "language. ")
-PROMPT_CHARACTERS = 32_000
+PROMPT_CHARACTERS = 23_000
 
 
-def prompt() -> str:
-    repeats = PROMPT_CHARACTERS // len(PARAGRAPH) + 1
-    return (PARAGRAPH * repeats)[:PROMPT_CHARACTERS]
+def prompt(characters: int = PROMPT_CHARACTERS) -> str:
+    repeats = characters // len(PARAGRAPH) + 1
+    return (PARAGRAPH * repeats)[:characters]
 
 
 def parse_footer(stderr: str) -> dict | None:
@@ -74,12 +84,14 @@ def parse_footer(stderr: str) -> dict | None:
     }
 
 
-def run_arm(model: str, ane: bool, timeout: int = 3600) -> dict:
+def run_arm(model: str, ane: bool, characters: int, chunk: int,
+            timeout: int = 3600) -> dict:
     env = os.environ.copy()
     env["TINYTITAN_PREFILL_ANE"] = "on" if ane else "off"
-    command = [str(CLI), "--model", str(MODELS_DIR / model), "--prompt", prompt(),
-               "--max-new", "1", "--temperature", "0",
-               "--prefill-chunk", str(PREFILL_CHUNK)]
+    command = [str(CLI), "--model", str(MODELS_DIR / model),
+               "--prompt", prompt(characters),
+               "--max-new", str(MAX_NEW), "--temperature", "0",
+               "--prefill-chunk", str(chunk)]
     proc = subprocess.run(command, capture_output=True, text=True, env=env,
                           cwd=ROOT, timeout=timeout)
     arm: dict = {"ane": ane, "exit": proc.returncode}
@@ -109,31 +121,35 @@ def run_arm(model: str, ane: bool, timeout: int = 3600) -> dict:
     return arm
 
 
-def measure(model: str, pairs: int) -> dict:
-    """Warm both arms, then interleave off/on/on/off `pairs` times.
+def measure(model: str, repeats: int, characters: int,
+            chunk: int) -> dict:
+    """Warm both arms, then alternate `repeats` measured runs per arm.
 
-    The OFF arm is measured once *before* the ANE arm is attempted, so a model
-    the ANE cannot serve — no sidecar, or one whose geometry the runtime
-    refuses — still reports its GPU prefill time instead of only the refusal.
-    That is the Qwen 3.8 case: it runs, and the ANE is structurally unavailable
-    because its sparse indexer is not what a dense sidecar computes.
+    The warm-ups are discarded because the first ANE run pays Core ML's compile
+    (~68 s against an 86 s prefill on AgentWorld 4-bit). One OFF run is measured
+    before the ANE arm is attempted, so a model the ANE cannot serve — no
+    sidecar, or one whose geometry the runtime refuses — still reports its GPU
+    prefill time instead of only the refusal. That is the Qwen 3.8 case.
     """
     arms: dict[str, list[dict]] = {"off": [], "on": []}
-    warm_off = run_arm(model, False)
+    warm_off = run_arm(model, False, characters, chunk)
     if "error" in warm_off:
         return {"model": model, "arms": arms,
                 "error": f"off warm-up: {warm_off['error']}"}
-    arms["off"].append(run_arm(model, False))
+    arms["off"].append(run_arm(model, False, characters, chunk))
     if "error" in arms["off"][-1]:
         return {"model": model, "arms": arms,
                 "error": f"off arm: {arms['off'][-1]['error']}"}
-    warm_on = run_arm(model, True)
+    warm_on = run_arm(model, True, characters, chunk)
     if "error" in warm_on:
         return {"model": model, "arms": arms, "ane_unavailable": warm_on["error"]}
-    arms["on"].append(run_arm(model, True))
-    for _ in range(pairs):
-        for ane in (False, True, True, False):
-            run = run_arm(model, ane)
+    arms["on"].append(run_arm(model, True, characters, chunk))
+    if "error" in arms["on"][-1]:
+        return {"model": model, "arms": arms,
+                "error": f"on arm: {arms['on'][-1]['error']}"}
+    for _ in range(max(0, repeats - 1)):
+        for ane in (False, True):
+            run = run_arm(model, ane, characters, chunk)
             if "error" in run:
                 return {"model": model, "arms": arms,
                         "error": f"{'on' if ane else 'off'} arm: {run['error']}"}
@@ -141,7 +157,7 @@ def measure(model: str, pairs: int) -> dict:
     return {"model": model, "arms": arms}
 
 
-def summarize(record: dict) -> dict:
+def summarize(record: dict, chunk: int = PREFILL_CHUNK) -> dict:
     out: dict = {"model": record["model"]}
     if "error" in record:
         out["error"] = record["error"]
@@ -165,7 +181,15 @@ def summarize(record: dict) -> dict:
         }
     off = out.get("off", {}).get("prefill_seconds_median")
     on = out.get("on", {}).get("prefill_seconds_median")
-    if off and on and out.get("on", {}).get("used_ane"):
+    # The ANE serves a full chunk or a continuation of one, so a prompt that
+    # does not reach 4,096 tokens measures two GPU arms. Say so rather than
+    # report "no speedup", which reads like a finding about the ANE.
+    tokens = out.get("off", {}).get("prefill_tokens")
+    if tokens and tokens < chunk:
+        out["prompt_too_short"] = (
+            f"{tokens} prompt tokens is under one {chunk}-token chunk; "
+            f"the ANE cannot engage, so these are two GPU arms")
+    if off and on and out.get("on", {}).get("used_ane") and "prompt_too_short" not in out:
         out["speedup"] = off / on
         out["saved_seconds"] = off - on
     return out
@@ -180,6 +204,8 @@ def format_row(r: dict) -> str:
     note = ""
     if "ane_unavailable" in r:
         note = f"ANE unavailable: {r['ane_unavailable'][:70]}"
+    elif "prompt_too_short" in r:
+        note = r["prompt_too_short"]
     elif r["on"].get("used_ane") is False:
         note = "ANE arm fell back to the GPU"
     elif not r["off"].get("used_ane", True):
@@ -191,13 +217,15 @@ def format_row(r: dict) -> str:
             f"{str(r.get('on', {}).get('used_ane')):>9}  {note}")
 
 
-def new_record(pairs: int) -> dict:
+def new_record(repeats: int, characters: int, max_new: int,
+               chunk: int = PREFILL_CHUNK) -> dict:
     return {
         "recorded_at": datetime.datetime.now(
             datetime.timezone.utc).isoformat(timespec="seconds"),
-        "prompt_characters": PROMPT_CHARACTERS,
-        "prefill_chunk": PREFILL_CHUNK,
-        "pairs": pairs,
+        "prompt_characters": characters,
+        "prefill_chunk": chunk,
+        "max_new_tokens": max_new,
+        "repeats_per_arm": repeats,
         "results": [],
     }
 
@@ -224,8 +252,22 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", nargs="+", required=True,
                         help="install directory names under models/")
-    parser.add_argument("--pairs", type=int, default=1,
-                        help="off/on/on/off blocks per model (default 1)")
+    parser.add_argument("--repeats", type=int, default=2,
+                        help="measured runs per arm (default 2). Each arm also "
+                             "gets one discarded warm-up, which the first ANE "
+                             "run needs for Core ML's compile")
+    parser.add_argument("--prompt-characters", type=int,
+                        default=PROMPT_CHARACTERS,
+                        help=f"prompt size (default {PROMPT_CHARACTERS}, about "
+                             f"4,300 tokens). Below ~21,750 the prompt does not "
+                             f"reach one full {PREFILL_CHUNK}-token chunk and "
+                             f"the ANE cannot engage at all")
+    parser.add_argument("--prefill-chunk", type=int, default=PREFILL_CHUNK,
+                        help=f"the runtime's prefill chunk (default "
+                             f"{PREFILL_CHUNK}). It must equal the sidecar's "
+                             f"chunk, so it also picks which sidecar directory "
+                             f"is loaded — a model can carry several widths "
+                             f"(ane_prefill-1024 beside ane_prefill)")
     parser.add_argument("--label", default=None)
     parser.add_argument("--record", action="store_true",
                         help="write benchmark/ane-prefill/<label>.json, after "
@@ -235,8 +277,14 @@ def main() -> int:
                              "the record (this is how a held run resumes)")
     args = parser.parse_args()
 
+    if args.prompt_characters < 21_750:
+        print(f"warning: {args.prompt_characters} characters is likely under "
+              f"one full {PREFILL_CHUNK}-token chunk, so the ANE arm would "
+              f"measure the GPU path", file=sys.stderr)
+
     path = None
-    record = new_record(args.pairs)
+    record = new_record(args.repeats, args.prompt_characters, MAX_NEW,
+                                                          args.prefill_chunk)
     if args.record:
         RESULTS.mkdir(parents=True, exist_ok=True)
         label = args.label or datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -246,7 +294,8 @@ def main() -> int:
                 record = json.loads(path.read_text())
                 record.setdefault("results", [])
             except ValueError:
-                record = new_record(args.pairs)
+                record = new_record(args.repeats, args.prompt_characters, MAX_NEW,
+                                                          args.prefill_chunk)
     done = stored_models(record)
     if args.skip_done and done:
         print(f"resuming {path.name}: {len(done)} model(s) already measured",
@@ -263,7 +312,8 @@ def main() -> int:
         if args.skip_done and name in done:
             print(f"{name:<44} skipped (already in {path.name})", flush=True)
             continue
-        result = summarize(measure(name, args.pairs))
+        result = summarize(measure(name, args.repeats, args.prompt_characters,
+                                   args.prefill_chunk), args.prefill_chunk)
         print(format_row(result), flush=True)
         if path is not None:
             store_result(record, result)
