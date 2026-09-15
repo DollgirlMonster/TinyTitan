@@ -1,0 +1,89 @@
+"""The ANE-vs-GPU prefill harness: what it reads, and what it refuses to claim.
+
+`benchmark/ane_prefill_ab_matrix.py` decides the number a release would quote,
+so the two things that can make it lie are pinned here:
+
+- the **footer parse** — prefill seconds come from the CLI's own footer, and a
+  run that produced no footer must not be mistaken for a fast one;
+- the **speedup** — an ANE arm that printed the runtime's GPU-fallback line did
+  not use the ANE, so its time is a GPU time and no ratio may be reported from
+  it. That is the check that would have caught the "3.8 was tested" illusion,
+  where the switch was on and the model ran entirely on the GPU.
+
+No model, no binary, no ANE.
+
+Run from this directory, like the other benchmark tests:
+
+    cd benchmark && python3 -m unittest test_ane_prefill_ab_matrix -v
+"""
+from __future__ import annotations
+
+import pathlib
+import sys
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "benchmark"))
+
+import ane_prefill_ab_matrix as ab  # noqa: E402
+
+
+def arm(seconds: float, used_ane: bool = True, digest: str = "d") -> dict:
+    return {"prefill_seconds": seconds, "prefill_tokens": 6027,
+            "used_ane": used_ane, "response_sha256": digest,
+            "response_head": "for", "exit": 0}
+
+
+def record(off: list[dict], on: list[dict]) -> dict:
+    return {"model": "qwen3.5_2B_4Bit", "arms": {"off": off, "on": on}}
+
+
+class ParseFooterTests(unittest.TestCase):
+    def test_reads_prefill_seconds_and_tokens(self):
+        footer = ("[stop=maxTokens prefill=6027tok/74.25s new=1tok "
+                  "decode=0.00s tok/s=2109.811]")
+        parsed = ab.parse_footer("loading\n" + footer + "\n")
+        self.assertEqual(parsed["finish"], "maxTokens")  # the stop reason
+        self.assertEqual(parsed["prefill_tokens"], 6027)
+        self.assertAlmostEqual(parsed["prefill_seconds"], 74.25)
+
+    def test_no_footer_is_none_rather_than_zero(self):
+        self.assertIsNone(ab.parse_footer("error: something went wrong\n"))
+
+
+class SummaryTests(unittest.TestCase):
+    def test_median_prefill_and_speedup(self):
+        summary = ab.summarize(record(
+            [arm(74.0), arm(74.4)], [arm(47.5), arm(47.7)]))
+        self.assertAlmostEqual(summary["off"]["prefill_seconds_median"], 74.2)
+        self.assertAlmostEqual(summary["on"]["prefill_seconds_median"], 47.6)
+        self.assertAlmostEqual(summary["speedup"], 74.2 / 47.6, places=3)
+
+    def test_an_arm_that_fell_back_reports_no_speedup(self):
+        # The runtime said "using the GPU path", so the time is a GPU time.
+        summary = ab.summarize(record([arm(74.0)], [arm(73.9, used_ane=False)]))
+        self.assertFalse(summary["on"]["used_ane"])
+        self.assertNotIn("speedup", summary)
+
+    def test_a_mixed_arm_is_not_treated_as_using_the_ane(self):
+        summary = ab.summarize(record(
+            [arm(74.0)], [arm(47.5, used_ane=True), arm(74.0, used_ane=False)]))
+        self.assertFalse(summary["on"]["used_ane"])
+        self.assertNotIn("speedup", summary)
+
+    def test_a_failed_measurement_is_reported_not_summarized(self):
+        summary = ab.summarize({"model": "m", "arms": {"off": [], "on": []},
+                                "error": "off warm-up: no sidecar"})
+        self.assertIn("no sidecar", summary["error"])
+
+    def test_differing_digests_are_kept_visible(self):
+        # The ANE is not bit-identical to the GPU by construction; the summary
+        # records both digests rather than pretending the arms agree.
+        summary = ab.summarize(record([arm(74.0, digest="gpu")],
+                                      [arm(47.5, digest="ane")]))
+        self.assertEqual(summary["off"]["digests"], ["gpu"])
+        self.assertEqual(summary["on"]["digests"], ["ane"])
+
+
+if __name__ == "__main__":
+    unittest.main()
