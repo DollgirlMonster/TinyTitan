@@ -45,6 +45,9 @@ NO_SIDECAR_MARKER = "is missing; run "
 # token both arms usually emit the same one — so treat the digests as a
 # determinism check, not as evidence the arms differ.
 MAX_NEW = 1
+# Measured for this text: 23,000 characters is 4,333 tokens. Used only to warn
+# when a prompt cannot reach one full chunk, i.e. when the ANE cannot engage.
+CHARACTERS_PER_TOKEN = 5.31
 
 FOOTER = re.compile(
     r"\[stop=(\S+) prefill=(\d+)tok/([\d.]+)s new=(\d+)tok decode=([\d.]+)s "
@@ -259,9 +262,8 @@ def main() -> int:
     parser.add_argument("--prompt-characters", type=int,
                         default=PROMPT_CHARACTERS,
                         help=f"prompt size (default {PROMPT_CHARACTERS}, about "
-                             f"4,300 tokens). Below ~21,750 the prompt does not "
-                             f"reach one full {PREFILL_CHUNK}-token chunk and "
-                             f"the ANE cannot engage at all")
+                             f"4,300 tokens). The prompt must reach one full "
+                             f"--prefill-chunk or the ANE cannot engage at all")
     parser.add_argument("--prefill-chunk", type=int, default=PREFILL_CHUNK,
                         help=f"the runtime's prefill chunk (default "
                              f"{PREFILL_CHUNK}). It must equal the sidecar's "
@@ -277,10 +279,11 @@ def main() -> int:
                              "the record (this is how a held run resumes)")
     args = parser.parse_args()
 
-    if args.prompt_characters < 21_750:
-        print(f"warning: {args.prompt_characters} characters is likely under "
-              f"one full {PREFILL_CHUNK}-token chunk, so the ANE arm would "
-              f"measure the GPU path", file=sys.stderr)
+    chunk_floor = int(args.prefill_chunk * CHARACTERS_PER_TOKEN)
+    if args.prompt_characters < chunk_floor:
+        print(f"warning: {args.prompt_characters} characters is under one full "
+              f"{args.prefill_chunk}-token chunk (~{chunk_floor} characters), so "
+              f"the ANE arm would measure the GPU path", file=sys.stderr)
 
     path = None
     record = new_record(args.repeats, args.prompt_characters, MAX_NEW,
