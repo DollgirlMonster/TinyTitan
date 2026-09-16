@@ -25,8 +25,10 @@
  * @module dsh-tinytitan
  */
 import { resolveConfig } from "./config.js";
+import { findModelsDir } from "./generate.js";
 import { registerRoute } from "./route.js";
 import { ensureCompactionPreset } from "./setup.js";
+import { watchModels } from "./models-watch.js";
 
 /** Plugin name, as the harness registry shows it. */
 export const name = "dsh-tinytitan";
@@ -39,6 +41,8 @@ export {
   resolveConfig,
 } from "./config.js";
 export { registerRoute, routeScript } from "./route.js";
+export { DEFAULT_DEBOUNCE_MS, watchModels } from "./models-watch.js";
+export { scanModelsFolder } from "./catalog-scan.js";
 export {
   applyRouteToSettings,
   catalogRows,
@@ -87,6 +91,27 @@ export function apply(ctx, config = {}) {
       ensureCompactionPreset({ ...resolved, log });
     } catch (error) {
       log(`dsh-tinytitan: compaction preset threw: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+  // Boot writes the route once; a folder that changes during the session has to
+  // reach the picker too, because installing a model and using it are the same
+  // sitting. The watcher is closed on disposal so it cannot outlive the plugin.
+  if (resolved.registerRoute && resolved.watchModels) {
+    try {
+      const modelsDir = findModelsDir({
+        explicit: resolved.modelsDir, env: process.env, repoRoot: resolved.repoRoot,
+      });
+      const handle = watchModels({
+        modelsDir,
+        debounceMs: resolved.watchDebounceMs,
+        log,
+        refresh: () => registerRoute({ ...resolved, log }),
+      });
+      if (handle.watching && typeof ctx?.on === "function") {
+        ctx.on("dispose", () => handle.close());
+      }
+    } catch (error) {
+      log(`dsh-tinytitan: models watch threw: ${error instanceof Error ? error.message : error}`);
     }
   }
 }

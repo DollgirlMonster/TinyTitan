@@ -99,6 +99,20 @@ export function findRepoRoot({ explicit, env = process.env, moduleUrl = import.m
 }
 
 /**
+ * How long to wait after the last `models/` change before refreshing.
+ *
+ * An install writes thousands of files, so the route is rebuilt once per quiet
+ * period rather than once per event.
+ */
+function resolveDebounce(value) {
+  const ms = Number(value ?? 2000);
+  if (!Number.isFinite(ms) || ms < 0) {
+    throw new Error(`dsh-tinytitan: watchDebounceMs must be milliseconds, got ${value}`);
+  }
+  return ms;
+}
+
+/**
  * Resolve the plugin config.
  * @param config - the raw row config.
  * @returns the resolved config, with every field a value.
@@ -133,6 +147,12 @@ export function resolveConfig(config = {}) {
     // Three switches, so an operator can take one job at a time:
     registerRoute: config.registerRoute !== false,
     writeCompactionPreset: config.writeCompactionPreset !== false,
+    // Keep watching `models/` after boot, so installing or deleting a model
+    // reaches the picker without restarting the harness. A machine where the
+    // folder is on a slow volume, or an operator who would rather refresh by
+    // hand, can turn it off.
+    watchModels: config.watchModels !== false,
+    watchDebounceMs: resolveDebounce(config.watchDebounceMs),
     // Re-point the *current* default preset's stock compaction row at this
     // backend. Off means "only the preset this plugin owns", which the person
     // then has to select themselves.

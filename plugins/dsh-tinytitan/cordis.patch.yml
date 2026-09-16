@@ -19,6 +19,9 @@
         # override both.
         provider: tinytitan
         registerRoute: true
+        # Keep the route in step with models/ after boot, so an install or a
+        # deletion reaches the picker without restarting the harness.
+        watchModels: true
         selfContained: false
         writeCompactionPreset: true
         adoptDefaultPreset: true

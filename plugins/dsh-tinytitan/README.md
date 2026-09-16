@@ -63,6 +63,8 @@ out, and `TINYTITAN_PORT` / `TINYTITAN_REPO` / `TINYTITAN_SERVER` /
 | `provider` | `tinytitan` | the `llm-pi-ai` provider route name |
 | `presetId` | `tinytitan` | the agent preset this plugin generates |
 | `registerRoute` | `true` | refresh the route block from `tools/dsh_route.sh` |
+| `watchModels` | `true` | keep watching `models/` and refresh when an install appears or disappears |
+| `watchDebounceMs` | `2000` | how long the folder has to be quiet before the refresh runs |
 | `selfContained` | `false` | use the built-in generator even where `tools/dsh_route.sh` exists |
 | `serverBinary` | discovered | the `TinyTitanServer` the built-in generator runs (`$TINYTITAN_SERVER`) |
 | `modelsDir` | `<repoRoot>/models` | the installs it describes (`$TINYTITAN_MODELS_DIR`) |
@@ -78,6 +80,21 @@ The built-in generator looks for the server at `serverBinary`, then
 release build; it looks for models at `modelsDir`, then `TINYTITAN_MODELS_DIR`,
 then `<repoRoot>/models`. It refuses to write when the settings file does not
 exist, and it makes no backup when the refresh would not change a byte.
+
+**With no server built, the folder is read directly.** The catalog normally comes
+from `TinyTitanServer --catalog`, which is the authority on what an install is.
+A profile that has installed models but has not built the server yet has nothing
+to ask, so `src/catalog-scan.js` walks `models/` itself — the same rules, mirroring
+`ModelCatalog.swift`, and `test/catalog-scan.test.js` compares its rows against
+the binary's own output on the same folder so the two cannot drift. A binary that
+exists but fails is treated the same way, and the reason goes to the log.
+
+**The route follows the folder while the harness runs.** An install is a long
+download someone starts and then wants to use, so `models/` is watched and the
+route is rebuilt once the folder goes quiet (`watchDebounceMs`). Deletions count
+too: a removed model stops being offered. The watcher is non-persistent and
+unref'd — it never keeps the process alive — and a platform where watching fails
+falls back to the boot-time refresh with a log line.
 
 ## What it does not do
 

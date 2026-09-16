@@ -22,6 +22,8 @@ import { accessSync, constants, copyFileSync, existsSync, readFileSync, statSync
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
+import { scanModelsFolder } from "./catalog-scan.js";
+
 /** The block's defaults, copied from `tools/dsh_route.sh`'s own. */
 export const ROUTE_DEFAULTS = Object.freeze({
   port: 8080,
@@ -473,34 +475,48 @@ export function generateRoute({
   stamp = new Date().toISOString().replace(/[:.]/g, "-"),
   backup = true,
 } = {}) {
-  const binary = findServerBinary({ explicit: serverBinary, env, repoRoot, home, isExecutable });
-  if (binary === null) {
-    const detail = "no TinyTitan server binary (set serverBinary or TINYTITAN_SERVER)";
-    log(`dsh-tinytitan: ${detail}; leaving the llm-pi-ai route as it is`);
-    return { status: "missing", detail, serverBinary: null, modelsDir: null };
-  }
   const directory = findModelsDir({ explicit: modelsDir, env, repoRoot, isDirectory });
   if (directory === null) {
     const detail = "no models directory (set modelsDir or TINYTITAN_MODELS_DIR)";
     log(`dsh-tinytitan: ${detail}; leaving the llm-pi-ai route as it is`);
-    return { status: "missing", detail, serverBinary: binary, modelsDir: null };
+    return { status: "missing", detail, serverBinary: null, modelsDir: null };
   }
+  const binary = findServerBinary({ explicit: serverBinary, env, repoRoot, home, isExecutable });
 
-  let catalog;
-  try {
-    const stdout = run(binary, ["--catalog", "--models-dir", directory],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    catalog = JSON.parse(String(stdout));
-  } catch (error) {
-    const detail = String(error?.stderr ?? error?.message ?? error).trim().split("\n")[0]
-      || "the server catalog could not be read";
-    log(`dsh-tinytitan: the server catalog failed: ${detail}`);
-    return { status: "failed", detail, serverBinary: binary, modelsDir: directory };
+  // The server is the authority on the catalog while it can answer. A profile
+  // that installed models but has not built the server yet has nothing to ask,
+  // so the folder is read directly -- the same rules, mirrored in
+  // `catalog-scan.js` and pinned against the binary's own output by the tests.
+  // A binary that exists but fails is treated the same way: a working picker
+  // beats a stale route, and the reason goes to the log.
+  let catalog = null;
+  let source = "folder";
+  if (binary !== null) {
+    try {
+      const stdout = run(binary, ["--catalog", "--models-dir", directory],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      const parsed = JSON.parse(String(stdout));
+      if (parsed !== null && typeof parsed === "object" && Array.isArray(parsed.models)) {
+        catalog = parsed;
+        source = "server";
+      } else {
+        log('dsh-tinytitan: the server catalog carried no "models" list; reading models/ directly');
+      }
+    } catch (error) {
+      const detail = String(error?.stderr ?? error?.message ?? error).trim().split("\n")[0]
+        || "the server catalog could not be read";
+      log(`dsh-tinytitan: the server catalog failed (${detail}); reading models/ directly`);
+    }
+  } else {
+    log("dsh-tinytitan: no TinyTitan server binary (set serverBinary or TINYTITAN_SERVER); "
+      + "reading models/ directly");
   }
-  if (catalog === null || typeof catalog !== "object" || !Array.isArray(catalog.models)) {
-    const detail = 'the server catalog carried no "models" list';
-    log(`dsh-tinytitan: ${detail}; leaving the llm-pi-ai route as it is`);
-    return { status: "failed", detail, serverBinary: binary, modelsDir: directory };
+  if (catalog === null) {
+    const scanned = scanModelsFolder(directory, { env });
+    for (const skip of scanned.skipped) {
+      log(`dsh-tinytitan: skipping ${skip.path}: ${skip.reason}`);
+    }
+    catalog = { models: scanned.models };
   }
   const rows = catalogRows(catalog.models);
   if (rows.length === 0) {
@@ -520,7 +536,8 @@ export function generateRoute({
     const block = buildBlock(rows, { port, provider, context, maxTokens, reasoning });
     const written = writeRouteSettings({ settingsPath: path, block, stamp, backup });
     const detail = written.changed ? "written" : "already current";
-    log(`dsh-tinytitan: route refreshed with the built-in generator (${rows.length} model(s), ${detail})`);
+    log(`dsh-tinytitan: route refreshed with the built-in generator `
+      + `(${rows.length} model(s) from the ${source}, ${detail})`);
     return {
       status: "written-self-contained",
       detail,
@@ -528,6 +545,7 @@ export function generateRoute({
       modelsDir: directory,
       settingsPath: path,
       models: rows.length,
+      source,
       backup: written.backup,
     };
   } catch (error) {

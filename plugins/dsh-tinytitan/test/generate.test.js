@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -330,31 +330,56 @@ test("generateRoute discovers the binary, parses stdout, and writes the block", 
   assert.equal(again.backup, null);
 });
 
-test("generateRoute reports absent prerequisites and a broken catalog", () => {
-  const missing = generateRoute({ env: { PATH: "" }, home: "/none", log: () => {},
-                                  isExecutable: () => false });
-  assert.equal(missing.status, "missing");
-  assert.match(missing.detail, /no TinyTitan server binary/);
-
+test("generateRoute reports absent prerequisites and a broken catalog", (t) => {
+  // No models directory is the one prerequisite nothing can work around.
   const noModels = generateRoute({ serverBinary: "/x/TinyTitanServer", env: { PATH: "" },
                                    isExecutable: () => true, isDirectory: () => false,
                                    log: () => {} });
   assert.equal(noModels.status, "missing");
   assert.match(noModels.detail, /no models directory/);
 
-  const broken = generateRoute({ serverBinary: "/x/TinyTitanServer", modelsDir: "/models",
+  // A binary that fails is a reason to read the folder, not to give up: an
+  // empty folder says so instead, and the binary's own words are logged.
+  const emptyDir = mkdtempSync(join(tmpdir(), "dsh-tinytitan-empty-models-"));
+  const messages = [];
+  const broken = generateRoute({ serverBinary: "/x/TinyTitanServer", modelsDir: emptyDir,
                                  env: { PATH: "" }, isExecutable: () => true,
                                  isDirectory: () => true,
-                                 run: () => { throw new Error("exit 2"); }, log: () => {} });
+                                 run: () => { throw new Error("exit 2"); },
+                                 log: (message) => messages.push(message) });
   assert.equal(broken.status, "failed");
-  assert.equal(broken.detail, "exit 2");
+  assert.match(broken.detail, /describes no servable install/);
+  assert.ok(messages.some((message) => /server catalog failed \(exit 2\)/.test(message)),
+            `the binary's own failure must be logged: ${JSON.stringify(messages)}`);
 
-  const empty = generateRoute({ serverBinary: "/x/TinyTitanServer", modelsDir: "/models",
+  const empty = generateRoute({ serverBinary: "/x/TinyTitanServer", modelsDir: emptyDir,
                                 env: { PATH: "" }, isExecutable: () => true,
                                 isDirectory: () => true, run: () => JSON.stringify({ models: [] }),
                                 log: () => {} });
   assert.equal(empty.status, "failed");
   assert.match(empty.detail, /describes no servable install/);
+
+  // A populated folder with no binary at all is the case the folder scan is
+  // for: the route is written from what is on disk.
+  const dshHome = mkdtempSync(join(tmpdir(), "dsh-tinytitan-home-"));
+  writeFileSync(join(dshHome, "settings.yaml"), "ui-theme:\n  preference: dark\n");
+  const directory = join(emptyDir, "qwen3.5_2B_4Bit");
+  mkdirSync(join(directory, "tokenizer"), { recursive: true });
+  writeFileSync(join(directory, "manifest.json"), JSON.stringify({
+    magic: "GTURBO", modelID: "qwen3.5-2b",
+    quant: { routedExpert: { weightBits: 4 } },
+    arch: { family: "qwen3_5_dense", hiddenActivation: "silu" },
+  }));
+  writeFileSync(join(directory, "tokenizer", "tokenizer.json"), "{}");
+  const scanned = generateRoute({ env: { PATH: "" }, dshHome, modelsDir: emptyDir,
+                                  serverBinary: null, isExecutable: () => false,
+                                  backup: false, log: () => {} });
+  assert.equal(scanned.status, "written-self-contained");
+  assert.equal(scanned.source, "folder");
+  assert.equal(scanned.models, 1);
+  const written = readFileSync(join(dshHome, "settings.yaml"), "utf8");
+  assert.ok(written.includes("- id: qwen3.5-2b_4-Bit"));
+  assert.ok(written.includes("name: Qwen 3.5 2B (4-bit)"));
 });
 
 test("registerRoute falls back to the generator when the checkout tool is absent", () => {
