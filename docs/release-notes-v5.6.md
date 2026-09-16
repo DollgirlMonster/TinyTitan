@@ -156,14 +156,29 @@ range:
 
 ### Verification
 
-On this commit before the tag: five lint gates clean (2,108 functions scanned),
-**1,566 tests in 237 suites**, 125 Python tests in `benchmark/`, and a clean
-release build. The release dry run additionally verifies every installed model
-that has a golden baseline — the 125B at both widths, AgentWorld 4-bit and the
-dense 2B/4B/9B at both widths — builds a clean scratch tree with the warning scan,
-and stages the archive. Golden targets with no install here (Ornith, Qwen 3.6,
-KAT-Coder) are reported *not checked*, as always: nothing is fetched to make a
-gate pass.
+Measured on this commit, by the release dry run:
+
+- five lint gates clean, **2,108 functions** scanned;
+- **1,566 tests in 237 suites**, all passing;
+- **9 golden baselines byte-identical**: the 125B at both widths, AgentWorld
+  4-bit, and the dense 2B/4B/9B at both widths;
+- a clean scratch release build with the compiler-warning scan clean, and the
+  archive staged and packaged from that tree.
+
+**Seven golden targets are not checked**, because their install is not under
+`models/` and nothing may be fetched to change that: `ornith-8`, `ornith-4`,
+`qwen36-4`, `qwen36-8`, `agentworld-8`, `katcoder-4`, `katcoder-8`.
+
+The engine's own speeds are recorded against the 5.5 baseline and committed with
+this release (`benchmark/internal-speeds/v5.6*.json`). The first pass ran
+immediately after the golden gate and measured **every** kernel bandwidth low at
+once — `gpu.qkv_gemv` 55.4 GB/s against the 64.9 GB/s baseline, a 14.6 % drop,
+which blocks a release — while generation throughput in the same pass was *up*
+5.8 %. Re-measured on an idle machine, every metric came back inside the
+threshold (`gpu.qkv_gemv` 74.3 GB/s, +14.5 %), so the drop was machine state left
+by nine golden baselines rather than a regression; nothing in this release
+touched a GEMV kernel. Both records are committed, and the idle pass is the
+release record.
 
 ### Checksum
 
