@@ -159,6 +159,20 @@ function effortsLines(levels) {
   return lines;
 }
 
+/**
+ * The label the DSH picker renders.
+ *
+ * The picker shows `name` and nothing else, while a catalog's display name
+ * carries no width -- `Qwen 3.5 2B` names both the 4-bit and the 8-bit install,
+ * so the two rows arrived looking identical and the width could not be picked.
+ * The routed width is always on the id (`..._4-Bit`), which is where the shell
+ * tool reads it too, so the two implementations stay byte-identical.
+ */
+function routeLabel(name, id) {
+  const match = /_(\d+)-Bit$/.exec(id);
+  return match === null ? name : `${name} (${match[1]}-bit)`;
+}
+
 /** Build the block from already-normalized rows. */
 function buildBlock(rows, options) {
   const port = String(options.port ?? ROUTE_DEFAULTS.port);
@@ -195,7 +209,7 @@ function buildBlock(rows, options) {
   for (const row of rows) {
     lines.push(
       `        - id: ${row.id}`,
-      `          name: ${row.name}`,
+      `          name: ${routeLabel(row.name, row.id)}`,
       `          contextWindow: ${context}`,
       `          maxTokens: ${maxTokens}`,
       ...effortsLines(row.levels),

@@ -83,6 +83,13 @@ const SYNTHETIC = [
     engines: "gpu,cpu", path: "/models/cpu_4Bit", thinking: ["xhigh", "off", "medium"] },
   { id: "gpu-on_8-Bit", name: "GPU Binary", family: "qwen36", quant: 8, backend: "gpu",
     engines: "gpu", path: "/models/gpu_8Bit", thinking: ["on", "off"] },
+  // Two widths of one model, named identically by the catalog. The picker
+  // renders `name` and nothing else, so this pair is what proves the label
+  // carries the width.
+  { id: "twin_4-Bit", name: "Twin 2B", family: "f_dense", quant: 4, backend: "gpu",
+    engines: "gpu", path: "/models/twin_4Bit", thinking: ["off", "on"] },
+  { id: "twin_8-Bit", name: "Twin 2B", family: "f_dense", quant: 8, backend: "gpu",
+    engines: "gpu", path: "/models/twin_8Bit", thinking: ["off", "on"] },
   // A string where a list belongs: the shell parser iterates it per character.
   { id: "string_4-Bit", name: "String Levels", family: "f_dense", quant: 4, backend: "cpu",
     engines: "cpu", path: "/models/string_4Bit", thinking: "off" },
@@ -113,7 +120,13 @@ test("the shell tool and the generator agree on a synthetic catalog", (t) => {
   const block = generateBlock(SYNTHETIC);
   assert.equal(block, printed);
   assert.deepEqual([...block.matchAll(/^        - id: (.+)$/gm)].map((match) => match[1]),
-                   ["gpu-on_8-Bit", "cpu_4-Bit", "string_4-Bit"]);
+                   ["gpu-on_8-Bit", "twin_4-Bit", "twin_8-Bit", "cpu_4-Bit", "string_4-Bit"]);
+  // One label per row, and the width in it: the picker shows `name` alone, so
+  // two widths of one model would otherwise arrive as the same row twice.
+  const labels = [...block.matchAll(/^ {10}name: (.+)$/gm)].map((match) => match[1]);
+  assert.equal(new Set(labels).size, labels.length, "every picker label must be unique");
+  assert.ok(labels.includes("Twin 2B (4-bit)") && labels.includes("Twin 2B (8-bit)"),
+            `the width must be on the label: ${JSON.stringify(labels)}`);
   // Levels follow pi-ai's order, not the catalog's.
   assert.ok(block.includes("          reasoningEfforts:\n            off:\n            medium: medium\n            xhigh: xhigh\n"));
 });
