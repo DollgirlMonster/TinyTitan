@@ -49,6 +49,12 @@ the conventions, `tests/` mirrors `sources/` path for path and never loads a mod
 and user and engineering documentation lives in the
 [GitHub Wiki](https://github.com/Pummelchen/TinyTitan/wiki).
 
+The wiki is a **separate repository** (`TinyTitan.wiki.git`, branch `master`,
+usually cloned at the gitignored `.qwen/wiki`), and `docs/site/` articles are
+committed here. Publishing is therefore **two pushes** — `main` to this
+repository and `master` to the wiki — and a request to push or publish a change
+means both, whether or not the change touched the wiki.
+
 ```bash
 swift build -c release
 .build/release/TinyTitanMac
