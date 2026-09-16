@@ -136,6 +136,37 @@ exactly. Do not enable experimental controls or profiling. Launch helpers live i
 Report the commit, hardware and RAM, macOS, Swift version, exact command, exit code,
 complete timing footer or error, and every protocol deviation.
 
+## Issues
+
+An issue report is a claim until it is checked. Work it in this order, and skip
+none of it because the report looks obviously right or obviously wrong:
+
+1. **Verify against the code**, not against the reporter's summary. Reproduce
+   their command where the machine allows it, and say plainly what was and was not
+   reproduced. Check whether the defect is already fixed on `main`: a report can
+   be true for the commit it names and stale against the current tree, and that is
+   the common case — it changes the whole reply, so establish it first.
+2. **Fix only what is true and unfixed.** When the report is already fixed, the
+   fix *is* the commit that did it and the reply names it. When part of it is
+   true, fix that part, and say which part was not.
+3. **Test the fix** — a unit test wherever one is possible, and a real run
+   wherever the defect is only visible in one (a model run for inference, an
+   export for a sidecar). A guard that exists to catch the defect and has no test
+   is half a fix. Pin any arithmetic the conclusion rests on.
+4. **Verify again** on current `main`, using the reporter's own reproduction where
+   it can run, and record the command, the exit code and the output.
+5. **Audit for the sibling defect** before closing, and report what you found: the
+   same mistake elsewhere, the guard that stops it recurring, and anywhere the fix
+   is not reachable.
+6. **Reply politely and with evidence**: what was verified, the commit, what to do
+   next, what could not be reproduced, and an invitation to reopen. No blame, and
+   never "works for me".
+7. **Close it** once a fix is on `main`, even while the release lags. The closing
+   comment names the commit and says that the next release is where to confirm it;
+   an issue left open because no release carries the fix yet becomes a stale list
+   nobody reads. If it survives the release for the reporter, it reopens with new
+   information.
+
 ## Local server
 
 Follow the [server guide](https://github.com/Pummelchen/TinyTitan/wiki/OpenAI-Compatible-Server)
