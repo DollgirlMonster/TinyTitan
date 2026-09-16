@@ -12,7 +12,11 @@
     - id: dsh-tinytitan
       name: dsh-tinytitan
       config:
-        port: 8080
+        # No port is written here on purpose. The default (8080) is resolved in
+        # config.js, and writing it out would *pin* it: a configured port beats
+        # TINYTITAN_PORT, so a server started on another port would have its
+        # route flipped back to 8080 at the next boot. Set `port` only to
+        # override both.
         provider: tinytitan
         registerRoute: true
         selfContained: false

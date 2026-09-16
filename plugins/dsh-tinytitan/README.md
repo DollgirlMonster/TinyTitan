@@ -59,7 +59,7 @@ out, and `TINYTITAN_PORT` / `TINYTITAN_REPO` / `TINYTITAN_SERVER` /
 
 | Field | Default | Meaning |
 |---|---|---|
-| `port` | `8080` | the port the TinyTitan server serves on |
+| `port` | resolved: `config.port`, else `TINYTITAN_PORT`, else `8080` | the port the TinyTitan server serves on. Nothing in this bundle pins it, so the environment can point the route at a server on another port |
 | `provider` | `tinytitan` | the `llm-pi-ai` provider route name |
 | `presetId` | `tinytitan` | the agent preset this plugin generates |
 | `registerRoute` | `true` | refresh the route block from `tools/dsh_route.sh` |

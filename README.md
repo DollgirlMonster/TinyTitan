@@ -107,7 +107,8 @@ pipeline sees only the answer. Nothing installed yet? Start with
   cache (1/2/4/8/16/32 GB; anything over 40% of the Mac's physical memory is
   warned about in red and used anyway, and the default is the install's own
   measured profile, which the runtime holds to half of physical memory).
-  It serves on `127.0.0.1:8080` (`TINYTITAN_PORT` overrides it), and every other
+  It serves on `127.0.0.1:8080` by default — the launcher asks for the port,
+  and `--port` or `TINYTITAN_PORT` sets it — and every other
   installed model stays available by name through the API; the server switches
   on demand, keeping one model resident at a time.
 

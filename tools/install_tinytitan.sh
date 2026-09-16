@@ -342,7 +342,8 @@ echo "  Start TinyTitan either way:"
 echo "    • open the TinyTitan app in Applications"
 echo "    • or, in a terminal:  ~/.local/bin/tinytitan"
 echo
-echo "  Then point a client at http://127.0.0.1:8080/v1 (any API key)."
+echo "  Then point a client at the base URL the launcher prints (default"
+echo "  http://127.0.0.1:8080/v1, any API key; --port changes the port)."
 echo "  Keep the window open while you use it; TinyTitan runs one model at a time."
 echo
 echo "  New to this? Start here:"

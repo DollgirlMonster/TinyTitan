@@ -811,7 +811,40 @@ elif [[ -n "$CONTEXT_ARG" ]]; then
   esac
 fi
 
-PORT="${PORT_ARG:-${TINYTITAN_PORT:-$TINYTITAN_DEFAULT_PORT}}"
+# The port is the one question about the *server* rather than the model, so it is
+# asked last and it is skippable: `--port` or `TINYTITAN_PORT` answers it, and an
+# unattended run takes the default. The default itself lives in one place —
+# `TINYTITAN_DEFAULT_PORT` in tinytitan_models.sh — so a changed default cannot
+# leave one script pointing where the others do not.
+if [[ -n "$PORT_ARG" ]]; then
+  PORT="$PORT_ARG"
+elif [[ -n "${TINYTITAN_PORT:-}" ]]; then
+  PORT="$TINYTITAN_PORT"
+elif (( INTERACTIVE )); then
+  echo ""
+  echo "Port for the server?"
+  echo "  Clients reach the API at http://127.0.0.1:<port>. ${TINYTITAN_DEFAULT_PORT} is the default;"
+  echo "  change it when something else already holds that port, or to run a"
+  echo "  second model beside this one."
+  printf "Port [1-65535] (default %s): " "$TINYTITAN_DEFAULT_PORT"
+  read -r port_choice || exit 1
+  PORT="${port_choice:-$TINYTITAN_DEFAULT_PORT}"
+else
+  PORT="$TINYTITAN_DEFAULT_PORT"
+fi
+case "$PORT" in
+  ''|*[!0-9]*) echo "unknown port: $PORT (a number 1-65535)" >&2; exit 2 ;;
+esac
+if (( PORT < 1 || PORT > 65535 )); then
+  echo "unknown port: $PORT (a number 1-65535)" >&2; exit 2
+fi
+# Below 1024 macOS wants root. Say so now, rather than let the server exit with a
+# bind error after the model has been chosen and the client wiring decided.
+if (( PORT < 1024 )); then
+  echo "NOTE: port $PORT is privileged; macOS requires root to bind it." >&2
+fi
+non_default_port=0
+if (( PORT != TINYTITAN_DEFAULT_PORT )); then non_default_port=1; fi
 
 # The context, KV and YaRN flags reach the GPU runtime only. Asking for one of
 # them against a CPU model is a misunderstanding worth naming: the CPU engine
@@ -939,6 +972,13 @@ print_setup() {
     echo "  Model:      $launch_model $api_model_note"
     echo "  Endpoints:  POST /v1/chat/completions, POST /v1/responses"
   fi
+  if (( non_default_port )); then
+    echo ""
+    echo "Port $PORT is not the default, so anything that assumes ${TINYTITAN_DEFAULT_PORT} needs"
+    echo "telling. The DeepSeek Harness route is one of those; regenerate it"
+    echo "against this server with:"
+    echo "  TINYTITAN_PORT=$PORT tools/dsh_route.sh --write"
+  fi
   echo ""
   if (( dynamic )); then
     echo "Every installed model is available by name through the API: send any"
@@ -1016,6 +1056,15 @@ if lsof -i :"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     lsof -i :"$PORT" -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 0.1
   done
+  # If it is still held, the holder is not ours — the loop above skips those on
+  # purpose. Name it and stop, instead of letting the server fail to bind after
+  # the model has been chosen and the client wiring decided.
+  if lsof -i :"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "ERROR: port $PORT is held by a process that is not a TinyTitanServer:" >&2
+    lsof -i :"$PORT" -sTCP:LISTEN | tail -n +2 | sed 's/^/  /' >&2
+    echo "       Choose another port with --port, or stop that process yourself." >&2
+    exit 2
+  fi
 fi
 
 if [[ ! -e "$MODEL_DIR" ]]; then

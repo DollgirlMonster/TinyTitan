@@ -87,6 +87,19 @@ test("config defaults suit a local server and can be overridden", () => {
   assert.equal(configured.dshHome, "/home");
 });
 
+test("the environment picks the port when the config does not", () => {
+  const saved = process.env.TINYTITAN_PORT;
+  process.env.TINYTITAN_PORT = "9123";
+  try {
+    assert.equal(resolveConfig().port, 9123);
+    // A configured port is an explicit choice and still wins.
+    assert.equal(resolveConfig({ port: 8096 }).port, 8096);
+  } finally {
+    if (saved === undefined) delete process.env.TINYTITAN_PORT;
+    else process.env.TINYTITAN_PORT = saved;
+  }
+});
+
 test("config refuses what it cannot use", () => {
   assert.throws(() => resolveConfig({ port: 0 }), /port must be a port number/);
   assert.throws(() => resolveConfig({ port: "http" }), /port must be a port number/);
