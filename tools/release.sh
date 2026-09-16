@@ -241,6 +241,13 @@ grep -qE '^[^ ]+\.(swift|metal|c|h|m|mm):[0-9]+:[0-9]+: warning:' "$STAGE_ROOT.b
   && die "release build emitted compiler warnings"
 BIN="$SCRATCH/release"
 [ -x "$BIN/TinyTitanServer" ] || die "build produced no TinyTitanServer"
+# Resolve the products directory physically before anything globs it. SwiftPM's
+# `$SCRATCH/release` is a symlink to `out/Products/Release`, and `find` does NOT
+# follow a symlink given as its own starting point — so `find "$BIN" -name
+# '*.bundle'` matched nothing while `cp "$BIN/$product"` worked through the same
+# link. 5.6 shipped without its Metal shader library that way, and the release
+# binaries died with "unable to find bundle named TinyTitan_TinyTitan".
+BIN="$(cd "$BIN" && pwd -P)"
 
 # --- stage ------------------------------------------------------------------
 step "stage"
@@ -250,8 +257,13 @@ for p in "${PRODUCTS[@]}"; do
   cp "$BIN/$p" "$STAGE/"
 done
 # .bundle resources carry the Metal shader library; without them beside the
-# executables the runtime cannot load its kernels.
-find "$BIN" -maxdepth 1 -name '*.bundle' -exec cp -R {} "$STAGE/" \;
+# executables the runtime cannot load its kernels. Fail closed rather than
+# shipping an archive that dies on the first model load. Test bundles are
+# excluded: they hold fixtures the tests read, and 5.5's archive carried the six
+# that the six executables actually need.
+[ -d "$BIN/TinyTitan_TinyTitan.bundle" ] \
+  || die "no TinyTitan_TinyTitan.bundle in $BIN: the Metal shader library would not ship"
+find "$BIN" -maxdepth 1 -name '*.bundle' ! -name '*Tests.bundle' -exec cp -R {} "$STAGE/" \;
 # LICENSE and NOTICE are what Apache-2.0 requires to travel with a binary
 # distribution; THIRD_PARTY_NOTICES.md carries the upstream attributions.
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/"
@@ -289,6 +301,11 @@ TXT
 
 step "package"
 ( cd "$STAGE_ROOT" && tar czf "$ARCHIVE" "$(basename "$STAGE")" )
+# Assert on the *archive*, not the staging directory: a bundle that failed to
+# stage is invisible until someone runs the binary somewhere else, which is how
+# 5.6's first upload shipped without the Metal shader library.
+tar tzf "$ARCHIVE" | grep -q '^[^/]*/TinyTitan_TinyTitan\.bundle/' \
+  || die "the archive carries no TinyTitan_TinyTitan.bundle: the runtime could not load its kernels"
 shasum -a 256 "$ARCHIVE" | sed "s|$STAGE_ROOT/||" > "$ARCHIVE.sha256"
 SHA="$(awk '{print $1}' "$ARCHIVE.sha256")"
 BYTES="$(wc -c < "$ARCHIVE" | tr -d ' ')"

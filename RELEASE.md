@@ -222,6 +222,12 @@ repository.
   installs are reported *not checked* and must be named in the notes.
 - **Traps** a golden gate that *refused to start* is reported as a "mismatch" —
   read the line above it. A synced-folder install can be online-only, which
-  surfaces as `parallel expert read failed`.
+  surfaces as `parallel expert read failed`. **An archive can also be missing its
+  `.bundle` resources while every gate passes** — `find` does not follow a symlink
+  given as its own starting point, so a staging glob over `$SCRATCH/release`
+  copies none of them, and the binaries then die with `unable to find bundle
+  named …` on the first model load. `release.sh` now asserts the bundle before
+  staging and in the finished tarball; the check that catches the class is
+  downloading the published artifact and running it somewhere else.
 - The model install and the checkout are separate jobs; adding a model is
   `docs/adding-a-model.md` and an operator decision, never a release side-effect.
