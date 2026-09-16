@@ -52,9 +52,9 @@ each catching something the one before it cannot:
 
 The runtime refuses a sidecar that does not record `aneCompileVerified`, so a
 sidecar written by an older exporter is declined and the GPU path is used rather
-than a 38× prefill. `tools/verify_ane_sidecar.py --record` keeps the graph check
-that a wrong geometry cannot pass. 22 exporter tests, including the marker scan,
-which had none.
+than a 38× prefill. `tools/verify_ane_sidecar.py` keeps the graph check that a
+wrong geometry cannot pass. 22 exporter tests, including the marker scan, which
+had none.
 
 ### Sparse-indexed attention is now correct on the ANE — and still stays on the GPU
 
