@@ -17,8 +17,8 @@ fix is **not** one of the missing features.
 suite runs 17 tests and seven of them exercise the WebSocket transport, which this
 project will not implement; they are excluded here rather than counted as failures
 ([Out of scope](#out-of-scope-websocket-transport)). Two of the three in-scope
-failures need `/v1/responses/compact` and one is the deliberate text-only
-`image-input` refusal.
+failures need `/v1/responses/compact`, the endpoint being built, and one is the
+deliberate text-only `image-input` refusal.
 
 ## First run (2026-09-14)
 
@@ -93,9 +93,10 @@ The five flips are the echo fix alone. `temperature`, `top_p`,
 object — resolved from the same `GenerationConfig` the sampler is handed, while
 the request-side fields stay nil so the served model's profile still supplies
 them (audit C11). The remaining 10 are the two absent optional surfaces —
-`/v1/responses/compact` and the WebSocket transport, the latter out of scope by
-decision ([below](#out-of-scope-websocket-transport)) — plus the deliberate
-text-only limit; none is a schema or object-shape defect.
+`/v1/responses/compact`, which is being built
+([below](#the-two-missing-features-judged-on-merit)), and the WebSocket transport,
+out of scope by decision — plus the deliberate text-only limit; none is a schema
+or object-shape defect.
 
 ## The finding that mattered: five tests, three fields (fixed)
 
@@ -166,19 +167,28 @@ compliance fix.
 
 ## The two missing features, judged on merit
 
-**`allowed_tools`** — still the best of the two, and *not* exercised by this
+**`/v1/responses/compact` — the one being built.** `POST` it with a long
+conversation and it returns a single opaque state item that stands in for that
+history while preserving the system prompt, attachments and the core reasoning;
+the client sends that item instead of the transcript on the next turn. That is
+what keeps a long session affordable to continue, and it is the pair of in-scope
+failures this record still expects.
+
+The fit here is unusually good, and the first pieces are already in the tree: the
+compaction machinery exists (DeepSeek Harness runs it through
+`plugins/dsh-tinytitan`), Items carry an `encrypted_content` field, and
+`include: ["reasoning.encrypted_content"]` is accepted
+(`ResponsesAPIModels.swift`). What is missing is the endpoint, the opaque item it
+returns, and the state behind it — `reasoningItem` emits a summary and no
+encrypted payload today. A third test, `websocket-compact-new-chain`, needs this
+*and* the WebSocket transport, so it leaves with the transport.
+
+**`allowed_tools`** — the other gap, and *not* exercised by this
 suite (no test covers it). Its stated purpose is to narrow the executable tool set
 without changing `tools`, because mutating `tools` invalidates prompt and schema
 caches. This server has a real prompt cache (`--prompt-cache-mode multi-prefix`,
 256 MiB), which is exactly the deployment the field was designed for. Not urgent,
 but the fit is unusually good.
-
-**`/v1/responses/compact`** — two tests, and the least attractive. This server
-already has compaction machinery for DeepSeek Harness; the endpoint is a
-different shape around it (`response.compaction` with `encrypted_content`), and
-the spec's own rationale is to avoid asserting provider-specific compression. A
-third test, `websocket-compact-new-chain`, needs both this and the WebSocket
-transport, so it leaves with the transport.
 
 ## Out of scope: WebSocket transport
 
@@ -272,7 +282,8 @@ needed — only `zod` is.
   against a release build of the working tree containing the echo fix.
 - `swift test --no-parallel` on that tree: 1524 tests in 234 suites, 0 failures.
 - The scorecard is a point-in-time measurement, not a release claim; the
-  `[DONE]` item is an upstream report, not a work item. No compaction surface
-  exists yet, so those two failures are expected, and the third in-scope failure
+  `[DONE]` item is an upstream report, not a work item. The compaction endpoint is
+  not in the tree yet — it is the feature being built — so those two failures are
+  the current expectation, and the third in-scope failure
   is the by-design image refusal. WebSocket transport is out of scope by decision,
   so its seven tests are not counted against the surface this server ships.
