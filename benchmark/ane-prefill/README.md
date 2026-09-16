@@ -183,6 +183,16 @@ would need — so a sidecar can be built explicitly to re-measure:
   --model models/qwen3.8-flash-next_125B_A6B_4Bit --chunk 4096 --max-history 8192
 ```
 
+**A gather graph — the one variant that would remove the fold's extra arithmetic
+— was sized and rejected.** The ANE accepts the `gather`, but a gathered key has
+to be materialised once for every query that selects it: 64× the dense score
+matrix, 103 GB at the real chunk. Measured, it is 5.7× slower where it runs and
+fails outright one chunk size up, and it does not help the load either — that
+scales with the score arena, not with package composition. The numbers, the probe
+and the reproduction commands are in
+[`docs/ane-gather-graph-sizing.md`](../../docs/ane-gather-graph-sizing.md) and
+`benchmark/ane_gather_probe.py`.
+
 **Do not raise that past 8,192 on 3.8.** Its `h12288` variant is accepted by the
 converter and then fails to *load* (`functionName` must be nil unless the model
 type is ML Program) on both widths — 24 heads of 4,096 × 16,384 fp16 scores is a
