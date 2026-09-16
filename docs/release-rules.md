@@ -432,35 +432,6 @@ there, and the rule above already forbids that.
   concern and this section must say so explicitly rather than borrowing upstream's
   process.
 
-## FXNews — MQL5, source and compiled artifact, 1 release
-
-**A release is the source file and the compiled indicator, and nothing else.**
-
-- **Artifacts** `FXNews.mq5` — the single MetaTrader 5 source — and `FXNews.ex5`,
-  the bytecode MetaEditor compiles from it. Both are attached, with a digest
-  covering both, because the source is the reviewable artifact and the `.ex5` is
-  the one users actually load into a terminal.
-- **Identity** the `#property version "M.mpp"` line in `FXNews.mq5` — currently
-  `"3.300"` for version 3.3. **Nothing enforces it.** The same version is restated in
-  the `// FXNews version 3.3` comment on line 1 and in `README.md`, and
-  `tools/contracts.py` does not check the version triple, so a bump must touch all
-  three by hand. No separate `VERSION` file is introduced. MQL5 version properties
-  are two-component at most in practice, so the release tag is `v3.300`, taken
-  verbatim from the property rather than re-derived.
-- **Build** `tools/build-macos.sh`, which drives MetaEditor under the
-  MetaQuotes-bundled Wine on macOS. It exits non-zero on a compiler error **or
-  warning**, so a warning-free compile is already enforced and the release uses the
-  same script unrelaxed. Its `--install` mode copies into the live terminal folder
-  for local use and is **not** part of producing a release artifact.
-- **Not a macOS host binary.** §1.2.1–§1.2.4 (arm64-only, `lipo`, universal
-  binaries) **do not apply**: the `.ex5` is MetaTrader 5 bytecode, and macOS's only
-  involvement is hosting the Wine-based compiler. Do not attach a `lipo -archs`
-  assertion to this repository — it would be a gate that cannot fail.
-- **Released** `v3.300` on 2026-09-16 — the first release, from source commit
-  `361d873`. `FXNews.mq5`, `FXNews.ex5` and `FXNews-3.300.sha256` are attached, and
-  the notes quote the digests the checksum file carries. The checklist above is the
-  whole process; the generic macOS packaging sections of Part 1 do not apply here.
-
 ## FXAI, FXAI-V0 — archived, out of scope
 
 Archived, therefore read-only: no commit, and so no release step, can touch them.
