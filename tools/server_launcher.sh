@@ -24,7 +24,7 @@
 #              models define the binary thinking switch, so their levels are
 #              exactly off|on -- off for a direct answer, on to reason first.
 #   <ram>      the routed-expert cache budget: 1, 2, 4, 8, 16 or 32 (GB).
-#              Anything over 40% of this Mac's physical memory is warned about
+#              Anything over 30% of this Mac's physical memory is warned about
 #              in red and used anyway. Omit it to use the install's own measured
 #              profile, which the runtime holds to half of physical memory. The
 #              CPU engine has no expert cache, so it does not ask and the flag
@@ -48,7 +48,7 @@
 #   --answers <default|concise>
 #   --thinking <level>
 #   --ram <1|2|4|8|16|32>   expert-cache budget in GB (GPU models only); over
-#              40% of this Mac's physical memory is warned about, not refused
+#              30% of this Mac's physical memory is warned about, not refused
 #   --context <n|native|max> native 262144, or 524288/1048576 with --yarn
 #   --kv <4|8|16>   KV-cache precision (default 8)
 #   --yarn          enable YaRN context scaling
@@ -70,7 +70,7 @@
 # and MTP off. Everything tuned per model and quantization -- the expert-cache
 # budget, prefetch and its I/O tier, the prefill chunk, sampling -- comes from
 # the install's own ModelProfile row, so the launcher never overrides a measured
-# optimum. Past 40% of physical memory the expert cache starts competing with
+# optimum. Past 30% of physical memory the expert cache starts competing with
 # the rest of the machine -- the cache is wired and cannot be paged out -- so
 # this launcher warns above that line and passes the size on as asked; the
 # runtime separately holds the *profile's* own value to half of physical memory
@@ -669,7 +669,7 @@ ram_tier() {
   echo "$(( 10#$value ))"
 }
 
-# 40% of physical memory: the point past which this launcher recommends against
+# 30% of physical memory: the point past which this launcher recommends against
 # the expert cache, and warns.
 #
 # The slot cache is wired and cannot be paged out, so it is not the only
@@ -677,7 +677,10 @@ ram_tier() {
 # whatever else the person is running all have to fit in what is left. Measured
 # on a 24 GB Mac with Qwen 3.8 4-bit, the install's own 12 GiB profile (half of
 # that machine) left 11% of memory free and glitched CoreAudio while the model
-# was merely loaded -- so this launcher's rule is the tighter one, 40%. It is a
+# was merely loaded -- so this launcher's rule is the tighter one. It is 30% and
+# not 40% because the cache is only part of what a running server holds: real
+# usage ran past half of physical memory even with the cache at 40%, so the
+# recommendation that overshot is the one that had to move. It is a
 # recommendation, not a limit: the runtime clamps the *install's* profile to
 # half of physical memory on the default path, and an explicit budget is passed
 # through as `--ram-budget` and taken verbatim -- which is the person's call, so
@@ -693,9 +696,9 @@ case "$physical_ram_bytes" in
   *[!0-9]*|"") physical_ram_bytes=0 ;;
 esac
 physical_ram_gb=$(( (physical_ram_bytes + 1073741823) / 1073741824 ))
-# Two fifths, floored to whole GB -- 4 on an 8 GB Mac, 8 on 16, 9 on 24, 12 on
-# 32, 25 on 64 -- because `--ram` names whole gigabytes.
-ram_rule_gb=$(( physical_ram_bytes * 2 / 5 / 1073741824 ))
+# Three tenths, floored to whole GB -- 2 on an 8 GB Mac, 4 on 16, 7 on 24, 9 on
+# 32, 19 on 64 -- because `--ram` names whole gigabytes.
+ram_rule_gb=$(( physical_ram_bytes * 3 / 10 / 1073741824 ))
 # An unreadable size means no warning rather than a warning at 1 GB: the same
 # thing the runtime's own guard does, and the launcher must not invent a limit
 # it cannot justify.
@@ -711,7 +714,7 @@ warn_ram_over_rule() {
   (( ram_gb > ram_rule_gb )) || return 0
   ram_over_rule=1
   warn_red "WARNING: the expert cache would use ${ram_gb} GB, more than the ${ram_rule_gb} GB"
-  warn_red "         this launcher recommends (40% of this Mac's ${physical_ram_gb} GB). The"
+  warn_red "         this launcher recommends (30% of this Mac's ${physical_ram_gb} GB). The"
   warn_red "         cache is wired, so it cannot be paged out and everything else"
   warn_red "         has to fit beside it. Expect:"
   warn_red "           * system instability while the model is loaded"
@@ -744,10 +747,10 @@ else
   echo "  left for everything else on the Mac."
   if (( ram_rule_gb > 0 )); then
     echo "  It is wired, so it cannot be paged out. This launcher recommends"
-    echo "  at most 40% of this Mac's ${physical_ram_gb} GB (${ram_rule_gb} GB): asking for"
+    echo "  at most 30% of this Mac's ${physical_ram_gb} GB (${ram_rule_gb} GB): asking for"
     echo "  more is allowed and warned about, because past that point the"
     echo "  Mac starts swapping."
-    rule_hint="40% of this Mac is ${ram_rule_gb} GB"
+    rule_hint="30% of this Mac is ${ram_rule_gb} GB"
   else
     rule_hint="recommended"
   fi
@@ -765,7 +768,7 @@ else
   if [[ -n "$ram_gb" ]]; then warn_ram_over_rule; fi
 fi
 if (( ram_rule_gb > 0 )); then
-  ram_note="model default (measured; 40% of this Mac is ${ram_rule_gb} GB)"
+  ram_note="model default (measured; 30% of this Mac is ${ram_rule_gb} GB)"
 else
   ram_note="model default (measured)"
 fi
@@ -775,7 +778,7 @@ if [[ -n "$ram_gb" ]]; then
   # summary line carries the risk once more for anyone who scrolled past the
   # warning itself.
   if (( ram_over_rule )); then
-    ram_note="${ram_gb} GB (your choice; over 40% of this Mac's RAM)"
+    ram_note="${ram_gb} GB (your choice; over 30% of this Mac's RAM)"
   fi
 fi
 
@@ -998,7 +1001,7 @@ print_setup() {
   echo "Thinking: $think_word | RAM: $ram_note | Port: $PORT | Ctrl-C to stop"
   if (( ram_over_rule )); then
     warn_red "WARNING: ${ram_gb} GB of expert cache is over the ${ram_rule_gb} GB this launcher"
-    warn_red "         recommends for this Mac (40%). Expect swapping, a less stable"
+    warn_red "         recommends for this Mac (30%). Expect swapping, a less stable"
     warn_red "         system and slower tokens."
   fi
   echo "============================================================"

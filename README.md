@@ -104,7 +104,7 @@ pipeline sees only the answer. Nothing installed yet? Start with
   provider config to the model the server advertises. It asks what to launch
   from one list of every installed model and quantization (GPU and CPU), the
   thinking level that model supports, and an optional RAM limit for the expert
-  cache (1/2/4/8/16/32 GB; anything over 40% of the Mac's physical memory is
+  cache (1/2/4/8/16/32 GB; anything over 30% of the Mac's physical memory is
   warned about in red and used anyway, and the default is the install's own
   measured profile, which the runtime holds to half of physical memory).
   It serves on `127.0.0.1:8080` by default — the launcher asks for the port,
@@ -166,7 +166,7 @@ tools/server_launcher.sh --client zed --model qwen38 --bits 4 --ram 8
   the model's own expert stride and clamped to half of physical memory, so a
   smaller Mac is not handed a budget tuned on a larger one. It is wired, so it
   cannot be paged out and everything else the Mac is running has to fit beside
-  it: the launcher recommends **40% of physical memory** and warns in red above
+  it: the launcher recommends **30% of physical memory** and warns in red above
   it — swapping, a less stable system and slower tokens — but a larger `--ram`
   is your call and is passed on, and the server's own `--ram-budget` takes
   exactly what it is given. Model state, KV cache, and runtime scratch use

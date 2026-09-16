@@ -1,9 +1,10 @@
-"""The launcher's expert-cache rule: 40% of physical memory, warned not capped.
+"""The launcher's expert-cache rule: 30% of physical memory, warned not capped.
 
 The rule belongs to the launcher, and it is a recommendation rather than a
 limit: a larger `--ram` is warned about in red and passed on, because the
-machine is the operator's. These tests pin the arithmetic (two fifths, floored
-to whole GB, which is what `--ram` takes) and both sides of the boundary.
+machine is the operator's. These tests pin the arithmetic (three tenths,
+floored to whole GB, which is what `--ram` takes) and both sides of the
+boundary.
 
 `TINYTITAN_PHYSICAL_RAM_BYTES` is the launcher's seam for exactly this: the mapping
 has to be checkable on a machine of any size.
@@ -25,13 +26,13 @@ LAUNCHER = ROOT / "tools/server_launcher.sh"
 SERVER = ROOT / ".build/release/TinyTitanServer"
 MODELS = ROOT / "models"
 
-# Installed memory in bytes, and the launcher's rule for it: 40%, floored.
+# Installed memory in bytes, and the launcher's rule for it: 30%, floored.
 MACHINES = {
-    8 * 2**30: 3,
-    16 * 2**30: 6,
-    24 * 2**30: 9,
-    32 * 2**30: 12,
-    64 * 2**30: 25,
+    8 * 2**30: 2,
+    16 * 2**30: 4,
+    24 * 2**30: 7,
+    32 * 2**30: 9,
+    64 * 2**30: 19,
 }
 
 
@@ -77,25 +78,25 @@ class RamRuleTests(unittest.TestCase):
                 run = dry_run("--model", self.model, physical_bytes=memory)
                 self.assertEqual(run.returncode, 0, run.stderr)
                 self.assertIn(
-                    f"RAM: model default (measured; 40% of this Mac is {expected} GB)",
+                    f"RAM: model default (measured; 30% of this Mac is {expected} GB)",
                     run.stdout,
                 )
 
     def test_at_the_rule_is_silent_and_above_it_warns(self) -> None:
         memory = 24 * 2**30
-        at_rule = dry_run("--model", self.model, "--ram", "9", physical_bytes=memory)
+        at_rule = dry_run("--model", self.model, "--ram", "7", physical_bytes=memory)
         self.assertEqual(at_rule.returncode, 0, at_rule.stderr)
         self.assertNotIn("WARNING", at_rule.stderr)
-        self.assertIn("--ram-budget 9G", at_rule.stdout)
+        self.assertIn("--ram-budget 7G", at_rule.stdout)
 
-        above = dry_run("--model", self.model, "--ram", "10", physical_bytes=memory)
+        above = dry_run("--model", self.model, "--ram", "8", physical_bytes=memory)
         self.assertEqual(above.returncode, 0, above.stderr)
-        self.assertIn("WARNING: the expert cache would use 10 GB", above.stderr)
-        self.assertIn("40% of this Mac's 24 GB", above.stderr)
-        self.assertIn("Starting anyway with 10 GB", above.stderr)
+        self.assertIn("WARNING: the expert cache would use 8 GB", above.stderr)
+        self.assertIn("30% of this Mac's 24 GB", above.stderr)
+        self.assertIn("Starting anyway with 8 GB", above.stderr)
         # Warned, not capped: the requested size is what the server is given.
-        self.assertIn("--ram-budget 10G", above.stdout)
-        self.assertIn("over 40% of this Mac's RAM", above.stdout)
+        self.assertIn("--ram-budget 8G", above.stdout)
+        self.assertIn("over 30% of this Mac's RAM", above.stdout)
 
     def test_default_path_warns_about_nothing(self) -> None:
         run = dry_run("--model", self.model, physical_bytes=24 * 2**30)
@@ -108,15 +109,15 @@ class RamRuleTests(unittest.TestCase):
         run = dry_run("--model", self.model, "--ram", "32", physical_bytes=0)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertNotIn("WARNING", run.stderr)
-        self.assertNotIn("40% of this Mac", run.stdout)
+        self.assertNotIn("30% of this Mac", run.stdout)
         self.assertIn("--ram-budget 32G", run.stdout)
         # …and the default's note claims no percentage either.
         default = dry_run("--model", self.model, physical_bytes=0)
         self.assertIn("RAM: model default (measured) |", default.stdout)
 
     def test_boundary_scales_with_the_machine(self) -> None:
-        # 3 GB is the rule on an 8 GB Mac: 3 is silent, 4 warns.
-        for ram, warns in (("3", False), ("4", True)):
+        # 2 GB is the rule on an 8 GB Mac: 2 is silent, 3 warns.
+        for ram, warns in (("2", False), ("3", True)):
             with self.subTest(ram=ram):
                 run = dry_run("--model", self.model, "--ram", ram,
                               physical_bytes=8 * 2**30)
