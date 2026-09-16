@@ -58,6 +58,11 @@ import numpy as np
 import coremltools as ct
 from coremltools.converters.mil import Builder as mb
 
+try:
+    from coremltools.models.compute_plan import MLComputePlan
+except Exception:                                     # noqa: BLE001 — optional
+    MLComputePlan = None
+
 # The chunk the sidecar is built around by default. The runtime routes a chunk
 # to the ANE only when its configured prefill chunk is exactly the sidecar's, so
 # this is a contract with `ANEPrefillAttention.eligibleChunk`, not a tunable.
@@ -210,6 +215,70 @@ ANE_COMPILE_ERROR_MARKERS = (
 
 class ANEExportError(RuntimeError):
     """The Neural Engine refused to compile a variant the exporter built."""
+
+
+def verify_variant_reaches_the_ane(variant: pathlib.Path, history: int,
+                                   layer: int) -> int | None:
+    """Assert the Neural Engine is assigned this variant's operations.
+
+    The compile-marker scan and `verify_variants_load` both ask whether Core ML
+    *complained*. This asks what `aneCompileVerified` actually claims: did the
+    Neural Engine get the graph?
+
+    It matters because issue #7's failure mode is silent. Measured on the 3.8
+    sidecar's h12288 as a standalone variant: it loads, `predict()` is never
+    possible, and **0 of its 173 operations** are assigned to the Neural Engine —
+    so Core ML runs it on the CPU at roughly 38x the GPU prefill cost while a
+    marker-only check sees nothing. A healthy variant of the same graph reports
+    74 of 173.
+
+    It is checked per *variant*, before the multifunction merge, because that is
+    where the variant is the package's default function: `MLComputePlan` reports
+    device assignments only for the default function, so every non-default
+    function of a merged package reports none (measured: the same 2B graph is
+    74/173 standalone and 0/173 as a non-default function of the merge).
+
+    Returns the count of operations assigned to the Neural Engine, or nil when
+    the running coremltools has no compute-plan API — a warning, not a failure,
+    because otherwise a missing API would block an export that the marker scan
+    and the load check still cover.
+    """
+    if MLComputePlan is None:
+        global _warnedNoComputePlan
+        if not _warnedNoComputePlan:
+            _warnedNoComputePlan = True
+            sys.stderr.write(
+                "warning: this coremltools has no MLComputePlan, so whether the "
+                "Neural Engine is assigned each variant cannot be checked; the "
+                "sidecar is covered by the compile markers and the load check "
+                "only. coremltools >= 8 provides the full check.\n")
+        return None
+    compiled = ct.models.utils.compile_model(str(variant))
+    plan = MLComputePlan.load_from_path(
+        compiled, compute_units=ct.ComputeUnit.CPU_AND_NE)
+    program = plan.model_structure.program
+    function = program.functions.get("main") or next(
+        iter(program.functions.values()))
+    operations = list(function.block.operations)
+    if not operations:
+        raise ANEExportError(
+            f"layer {layer}: h{history} has no operations to assign")
+    on_ane = 0
+    for operation in operations:
+        usage = plan.get_compute_device_usage_for_mlprogram_operation(operation)
+        device = getattr(usage, "preferred_compute_device", None)
+        if device is not None and "NeuralEngine" in type(device).__name__:
+            on_ane += 1
+    if on_ane == 0:
+        raise ANEExportError(
+            f"layer {layer}: h{history} converted, but the Neural Engine is "
+            f"assigned none of its {len(operations)} operations, so Core ML "
+            f"would run it on the CPU at roughly 38x the GPU prefill cost "
+            f"(issue #7). Re-export with a smaller --max-history")
+    return on_ane
+
+
+_warnedNoComputePlan = False
 
 
 def verify_variants_load(package: pathlib.Path, histories, layer: int) -> None:
@@ -670,6 +739,16 @@ def main() -> int:
                 variant_path = stage / f"h{history}.mlpackage"
                 run_checked(f"layer {layer} h{history} save",
                             lambda: variant.save(str(variant_path)))
+                # Checked here, not after the merge: the variant is the package's
+                # default function only while it stands alone, and that is what
+                # the compute plan reports device assignments for.
+                on_ane = run_checked(
+                    f"layer {layer} h{history} reaches the ANE",
+                    lambda: verify_variant_reaches_the_ane(variant_path,
+                                                           history, layer))
+                if on_ane is not None:
+                    print(f"layer {layer}: h{history} — {on_ane} operations on "
+                          f"the Neural Engine", flush=True)
                 desc.add_function(str(variant_path),
                                   src_function_name="main",
                                   target_function_name=f"h{history}")

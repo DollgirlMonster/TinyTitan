@@ -20,8 +20,10 @@ is not installed (the CI python does not have it; `~/.venvs/coreml-py311` does):
 """
 from __future__ import annotations
 
+import contextlib
 import io
 import json
+import os
 import pathlib
 import sys
 import unittest
@@ -145,6 +147,119 @@ class TensorWidthTests(unittest.TestCase):
         self.assertEqual(
             exporter.tensor_weight_bits(
                 manifest, f"{PREFIX}3.self_attn.k_proj.weight", 8), 8)
+
+
+@unittest.skipIf(exporter is None, f"exporter needs coremltools: {IMPORT_ERROR}")
+class CompileMarkerTests(unittest.TestCase):
+    """The stderr scan that made issue #7's export fail loudly.
+
+    Core ML reports an ANE compile refusal on the native stderr and still
+    returns, so the exporter has to read it back and refuse rather than let the
+    sidecar claim `aneCompileVerified`.
+    """
+
+    def test_a_compile_error_marker_fails_the_step(self):
+        def refuses():
+            os.write(2, b"MILCompilerForANE error: failed to compile ANE model\n"
+                        b"ANECCompile() FAILED.\n")
+            return "ok"
+
+        with self.assertRaises(exporter.ANEExportError) as caught:
+            exporter.run_checked("layer 3 h32768 convert", refuses)
+        self.assertIn("refused to compile", str(caught.exception))
+
+    def test_a_clean_step_returns_its_result(self):
+        self.assertEqual(
+            exporter.run_checked("layer 3 h0 convert", lambda: 41 + 1), 42)
+
+
+@unittest.skipIf(exporter is None, f"exporter needs coremltools: {IMPORT_ERROR}")
+class ANEAssignmentTests(unittest.TestCase):
+    """What `aneCompileVerified` claims: the ANE is assigned the graph.
+
+    Issue #7's silent half is a variant the ANE refuses that still loads and
+    runs on the CPU at ~38x the GPU cost. Measured on the real 3.8 h12288
+    standalone package: 0 of 173 operations assigned to the Neural Engine, while
+    a healthy variant of the same graph reports 74 of 173. Only the compute plan
+    distinguishes those.
+    """
+
+    def setUp(self):
+        self.addCleanup(setattr, exporter, "MLComputePlan",
+                        exporter.MLComputePlan)
+        self.addCleanup(setattr, exporter.ct.models.utils, "compile_model",
+                        exporter.ct.models.utils.compile_model)
+        exporter.ct.models.utils.compile_model = lambda path: "/tmp/fake.mlmodelc"
+
+    @staticmethod
+    def fakePlan(on_ane: int, total: int = 8, function: str = "main"):
+        class NeuralEngineComputeDevice:
+            pass
+
+        class Operation:
+            pass
+
+        class Usage:
+            def __init__(self, device):
+                self.preferred_compute_device = device
+
+        device = NeuralEngineComputeDevice()
+        operations = [Operation() for _ in range(total)]
+        decided = {id(op): index < on_ane for index, op in enumerate(operations)}
+        function_object = type("Function", (), {
+            "block": type("Block", (), {"operations": operations})()})()
+        program = type("Program", (), {"functions": {function: function_object}})()
+
+        class Plan:
+            model_structure = type("Structure", (), {"program": program})()
+
+            @staticmethod
+            def get_compute_device_usage_for_mlprogram_operation(operation):
+                return Usage(device if decided[id(operation)] else None)
+
+        return Plan
+
+    def install(self, on_ane: int, total: int = 8):
+        exporter.MLComputePlan = type(
+            "MLComputePlan", (), {"load_from_path": staticmethod(
+                lambda path, compute_units=None: self.fakePlan(on_ane, total))})
+
+    def test_a_variant_assigned_to_the_ane_reports_its_count(self):
+        self.install(on_ane=6)
+        self.assertEqual(
+            exporter.verify_variant_reaches_the_ane(
+                pathlib.Path("h4096.mlpackage"), 4096, 3), 6)
+
+    def test_a_variant_the_ane_refuses_fails_the_export(self):
+        self.install(on_ane=0, total=173)
+        with self.assertRaises(exporter.ANEExportError) as caught:
+            exporter.verify_variant_reaches_the_ane(
+                pathlib.Path("h12288.mlpackage"), 12288, 3)
+        message = str(caught.exception)
+        self.assertIn("h12288", message)
+        self.assertIn("173", message)
+        self.assertIn("38x", message)
+
+    def test_an_empty_graph_is_refused_rather_than_counted(self):
+        self.install(on_ane=0, total=0)
+        with self.assertRaises(exporter.ANEExportError) as caught:
+            exporter.verify_variant_reaches_the_ane(
+                pathlib.Path("h0.mlpackage"), 0, 3)
+        self.assertIn("no operations", str(caught.exception))
+
+    def test_no_compute_plan_api_warns_once_and_does_not_fail(self):
+        exporter.MLComputePlan = None
+        exporter._warnedNoComputePlan = False
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            first = exporter.verify_variant_reaches_the_ane(
+                pathlib.Path("h0.mlpackage"), 0, 3)
+            second = exporter.verify_variant_reaches_the_ane(
+                pathlib.Path("h4096.mlpackage"), 4096, 3)
+        self.assertIsNone(first)
+        self.assertIsNone(second)
+        self.assertIn("MLComputePlan", stderr.getvalue())
+        self.assertEqual(stderr.getvalue().count("warning:"), 1)
 
 
 @unittest.skipIf(exporter is None, f"exporter needs coremltools: {IMPORT_ERROR}")
