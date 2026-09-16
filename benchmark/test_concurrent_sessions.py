@@ -34,6 +34,13 @@ model starts. Models that are not installed are skipped rather than fetched.
 
 Against a server you started yourself, `BASE=http://127.0.0.1:8090` runs the checks
 without launching anything. Exit status is non-zero if any model leaks or misroutes.
+
+A run on the 2B reports `task_wrong` and `own_missed`: that model genuinely
+mishandles arithmetic and two-part instructions (measured, see
+`docs/site/04-choosing-a-model.md`), which is answer quality rather than a mixed
+session and is deliberately not part of the separation verdict. `TOKEN_SCALE`,
+`TEMPERATURE`, `TOP_P`/`TOP_K` and `SERVER_ARGS` exist for thinking runs, which
+need their family's own sampling and a budget big enough for the reasoning block.
 """
 from __future__ import annotations
 
@@ -61,6 +68,20 @@ BASE = os.environ.get("BASE", "")
 PORT = 0
 MODEL = ""
 SEED = os.environ.get("SEED") or str(int(time.time()))
+# A thinking model spends tokens before it answers, so the per-round budgets can
+# be scaled up: a truncated answer is a harness artifact, not a model failure.
+# `SERVER_ARGS` passes extra server flags through (for example `--thinking on`).
+#
+# Sampling matters as much as the budget: a reasoning model decoded greedily can
+# loop in its thinking block until the budget runs out and never answer, so a
+# thinking run has to use the model's own sampling (temperature 0.6, top_p 0.95,
+# top_k 20 for the Qwen 3.5 family). TEMPERATURE also decides whether the
+# determinism control means anything.
+TOKEN_SCALE = float(os.environ.get("TOKEN_SCALE", "1"))
+SERVER_ARGS = os.environ.get("SERVER_ARGS", "").split()
+TEMPERATURE = float(os.environ.get("TEMPERATURE", "0"))
+TOP_P = float(os.environ.get("TOP_P", "0"))
+TOP_K = int(os.environ.get("TOP_K", "0"))
 random.seed(SEED)
 
 
@@ -71,9 +92,15 @@ def served_model() -> str:
     return (base or ids)[0]
 
 
-def chat(messages: list[dict], max_tokens: int, temperature: float = 0.0) -> dict:
-    payload = {"model": MODEL, "temperature": temperature,
+def chat(messages: list[dict], max_tokens: int, temperature: float | None = None) -> dict:
+    max_tokens = max(8, int(max_tokens * TOKEN_SCALE))
+    payload = {"model": MODEL,
+               "temperature": TEMPERATURE if temperature is None else temperature,
                "max_completion_tokens": max_tokens, "messages": messages}
+    if TOP_P > 0:
+        payload["top_p"] = TOP_P
+    if TOP_K > 0:
+        payload["top_k"] = TOP_K
     request = urllib.request.Request(BASE + "/v1/chat/completions",
                                      data=json.dumps(payload).encode(), method="POST")
     request.add_header("content-type", "application/json")
@@ -248,6 +275,7 @@ def report(users: list[dict], results: list[dict], phase: str) -> None:
         print(f"  {user['label']:16} HTTP {result['status']} "
               f"{result['elapsed']:5.2f}s tok={usage.get('completion_tokens')} "
               f"prompt={usage.get('prompt_tokens')} cached={cached} "
+              f"finish={result['finish']} "
               f"| own={'yes' if own else 'NO'} foreign={foreign or 'none'} "
               f"| {task} | {flag}")
         print(f"      expect: {user['expect']}")
@@ -311,8 +339,12 @@ def run_determinism_control() -> None:
     report(users, results, "control determinism")
     distinct = {normalize(r["text"]) for r in results}
     TOTALS["det_distinct"] = len(distinct)
-    print(f"  distinct answers: {len(distinct)} "
-          f"({'deterministic' if len(distinct) == 1 else 'VARIATION at temperature 0'})")
+    if TEMPERATURE == 0:
+        print(f"  distinct answers: {len(distinct)} "
+              f"({'deterministic' if len(distinct) == 1 else 'VARIATION at temperature 0'})")
+    else:
+        print(f"  distinct answers: {len(distinct)} (sampling at temperature "
+              f"{TEMPERATURE}; variation is expected, determinism is not a control here)")
 
 
 def run_canary_control() -> None:
@@ -381,7 +413,8 @@ def run_cancellation_control() -> None:
 def start_server(model_dir: pathlib.Path, port: int, context: int, concurrency: int):
     process = subprocess.Popen(
         [str(BINARY), "--model", str(model_dir), "--port", str(port),
-         "--max-context", str(context), "--max-concurrent-sequences", str(concurrency)],
+         "--max-context", str(context), "--max-concurrent-sequences", str(concurrency),
+         *SERVER_ARGS],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     deadline = time.monotonic() + 900
     while time.monotonic() < deadline:
