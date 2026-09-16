@@ -87,6 +87,16 @@ enum ServerLog {
         write("model \(transition)")
     }
 
+    /// A `/v1/responses/compact` finished: which path produced the note and
+    /// whether it fit.
+    ///
+    /// Worth a line because a compaction that quietly misses its budget, or one
+    /// that fell back to trimming, is invisible in the caller's result — the
+    /// window looks the same either way.
+    static func compacted(id: String, mode: String, noteTokens: Int, budget: Int) {
+        write("request \(id) compacted mode=\(mode) note_tokens=\(noteTokens) budget=\(budget)")
+    }
+
     /// `" prompt_cache=<mode>"` for a backend that can describe its cache, and
     /// nothing at all for one that cannot.
     ///

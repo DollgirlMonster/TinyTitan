@@ -187,6 +187,33 @@ public struct ResponsesAPIRequest: Decodable, Sendable {
     public var stores: Bool { store ?? true }
 }
 
+/// `POST /v1/responses/compact`.
+///
+/// Deliberately not `ResponsesAPIRequest`: compaction takes a conversation and
+/// returns another window, not a turn. The fields that shape a turn — tools,
+/// `store`, `stream`, `previous_response_id`, `max_output_tokens` — have no
+/// meaning here, so they are not modelled and a client that sends them is
+/// ignored rather than misread.
+public struct CompactionRequest: Decodable, Sendable {
+    /// Required by the spec; optional in the shape so a missing one is refused
+    /// with a named parameter rather than as malformed JSON.
+    public let model: String?
+    public let instructions: String?
+    public let input: ResponsesAPIRequest.Input?
+    public let promptCacheKey: String?
+    /// This server's own ceiling for the compacted note, in tokens. Absent
+    /// leaves `ServerCompaction.targetTokens` to choose one from the context.
+    public let maxCompactionTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case model, instructions, input
+        case promptCacheKey = "prompt_cache_key"
+        case maxCompactionTokens = "max_compaction_tokens"
+    }
+
+    public var inputItems: [ResponsesAPIRequest.Item] { input?.items ?? [] }
+}
+
 // MARK: - Responses -> chat mapping
 
 public enum ResponsesAPIMapper {
@@ -340,22 +367,22 @@ public enum ResponsesAPIMapper {
         return (out, namespaces)
     }
 
-    /// Build the chat-completions request equivalent to a responses request.
-    /// TinyTitan's chat template requires exactly one leading system message and
-    /// rejects the developer role, so instructions and developer guidance are
-    /// merged into a single opening system message. `priorItems` is the
-    /// conversation a `previous_response_id` resolved to; it precedes the
-    /// request's own input.
-    public static func chatRequest(_ request: ResponsesAPIRequest,
-                                   priorItems: [ResponsesAPIRequest.Item] = [],
-                                   inputItems: [ResponsesAPIRequest.Item]? = nil) throws -> OpenAIChatRequest {
-        try validateFeatures(request)
+    /// The conversation a Responses request renders to.
+    ///
+    /// Instructions and developer guidance become one leading system message —
+    /// TinyTitan's chat template requires exactly that and rejects the developer
+    /// role — followed by the items in order. Shared by `/v1/responses` and
+    /// `/v1/responses/compact`, so the two cannot disagree about what an item
+    /// means, and a compacted window replays through exactly the path the
+    /// original items did.
+    public static func chatMessages(items: [ResponsesAPIRequest.Item],
+                                   instructions: String?) throws -> [OpenAIChatMessage] {
         var systemParts: [String] = []
-        if let instructions = request.instructions, !instructions.isEmpty {
+        if let instructions, !instructions.isEmpty {
             systemParts.append(instructions)
         }
         var messages: [OpenAIChatMessage] = []
-        for item in priorItems + (inputItems ?? request.inputItems) {
+        for item in items {
             guard let kind = item.resolvedType else {
                 throw ServerRequestError.invalid(
                     message: "unsupported input item; cannot determine its type",
@@ -387,6 +414,18 @@ public enum ResponsesAPIMapper {
                 messages.append(OpenAIChatMessage(
                     role: "tool", content: .text(try outputText(item.output)),
                     toolCalls: nil, toolCallID: item.callID, name: nil))
+            case "compaction":
+                // The window `/v1/responses/compact` returned, sent back as the
+                // base input of a new response. It becomes standing context, and
+                // a payload this server cannot read is refused rather than
+                // dropped: silently discarding it would lose the history the
+                // client just paid to compact.
+                guard let payload = item.encryptedContent else {
+                    throw ServerRequestError.invalid(
+                        message: "compaction item requires encrypted_content",
+                        param: "input", code: "invalid_value")
+                }
+                systemParts.append(ServerCompaction.replayNote(try ServerCompaction.decode(payload)))
             case "reasoning":
                 // A client replaying an earlier turn returns the reasoning
                 // item it was given. The model's thoughts are never part of
@@ -408,6 +447,22 @@ public enum ResponsesAPIMapper {
                 role: "system", content: .text(systemParts.joined(separator: "\n\n")),
                 toolCalls: nil, toolCallID: nil, name: nil), at: 0)
         }
+        return chatMessages
+    }
+
+    /// Build the chat-completions request equivalent to a responses request.
+    /// TinyTitan's chat template requires exactly one leading system message and
+    /// rejects the developer role, so instructions and developer guidance are
+    /// merged into a single opening system message. `priorItems` is the
+    /// conversation a `previous_response_id` resolved to; it precedes the
+    /// request's own input.
+    public static func chatRequest(_ request: ResponsesAPIRequest,
+                                   priorItems: [ResponsesAPIRequest.Item] = [],
+                                   inputItems: [ResponsesAPIRequest.Item]? = nil) throws -> OpenAIChatRequest {
+        try validateFeatures(request)
+        let chatMessages = try chatMessages(
+            items: priorItems + (inputItems ?? request.inputItems),
+            instructions: request.instructions)
         let tools = functionTools(request.tools).tools
         let responseFormat = try responseFormat(request.text?.format)
         return OpenAIChatRequest(
@@ -725,6 +780,36 @@ public enum ResponsesAPIBuilder {
             ],
             "total_tokens": usage.totalTokens,
         ]
+    }
+
+    /// `POST /v1/responses/compact` — the compacted input window.
+    ///
+    /// The spec's shape, and its semantics: this is a value the client sends back
+    /// as the base `input` of a new response, not a response id to continue from.
+    /// `output` holds the caller's instructions verbatim (the spec asks
+    /// compaction to preserve system prompts) followed by the `compaction` item
+    /// that carries the note.
+    public static func compactResource(id: String,
+                                       created: Int,
+                                       output: [[String: Any]],
+                                       usage: OpenAIUsage) -> [String: Any] {
+        ["id": id,
+         "object": "response.compaction",
+         "created_at": created,
+         "output": output,
+         "usage": usageObject(usage)]
+    }
+
+    /// The item that carries a compaction note. `encrypted_content` is required
+    /// by the schema; what this server puts in it is documented in
+    /// `docs/server-api.md`.
+    public static func compactionItem(id: String,
+                                      encryptedContent: String,
+                                      createdBy: String) -> [String: Any] {
+        ["id": id,
+         "type": "compaction",
+         "encrypted_content": encryptedContent,
+         "created_by": createdBy]
     }
 
     static func toolObject(_ tool: ResponsesAPIRequest.Tool) -> [String: Any] {

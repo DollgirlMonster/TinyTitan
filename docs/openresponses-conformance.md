@@ -13,12 +13,14 @@ The point of running it was to turn "we implement the Responses API" into a
 number with named failures. It did, and it corrected a guess: the most valuable
 fix is **not** one of the missing features.
 
-**Score on the HTTP/SSE surface: 7 passed, 3 failed, 0 skipped — 10 total.** The
-suite runs 17 tests and seven of them exercise the WebSocket transport, which this
-project will not implement; they are excluded here rather than counted as failures
+**Score on the HTTP/SSE surface: 7 passed, 3 failed, 0 skipped — 10 total**,
+measured 2026-09-15. The suite runs 17 tests and seven of them exercise the
+WebSocket transport, which this project will not implement; they are excluded here
+rather than counted as failures
 ([Out of scope](#out-of-scope-websocket-transport)). Two of the three in-scope
-failures need `/v1/responses/compact`, the endpoint being built, and one is the
-deliberate text-only `image-input` refusal.
+failures needed `/v1/responses/compact`, which has since been implemented
+([below](#what-was-missing-and-where-it-stands)); the third is the deliberate
+text-only `image-input` refusal.
 
 ## First run (2026-09-14)
 
@@ -165,23 +167,20 @@ So the normative MUST is unenforced on one transport and contradicted on the
 other. That belongs upstream as a specification bug, not in this server as a
 compliance fix.
 
-## The two missing features, judged on merit
+## What was missing, and where it stands
 
-**`/v1/responses/compact` — the one being built.** `POST` it with a long
-conversation and it returns a single opaque state item that stands in for that
-history while preserving the system prompt, attachments and the core reasoning;
-the client sends that item instead of the transcript on the next turn. That is
-what keeps a long session affordable to continue, and it is the pair of in-scope
-failures this record still expects.
+**`/v1/responses/compact` — implemented.** It takes a conversation and returns the
+compacted input window the spec describes: the caller's instructions verbatim,
+then one `compaction` item carrying the note, which the next response takes as its
+base `input`. The two in-scope failures above are the tests it was written
+against. The pipeline — thinking off, a tokenizer-verified budget, a second pass
+that compresses rather than truncates, and guards that drop instruction echoes and
+recognise a repetition loop — is documented in `docs/server-api.md`.
 
-The fit here is unusually good, and the first pieces are already in the tree: the
-compaction machinery exists (DeepSeek Harness runs it through
-`plugins/dsh-tinytitan`), Items carry an `encrypted_content` field, and
-`include: ["reasoning.encrypted_content"]` is accepted
-(`ResponsesAPIModels.swift`). What is missing is the endpoint, the opaque item it
-returns, and the state behind it — `reasoningItem` emits a summary and no
-encrypted payload today. A third test, `websocket-compact-new-chain`, needs this
-*and* the WebSocket transport, so it leaves with the transport.
+**This record has not been re-run against it yet.** The score above still measures
+the tree before that work; the next run is expected to show 9 passed and 1 failed,
+the by-design text-only refusal. A third test, `websocket-compact-new-chain`, needs
+this *and* the WebSocket transport, so it stays out of scope with the transport.
 
 **`allowed_tools`** — the other gap, and *not* exercised by this
 suite (no test covers it). Its stated purpose is to narrow the executable tool set

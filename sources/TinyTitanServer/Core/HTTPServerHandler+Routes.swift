@@ -32,19 +32,8 @@ extension ServerHTTPHandler {
         let segments = path.split(separator: "/").map(String.init)
         let jsonBody = head.headers.first(name: "content-type")?
             .lowercased().hasPrefix("application/json") == true
-        // S28: a HEAD response must never carry a body, and only the two read
-        // routes below support HEAD. Everything else -- a POST route, a per-id
-        // route, or nothing at all -- would otherwise answer with the body its
-        // ordinary path writes, which on a keep-alive connection is read as the
-        // *next* response's head by a simple client. Every other method error on
-        // a known route is already a 405 (`method_not_allowed`), so answering
-        // HEAD the same way keeps this one rule rather than a second route table;
-        // the cost is that a HEAD for an unknown path says 405 where a GET says
-        // 404, and both are head-only.
-        if head.method == .HEAD, path != "/health", path != "/v1/models" {
-            writeHeadOnly(context, status: .methodNotAllowed)
-            return
-        }
+        // S28: only the two read routes answer HEAD; see `refuseUnsupportedHEAD`.
+        if refuseUnsupportedHEAD(head, path: path, context: context) { return }
         switch (head.method, path) {
         case (.GET, "/health"):
             writeJSON(context, status: .ok, object: ["status": "ok"])
@@ -100,6 +89,15 @@ extension ServerHTTPHandler {
                 body: body,
                 context: context,
                 workspace: WorkspaceHeader.value(in: head))
+        case (.POST, "/v1/responses/compact"):
+            // The spec's compaction endpoint: a conversation in, a compacted
+            // window out. No model state and no stored response, so it is a
+            // plain JSON route rather than anything the response store sees.
+            guard jsonBody else {
+                writeUnsupportedMediaType(context, surface: .responses)
+                return
+            }
+            handleCompact(body: body, context: context)
         case (.POST, "/v1/messages"):
             guard jsonBody else {
                 writeUnsupportedMediaType(context, surface: .anthropic)
@@ -116,23 +114,49 @@ extension ServerHTTPHandler {
         case (.POST, "/v1/models/unload"):
             handleUnload(context: context)
         case (_, "/health"), (_, "/v1/models"), (_, "/v1/chat/completions"), (_, "/v1/responses"),
+             (_, "/v1/responses/compact"),
              (_, "/v1/models/unload"), (_, "/v1/messages"), (_, "/v1/messages/count_tokens"):
             writeRequestError(context, .invalid(message: "method not allowed", param: nil,
                                                 code: "method_not_allowed"),
                               status: .methodNotAllowed,
                               surface: anthropic ? .anthropic : .chat)
         default:
-            if segments.count == 3, segments[0] == "v1", segments[1] == "models" {
-                handleModel(id: segments[2], method: head.method, anthropic: anthropic, context: context)
-            } else if segments.count >= 3, segments[0] == "v1", segments[1] == "responses" {
-                handleStoredResponse(segments: Array(segments.dropFirst(2)),
-                                     method: head.method, context: context)
-            } else {
-                writeRequestError(context, .notFound(message: "route not found", param: nil),
-                                  status: .notFound,
-                                  surface: anthropic ? .anthropic : .chat)
-            }
+            routeBySegment(segments: segments, method: head.method,
+                           anthropic: anthropic, context: context)
         }
+    }
+
+    /// Paths that are not in the table above: a model id, a stored response, or
+    /// nothing. Kept out of the switch so the switch stays a table.
+    func routeBySegment(segments: [String], method: HTTPMethod, anthropic: Bool,
+                        context: ChannelHandlerContext) {
+        if segments.count == 3, segments[0] == "v1", segments[1] == "models" {
+            handleModel(id: segments[2], method: method, anthropic: anthropic, context: context)
+        } else if segments.count >= 3, segments[0] == "v1", segments[1] == "responses" {
+            handleStoredResponse(segments: Array(segments.dropFirst(2)),
+                                 method: method, context: context)
+        } else {
+            writeRequestError(context, .notFound(message: "route not found", param: nil),
+                              status: .notFound,
+                              surface: anthropic ? .anthropic : .chat)
+        }
+    }
+
+    /// S28: a HEAD response must never carry a body, and only the two read routes
+    /// support HEAD. Everything else — a POST route, a per-id route, or nothing
+    /// at all — would otherwise answer with the body its ordinary path writes,
+    /// which on a keep-alive connection is read as the *next* response's head by
+    /// a simple client. Every other method error on a known route is already a
+    /// 405 (`method_not_allowed`), so answering HEAD the same way keeps this one
+    /// rule rather than a second route table; the cost is that a HEAD for an
+    /// unknown path says 405 where a GET says 404, and both are head-only.
+    ///
+    /// - Returns: true when the request has been answered and routing should stop.
+    func refuseUnsupportedHEAD(_ head: HTTPRequestHead, path: String,
+                               context: ChannelHandlerContext) -> Bool {
+        guard head.method == .HEAD, path != "/health", path != "/v1/models" else { return false }
+        writeHeadOnly(context, status: .methodNotAllowed)
+        return true
     }
 
     func writeUnsupportedMediaType(_ context: ChannelHandlerContext, surface: APISurface) {

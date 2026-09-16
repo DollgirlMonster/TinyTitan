@@ -208,6 +208,62 @@ A failure after the stream opened ends it with `response.failed` carrying the
 error inside the response object. There is no `[DONE]`; the terminal event is
 the end.
 
+## Compaction (`POST /v1/responses/compact`)
+
+Compaction takes a conversation and returns a **compacted input window**, not a
+response: nothing is stored and no session begins. The client sends the returned
+`output` back as the base `input` of its next response — dropping
+`previous_response_id` — and this server decodes the note into the leading system
+block on the way in, so the model continues from the compacted state rather than
+from the transcript.
+
+```
+POST /v1/responses/compact
+{ "model": "…", "instructions": "…", "input": [ …items… ],
+  "prompt_cache_key": "…", "max_compaction_tokens": 4096 }
+
+→ { "id": "resp_cmp_…", "object": "response.compaction", "created_at": …,
+    "output": [ {message with `instructions` verbatim}, {compaction item} ],
+    "usage": { …the whole cost, both passes… } }
+```
+
+`model` is required (400 naming the parameter without it). The `compaction` item
+carries the note in `encrypted_content`; a response's `output` is non-empty and
+contains exactly one such item, as the spec requires. A `compaction` item sent
+back as input is decoded in `ResponsesAPIMapper.chatMessages`, and one this server
+cannot read is refused by name (`compaction_payload_invalid`) rather than dropped.
+
+**What `encrypted_content` actually holds.** The field is provider-opaque, not
+necessarily encrypted, and this server does not pretend otherwise: the payload is
+base64 JSON — `{v, model, createdAt, mode, summary}` — that the client is not
+expected to inspect and this server reads back on the next turn. It is versioned,
+so a payload from another build is refused by name instead of being misread. Real
+encryption would buy nothing here: the server is loopback-only and is summarising
+the caller's own session.
+
+**How the note is produced.** The conversation is rendered as a role-labelled
+transcript and summarised under a handover instruction that keeps requirements,
+decisions (with the reason and any option rejected), facts, and the next step,
+quoting paths and identifiers exactly. The call runs through the normal queue
+with **thinking off** — a model that reasons inside its own output cap returns an
+empty note — and at temperature 0, so the same session compacts the same way.
+
+The note is then measured with this server's own tokenizer. Over the budget
+(`max_compaction_tokens`, else one eighth of the context, capped at 4096) it is
+**compressed by a second pass rather than truncated**, because truncation drops
+the end of the session, which a continuation needs most. Three guards keep a bad
+pass out of the caller's history: lines copied from the instruction are dropped,
+a repetition loop is recognised as a failed pass, and a pass that still produces
+nothing usable falls back to the newest text trimmed to the budget. `mode` in the
+payload — `model`, `compressed` or `extractive` — says which path produced the
+note, and the server logs it with the note's token count.
+
+Measured on the 4B and 9B installs at 4-bit, an eight-turn session compacted in
+16.5 s and 39.7 s to notes that kept all four load-bearing facts (the decision and
+its rejected alternative, the measurement, the path, the next step) and that the
+model could then answer questions from. A 2B is not a summariser: it repeated the
+transcript instead of condensing it, which the repetition guard now catches.
+
 ## Messages (Anthropic)
 
 `messages` with `user` and `assistant` roles, content a string or blocks of
