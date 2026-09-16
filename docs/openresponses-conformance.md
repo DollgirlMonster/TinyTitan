@@ -4,16 +4,21 @@ What the [Open Responses](https://www.openresponses.org/specification) acceptanc
 suite says about this server's `/v1/responses` surface: first run as a scorecard on
 2026-09-14, then **re-run serially on 2026-09-15** after the sampling echo fix. Open
 Responses is an open, vendor-neutral formalisation of the OpenAI Responses API —
-schema, items, semantic streaming events, state machines — plus three things this
-server does not have (`/v1/responses/compact`, WebSocket transport, `allowed_tools`).
+schema, items, semantic streaming events, state machines — plus things this server
+does not have (`/v1/responses/compact`, `allowed_tools`) and one it has decided not
+to implement at all: the WebSocket transport, which the specification makes optional
+for servers (see [Out of scope](#out-of-scope-websocket-transport)).
 
 The point of running it was to turn "we implement the Responses API" into a
 number with named failures. It did, and it corrected a guess: the most valuable
-fix is **not** one of the three missing features.
+fix is **not** one of the missing features.
 
-**Current score: 7 passed, 10 failed, 0 skipped — 17 total** (see
-[Re-run](#re-run-2026-09-15-7-passed)). Every remaining failure is a genuinely
-absent optional surface or a deliberate limitation.
+**Score on the HTTP/SSE surface: 7 passed, 3 failed, 0 skipped — 10 total.** The
+suite runs 17 tests and seven of them exercise the WebSocket transport, which this
+project will not implement; they are excluded here rather than counted as failures
+([Out of scope](#out-of-scope-websocket-transport)). Two of the three in-scope
+failures need `/v1/responses/compact` and one is the deliberate text-only
+`image-input` refusal.
 
 ## First run (2026-09-14)
 
@@ -45,7 +50,7 @@ absent optional surface or a deliberate limitation.
 | --- | --- | --- |
 | Required sampling fields absent | **5** | real, and cheap |
 | No compaction endpoint | 3 | missing feature |
-| No WebSocket transport | 6 | missing feature |
+| No WebSocket transport | 6 (+1 that also needs compaction) | **out of scope by decision** — see below |
 | Text-only refuses `input_image` | 1 | deliberate limitation, not a bug |
 | 429 `queueFull` | 1 | artifact of the suite, not the server |
 
@@ -87,9 +92,10 @@ The five flips are the echo fix alone. `temperature`, `top_p`,
 `presence_penalty` and `frequency_penalty` are now numbers in every `Response`
 object — resolved from the same `GenerationConfig` the sampler is handed, while
 the request-side fields stay nil so the served model's profile still supplies
-them (audit C11). The remaining 10 are exactly the three absent optional
-surfaces plus the deliberate text-only limit; none is a schema or object-shape
-defect.
+them (audit C11). The remaining 10 are the two absent optional surfaces —
+`/v1/responses/compact` and the WebSocket transport, the latter out of scope by
+decision ([below](#out-of-scope-websocket-transport)) — plus the deliberate
+text-only limit; none is a schema or object-shape defect.
 
 ## The finding that mattered: five tests, three fields (fixed)
 
@@ -150,37 +156,49 @@ The suite agrees with this server, not with its own specification:
 - `src/lib/sse-parser.ts` treats `[DONE]` on HTTP as a sentinel to **skip** —
   `// Skip the [DONE] sentinel - it's not a real event` — so it is neither
   required nor rejected there.
-- On WebSocket the same suite **rejects** it: `"Received [DONE] before a terminal
-  WebSocket event"` is recorded as an error.
+- On WebSocket — a transport this project does not implement — the same suite
+  **rejects** it: `"Received [DONE] before a terminal WebSocket event"` is
+  recorded as an error.
 
 So the normative MUST is unenforced on one transport and contradicted on the
 other. That belongs upstream as a specification bug, not in this server as a
 compliance fix.
 
-## The three missing features, judged on merit
+## The two missing features, judged on merit
 
-**`allowed_tools`** — still the best of the three, and *not* exercised by this
+**`allowed_tools`** — still the best of the two, and *not* exercised by this
 suite (no test covers it). Its stated purpose is to narrow the executable tool set
 without changing `tools`, because mutating `tools` invalidates prompt and schema
 caches. This server has a real prompt cache (`--prompt-cache-mode multi-prefix`,
 256 MiB), which is exactly the deployment the field was designed for. Not urgent,
 but the fit is unusually good.
 
-**WebSocket transport** — six tests, and the largest piece of work. It is not
-merely a second binding: it needs `response.create`, connection-local
-`previous_response_id` so `store=false` can continue without persisted state, a
-60-minute connection limit, `previous_response_not_found`, and eviction of a
-referenced response when a continuation fails. The payoff beyond compliance is
-that a persistent socket with connection-local state addresses the cold-prefill
-problem 5.5's notes describe — a client can continue a turn without resending and
-re-prefilling the whole context.
-
-**`/v1/responses/compact`** — three tests, and the least attractive. This server
+**`/v1/responses/compact`** — two tests, and the least attractive. This server
 already has compaction machinery for DeepSeek Harness; the endpoint is a
 different shape around it (`response.compaction` with `encrypted_content`), and
-the spec's own rationale is to avoid asserting provider-specific compression. Worth
-doing only alongside the WebSocket work, since `websocket-compact-new-chain`
-depends on both.
+the spec's own rationale is to avoid asserting provider-specific compression. A
+third test, `websocket-compact-new-chain`, needs both this and the WebSocket
+transport, so it leaves with the transport.
+
+## Out of scope: WebSocket transport
+
+**Not implemented, and not planned.** The specification makes it optional for
+servers, and the reasons here are concrete: the server is loopback-only with one
+resident model, so a persistent socket buys no reach; the same event model is
+already carried over HTTP and SSE; and the one thing the transport would really
+add — connection-local continuation, so a client can carry on without resending
+and re-prefilling the whole context — is served here by the prompt cache
+(`--prompt-cache-mode multi-prefix`), which is the mechanism this project has
+actually measured.
+
+Seven suite tests exercise the transport: `websocket-response`,
+`websocket-sequential-responses`, `websocket-continuation`,
+`websocket-reconnect-store-false-recovery`, `websocket-previous-response-not-found`,
+`websocket-failed-continuation-evicts-cache` and `websocket-compact-new-chain`.
+They stay in the tables above exactly as the suite reported them, because that is
+what the run produced, and they are excluded from the score. A failure against a
+transport this project has decided not to build is not a conformance gap, and
+nothing in the suite requires the transport of a server that speaks HTTP and SSE.
 
 ## One caveat about the scorecard itself
 
@@ -228,15 +246,16 @@ never sees more than one generation at a time (no suite patch, no raised
 
 ```bash
 for id in basic-response assistant-phase response-output-phase-schema \
-          streaming-response websocket-response websocket-sequential-responses \
-          websocket-continuation websocket-reconnect-store-false-recovery \
-          websocket-previous-response-not-found websocket-failed-continuation-evicts-cache \
-          websocket-compact-new-chain system-prompt tool-calling image-input \
+          streaming-response system-prompt tool-calling image-input \
           multi-turn compact-response compact-missing-model; do
   npx tsx bin/compliance-test.ts -u http://127.0.0.1:8080/v1 -k any \
     -m qwen3.5-2b_4-Bit --filter "$id" --json
 done
 ```
+
+These are the ten tests of the surface this server ships. The seven WebSocket test
+ids are omitted on purpose: the transport is out of scope by decision (above), so
+running them would only reproduce a known non-result.
 
 Node alone cannot run the suite: its resolver rejects the extensionless relative
 imports (`from "../src/lib/compliance-tests"`), so `tsx` (or the repo's own Bun)
@@ -253,6 +272,7 @@ needed — only `zod` is.
   against a release build of the working tree containing the echo fix.
 - `swift test --no-parallel` on that tree: 1524 tests in 234 suites, 0 failures.
 - The scorecard is a point-in-time measurement, not a release claim; the
-  `[DONE]` item is an upstream report, not a work item. No WebSocket or
-  compaction surface exists yet, so those nine failures are expected; the tenth
-  is the by-design image refusal.
+  `[DONE]` item is an upstream report, not a work item. No compaction surface
+  exists yet, so those two failures are expected, and the third in-scope failure
+  is the by-design image refusal. WebSocket transport is out of scope by decision,
+  so its seven tests are not counted against the surface this server ships.
