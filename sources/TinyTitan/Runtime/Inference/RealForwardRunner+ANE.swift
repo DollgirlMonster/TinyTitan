@@ -21,7 +21,8 @@ extension RealForwardRunner {
         tokenCount t: Int,
         hiddenSize D: Int,
         startPosition: Int,
-        kvDim: Int
+        kvDim: Int,
+        selection: QSASelection?
     ) async throws {
         let halfBytes = MemoryLayout<Float16>.stride
         guard let stage = cb.makeBlitCommandEncoder() else {
@@ -35,7 +36,8 @@ extension RealForwardRunner {
         try waitForCompletion(cb)
         recordKernelGPU(role: "prefill_ane_stage", cb)
 
-        try await ane.predict(layer: L, history: startPosition, tokenCount: t)
+        try await ane.predict(layer: L, history: startPosition,
+                              tokenCount: t, selection: selection)
         ane.appendShadow(layer: L, startPosition: startPosition, tokenCount: t)
         // Start the next covered layer's model load now: it overlaps the MoE
         // stage the caller is about to encode and run on the GPU, which is

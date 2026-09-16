@@ -46,6 +46,30 @@ but ~21,750 characters is the floor.
 arm's seconds are a GPU time, and quoting a ratio from it is how a model that
 never touched the ANE comes to look "tested".
 
+## Is it the same model? (correctness)
+
+Speed is the easy half. **Whatever the digests say, this sweep does not answer
+whether the ANE computes the model's attention** — it generates one greedy
+token, and a single token usually agrees even when the attention behind it is
+wrong, so the digests are a determinism check and nothing more.
+
+`benchmark/ane_prefill_correctness.py` is the check that answers it: the same
+long prompt, greedy, `--max-new` tokens (default 32) per arm, compared as text
+— how many leading characters agree and where the first divergence is.
+
+```bash
+python3 benchmark/ane_prefill_correctness.py \
+  --models qwen3.8-flash-next_125B_A6B_4Bit --max-new 32 \
+  --label v5.6-ane-38 --record
+```
+
+A model whose full-attention layers select keys with a QSA indexer gets a third
+arm: `causal`, which runs the ANE with the causal-only mask the fold exists to
+replace (`TINYTITAN_ANE_MASK=causal`, a verification control that prints a
+warning). It is the negative control. `on` is expected to track the GPU arm and
+`causal` to diverge from it; an arm that fell back is reported as an error,
+never as a comparison.
+
 ## What the ANE covers, and when it engages
 
 The ANE runs the **full-attention block** of a chunk, for the covered layers
@@ -69,23 +93,136 @@ Three conditions must hold or the chunk silently stays on the GPU:
 3. the chunk is **full**, or a continuation of a long prompt. A prompt under one
    chunk has no shape to run and deliberately stays on the GPU.
 
-## The band table
+## The decision rule (plan item A)
 
-Which width to export is a function of the prompt, so a model can carry several
-(see `tools/ane_sidecars.sh`, and the runbook's wiring point 9):
+Two questions, in order: **which family** is the model, and **how long** are the
+prompts this deployment serves. The second is a *deployment* choice, not a
+per-request one — the prefill chunk is fixed when the runner starts, and the
+sidecar it selects must be built for exactly that width — so "match the chunk to
+the prompt" means match it to the workload.
 
-| Prompt | Sidecar to have | Measured |
+| The prompts this deployment serves | Export and configure | Measured |
 | --- | --- | --- |
-| under 1,024 tokens | none — the GPU wins | "hello" (5 tokens): GPU 0.11 s vs a padded chunk costing tens of seconds |
-| 1,024 – 4,095 | **`ane_prefill-1024`** (this is what makes the band reachable) | dense 2B, ~2,500 tokens: GPU 23.33 s → ANE 17.88 s, **1.30×** |
-| 4,096 – 16,384 | `ane_prefill` (4,096) | `v5.5-ane-matrix-3`, ~4,300 tokens, per model below |
-| over 16,384 | a larger `--max-history` (coverage = max history + chunk) | see below |
+| under 1,024 tokens | nothing — leave the ANE to decline | "hello" (5 tokens): GPU 0.11 s, against a padded chunk costing tens of seconds |
+| 1,024 – 4,095 | `--chunk 1024` | dense 2B at ~2,500 tokens: 23.33 s → 17.88 s, **1.30×** |
+| 4,096 – 16,384 | `--chunk 4096` (the default) | per-model matrix below; AgentWorld **1.68×** at 4,333 tokens |
+| beyond 16,384 | `--chunk 4096 --max-history 32768` | coverage becomes 36,864 tokens; the ANE accepted that shape here |
 
-**The default sidecar covers prompts up to `max(histories) + chunk` = 16,384
-tokens.** Past that the chunk at `startPosition` 16,384 has no `h16384` variant,
-so it falls back — and because a chunk may only run on the ANE when every prior
+**Why not one width for everything.** A chunk-1,024 sidecar reaches the mid band
+that 4,096 cannot serve at all, but it costs more on long prompts: the runtime
+loads one Core ML model per (layer, history) — the variant is named by the
+chunk's start position — so a 16,384-token prefill is four loads per covered
+layer at chunk 4,096 and sixteen at chunk 1,024, at roughly 0.5 s each. 1,024
+wins where 4,096 cannot run; 4,096 wins above it. 2,048 buys nothing: measured
+against 1,024 at the same prompt it tied (22.73 s → 17.52 s, 1.30×), so the
+narrower width is the one to ship — it wins the same and covers strictly more.
+Both records are kept (`ane-chunk1024-2b-4bit.json`,
+`ane-chunk2048-2b-4bit.json`) so the claim can be re-run.
+
+Per family, with the bands the same:
+
+| Family | < 1,024 | 1,024 – 4,095 | 4,096 – 16,384 | > 16,384 |
+| --- | --- | --- | --- | --- |
+| `qwen36` — Qwen 3.6, Ornith 1.5, KAT-Coder, AgentWorld | GPU | ANE, chunk 1,024 | ANE, chunk 4,096 | widen `--max-history` |
+| `qwen3_5_dense` — Qwen 3.5 2B/4B/9B | GPU | ANE, chunk 1,024 | ANE, chunk 4,096 | widen `--max-history` |
+| `qwen38flash` — Qwen 3.8 125B-A6B | GPU | **GPU** | **GPU** | **GPU** |
+| `qwen38flash_mtp` — its one-layer MTP draft | GPU | GPU | GPU | GPU |
+| the CPU engine, any model | CPU | CPU | CPU | CPU |
+
+## Qwen 3.8: the fold is wired and correct, and the ANE still loses
+
+Qwen 3.8's full-attention layers do not compute a different attention: they
+**choose keys** with a QSA indexer, and the GPU path already computes that choice
+as a compacted keep list (`keepIndices`/`keepCounts`, which is why that path
+forces the causal-tiled kernel). Dense attention matches that selection only
+through `keptBlocks × compressRatio + (compressRatio − 1)` = **2,051 visible
+keys**, and the smallest chunk the ANE accepts is a full 4,096 — so a sidecar fed
+the causal mask would attend to keys the model drops, silently.
+
+That is now wired rather than refused. The sidecar's mask input is an *arbitrary*
+additive mask, so the runtime folds the same selection in — `-30000` on every
+dropped key, which `exp()` underflows to zero exactly as an omitted key
+contributes nothing — and **the graph does not change at all**. What was added is
+the fold itself (a per-layer mask, because each layer selects its own keys), the
+`selectionFolded` contract the runtime refuses to run without, and the checks
+below. `TINYTITAN_ANE_MASK=causal` is a verification control that feeds the
+causal-only mask instead, and prints a warning when it does.
+
+**Then it was measured, and it does not pay.** Both 3.8 widths, prompt ~4,333
+tokens, chunk 4,096, two measured runs per arm after a warm-up each:
+
+| Model | ANE off | ANE on | Ratio |
+| --- | ---: | ---: | ---: |
+| Qwen 3.8 125B-A6B 4-bit | 197.5 s | 273.5 s | **0.72×** |
+| Qwen 3.8 125B-A6B 8-bit | 428.3 s | 491.8 s | **0.87×** |
+
+The mechanism, all measured rather than inferred:
+
+- **The GPU path is already sparse.** It gathers the indexer's ~2,051 selected
+  keys per query; the ANE graph computes **dense attention over the whole
+  context** and masks the dropped keys. For the 4,333-token prompt that is a
+  4,096 × 8,192 score matrix per covered layer-chunk against the GPU's
+  4,096 × 2,051 gather — about 4× the arithmetic — and this graph's ANE
+  advantage is small to begin with: one `h0` prediction measured **0.43 s on the
+  ANE against 0.65 s on the CPU alone**, where the 35B's blocks were 26.7× the
+  GPU's cost.
+- **The per-variant Core ML load is now the dominant term.** One
+  `MLModel(contentsOf:configuration:)` of this sidecar measured **6.9 s for
+  `h0`, 13.6 s for `h4096`** on the same machine whose 35B sidecar documents
+  ~0.5 s. A 4,333-token prompt visits 24 (layer, history) variants, so model
+  setup alone is minutes — against a GPU prefill of ~185 s, and the asynchronous
+  preload can only hide what the MoE stage lasts.
+
+So `tools/ane_sidecars.sh` does **not** export one for `qwen38flash`, and the
+family's row above is GPU everywhere. The exporter still supports the family —
+the geometry is the same block, and the fold is the thing any future attempt
+would need — so a sidecar can be built explicitly to re-measure:
+
+```bash
+~/.venvs/coreml-py311/bin/python tools/export_ane_prefill.py \
+  --model models/qwen3.8-flash-next_125B_A6B_4Bit --chunk 4096 --max-history 8192
+```
+
+**Do not raise that past 8,192 on 3.8.** Its `h12288` variant is accepted by the
+converter and then fails to *load* (`functionName` must be nil unless the model
+type is ML Program) on both widths — 24 heads of 4,096 × 16,384 fp16 scores is a
+3.2 GB arena, against the 35B's, which loads. The exporter now compiles *and*
+loads every function it is about to record and fails the export if one does not,
+so a sidecar cannot advertise coverage it cannot serve.
+
+Three checks cover the correctness of what was wired:
+
+- `tools/verify_ane_sidecar.py` runs automatically on a sidecar that records
+  `selectionFolded`: the graph is fed a QSA-shaped mask (1,538 of 4,096 keys kept
+  on average) and checked against the NumPy reference under that same mask. On
+  **both widths** the graph tracks the reference to **0.47 %**, while the
+  causal-only mask moves the reference by **7.6 %** and is off by 7.9 % — 16× the
+  fp16 noise, which is what makes the check non-vacuous. A selection that barely
+  moves the reference fails as vacuous (`--min-selection-effect`).
+- the runtime refuses to attend densely: a chunk past the dense-exact window with
+  no selection throws rather than quietly dropping the fold.
+- `benchmark/ane_prefill_correctness.py --max-new 32` compares a 32-token greedy
+  continuation between the arms, with the causal-only mask as the negative
+  control. Run on the 4-bit install (the runtime path is the same on both), the
+  folded arm is **textually identical to the GPU arm** — and so is the causal
+  control, which is exactly why text alone is not enough here. A **digest at
+  `--max-new 1` cannot do this** at all.
+- `benchmark/ane_prefill_layer_diff.py` compares the runtime's own activation
+  dumps per arm, and it is the check that separates them: the causal control's
+  `prefill_logits` differ from the folded arm's by 13.6–17.8 %, so the mask does
+  reach the graph. Two related numbers were measured while pinning that down: on
+  the dense 2B the ANE arm's `L3_after` differs from the GPU arm's by 0.94 %, and
+  lowering the 3.8 QSA budget from 2,048 to 8 moves `L3_after` by 10.2 % and the
+  logits by 69 %. The folded and causal arms are by contrast *bit-identical* at
+  `L3_after`, because at the first full-attention layer the blocks this indexer
+  drops contribute below fp16 resolution; the divergence appears at later
+  attention layers, which the dump's layer limit does not cover.
+
+**The sidecar covers prompts up to `max(histories) + chunk` = 16,384 tokens by
+default.** Past that the chunk at `startPosition` 16,384 has no `h16384` variant
+and falls back — and because a chunk may only run on the ANE when every prior
 chunk's shadow rows exist, the *rest of that request* stays on the GPU too. For
-long-context work, export a wider sidecar:
+long-context work:
 
 ```bash
 ~/.venvs/coreml-py311/bin/python tools/export_ane_prefill.py \
@@ -99,14 +236,6 @@ loudly and writes nothing in that case, so the attempt is safe to make; a
 refusal means the smaller `--max-history` stays. On this machine (M3) it does
 not refuse: a one-layer `--max-history 32768` export compiled all nine variants
 and recorded `maxPromptTokens: 36864`. The refusal in issue #7 was an M5.
-
-**1,024 or 2,048 for the mid band? Both were measured, and 1,024 wins the
-tie.** On the dense 2B at ~2,500 tokens, chunk 1,024 gave 23.33 s → 17.88 s
-(1.30×) and chunk 2,048 gave 22.73 s → 17.52 s (1.30×) — the same result inside
-the noise. So 1,024 is the width to ship: it wins the same, and it also covers
-1,024–2,047 tokens, which a 2,048 chunk cannot serve at all. A second mid-band
-width buys nothing, and the two records (`ane-chunk1024-2b-4bit.json`,
-`ane-chunk2048-2b-4bit.json`) are both kept so the claim can be re-run.
 
 `v5.5-ane-matrix-3` — 23,000-character prompt (4,333 tokens), chunk 4,096,
 two measured runs per arm after a discarded warm-up each, on an M3 24 GB:
@@ -144,21 +273,18 @@ manifest, so support is a property of the graph, not a list:
 | --- | --- | --- | --- |
 | `qwen36` | AgentWorld 35B-A3B | yes | the geometry the graph was written for |
 | `qwen3_5_dense` | Qwen 3.5 2B / 4B / 9B | yes | same attention block, read from the manifest |
-| `qwen38flash`, `qwen38flash_mtp` | Qwen 3.8 125B-A6B (+MTP) | **no** | structural — see below |
+| `qwen38flash` | Qwen 3.8 125B-A6B | exportable, **not installed** | the block and the fold are right, but the ANE loses on this model (above) |
+| `qwen38flash_mtp` | Qwen 3.8's one-layer MTP draft | **no** | verified, not prefilled, on the ANE |
 
-Qwen 3.8's exclusion is a correctness boundary, not a missing feature: its
-full-attention layers select keys with a **QSA sparse indexer**, and dense
-attention matches that selection only through `keptBlocks × compressRatio +
-(compressRatio − 1)` = **2,051 visible keys** (`QSAExactness`). Past that, dense
-attention attends to keys the model would have dropped, silently and plausibly.
-The ANE pays only on long prompts, which is exactly where dense is wrong — so
-the exporter refuses the family and the runtime keeps it on the GPU.
+The 3.8 build names its per-head norms `q_norm`/`k_norm` rather than
+`q_norm.weight`, which the loader resolves from the index rather than assuming.
 
 A sidecar also records the geometry it was built for, and the runtime refuses
 one that disagrees with the model (family, hidden width, head split, chunk,
 covered layers). The exporter resolves each tensor's **per-tensor** width rather
 than its slot width: the dense installs declare a 4-bit attention slot over
-8-bit `k_proj`/`v_proj`.
+8-bit `k_proj`/`v_proj`. It also loads every function it records, so a
+specialization the ANE refuses cannot be advertised as coverage.
 
 ## Reading a record
 
@@ -167,3 +293,11 @@ arms are **not** bit-identical by construction — the ANE computes attention in
 fp16 with a different reduction order — so the digests are expected to differ;
 what must hold is that each arm is internally stable, and that `on.used_ane` is
 true. Compare a run only against another run of the same model and prompt.
+
+A differing digest is therefore not evidence of a bug, and a matching one is not
+evidence of correctness. Whether the two arms generate the *same text* is the
+separate measurement above (`ane-correctness-*.json`), and even *that* is not
+enough on a prompt whose continuation is nearly deterministic: on 3.8 the
+causal-only control agreed with the GPU for all 32 tokens too. The per-arm
+activation comparison (`ane-layer-diff-*.json`) is what separates them, via
+`prefill_logits`.

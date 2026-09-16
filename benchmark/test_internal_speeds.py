@@ -114,15 +114,23 @@ class MissingAneReasonTests(unittest.TestCase):
         self.assertIn("export_ane_prefill.py", reason)
         self.assertNotIn("no graph for", reason)
 
-    def test_qwen38_is_told_the_ane_cannot_serve_it_at_all(self):
-        for family in ("qwen38flash", "qwen38flash_mtp"):
-            with self.subTest(family=family):
-                reason = internal_speeds.missing_ane_reason(
-                    "models/qwen3.8-flash-next_125B_A6B_4Bit", family)
-                self.assertIn("sparse indexer", reason)
-                self.assertIn("2,051", reason)
-                # Not a missing sidecar: none can be built.
-                self.assertNotIn("export one", reason)
+    def test_qwen38_is_told_the_ane_measured_slower(self):
+        # The family became servable when the runtime learned to fold the QSA
+        # selection into the mask, and then measured: the ANE loses, so the
+        # record says so rather than telling the operator to export one.
+        reason = internal_speeds.missing_ane_reason(
+            "models/qwen3.8-flash-next_125B_A6B_4Bit", "qwen38flash")
+        self.assertIn("does not pay", reason)
+        self.assertIn("0.72x", reason)
+        # Not a missing sidecar: one would make the default path slower.
+        self.assertNotIn("export one", reason)
+
+    def test_the_mtp_draft_is_not_prefilled_on_the_ane(self):
+        reason = internal_speeds.missing_ane_reason(
+            "models/qwen3.8-flash-next_125B_A6B_MTP_4Bit", "qwen38flash_mtp")
+        self.assertIn("MTP draft", reason)
+        # Not a missing sidecar: one would never be loaded.
+        self.assertNotIn("export one", reason)
 
 
 class NewestBaselineTests(unittest.TestCase):

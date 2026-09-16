@@ -91,12 +91,24 @@ for name in "${candidates[@]}"; do
 import json,sys
 print(json.load(open('$model/manifest.json'))['arch']['family'])")"
 
-  # Families the exporter cannot describe are reported, not attempted: a dense
-  # sidecar computes attention Qwen 3.8's sparse indexer would not have chosen,
-  # and past 2,051 visible keys that is silently wrong.
+  # Two kinds of install are reported rather than exported.
+  #
+  # `qwen38flash` is measured *not to pay*: the fold is wired and verified, and
+  # the ANE still loses (0.72x on the 4-bit install at 4,333 tokens). Its GPU
+  # path already attends to only the indexer's ~2,051 selected keys, while the
+  # ANE graph is dense over the context and its per-variant Core ML load measured
+  # 7-14 s. Export one explicitly to re-measure; do not install one expecting a
+  # win. See benchmark/ane-prefill/README.md.
+  #
+  # The MTP draft is one the runtime never routes: it is verified rather than
+  # prefilled on the ANE, so a sidecar for it would never be loaded.
   case "$family" in
     qwen36|qwen3_5_dense) ;;
-    *) echo "== $name: $family — the exporter has no graph for this family; skipping"
+    qwen38flash)
+       echo "== $name: $family — the ANE is measured slower on this model; skipping (export explicitly to re-measure)"
+       skipped+=("$name ($family: measured slower)"); continue ;;
+    *)
+       echo "== $name: $family — the exporter does not build a sidecar for this family; skipping"
        skipped+=("$name ($family)"); continue ;;
   esac
 
@@ -125,10 +137,13 @@ print(json.load(open('$model/manifest.json'))['arch']['family'])")"
     failed+=("$name: still no sidecar"); continue
   fi
 
-  # Cheap, and the only check that a wrong geometry cannot pass.
+  # Cheap, and the only check that a wrong geometry cannot pass. The width
+  # matters: `--chunk` selects which sidecar directory is opened, so a
+  # non-4,096 run must verify the one it just exported.
   echo "== $name: verifying the graph against NumPy"
   log="$(mktemp)"
-  if "$COREML_PYTHON" tools/verify_ane_sidecar.py --model "$model" > "$log" 2>&1; then
+  if "$COREML_PYTHON" tools/verify_ane_sidecar.py --model "$model" \
+       --chunk "$CHUNK" > "$log" 2>&1; then
     tail -2 "$log"
     verified+=("$name")
   else

@@ -119,7 +119,7 @@ even though the converter would not complain.
 | 6 | `ModelCatalog.swift` — `displayNames` | The served id → human name (`/v1/models` and the app read this) |
 | 7 | `AppModelInstallDescriptor.swift` | Two `converted(...)` descriptors, `all`, `installerTarget`, `selectedDescriptor` — **see §5 for the fingerprint** |
 | 8 | `tests/` | `ModelProfileTests.shipped` (and the table count) and the app test's build table |
-| 9 | ANE prefill sidecar | `tools/ane_sidecars.sh <install>` — export and verify it. A GPU-path install without one has no ANE prefill at all: the switch is on by default, the runtime asks for the sidecar, and finds nothing. Skip only where the exporter has no graph — `qwen38flash`, whose sparse indexer dense attention does not match past 2,051 visible keys |
+| 9 | ANE prefill sidecar | `tools/ane_sidecars.sh <install>` — export and verify it. A GPU-path install without one has no ANE prefill at all: the switch is on by default, the runtime asks for the sidecar, and finds nothing. Two kinds are skipped. The exporter has no graph for the one-layer MTP draft, which the runtime verifies rather than prefills on the ANE. And the ANE has been *measured not to pay* for `qwen38flash`: its GPU path already attends to only the indexer's ~2,051 selected keys while the ANE graph is dense over the context, so a sidecar there only slows the default path (0.72×, `benchmark/ane-prefill/README.md`). Its block is still exportable — the runtime folds the QSA selection into the mask — but export one explicitly to re-measure, never to install |
 
 Validate 1 before any download:
 

@@ -198,12 +198,15 @@ tools/internal-speeds.py --record --label vX.Y-<model> \
   --model models/<install with a sidecar>
 ```
 
-Qwen 3.8 is the standing exception and it is structural: its full-attention
-layers select keys with a sparse indexer, and dense attention matches that
-selection only through 2,051 visible keys, so the ANE cannot serve it and the
-record says so rather than quoting a dense number. The ANE also requires a
-4,096-token prefill chunk and a prompt that fills one; a model left on a smaller
-chunk cannot reach it at all.
+The one family the ANE does not serve at all is the one-layer MTP draft: the
+runtime verifies it rather than prefilling it on the Neural Engine, so the record
+says so rather than quoting a number. Sparse-indexed attention is *not* an
+exception any more — Qwen 3.8's QSA indexer selects keys rather than changing the
+arithmetic, and the runtime folds that selection into the additive mask the
+sidecar already takes — but it is also **not installed**: measured, the ANE runs
+0.72× the GPU's prefill on that model, so its row reports the measurement instead
+of a speedup. The ANE also requires a 4,096-token prefill chunk and a prompt that
+fills one; a model left on a smaller chunk cannot reach it at all.
 
 With no `--baseline`, the comparison picks the newest previous record for the
 **same model and prompt**, so extra records never become the 4B's baseline. A

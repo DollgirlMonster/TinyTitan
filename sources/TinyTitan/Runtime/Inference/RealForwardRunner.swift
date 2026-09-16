@@ -481,8 +481,14 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         // Any family may carry a sidecar now: the graph is built from the
         // model's own geometry and `ANEPrefillAttention.init` refuses one that
         // does not match this model, so the gate is the sidecar itself rather
-        // than a family name. A family the exporter cannot serve (3.8, whose
-        // sparse indexer dense attention cannot stand in for) simply has none.
+        // than a family name. A family that *selects* keys rather than changing
+        // the arithmetic — Qwen 3.8's QSA indexer — is served by folding that
+        // selection into the additive mask the graph already takes, which the
+        // sidecar records as `selectionFolded`. A family the exporter does not
+        // build for (the one-layer MTP draft) simply has none — and 3.8, whose
+        // fold is wired and verified, is measured *slower* on the ANE
+        // (benchmark/ane-prefill/README.md), so no sidecar is installed for it
+        // and the chunk stays here on the GPU.
         let wantsANE = try RuntimePrefillANE.environmentValue() == .on
         if wantsANE {
             do {

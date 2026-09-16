@@ -25,6 +25,7 @@ import json
 import pathlib
 import sys
 import unittest
+import warnings
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -81,10 +82,21 @@ class GeometryTests(unittest.TestCase):
         geom = exporter.geometry_for(arch(family="qwen3_5_dense"), entries)
         self.assertEqual(geom.prefix, "model.language_model.layers.")
 
-    def test_qwen38_is_refused_for_its_indexer_not_its_shape(self):
+    def test_qwen38_is_served_because_only_its_mask_was_missing(self):
+        # The indexer selects keys; it does not change the arithmetic. The
+        # geometry is the same kind of block as the other families, and the
+        # runtime folds the selection into the mask the graph already takes.
+        geom = exporter.geometry_for(arch(family="qwen38flash"), ENTRIES)
+        self.assertEqual((geom.family, geom.hidden, geom.q_heads,
+                          geom.kv_heads, geom.head_dim, geom.rotary),
+                         ("qwen38flash", 2048, 16, 2, 256, 64))
+
+    def test_the_mtp_draft_is_refused(self):
+        # The runtime verifies the one-layer draft rather than prefilling it on
+        # the ANE, so a sidecar for it would never be loaded.
         with self.assertRaises(SystemExit) as caught:
-            exporter.geometry_for(arch(family="qwen38flash"), ENTRIES)
-        self.assertIn("2,051", str(caught.exception))
+            exporter.geometry_for(arch(family="qwen38flash_mtp"), ENTRIES)
+        self.assertIn("MTP draft", str(caught.exception))
 
     def test_a_geometry_the_graph_cannot_reproduce_is_refused(self):
         for override, fragment in (
@@ -133,6 +145,72 @@ class TensorWidthTests(unittest.TestCase):
         self.assertEqual(
             exporter.tensor_weight_bits(
                 manifest, f"{PREFIX}3.self_attn.k_proj.weight", 8), 8)
+
+
+@unittest.skipIf(exporter is None, f"exporter needs coremltools: {IMPORT_ERROR}")
+class VariantLoadTests(unittest.TestCase):
+    """A recorded history the runtime cannot load is announced coverage.
+
+    The converter accepting a graph is not Core ML being able to load it, and a
+    sidecar that records a variant it cannot serve fails the request that
+    reaches it instead of falling back. Qwen 3.8's h12288 is the measured case.
+    """
+
+    def setUp(self):
+        self.real = exporter.ct.models.MLModel
+        self.addCleanup(setattr, exporter.ct.models, "MLModel", self.real)
+
+    def test_a_variant_that_does_not_load_fails_the_export(self):
+        seen = []
+
+        def fake(path, compute_units=None, function_name=None):
+            seen.append(function_name)
+            if function_name == "h12288":
+                raise RuntimeError(
+                    "`.functionName` property must be nil unless the model type "
+                    "is ML Program.")
+            return object()
+
+        exporter.ct.models.MLModel = fake
+        with self.assertRaises(exporter.ANEExportError) as caught:
+            exporter.verify_variants_load(pathlib.Path("layer_3.mlpackage"),
+                                          [0, 4096, 8192, 12288], 3)
+        self.assertIn("h12288", str(caught.exception))
+        # It reaches the failing variant rather than stopping early, so the
+        # error names the history that has to change.
+        self.assertEqual(seen, ["h0", "h4096", "h8192", "h12288"])
+
+    def test_a_variant_that_loads_but_cannot_run_fails_the_export(self):
+        # The Python API does not raise for a variant the ANE refused; it warns
+        # that predict() will not work and returns a model. The runtime's
+        # Objective-C call *does* raise, so an exception-only check here would
+        # pass and the sidecar would still advertise coverage it cannot serve.
+        def fake(path, compute_units=None, function_name=None):
+            if function_name == "h12288":
+                warnings.warn(
+                    "You will not be able to run predict() on this Core ML "
+                    "model. Underlying exception message was: `.functionName` "
+                    "property must be nil unless the model type is ML Program.")
+            return object()
+
+        exporter.ct.models.MLModel = fake
+        with self.assertRaises(exporter.ANEExportError) as caught:
+            exporter.verify_variants_load(pathlib.Path("layer_3.mlpackage"),
+                                          [0, 12288], 3)
+        self.assertIn("h12288", str(caught.exception))
+        self.assertIn("cannot run", str(caught.exception))
+
+    def test_every_recorded_variant_is_loaded(self):
+        seen = []
+
+        def fake(path, compute_units=None, function_name=None):
+            seen.append(function_name)
+            return object()
+
+        exporter.ct.models.MLModel = fake
+        exporter.verify_variants_load(pathlib.Path("layer_7.mlpackage"),
+                                      [0, 4096], 7)
+        self.assertEqual(seen, ["h0", "h4096"])
 
 
 @unittest.skipIf(exporter is None, f"exporter needs coremltools: {IMPORT_ERROR}")

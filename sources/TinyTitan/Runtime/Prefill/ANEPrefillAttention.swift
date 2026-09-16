@@ -108,12 +108,43 @@ final class ANEPrefillAttention: @unchecked Sendable {
         /// the native stderr and still exits 0, so a sidecar from an exporter
         /// without this flag may silently run the whole prefill on the CPU.
         let aneCompileVerified: Bool?
+        /// True when the exporter built this sidecar for a family whose
+        /// full-attention layers pick keys with a sparse indexer, so the
+        /// runtime has to fold that selection into the mask. Absent on a
+        /// sidecar for a dense family; the runtime refuses to load a
+        /// sparse-indexed model's sidecar that does not record it.
+        let selectionFolded: Bool?
     }
 
     static let expectedVersion = 1
     /// -30000 underflows fp16 exp() exactly like -inf without putting
     /// infinity arithmetic into the ANE graph (whose fused SDPA op NaNs).
     static let maskNegative = Float16(-30000)
+
+    /// Which mask the ANE path feeds the sidecar.
+    ///
+    /// `folded` is the shipped behaviour: a sparse-indexed model's key
+    /// selection is folded into the additive mask, which is the only way the
+    /// ANE computes the attention the model actually computes. `causal` is a
+    /// **verification control, not a tuning knob** — it feeds the causal-only
+    /// mask, which is *wrong* for such a model past its dense-exact window. It
+    /// exists so an A/B can show the fold is load-bearing by measuring the
+    /// causal arm diverge from the GPU path, rather than asserting it.
+    enum MaskMode: String {
+        case folded
+        case causal
+
+        static func environmentValue(
+            _ environment: [String: String] = ProcessInfo.processInfo.environment
+        ) throws -> MaskMode {
+            guard let raw = environment["TINYTITAN_ANE_MASK"] else { return .folded }
+            guard let mode = MaskMode(rawValue: raw) else {
+                throw PrefillError.chunkedUnsupported(
+                    "unsupported TINYTITAN_ANE_MASK '\(raw)'; allowed: folded, causal")
+            }
+            return mode
+        }
+    }
 
     /// The sidecar directory for a configured prefill chunk.
     ///
@@ -139,6 +170,16 @@ final class ANEPrefillAttention: @unchecked Sendable {
     let histories: Set<Int>
     let coveredLayers: Set<Int>
     let maxPromptTokens: Int
+    /// True when this model's full-attention layers select keys with a QSA
+    /// indexer, so every chunk past the dense-exact window must be fed a mask
+    /// with that selection folded in rather than the causal mask alone.
+    let requiresSelection: Bool
+    /// The visible-key count below which dense attention *is* the model's
+    /// selection, from the model's own indexer geometry. A chunk that needs a
+    /// selection and does not get one is refused rather than attended densely.
+    let exactVisibleKeys: Int?
+    /// Which mask the sidecar is fed; `.causal` only as a verification control.
+    let maskMode: MaskMode
 
     /// Shared-mode staging: the GPU blits `normed` in, Core ML writes the
     /// three outputs back via output backings, the GPU quantizes K/V into the
@@ -168,6 +209,15 @@ final class ANEPrefillAttention: @unchecked Sendable {
     private var preloaded: (layer: Int, history: Int, task: Task<LoadedModelBox, Error>)?
     private var masks: [Int: MLMultiArray] = [:]
     private var maskStorage: [Int: UnsafeMutableRawPointer] = [:]
+    /// The folded masks, one per history window, beside the causal ones: for a
+    /// sparse-indexed model the mask depends on the *layer* as well, so the
+    /// buffer is rewritten per covered layer. One chunk of one layer is live
+    /// at a time in the chunk loop, so this is bounded by the same 33–134 MB
+    /// per window the causal masks cost, not by layer count.
+    private var selectionMasks: [Int: MLMultiArray] = [:]
+    private var selectionMaskStorage: [Int: UnsafeMutableRawPointer] = [:]
+    /// One all-`-30000` row per history window, the fold's reset.
+    private var selectionNegativeRow: [Int: UnsafeMutableRawPointer] = [:]
     /// Token-major fp16 K/V rows per layer, at absolute prompt positions, so
     /// later chunks can attend to exact-precision history without
     /// re-dequantizing the cache. Allocated on the first append (single-chunk
@@ -176,6 +226,7 @@ final class ANEPrefillAttention: @unchecked Sendable {
     private var shadowV: [Int: UnsafeMutableRawPointer] = [:]
     private(set) var shadowTokens = 0
     private var loggedFallback = false
+    private var loggedCausalMask = false
 
     /// - Parameter weightsSha256: the model's own recorded `model_weights.bin`
     ///   digest, taken from its install receipt. A sidecar exported from
@@ -191,11 +242,15 @@ final class ANEPrefillAttention: @unchecked Sendable {
     ///   It selects *which* sidecar directory is loaded, and the one that is
     ///   found must be built for exactly this chunk — the gate below is a
     ///   contract with the graph's fixed shapes, so a nearer one is not usable.
+    /// - Parameter maskMode: `.folded` everywhere except a verification run;
+    ///   nil reads `TINYTITAN_ANE_MASK` (the tests pass it explicitly).
     init(modelDirectory: URL, device: MTLDevice,
          hiddenSize: Int, kvDim: Int, weightsSha256: String?,
          family: ModelFamily, fullAttentionLayerMask: [UInt8],
          sparseIndexer: SparseIndexerConfig,
-         configChunkTokens: Int) throws {
+         configChunkTokens: Int,
+         maskMode: MaskMode? = nil) throws {
+        self.maskMode = try maskMode ?? MaskMode.environmentValue()
         let dir = Self.sidecarDirectory(modelDirectory: modelDirectory,
                                         configChunkTokens: configChunkTokens)
         let metaURL = dir.appendingPathComponent("ane_prefill.json")
@@ -224,23 +279,28 @@ final class ANEPrefillAttention: @unchecked Sendable {
                 + "(tools/export_ane_prefill.py --chunk \(configChunkTokens)) "
                 + "or configure --prefill-chunk \(meta.chunkTokens)")
         }
-        // A sparse-indexed family is not something a dense sidecar can stand in
-        // for, and the arithmetic says there is no window where it could:
-        // dense attention matches the indexer's selection only through
-        // `keptBlocks * compressRatio + (compressRatio - 1)` visible keys —
-        // 2,051 for the shipped Qwen 3.8 geometry — and the smallest chunk the
-        // ANE accepts is a full 4,096, already past it. The exporter refuses to
-        // build such a sidecar; the runtime refuses to load one rather than
-        // depend on that, because past the window dense attention attends to
+        // A sparse-indexed model is served by folding its indexer's selection
+        // into the mask the sidecar is fed (`fillSelectionMask`): the graph's
+        // mask input is an *arbitrary* additive mask, so no part of the graph
+        // changes and the same sidecar works either way. What has to be true is
+        // that the runtime actually folds — dense attention matches the
+        // selection only through `keptBlocks * compressRatio +
+        // (compressRatio - 1)` visible keys (2,051 for the shipped Qwen 3.8
+        // geometry), and the smallest chunk the ANE accepts is a full 4,096,
+        // already past it. A sidecar that does not record the contract is
+        // refused rather than trusted, because a causal-only mask attends to
         // keys the model drops, silently and with plausible output.
-        guard !sparseIndexer.enabled else {
-            let exact = QSAExactness(sparseIndexer).maximumExactVisibleKeys
-            throw PrefillError.chunkedUnsupported(
-                "ANE prefill cannot serve a sparse-indexed model: a full "
-                + "\(meta.chunkTokens)-token chunk is already past the \(exact) "
-                + "visible keys where dense attention matches this model's "
-                + "selection, so the sidecar would attend to keys the model "
-                + "drops. This family stays on the GPU.")
+        let exactVisibleKeys = sparseIndexer.enabled
+            ? QSAExactness(sparseIndexer).maximumExactVisibleKeys : nil
+        if sparseIndexer.enabled {
+            guard meta.selectionFolded == true else {
+                throw PrefillError.chunkedUnsupported(
+                    "ANE prefill sidecar does not record a folded sparse "
+                    + "selection (selectionFolded is missing or false); with a "
+                    + "causal-only mask the sidecar would attend to keys this "
+                    + "model's indexer drops past \(exactVisibleKeys ?? 0) visible "
+                    + "keys. Re-export with tools/export_ane_prefill.py.")
+            }
         }
         // One geometry per sidecar. The graph's weights, head split, rope and
         // GQA expansion are all built from these numbers, so a sidecar that
@@ -305,6 +365,8 @@ final class ANEPrefillAttention: @unchecked Sendable {
         self.histories = Set(meta.histories)
         self.coveredLayers = Set(meta.layers)
         self.maxPromptTokens = (meta.histories.max() ?? 0) + meta.chunkTokens
+        self.requiresSelection = sparseIndexer.enabled
+        self.exactVisibleKeys = exactVisibleKeys
         self.hiddenSize = hiddenSize
         self.kvDim = kvDim
         self.packageDir = dir
@@ -331,6 +393,8 @@ final class ANEPrefillAttention: @unchecked Sendable {
 
     deinit {
         for pointer in maskStorage.values { pointer.deallocate() }
+        for pointer in selectionMaskStorage.values { pointer.deallocate() }
+        for pointer in selectionNegativeRow.values { pointer.deallocate() }
         for pointer in shadowK.values { pointer.deallocate() }
         for pointer in shadowV.values { pointer.deallocate() }
     }
@@ -466,6 +530,11 @@ final class ANEPrefillAttention: @unchecked Sendable {
         masks.removeAll()
         for pointer in maskStorage.values { pointer.deallocate() }
         maskStorage.removeAll()
+        selectionMasks.removeAll()
+        for pointer in selectionMaskStorage.values { pointer.deallocate() }
+        selectionMaskStorage.removeAll()
+        for pointer in selectionNegativeRow.values { pointer.deallocate() }
+        selectionNegativeRow.removeAll()
         for pointer in shadowK.values { pointer.deallocate() }
         for pointer in shadowV.values { pointer.deallocate() }
         shadowK.removeAll()
@@ -517,6 +586,82 @@ final class ANEPrefillAttention: @unchecked Sendable {
         return array
     }
 
+    /// The additive mask for one chunk of one layer: `-30000` on every key the
+    /// query must not read, `0` on every key it may.
+    ///
+    /// For a sparse-indexed model the causal mask alone is not the attention
+    /// this model computes: past the dense-exact window the QSA indexer drops
+    /// keys, and the GPU path reads exactly the kept ones. The sidecar's mask
+    /// input is *arbitrary*, so folding the selection in here makes the ANE's
+    /// softmax the GPU's gather — `exp(-30000)` underflows to zero in fp16
+    /// exactly as an omitted key contributes nothing — and the graph does not
+    /// change at all.
+    ///
+    /// The buffer is per history window and rewritten for every prediction:
+    /// the selection is per layer *and* per prompt, so a cached fill cannot be
+    /// reused across layers or requests. Refilling is one memcpy and at most
+    /// `selectionWidth` stores per row — tens of milliseconds against a
+    /// prefill measured in minutes.
+    ///
+    /// Rows past `tokenCount` are the chunk's padding (zero queries), which an
+    /// all-masked row averages uniformly — finite, and discarded by `predict`.
+    ///
+    /// Internal rather than private: `ANEPrefillAttentionTests` checks the fold
+    /// against a hand-built selection, and the fold is exactly the arithmetic a
+    /// wrong mask would silently get wrong.
+    func selectionMask(history: Int, tokenCount: Int,
+                       selection: QSASelection) throws -> MLMultiArray {
+        let halfBytes = MemoryLayout<Float16>.stride
+        let total = history + chunkTokens
+        let count = chunkTokens * total
+        let array: MLMultiArray
+        if let cached = selectionMasks[history] {
+            array = cached
+        } else {
+            let storage = UnsafeMutableRawPointer.allocate(
+                byteCount: count * halfBytes, alignment: 16_384)
+            let negatives = UnsafeMutableRawPointer.allocate(
+                byteCount: total * halfBytes, alignment: 16_384)
+            let negativeValues = negatives.bindMemory(to: Float16.self,
+                                                      capacity: total)
+            for column in 0..<total { negativeValues[column] = Self.maskNegative }
+            array = try MLMultiArray(
+                dataPointer: storage,
+                shape: [1, 1, NSNumber(value: chunkTokens), NSNumber(value: total)],
+                dataType: .float16,
+                strides: [NSNumber(value: count), NSNumber(value: count),
+                          NSNumber(value: total), 1],
+                deallocator: nil)
+            selectionMaskStorage[history] = storage
+            selectionNegativeRow[history] = negatives
+            selectionMasks[history] = array
+        }
+        let storage = selectionMaskStorage[history]!
+        let negativeRow = selectionNegativeRow[history]!.bindMemory(
+            to: Float16.self, capacity: total)
+        let values = storage.bindMemory(to: Float16.self, capacity: count)
+        let indices = selection.indices.contents().bindMemory(
+            to: UInt32.self, capacity: max(1, tokenCount * selection.indexStride))
+        let counts = selection.counts.contents().bindMemory(
+            to: UInt32.self, capacity: max(1, tokenCount))
+        for row in 0..<chunkTokens {
+            let base = row * total
+            memcpy(UnsafeMutableRawPointer(values + base),
+                   UnsafeRawPointer(negativeRow), total * halfBytes)
+            guard row < tokenCount else { continue }
+            // The compacted ascending selection the GPU's attention gathers:
+            // the same keys, so the same softmax.
+            let written = min(Int(counts[row]), selection.indexStride)
+            let rowIndices = indices + row * selection.indexStride
+            for slot in 0..<written {
+                let key = Int(rowIndices[slot])
+                guard key < total else { continue }
+                values[base + key] = 0
+            }
+        }
+        return array
+    }
+
     private func wrap(_ buffer: MTLBuffer, rows: Int,
                       columns: Int) throws -> MLMultiArray {
         try MLMultiArray(dataPointer: buffer.contents(),
@@ -538,7 +683,14 @@ final class ANEPrefillAttention: @unchecked Sendable {
     /// Runs one layer's attention block. `stagingNormed` must already hold
     /// the chunk's post-norm hidden rows; results land in `stagingOut` /
     /// `stagingK` / `stagingV` (real `tokenCount` rows; padding discarded).
-    func predict(layer: Int, history: Int, tokenCount: Int) async throws {
+    ///
+    /// - Parameter selection: this layer's QSA key selection for this chunk, or
+    ///   nil where the model has no indexer or every visible key is kept. A
+    ///   sparse-indexed model past its dense-exact window must supply one: the
+    ///   causal mask would otherwise attend to keys the model drops, so a
+    ///   missing selection there is refused rather than run.
+    func predict(layer: Int, history: Int, tokenCount: Int,
+                 selection: QSASelection?) async throws {
         let halfBytes = MemoryLayout<Float16>.stride
         if tokenCount < chunkTokens {
             // Padded rows must be zeros: zero queries attend uniformly and
@@ -548,10 +700,41 @@ final class ANEPrefillAttention: @unchecked Sendable {
             let length = (chunkTokens - tokenCount) * hiddenSize * halfBytes
             memset(stagingNormed.contents().advanced(by: start), 0, length)
         }
+        let maskFeature: MLMultiArray
+        if let selection, maskMode == .folded {
+            maskFeature = try selectionMask(history: history,
+                                            tokenCount: tokenCount,
+                                            selection: selection)
+        } else {
+            if requiresSelection, maskMode == .causal, let exact = exactVisibleKeys,
+               history + tokenCount > exact, !loggedCausalMask {
+                loggedCausalMask = true
+                // stderr for the same reason as the fallback notice: stdout is
+                // the generated text.
+                FileHandle.standardError.write(Data(
+                    ("TinyTitan ane-prefill: TINYTITAN_ANE_MASK=causal feeds the "
+                     + "causal-only mask, which is WRONG for this sparse-indexed "
+                     + "model past \(exact) visible keys; verification control "
+                     + "only\n").utf8))
+            }
+            // No selection is only correct while every visible key is kept.
+            // Past that the GPU path gathers the indexer's choice and the ANE
+            // has to be fed the same one; a missing selection there is a caller
+            // bug, not permission to attend densely.
+            if requiresSelection, maskMode == .folded, let exact = exactVisibleKeys,
+               history + tokenCount > exact {
+                throw PrefillError.chunkedUnsupported(
+                    "ANE prefill has no QSA selection for the chunk at "
+                    + "\(history)+\(tokenCount) tokens, where this model's "
+                    + "indexer drops keys past \(exact) visible ones; refusing to "
+                    + "attend densely")
+            }
+            maskFeature = try mask(history: history)
+        }
         var features: [String: MLMultiArray] = [
             "normed": try wrap(stagingNormed, rows: chunkTokens,
                                columns: hiddenSize),
-            "mask": try mask(history: history),
+            "mask": maskFeature,
         ]
         if history > 0 {
             guard let kShadow = shadowK[layer], let vShadow = shadowV[layer] else {

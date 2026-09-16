@@ -1,3 +1,4 @@
+import CoreML
 import Foundation
 import Metal
 import Testing
@@ -21,9 +22,76 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
     return mask
 }
 
+/// A sparse-indexed (Qwen 3.8-shaped) sidecar over a toy geometry, with the
+/// model's own indexer attached, so the fold can be exercised without Core ML,
+/// model weights or a real indexer pass.
+private func sparseANE(context: MetalContext, chunk: Int, layers: [Int],
+                       budget: Int, compressRatio: Int)
+    throws -> (URL, ANEPrefillAttention) {
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ane-test-\(UUID().uuidString)")
+    let sidecar = dir.appendingPathComponent("ane_prefill")
+    try FileManager.default.createDirectory(at: sidecar,
+                                            withIntermediateDirectories: true)
+    let geometry = sidecarGeometry(family: "qwen38flash", hidden: 16,
+                                   numHeads: 1, numKVHeads: 1, headDim: 4,
+                                   chunkTokens: chunk, layers: layers)
+    let meta: [String: Any] = [
+        "version": 1, "family": "qwen38flash", "chunkTokens": chunk,
+        "histories": [0, chunk], "layers": layers, "geometry": geometry,
+        "aneCompileVerified": true, "selectionFolded": true,
+    ]
+    try JSONSerialization.data(withJSONObject: meta)
+        .write(to: sidecar.appendingPathComponent("ane_prefill.json"))
+    let indexer = SparseIndexerConfig(numHeads: 1, numKVHeads: 1, headDim: 4,
+                                      budget: budget,
+                                      compressRatio: compressRatio)
+    let ane = try ANEPrefillAttention(
+        modelDirectory: dir, device: context.device,
+        hiddenSize: 16, kvDim: 4, weightsSha256: nil,
+        family: .qwen38flash, fullAttentionLayerMask: fullMask(layers: layers,
+                                                              count: 8),
+        sparseIndexer: indexer, configChunkTokens: chunk)
+    return (dir, ane)
+}
+
+/// A `QSASelection` whose compacted form is `keep(row)`, ascending. The byte
+/// mask is filled to match for realism, but the fold reads the compacted form —
+/// which is exactly what the GPU's attention gathers.
+private func makeSelection(device: MTLDevice, rows: Int, maskStride: Int,
+                           indexStride: Int,
+                           keep: (Int) -> [Int]) throws -> QSASelection {
+    guard let mask = device.makeBuffer(length: max(1, rows * maskStride),
+                                       options: .storageModeShared),
+          let indices = device.makeBuffer(
+            length: max(1, rows * indexStride * MemoryLayout<UInt32>.stride),
+            options: .storageModeShared),
+          let counts = device.makeBuffer(
+            length: max(1, rows * MemoryLayout<UInt32>.stride),
+            options: .storageModeShared) else {
+        throw ModelError.residentBufferWrapFailed
+    }
+    let maskPtr = mask.contents().bindMemory(to: UInt8.self,
+                                             capacity: max(1, rows * maskStride))
+    let indexPtr = indices.contents().bindMemory(to: UInt32.self,
+                                                 capacity: max(1, rows * indexStride))
+    let countPtr = counts.contents().bindMemory(to: UInt32.self,
+                                                capacity: max(1, rows))
+    for row in 0..<rows {
+        let kept = keep(row)
+        for (slot, key) in kept.enumerated() {
+            guard slot < indexStride else { break }
+            maskPtr[row * maskStride + key] = 1
+            indexPtr[row * indexStride + slot] = UInt32(key)
+        }
+        countPtr[row] = UInt32(min(kept.count, indexStride))
+    }
+    return QSASelection(mask: mask, maskStride: maskStride, indices: indices,
+                        indexStride: indexStride, counts: counts)
+}
+
 @Suite struct ANEPrefillAttentionTests {
-    @Test func environmentSwitchDefaultsOnAndFailsClosed() throws {
-        // Default-on since the deferred-pin A/Bs qualified it on an idle
+    @Test func environmentSwitchDefaultsOnAndFailsClosed() throws {        // Default-on since the deferred-pin A/Bs qualified it on an idle
         // machine: 3.14x end to end at 4-bit, 1.91x at 8-bit. A model with no
         // sidecar still loads -- the runner degrades to the GPU unless the
         // setting was named explicitly.
@@ -40,6 +108,22 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
         }
         #expect(throws: PrefillError.self) {
             try RuntimePrefillANE.environmentValue(["TINYTITAN_PREFILL_ANE": ""])
+        }
+    }
+
+    /// The mask mode is a verification control, not a tuning knob: `folded` is
+    /// the shipped behaviour and `causal` feeds the mask the path would build
+    /// without the fold, which is wrong for a sparse-indexed model. Nonsense is
+    /// refused rather than silently treated as the default.
+    @Test func theMaskModeControlDefaultsToFoldedAndRejectsNonsense() throws {
+        #expect(try ANEPrefillAttention.MaskMode.environmentValue([:]) == .folded)
+        #expect(try ANEPrefillAttention.MaskMode.environmentValue(
+            ["TINYTITAN_ANE_MASK": "folded"]) == .folded)
+        #expect(try ANEPrefillAttention.MaskMode.environmentValue(
+            ["TINYTITAN_ANE_MASK": "causal"]) == .causal)
+        #expect(throws: PrefillError.self) {
+            try ANEPrefillAttention.MaskMode.environmentValue(
+                ["TINYTITAN_ANE_MASK": "causal-only"])
         }
     }
 
@@ -158,14 +242,13 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
         try load()
     }
 
-    /// Qwen 3.8: a sparse-indexed family cannot be served by a dense sidecar,
-    /// and the arithmetic says there is no window where it could — the smallest
-    /// chunk the ANE accepts is a full 4,096 tokens, already past the 2,051
-    /// visible keys where dense attention matches the indexer's selection.
-    ///
-    /// The sidecar and the model match exactly here, so the refusal can only
-    /// come from the indexer; the same sidecar loads with `.none`.
-    @Test func aSparseIndexedModelIsRefusedEvenWithAMatchingSidecar() throws {
+    /// Qwen 3.8: a sparse-indexed model is served by folding the indexer's key
+    /// selection into the mask the sidecar is fed, so a sidecar with the
+    /// matching geometry **loads** — but only one that records the contract.
+    /// Loaded with a causal-only mask it would attend to keys the model drops
+    /// past the 2,051 visible keys where dense attention stops being exact, and
+    /// nothing downstream would flag it.
+    @Test func aSparseIndexedModelLoadsOnlyAFoldedSidecar() throws {
         let ctx = try MetalContext()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ane-test-\(UUID().uuidString)")
@@ -173,39 +256,127 @@ private func fullMask(layers: [Int], count: Int = 40) -> [UInt8] {
         try FileManager.default.createDirectory(
             at: sidecar, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        let meta: [String: Any] = [
-            "version": 1, "family": "qwen36", "chunkTokens": 4096,
-            "histories": [0], "layers": [3],
-            "geometry": sidecarGeometry(), "aneCompileVerified": true,
-        ]
-        try JSONSerialization.data(withJSONObject: meta)
-            .write(to: sidecar.appendingPathComponent("ane_prefill.json"))
-
+        let metaURL = sidecar.appendingPathComponent("ane_prefill.json")
+        func write(_ folded: Bool?) throws {
+            var meta: [String: Any] = [
+                "version": 1, "family": "qwen38flash", "chunkTokens": 4096,
+                "histories": [0], "layers": [3],
+                "geometry": sidecarGeometry(family: "qwen38flash"), "aneCompileVerified": true,
+            ]
+            if let folded { meta["selectionFolded"] = folded }
+            try JSONSerialization.data(withJSONObject: meta).write(to: metaURL)
+        }
         let indexer = SparseIndexerConfig(numHeads: 24, numKVHeads: 2,
                                           headDim: 256, budget: 2048,
                                           compressRatio: 4)
-        #expect(QSAExactness(indexer).maximumExactVisibleKeys == 2_051)
-        do {
-            _ = try ANEPrefillAttention(
+        func load() throws -> ANEPrefillAttention {
+            try ANEPrefillAttention(
                 modelDirectory: dir, device: ctx.device,
                 hiddenSize: 2048, kvDim: 512, weightsSha256: nil,
-                family: .qwen36, fullAttentionLayerMask: fullMask(layers: [3]),
-                sparseIndexer: indexer,
-                                        configChunkTokens: 4096)
-            Issue.record("a sparse-indexed model was allowed to load a sidecar")
-        } catch {
-            // The indexer's guard, not one of the geometry guards.
-            #expect("\(error)".contains("sparse-indexed"))
-            #expect("\(error)".contains("\(QSAExactness(indexer).maximumExactVisibleKeys)"))
+                family: .qwen38flash, fullAttentionLayerMask: fullMask(layers: [3]),
+                sparseIndexer: indexer, configChunkTokens: 4096)
         }
+        #expect(QSAExactness(indexer).maximumExactVisibleKeys == 2_051)
 
-        // Same sidecar, no indexer: it loads.
-        _ = try ANEPrefillAttention(
+        // No record at all (a sidecar from an exporter that did not know about
+        // the fold): refused, naming the fix.
+        try write(nil)
+        #expect(throws: PrefillError.self) { _ = try load() }
+        // Explicitly false: the same refusal.
+        try write(false)
+        #expect(throws: PrefillError.self) { _ = try load() }
+
+        // The contract: loads, and says the fold is required.
+        try write(true)
+        let ane = try load()
+        #expect(ane.requiresSelection)
+        #expect(ane.exactVisibleKeys == 2_051)
+
+        // The same sidecar on a model with no indexer needs no fold.
+        let denseANE = try ANEPrefillAttention(
             modelDirectory: dir, device: ctx.device,
             hiddenSize: 2048, kvDim: 512, weightsSha256: nil,
-            family: .qwen36, fullAttentionLayerMask: fullMask(layers: [3]),
-            sparseIndexer: .none,
-                                        configChunkTokens: 4096)
+            family: .qwen38flash, fullAttentionLayerMask: fullMask(layers: [3]),
+            sparseIndexer: .none, configChunkTokens: 4096)
+        #expect(!denseANE.requiresSelection)
+    }
+
+    /// The fold is the whole wiring: the sidecar's mask input is arbitrary, so
+    /// a sparse model's selection is written into the same `-30000` the causal
+    /// mask uses, and the graph is untouched. A wrong fold attends to keys the
+    /// model drops and nothing downstream flags it, so the arithmetic is
+    /// checked directly on a chunk small enough to read.
+    @Test func theSelectionIsFoldedIntoTheAdditiveMask() throws {
+        let ctx = try MetalContext()
+        let (dir, ane) = try sparseANE(context: ctx, chunk: 8, layers: [3],
+                                       budget: 4, compressRatio: 2)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(ane.requiresSelection)
+        #expect(ane.exactVisibleKeys == 5)
+
+        let history = 8, chunk = 8, total = history + chunk
+        let indexStride = 5
+        var expected: [Set<Int>] = []
+        let selection = try makeSelection(
+            device: ctx.device, rows: chunk, maskStride: total,
+            indexStride: indexStride) { row in
+                // The query's own key is always kept (the "ragged tail"), plus
+                // key 0 standing in for a block the indexer ranked in; every
+                // other key of the row is dropped.
+                let visible = history + row + 1
+                let kept: Set<Int> = [0, visible - 1]
+                expected.append(kept)
+                return Array(kept).sorted()
+            }
+        let array = try ane.selectionMask(history: history, tokenCount: chunk,
+                                          selection: selection)
+        #expect(array.shape == [1, 1, 8, 16])
+        let values = array.dataPointer.bindMemory(to: Float16.self,
+                                                  capacity: chunk * total)
+        for row in 0..<chunk {
+            for column in 0..<total {
+                let want: Float16 = expected[row].contains(column)
+                    ? 0 : ANEPrefillAttention.maskNegative
+                #expect(values[row * total + column] == want,
+                        "row \(row) column \(column) should be \(want)")
+            }
+        }
+    }
+
+    /// A chunk's last pass is partial: the selection covers `tokenCount` rows
+    /// and only `history + tokenCount` columns, and everything outside it must
+    /// be masked rather than left as whatever a previous layer wrote. Padding
+    /// rows are zero queries, whose all-masked row softmaxes uniformly — finite
+    /// and discarded — so they must not carry a real row's selection.
+    @Test func partialChunksMaskTheirPaddingAndUnselectedColumns() throws {
+        let ctx = try MetalContext()
+        let (dir, ane) = try sparseANE(context: ctx, chunk: 8, layers: [3],
+                                       budget: 4, compressRatio: 2)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let history = 8, chunk = 8, total = history + chunk
+        let tokenCount = 3
+        let indexStride = 5
+        let selection = try makeSelection(
+            device: ctx.device, rows: tokenCount,
+            maskStride: history + tokenCount, indexStride: indexStride) { row in
+                [0, history + row]
+            }
+        let array = try ane.selectionMask(history: history,
+                                          tokenCount: tokenCount,
+                                          selection: selection)
+        let values = array.dataPointer.bindMemory(to: Float16.self,
+                                                  capacity: chunk * total)
+        for row in 0..<chunk {
+            for column in 0..<total {
+                var want = ANEPrefillAttention.maskNegative
+                if row < tokenCount,
+                   column == 0 || column == history + row {
+                    want = 0
+                }
+                #expect(values[row * total + column] == want,
+                        "row \(row) column \(column) should be \(want)")
+            }
+        }
     }
 
     /// Eligibility and shadow continuity, using a synthetic sidecar manifest

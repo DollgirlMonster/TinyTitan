@@ -146,19 +146,27 @@ def model_total_bytes(model: str) -> int:
 
 
 # Families the exporter can build a sidecar for, because the Core ML graph
-# computes their attention block. `qwen38flash` is deliberately not one of them:
-# its full-attention layers select keys with a sparse indexer, and dense
-# attention matches that selection only through 2,051 visible keys — so its ANE
-# row is structurally absent rather than merely unmeasured.
-ANE_EXPORTABLE_FAMILIES = ("qwen36", "qwen3_5_dense")
+# computes their attention block. `qwen38flash` is one of them — its QSA indexer
+# selects keys rather than changing the arithmetic, and the runtime folds that
+# selection into the additive mask the graph already takes — but *installing* a
+# sidecar for it is not recommended, which `missing_ane_reason` says below. The
+# one-layer MTP draft is not: the runtime verifies it rather than prefilling it
+# on the ANE.
+ANE_EXPORTABLE_FAMILIES = ("qwen36", "qwen3_5_dense", "qwen38flash")
 
 
 def missing_ane_reason(model: str, family: str | None) -> str:
     """Why no ANE number was recorded, in terms of what was observed."""
-    if family in ("qwen38flash", "qwen38flash_mtp"):
-        return (f"ANE prefill cannot serve a {family} model: its full-attention "
-                f"layers select keys with a sparse indexer, and a dense sidecar "
-                f"would attend to keys the model drops past 2,051 visible keys")
+    if family == "qwen38flash":
+        return (f"the ANE prefill path does not pay for a {family} model: "
+                f"measured 0.72x against the GPU at 4,333 tokens, because the "
+                f"GPU already attends to only the indexer's ~2,051 selected keys "
+                f"while the ANE graph is dense over the context and its "
+                f"per-variant Core ML load is 7-14 s. A sidecar is exportable "
+                f"only to re-measure")
+    if family == "qwen38flash_mtp":
+        return (f"ANE prefill does not serve a {family} model: the one-layer "
+                f"MTP draft is verified rather than prefilled on the ANE")
     reason = (f"no ANE prefill sidecar at {model}/ane_prefill; export one "
               f"with tools/export_ane_prefill.py --model {model}")
     if family and family not in ANE_EXPORTABLE_FAMILIES:

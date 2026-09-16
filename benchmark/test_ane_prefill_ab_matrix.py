@@ -72,8 +72,9 @@ class SummaryTests(unittest.TestCase):
         self.assertNotIn("speedup", summary)
 
     def test_a_model_the_ane_cannot_serve_keeps_its_gpu_time(self):
-        # Qwen 3.8: no sidecar is possible (its sparse indexer is not what a
-        # dense sidecar computes), so the refusal must not cost the GPU number.
+        # Any model without a usable sidecar — an install that has not been
+        # exported yet, a refusal, or a family the exporter does not build for
+        # — must still report its GPU number rather than no number at all.
         summary = ab.summarize({
             "model": "qwen3.8-flash-next_125B_A6B_4Bit",
             "arms": {"off": [arm(200.0)], "on": []},

@@ -18,7 +18,11 @@ Why these choices (all measured, see docs/v4.4-decode-width-plan.md Track A):
   multiples of 4096, so history is too, and fixed shapes keep the ANE
   scheduler on the fast path;
 - additive -30000 mask instead of -inf — exp() underflows identically and
-  fp16 infinity arithmetic stays out of the graph.
+  fp16 infinity arithmetic stays out of the graph. The mask is an *input*, so
+  a family whose attention selects keys (Qwen 3.8's QSA indexer) is served by
+  the runtime folding that selection into the same additive mask; the graph
+  itself is identical, and `selectionFolded` in the metadata records that the
+  sidecar was exported knowing this.
 
   ~/.venvs/coreml-py311/bin/python tools/export_ane_prefill.py \
       --model models/ornith-1.5_35B_A3B_4Bit --max-history 12288
@@ -29,6 +33,12 @@ the native stderr and otherwise exits 0, so without this an export could
 "succeed" into a sidecar that the runtime then runs on the CPU at ~38x the GPU
 prefill cost (issue #7). A successful export records `aneCompileVerified` in
 `ane_prefill.json`, and the runtime refuses a sidecar that lacks it.
+
+Compiling is not the last word either: every function the metadata records is
+also *loaded* under its `h<history>` name before the export commits, because a
+specialization the ANE refuses can still save and then fail at the runtime's
+`MLModel(contentsOf:)` — which would advertise coverage the sidecar cannot
+serve. Qwen 3.8's `h12288` is that case on this machine.
 """
 from __future__ import annotations
 
@@ -42,6 +52,7 @@ import shutil
 import struct
 import sys
 import tempfile
+import warnings
 
 import numpy as np
 import coremltools as ct
@@ -60,14 +71,16 @@ NEG = -30000.0
 EXPORT_VERSION = 1
 
 # Families whose full-attention block this graph reproduces. `qwen38flash` is
-# deliberately absent: its full-attention layers carry a QSA sparse indexer
-# (`self_attn.indexer.*`) whose selection the graph does not compute, and dense
-# attention matches that selection only through 2,051 visible keys
-# (`QSAExactness.maximumExactVisibleKeys`). Past that the runtime refuses dense
-# attention rather than attend to keys the model would have dropped — and long
-# prompts are the only ones where the ANE pays, so a sidecar here would either
-# be unused or silently wrong.
-SUPPORTED_FAMILIES = ("qwen36", "qwen3_5_dense")
+# included because the only thing that separated it was the *mask*: its
+# full-attention layers pick keys with a QSA sparse indexer, and dense attention
+# matches that selection only through 2,051 visible keys, so a sidecar fed the
+# causal mask would attend to keys the model drops. The graph takes an arbitrary
+# additive mask, so the runtime folds the same selection in
+# (`ANEPrefillAttention.selectionMask`) and the graph is unchanged; the metadata
+# records `selectionFolded` so the runtime refuses a sidecar that does not carry
+# the contract. `qwen38flash_mtp` is the one-layer MTP draft, which the runtime
+# never routes to the ANE.
+SUPPORTED_FAMILIES = ("qwen36", "qwen3_5_dense", "qwen38flash")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -144,10 +157,9 @@ def geometry_for(manifest: dict, entries: dict[str, dict]) -> Geometry:
     family = arch["family"]
     if family not in SUPPORTED_FAMILIES:
         detail = ""
-        if family.startswith("qwen38"):
-            detail = (" — its QSA sparse indexer makes dense attention inexact "
-                      "past 2,051 keys, so the sidecar would be wrong exactly "
-                      "where the ANE pays")
+        if family.endswith("_mtp"):
+            detail = (" — the MTP draft is verified rather than prefilled on "
+                      "the ANE, so it carries no sidecar")
         raise SystemExit(
             f"ANE prefill export supports {', '.join(SUPPORTED_FAMILIES)}; "
             f"this model is {family}{detail}")
@@ -198,6 +210,55 @@ ANE_COMPILE_ERROR_MARKERS = (
 
 class ANEExportError(RuntimeError):
     """The Neural Engine refused to compile a variant the exporter built."""
+
+
+def verify_variants_load(package: pathlib.Path, histories, layer: int) -> None:
+    """Load every function the metadata is about to advertise.
+
+    The converter accepting a graph is not the same as Core ML being able to
+    *load* it. The ANE can refuse a specialization that conversion was happy
+    with: the merged multifunction still saves, and then the runtime's
+    `MLModel(contentsOf:configuration:)` fails outright — Core ML reports
+    "`.functionName` property must be nil unless the model type is ML Program",
+    because the refused variant did not come back as an mlprogram at all.
+
+    Recording such a history would hand the runtime a sidecar that claims
+    coverage it cannot deliver, and the request that reached that history would
+    die at load time instead of falling back. It is the same shape of failure as
+    issue #7 (`aneCompileVerified`), one stage later, so it fails the export.
+
+    Measured on this machine: Qwen 3.8's `h12288` does not load (24 heads of
+    4096x16384 fp16 scores is a 3.2 GB arena) while `h0`/`h4096`/`h8192` do, and
+    the 35B's `h12288` loads. The check costs one load per function per layer —
+    minutes on a full export, against a sidecar that is loaded once per install.
+
+    The failure is caught through Core ML's *warning* as well as its exceptions:
+    this Python API does not raise for the refused variant, it warns that
+    "You will not be able to run predict() on this Core ML model" and returns a
+    model that cannot run. Only the Objective-C call the runtime uses raises, so
+    an exception-only check here would pass and the sidecar would still lie.
+    """
+    for history in histories:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            try:
+                ct.models.MLModel(str(package),
+                                  compute_units=ct.ComputeUnit.CPU_AND_NE,
+                                  function_name=f"h{history}")
+            except Exception as exc:                  # noqa: BLE001 — reported
+                raise ANEExportError(
+                    f"layer {layer}: the converter accepted h{history} but Core "
+                    f"ML cannot load it ({exc}). Recording it would advertise "
+                    f"coverage the sidecar cannot serve; re-export with a "
+                    f"smaller --max-history") from exc
+        unusable = [str(w.message) for w in caught
+                    if "will not be able to run predict" in str(w.message)]
+        if unusable:
+            raise ANEExportError(
+                f"layer {layer}: h{history} loads but Core ML says it cannot "
+                f"run ({unusable[0][:160]}). Recording it would advertise "
+                f"coverage the sidecar cannot serve; re-export with a smaller "
+                f"--max-history")
 
 
 @contextlib.contextmanager
@@ -323,13 +384,27 @@ def load_layer_weights(handle, entries, layer: int, geom: Geometry,
                            weight_bits=tensor_weight_bits(manifest, full,
                                                           fallback),
                            name=full)
+    def norm(*names):
+        """A per-head norm, under whichever name this checkpoint uses.
+
+        The families agree on the projection names but not on the norms: the
+        qwen36 and dense builds store `q_norm.weight`, the 3.8 build stores
+        `q_norm` as a plain bf16 vector. Resolving by what the index actually
+        holds keeps a rename a refusal instead of a KeyError halfway through a
+        long export.
+        """
+        for name in names:
+            if prefix + name in entries:
+                return get(name)
+        raise SystemExit(f"{prefix}{names[0]}: the model has none of "
+                         f"{', '.join(names)}")
     return {
         "wq": get("q_proj.weight").astype(np.float16),
         "wk": get("k_proj.weight").astype(np.float16),
         "wv": get("v_proj.weight").astype(np.float16),
         "wo": get("o_proj.weight").astype(np.float16),
-        "q_norm": get("q_norm.weight").astype(np.float16),
-        "k_norm": get("k_norm.weight").astype(np.float16),
+        "q_norm": norm("q_norm.weight", "q_norm").astype(np.float16),
+        "k_norm": norm("k_norm.weight", "k_norm").astype(np.float16),
     }
 
 
@@ -562,6 +637,13 @@ def main() -> int:
     # build; both dequantize to the same fp16 graph, so only the unpack
     # differs. The sidecar itself is fp16 either way.
     weight_bits = manifest["quant"]["attention"]["weightBits"]
+    # A sparse indexer is the model's own geometry, like the head count: it
+    # decides whether the runtime must fold a selection into the mask, and the
+    # runtime cross-checks this flag against its own configuration.
+    selection_folded = int(manifest["arch"].get("indexerBudget") or 0) > 0
+    if selection_folded:
+        print("sparse indexer: the runtime will fold this model's key "
+              "selection into the mask (selectionFolded=true)", flush=True)
 
     out_dir = model_dir / sidecar_directory(args.chunk)
     # Build beside the live sidecar and swap only after every layer has
@@ -596,6 +678,9 @@ def main() -> int:
             final = staging / f"layer_{layer}.mlpackage"
             run_checked(f"layer {layer} multifunction",
                         lambda: ct.utils.save_multifunction(desc, str(final)))
+            # Every recorded history must actually load; see the docstring.
+            run_checked(f"layer {layer} variants load",
+                        lambda: verify_variants_load(final, histories, layer))
             shutil.rmtree(stage)
             print(f"layer {layer}: wrote {final}", flush=True)
 
@@ -618,6 +703,12 @@ def main() -> int:
             # was written by a failing export) is refused, so the ~38x
             # CPU-fallback prefill of issue #7 cannot happen.
             "aneCompileVerified": True,
+            # True for a family whose full-attention layers select keys with a
+            # sparse indexer: the runtime refuses such a model's sidecar unless
+            # it records that the selection has to be folded into the mask, so a
+            # sidecar built by an exporter that did not know cannot be run with
+            # a causal-only mask.
+            "selectionFolded": selection_folded,
         }
         with open(staging / "ane_prefill.json", "w") as fh:
             json.dump(meta, fh, indent=2)

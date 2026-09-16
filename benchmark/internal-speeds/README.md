@@ -58,12 +58,17 @@ model, and suffixed with the model's directory name for any other, so a second
 model can never overwrite the 4B's record.
 
 **The ANE row needs a sidecar, and a sidecar needs a family the graph can
-describe.** `tools/export_ane_prefill.py` now reads the attention geometry from
-the model's own manifest, so it serves both the qwen36 MoE family and the dense
-Qwen 3.5 family. Qwen 3.8 is the exception and it is structural, not a missing
-step: its full-attention layers select keys with a sparse indexer, and dense
-attention matches that selection only through 2,051 visible keys, so the record
-says so instead of quoting a dense number the model would never produce.
+describe.** `tools/export_ane_prefill.py` reads the attention geometry from the
+model's own manifest, so it serves the qwen36 MoE family, the dense Qwen 3.5
+family and Qwen 3.8. The last of those selects keys with a QSA indexer rather
+than computing different arithmetic, and the runtime folds that selection into
+the additive mask the sidecar already takes as an input, so the graph is
+unchanged — and it is still **not installed**, because it was measured: the ANE
+runs 0.72× the GPU's prefill on that model, since the GPU already attends to only
+the indexer's ~2,051 selected keys while the ANE graph is dense over the context.
+The family left out entirely is the one-layer MTP draft, which is verified rather
+than prefilled on the ANE. The record says which of the two it is rather than
+quoting a number the model would never produce.
 
 The ANE also needs a **4,096-token prefill chunk** and a prompt that fills one:
 a shorter prompt is one partial chunk and deliberately stays on the GPU, and the

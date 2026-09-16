@@ -1774,10 +1774,14 @@ extension RealForwardRunner {
                 useTwoRowProjection: useTwoRowProjection,
                 slot: slot)
         } else if let ane = aneChunk, ane.coveredLayers.contains(L) {
+            // The indexer's selection is computed above for this layer whether
+            // it runs here or on the GPU; the ANE has to be fed the same
+            // choice, or it attends to keys the model drops.
             try await runANEFullAttentionPrefill(
                 ane: ane, cb: &cb, layer: L, scratch: scratch,
                 tokenCount: t, hiddenSize: D,
-                startPosition: startPosition, kvDim: kvDim)
+                startPosition: startPosition, kvDim: kvDim,
+                selection: qsaSelection)
         } else {
             try encodeFullAttentionPrefill(
                 cb: cb, layer: L, views: views, scratch: scratch,
