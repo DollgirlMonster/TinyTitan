@@ -131,8 +131,7 @@ whose traps still bite and are folded in below.
 4. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
    the GPU, a higher expert slot budget, the n-gram gather a token ahead); the
    app features from issue #5 (image upload — every supported model is text-only,
-   conversation history, LaTeX); and the hardware blockers in tracker section 3
-   (validation on M1/M2/M4/M5/M6, ANE across generations, long-context parity
+the hardware blockers in tracker section 2   (validation on M1/M2/M4/M5/M6, ANE across generations, long-context parity
    past the exactness window).
 
 ## Traps worth carrying forward

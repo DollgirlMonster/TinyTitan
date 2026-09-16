@@ -114,16 +114,29 @@ readability question, and the convention that came out of this pass is:
   only where the read improves; 95 members of `ServerHTTPHandler` and 4 members
   around `Model` were widened this pass, and nothing else changed.
 
-Files still above 600 lines are, in order: `ServerInference.swift` (1,712),
-`RealForwardRunner+Decode.swift` (1,699), `RealForwardRunner+Prefill.swift`
-(1,689), `PreadExpertStreamer.swift` (1,391, one class),
-`RealForwardRunner.swift` (1,268), `RemoteStreamingRepacker.swift` (1,234),
-`AppModel.swift` (1,020), `Model.swift` (878), `ResponsesAPIModels.swift`
-(789), `OpenAIModels.swift` (779), `MemoryService.swift` (727),
-`RealForwardRunner+MTP.swift` (721), `Tokenizer.swift` (715),
-`DecodeServiceInferenceClient.swift` (714). Each is one cohesive type or one
-phase of a pipeline; the next structural gain there is a *design* change (a
-type doing two jobs), not a move, and none is currently doing two jobs.
+Files still above 600 lines are, in order: `ServerInference.swift` (1,664),
+`RealForwardRunner+Decode.swift` (1,572), `RealForwardRunner+Prefill.swift`
+(1,524), `PreadExpertStreamer.swift` (1,391, one class),
+`RealForwardRunner.swift` (1,357), `RemoteStreamingRepacker.swift` (1,234),
+`AppModel.swift` (1,053), `Model.swift` (1,024; the test files below this line
+are sized by case count, not by design). Each is one cohesive type or one phase
+of a pipeline; the next structural gain there is a *design* change (a type doing
+two jobs), not a move, and none is currently doing two jobs.
+
+Three files were split out of that list on 2026-09-15, each as pure code motion
+after the seam was checked to be self-contained — no `private` member reached
+across the new boundary, so no access was widened:
+
+| New file | Lines | Out of |
+| --- | ---: | --- |
+| `TinyTitanServer/Core/StructuredOutputDiagnostics.swift` | 245 | `ServerInference.swift` (1,897 → 1,664) |
+| `Runtime/Inference/RealForwardRunner+DecodeAttention.swift` | 268 | `+Decode.swift` (1,829 → 1,572) |
+| `Runtime/Inference/RealForwardRunner+PrefillAttention.swift` | 362 | `+Prefill.swift` (1,875 → 1,524) |
+
+The rule for the next split is the one the pass above followed: move a *cluster*
+— an entry point with its own helpers — never half of one pipeline, and check
+for `private` members on both sides of the seam first, because a file-scoped
+`private` reached from another file has to become `internal`.
 
 ## Generated and local files
 
@@ -142,5 +155,5 @@ stray ones that had accumulated outside `.build/`.
   (the per-connection handler) → `HTTPServerHandler+Routes.swift`.
 - The format is `docs/gturbo-format.md`; the memory layer is
   `sources/ContinuityCore/README.md` and `docs/agent-memory.md`.
-- The state of the tree, including what is verified and what is not, is
-  `docs/audit-2026-09-11-findings.md` and the project tracker in the wiki.
+- The state of the tree, including what is verified and what is not, is the
+  project tracker in the wiki (`Project-Tracker`).

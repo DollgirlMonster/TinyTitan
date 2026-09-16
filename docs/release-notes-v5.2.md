@@ -127,9 +127,9 @@ inferred.
 
 Seven read-only passes over every module, then verification of each finding
 against the source before any fix — a subagent's word is not evidence. The
-register is `docs/audit-2026-09-11-findings.md`: **89 code findings and 8
-documentation defects resolved, 0 open, 3 disproved** (and recorded as
-disproved rather than deleted).
+register that tracked them has since been removed from the tree, now that
+nothing in it is open: **89 code findings and 8 documentation defects resolved,
+0 open, 3 disproved** (recorded as disproved rather than deleted).
 
 The worst were the ones that were silent rather than loud: an out-of-bounds
 router write on Qwen3.8-Flash-Next that did not fault only because driver

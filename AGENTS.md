@@ -53,7 +53,7 @@ and user and engineering documentation lives in the
 swift build -c release
 .build/release/TinyTitanMac
 swift run -c release TinyTitanCLI \
-  --model models/kat-coder-v2.5_35B_A3B_4Bit \
+  --model models/qwen3.5_2B_4Bit \
   --prompt "The capital of France is" \
   --max-new 64
 ```
@@ -79,7 +79,7 @@ corruption and does not need a re-download — re-issue the receipt in place
 (re-hashes the payload against the manifest and rebinds it to the current path):
 
 ```bash
-swift run -c release TinyTitanRepack --verify-install --input-gturbo models/kat-coder-v2.5_35B_A3B_4Bit
+swift run -c release TinyTitanRepack --verify-install --input-gturbo models/qwen3.5_2B_4Bit
 ```
 
 Never hand-edit the receipt to match the new path: the path binding is what detects

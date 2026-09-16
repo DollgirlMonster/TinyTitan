@@ -109,8 +109,8 @@ can validate it.
 This is worth separating into two concerns that are currently one:
 
 - **Validation** wants the request's fields to stay nil when the client named
-  none, so the served model's own profile supplies them. `docs/audit-2026-09-11-findings.md`
-  C11 fixed exactly that, and the mapper tests pin it.
+  none, so the served model's own profile supplies them. That is what the mapper
+  does today, and the mapper tests pin it.
 - **Echo** wants the `Response` object to report the values the server actually
   used. A client cannot tell what `top_p` was applied otherwise, and the spec
   requires the number.

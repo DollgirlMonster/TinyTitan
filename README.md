@@ -71,6 +71,22 @@ Every model installs at **4-bit and 8-bit**:
 
 ### Usage
 
+Already installed? These three commands cover what most people want, and the
+[wiki Cookbook](https://github.com/Pummelchen/TinyTitan/wiki/Cookbook) has a
+copy-paste recipe for each task — the API, a coding client, JSON output, memory,
+long context, the CPU engine — with the output you should expect.
+
+```bash
+tools/install_models.sh                                         # what is installed
+.build/release/TinyTitanCLI --model models/qwen3.5_2B_4Bit \
+  --prompt "The capital of France is" --max-new 32 --temperature 0
+tools/server_launcher.sh --client codex --model qwen38 --bits 4   # API + Codex
+```
+
+Generated text goes to **stdout**; the timing footer goes to **stderr**, so a
+pipeline sees only the answer. Nothing installed yet? Start with
+[Getting Started](https://github.com/Pummelchen/TinyTitan/wiki/Getting-Started).
+
 - **Easiest install:** one command checks the Mac, builds TinyTitan, optionally
   downloads a model, and installs a double-clickable Mac app in
   `~/Applications`. Safe to re-run; it updates instead of cloning twice.
@@ -96,9 +112,9 @@ Every model installs at **4-bit and 8-bit**:
   on demand, keeping one model resident at a time.
 
 ```bash
-tools/server_launcher.sh                                    # interactive
-tools/server_launcher.sh --client codex --model ornith 4     # server + Codex
-tools/server_launcher.sh --client zed --model qwen38 4 --ram 8
+tools/server_launcher.sh                                       # interactive
+tools/server_launcher.sh --client codex --model ornith --bits 4  # server + Codex
+tools/server_launcher.sh --client zed --model qwen38 --bits 4 --ram 8
 ```
 
 - **Persistent agent memory (optional):** With `TINYTITAN_MEMORY=1` the model gets

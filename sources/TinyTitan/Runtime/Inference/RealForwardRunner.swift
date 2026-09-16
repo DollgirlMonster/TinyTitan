@@ -1120,7 +1120,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             // (Qwen3.8-Flash-Next), so the MoE families keep restoring. Carrying
             // these buffers in the snapshot, or replaying the prefix to rebuild
             // them, is the real fix; it is recorded in
-            // docs/audit-2026-09-11-findings.md.
+            // the wiki's project tracker.
             if qsaIndexer != nil {
                 throw InferenceStateSnapshotError.stateNotInSnapshot("sparse-indexer")
             }

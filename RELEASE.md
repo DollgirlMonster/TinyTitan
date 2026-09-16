@@ -194,7 +194,7 @@ Leave previous releases' notes and performance tables alone.
 This repository is a GitHub **fork** of `drumih/turbo-fieldfare`, and it is
 **deliberately left as a fork** — do not detach it from the fork network. Leaving
 is permanent, and the standalone repository would not retain its wiki, issues, pull
-requests, stars, watchers or child forks; the wiki alone holds 15 pages across 223
+requests, stars, watchers or child forks; the wiki alone holds 17 pages across 224
 commits, alongside 21 releases.
 
 The fork relationship is inert. Nothing here is upstreamed: **no pull requests,
@@ -212,9 +212,11 @@ repository.
   converter, arch-path); `swift test --no-parallel`; **every installed model with
   a golden target**, through `tools/golden-baseline.sh --check`; then a clean
   scratch build with the warning scan.
-- **Mandatory** `tools/internal-speeds.py --record --label vX.Y --baseline …`.
-  Any metric or duration past a 10% regression blocks the release until fixed or
-  explained in `### Verification`. The record is committed with the release.
+- **Mandatory, and run by the runbook rather than by `release.sh`**
+  (`docs/release-process.md`): `tools/internal-speeds.py --record --label vX.Y
+  --baseline …`. Any metric or duration past a 10% regression blocks the release
+  until fixed or explained in `### Verification`. The record is committed with
+  the release.
 - **Only models already installed under `models/` are verified**, and `release.sh`
   fingerprints the install set so a gate cannot install one to go green. Missing
   installs are reported *not checked* and must be named in the notes.
