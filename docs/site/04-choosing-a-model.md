@@ -86,6 +86,28 @@ The only difference left is where they run — on the processor rather than the
 graphics chip. Everything you run is quantized from Qwen's own release, never a
 third-party repack.
 
+**What the 2B is not good for.** Measured, not guessed: it cannot be trusted
+with anything exact. Asked to copy a six-character code *and* add two
+three-digit numbers in one turn, the 4-bit build got the sum wrong — or dropped
+the code — in three to five of eight attempts with thinking off, and six of eight
+at the model's own sampling. It is fluent and on-topic, and its multi-turn recall
+was exact every time; it simply does not compute reliably, and a two-part
+instruction is one part too many.
+
+**Thinking makes it slower, not better.** With thinking on, the same model in
+8-bit answered five of eight correctly but took **42 to 253 seconds** per reply,
+and never answered at all on the other three: it spent the whole token budget
+inside the reasoning block. With thinking off those answers took about three
+seconds. Thinking also has to be sampled — decoded greedily (temperature 0) this
+model loops in its thinking block and never emits an answer at all.
+
+So treat the 2B as a cheap side worker — chat, summaries, the memory-shaped jobs
+in [Memory that remembers](08-memory-that-remembers.md) — and not as an agent
+brain, a coding assistant, or anything whose output has to be right. If disk is
+tight and you need exactness, the 4B or 9B is the smaller risk, and for real work
+it is a 35B. As with every quality note here, this is one narrow probe rather
+than a benchmark: the project measures weight fidelity, not task success.
+
 ## Which should you pick?
 
 **You want one answer:** Ornith 1.5 35B-A3B, 4-bit. It is the project's
@@ -98,7 +120,8 @@ project's coding and tooling results — at about half the speed and nearly
 double the disk.
 
 **Disk space is very tight:** the Qwen 3.5 2B on the CPU, at about 1.3 GB.
-Small, quick, and it runs on the processor rather than the graphics chip.
+Small, quick, and it runs on the processor rather than the graphics chip — read
+the note above on what it cannot do.
 
 **You want to connect a coding assistant:** a 35B model — 8-bit if you have
 the space and want the best results, 4-bit for speed. Both work; see
