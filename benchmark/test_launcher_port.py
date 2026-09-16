@@ -28,8 +28,10 @@ MODELS = ROOT / "models"
 
 INSTALLED = ROOT / "models/qwen3.8-flash-next_125B_A6B_4Bit"
 # Flags that answer every other question, so the port is the only prompt left.
+# `--concurrency` is one of them: it is asked before the port, so leaving it
+# unanswered would consume the newline these tests mean for the port.
 QUIET_ANSWERS = ("--answers", "default", "--thinking", "off", "--ram", "9",
-                 "--engine", "gpu")
+                 "--engine", "gpu", "--concurrency", "1")
 
 
 def shared_default() -> int:

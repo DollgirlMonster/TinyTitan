@@ -366,8 +366,9 @@ public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptToken
         inFlight += 1
         let fitted = choice.effective == choice.requested
             ? "" : " (server level \(choice.requested.rawValue))"
-        ServerLog.residency("loaded \(entry.id) on the \(entry.backend.rawValue) "
-            + "reasoning=\(choice.effective.rawValue)\(fitted)")
+        ServerLog.residency("loaded \(entry.id) on the \(entry.backend.rawValue)"
+            + ServerLog.promptCacheField(for: loaded)
+            + " reasoning=\(choice.effective.rawValue)\(fitted)")
         return loaded
     }
 

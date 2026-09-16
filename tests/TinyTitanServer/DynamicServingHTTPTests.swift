@@ -29,8 +29,10 @@ private func chat(_ model: String, extra: String = "") -> String {
 private func withServer<T>(backend: any ServerInferenceBackend,
                            router: (any ModelRouting)? = nil,
                            queueLimit: Int = 4,
+                           maxConcurrentSequences: Int = 1,
                            _ body: (Int) async throws -> T) async throws -> T {
     let server = TinyTitanHTTPServer(modelID: "test-model", queueLimit: queueLimit,
+                                 maxConcurrentSequences: maxConcurrentSequences,
                                  backend: backend, router: router)
     let channel = try await server.start(port: 0)
     let port = try #require(channel.localAddress?.port)
@@ -210,13 +212,16 @@ struct DynamicServingHTTPTests {
     }
 
     /// Four clients at once against the default queue limit: every one is
-    /// admitted and answered, one generation at a time.
+    /// admitted and answered, one generation at a time. The width is the
+    /// *parsed* default rather than a literal, so a launched server and this
+    /// test cannot disagree about what "default" means.
     @Test func fourConcurrentRequestsAllComplete() async throws {
         let log = RoutingEventLog()
         let backend = RoutedStubModel(id: "test-model", log: log, gate: nil,
                                       delay: .milliseconds(150))
         let defaults = try ServerArguments.parse(["--model", "/m"], environment: [:])
-        try await withServer(backend: backend, queueLimit: defaults.queueLimit) { port in
+        try await withServer(backend: backend, queueLimit: defaults.queueLimit,
+                             maxConcurrentSequences: defaults.maxConcurrentSequences) { port in
             let statuses = try await withThrowingTaskGroup(of: Int.self) { group in
                 for _ in 0..<4 {
                     group.addTask {
@@ -376,11 +381,12 @@ struct DynamicServingArgumentTests {
         #expect(try parse(["--model", "/m"]).queueLimit + 1 >= 4)
     }
 
-    /// The batched width defaults to four and is bounded to 1...4.
-    @Test func concurrentSequenceCountDefaultsToFourAndIsBounded() throws {
-        #expect(try parse(["--model", "/m"]).maxConcurrentSequences == 4)
-        #expect(try parse(["--model", "/m", "--max-concurrent-sequences", "1"])
-                    .maxConcurrentSequences == 1)
+    /// The batched width is opt-in: one generation at a time unless asked,
+    /// bounded to 1...4.
+    @Test func concurrentSequenceCountDefaultsToOneAndIsBounded() throws {
+        #expect(try parse(["--model", "/m"]).maxConcurrentSequences == 1)
+        #expect(try parse(["--model", "/m", "--max-concurrent-sequences", "4"])
+                    .maxConcurrentSequences == 4)
         for bad in ["0", "5", "-1"] {
             #expect(throws: ServerArgumentError.self) {
                 try parse(["--model", "/m", "--max-concurrent-sequences", bad])
@@ -399,6 +405,24 @@ struct DynamicServingArgumentTests {
             requested: .singlePrefix, mtpEnabled: false, slots: 2) == .off)
         #expect(ServerModelSession.effectivePromptCacheMode(
             requested: .multiPrefix, mtpEnabled: true, slots: 1) == .off)
+    }
+
+    /// The routing banner states the initial model's cache mode, and that
+    /// depends on the engine as well as the width: a CPU entry has no cache to
+    /// turn on, so it reports off whatever the server was asked for, and a
+    /// raised width turns a GPU entry's session-wide cache off.
+    @Test func theInitialModelsPromptCacheFollowsItsEngineAndTheWidth() {
+        for slots in [1, 2, 4] {
+            #expect(ServerModelSession.initialPromptCacheMode(
+                backend: .cpu, requested: .multiPrefix,
+                maxConcurrentSequences: slots) == .off)
+        }
+        #expect(ServerModelSession.initialPromptCacheMode(
+            backend: .gpu, requested: .multiPrefix, maxConcurrentSequences: 1) == .multiPrefix)
+        #expect(ServerModelSession.initialPromptCacheMode(
+            backend: .gpu, requested: .multiPrefix, maxConcurrentSequences: 4) == .off)
+        #expect(ServerModelSession.initialPromptCacheMode(
+            backend: .gpu, requested: .singlePrefix, maxConcurrentSequences: 2) == .off)
     }
 
     /// Every plan is built through `ModelSessionPlan.from`, which carries the

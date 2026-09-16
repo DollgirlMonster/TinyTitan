@@ -12,7 +12,10 @@ public struct ServerArguments: Equatable, Sendable {
     public let maxContext: Int
     public let queueLimit: Int
     /// Generations that may run at once through the batched engine. One is the
-    /// historical single-generation server; the excess still queues.
+    /// historical single-generation server and the default; the excess still
+    /// queues. Above one, each sequence holds its own KV cache and scratch, and
+    /// the prompt cache is switched off (it is session-wide, so a prefix could
+    /// otherwise be restored into the wrong sequence).
     public let maxConcurrentSequences: Int
 
     /// The width a session's runner and scratch may actually be built with.
@@ -131,9 +134,12 @@ public struct ServerArguments: Equatable, Sendable {
       --rope-scaling <mode>  Context scaling: none or yarn (default none).
       --queue-limit <count>  Maximum queued requests (default 4).
       --max-concurrent-sequences <count>
-                             Generations served at once, 1...4 (default 4).
+                             Generations served at once, 1...4 (default 1).
                              Requests beyond this plus --queue-limit are shed
-                             with 429. The prompt cache is off above 1.
+                             with 429. Above 1 each sequence holds its own KV
+                             cache (so memory use rises) and answers take
+                             longer, because one GPU is shared; the prompt
+                             cache is off above 1.
       --prompt-cache-mode <off|single-prefix|multi-prefix>
                              Prompt KV reuse mode (default multi-prefix).
       --prompt-cache-entries <count>
@@ -209,7 +215,11 @@ public struct ServerArguments: Equatable, Sendable {
         var maxContext = 262_144
         var maxContextWasSet = false
         var queueLimit = 4
-        var maxConcurrentSequences = 4
+        // One generation at a time unless the operator asks for more: the
+        // batched path holds one KV cache and scratch buffer per sequence, so
+        // the memory bill and the per-answer slowdown are opt-in, not a
+        // surprise on a default launch.
+        var maxConcurrentSequences = 1
         var promptCacheMode: ServerPromptCacheMode = .multiPrefix
         var promptCacheMaximumEntries = 4
         var promptCacheMemoryMiB = 256

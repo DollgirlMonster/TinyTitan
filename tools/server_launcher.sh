@@ -53,6 +53,15 @@
 #   --kv <4|8|16>   KV-cache precision (default 8)
 #   --yarn          enable YaRN context scaling
 #   --port <n>      default 8080 (TINYTITAN_PORT overrides)
+#   --concurrency <1|2|3|4>  generations served at once through one model
+#              (default 1: one at a time). Above 1 each running sequence keeps
+#              its own KV cache, so memory use rises, and one GPU shared between
+#              them makes every answer slower -- it buys fairness (nobody
+#              queues), not throughput. The prompt cache is off above 1, so
+#              follow-up turns re-read their whole prompt. The launcher asks,
+#              and warns in red, because this is the setting a person turns on
+#              once and then wonders why the Mac is swapping. GPU models only:
+#              the CPU engine runs one generation at a time whatever it is told.
 #   --memory        enable persistent agent memory for this project
 #   --dry-run       print the server command and client setup; start nothing
 #   --prompt-cache <multi-prefix|off>  prompt-state reuse (default multi-prefix,
@@ -135,7 +144,7 @@ if [[ "${TINYTITAN_LAUNCHER_ASSUME_TTY:-0}" == "1" ]]; then INTERACTIVE=1; fi
 
 CLIENT=""; MODE=""; MODEL_ARG=""; BITS=""; ANSWERS=""; THINKING_ARG=""
 RAM_ARG=""; CONTEXT_ARG=""; KV_ARG=""; YARN=0; PORT_ARG=""; MEMORY=0; ENGINE_ARG=""
-CACHE_ARG=""; MTP_MODEL_ARG=""; MTP_MEMORY_ARG=""
+CACHE_ARG=""; MTP_MODEL_ARG=""; MTP_MEMORY_ARG=""; CONCURRENCY_ARG=""
 positional=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -161,6 +170,9 @@ while [[ $# -gt 0 ]]; do
     --mtp-model) MTP_MODEL_ARG="${2:?--mtp-model needs a directory}"; shift 2 ;;
     --mtp-memory-mib) MTP_MEMORY_ARG="${2:?--mtp-memory-mib needs a number}"; shift 2 ;;
     --port)     PORT_ARG="${2:?--port needs a number}"; shift 2 ;;
+    # How many generations one server serves at once. The server's own default
+    # is one, so this only ever raises it, and raising it is warned about.
+    --concurrency) CONCURRENCY_ARG="${2:?--concurrency needs 1, 2, 3 or 4}"; shift 2 ;;
     --memory)   MEMORY=1; shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
     --help|-h)  usage; exit 0 ;;
@@ -814,7 +826,76 @@ elif [[ -n "$CONTEXT_ARG" ]]; then
   esac
 fi
 
-# The port is the one question about the *server* rather than the model, so it is
+# Concurrency: how many generations one server serves at once. It is opt-in --
+# the server's own default is one -- because it is the one setting that changes
+# what the machine has to hold *while it works*: every running sequence keeps its
+# own KV cache and scratch, and the single GPU is shared between them. The
+# runtime clamps the width when the worst case does not fit in memory, and says
+# so; that clamp is the backstop, not the reason to be quiet about the bill.
+warn_concurrency() {
+  # Unmissable and specific, the same way the expert-cache warning is: this is
+  # the trade the operator is making, and the summary repeats it for anyone who
+  # scrolled past.
+  warn_red "WARNING: the server will serve ${concurrency} generations at once."
+  warn_red "         Each running sequence keeps its own KV cache and scratch, so"
+  warn_red "         memory use rises with the count: the worst case is"
+  warn_red "         ${concurrency} x one sequence, on top of the weights and the"
+  warn_red "         expert cache. The runtime clamps the width if that does not"
+  warn_red "         fit, and says so when it does."
+  warn_red "         One GPU is shared: ${concurrency} clients make progress together"
+  warn_red "         instead of queueing, but each answer takes roughly"
+  warn_red "         ${concurrency} times longer. This buys fairness, not throughput."
+  warn_red "         The prompt cache is off above 1, so every follow-up turn"
+  warn_red "         re-reads its whole prompt."
+  warn_red "         Starting anyway with ${concurrency}, because you asked for it."
+}
+
+# A width of one is the default and needs no warning; only a raised one does.
+warn_concurrency_if_many() {
+  (( concurrency > 1 )) || return 0
+  warn_concurrency
+}
+
+concurrency=1
+# The flag is validated whether or not it can take effect, so a typo is refused
+# rather than silently swallowed on the CPU engine.
+if [[ -n "$CONCURRENCY_ARG" ]]; then
+  case "$CONCURRENCY_ARG" in
+    1|2|3|4) concurrency="$CONCURRENCY_ARG" ;;
+    *) echo "unknown --concurrency: $CONCURRENCY_ARG (1, 2, 3 or 4)" >&2; exit 2 ;;
+  esac
+fi
+
+if [[ "$ENGINE" == "cpu" ]]; then
+  # Nothing to ask and nothing to warn about: the CPU backend's actor runs a
+  # generation to completion before the next starts, so a width above one only
+  # widens the admission window. The flag is reported as not applying in the CPU
+  # block below, and the value that reaches the server is pinned to one, so the
+  # summary cannot advertise a width the server will not run.
+  concurrency=1
+elif (( INTERACTIVE )) && [[ -z "$CONCURRENCY_ARG" ]]; then
+  echo ""
+  echo "How many generations should the server serve at once?"
+  echo "  1 is the default and the fastest per answer: the whole GPU works on"
+  echo "  your request. More lets that many people (or agents) make progress"
+  echo "  together instead of queueing, and costs: each extra sequence holds"
+  echo "  its own KV cache, so memory use rises, and one GPU shared n ways"
+  echo "  makes every answer about n times slower. The prompt cache is off"
+  echo "  above 1, so follow-up turns re-read their whole prompt."
+  echo "  1) One at a time (default)  2) Two at once"
+  echo "  3) Three at once             4) Four at once"
+  printf "Choice [1-4] (default 1): "
+  read -r concurrency_choice || exit 1
+  case "${concurrency_choice:-1}" in
+    1) concurrency=1 ;; 2) concurrency=2 ;; 3) concurrency=3 ;; 4) concurrency=4 ;;
+    *) echo "invalid choice: $concurrency_choice" >&2; exit 2 ;;
+  esac
+fi
+# Outside the branches on purpose: a raised width has to warn whether it came
+# from the flag or the question.
+warn_concurrency_if_many
+
+# The port is the last question about the *server* rather than the model, so it is
 # asked last and it is skippable: `--port` or `TINYTITAN_PORT` answers it, and an
 # unattended run takes the default. The default itself lives in one place —
 # `TINYTITAN_DEFAULT_PORT` in tinytitan_models.sh — so a changed default cannot
@@ -857,6 +938,7 @@ if [[ "$ENGINE" == "cpu" ]]; then
   inert_flags=()
   [[ -n "$KV_ARG" ]] && inert_flags+=(--kv)
   [[ -n "$CONTEXT_ARG" ]] && inert_flags+=(--context)
+  [[ -n "$CONCURRENCY_ARG" ]] && inert_flags+=(--concurrency)
   (( YARN )) && inert_flags+=(--yarn)
   if (( ${#inert_flags[@]} > 0 )); then
     echo "NOTE: ${inert_flags[*]} do not apply to the CPU engine; ignoring" >&2
@@ -918,11 +1000,25 @@ if [[ "$MODEL_BACKEND" == "cpu" ]]; then
     server_cmd+=(--cpu)
     runtime_note="CPU backend | no prompt cache | context clamped by the backend | sampling from the model"
   fi
+  # Pin the single-generation width the CPU engine runs at anyway, so the
+  # server's admission window matches what this launcher just told the operator.
+  server_cmd+=(--max-concurrent-sequences 1)
+  runtime_note="$runtime_note | one generation at a time"
 else
-  server_cmd+=("${gpu_runtime[@]}")
+  server_cmd+=("${gpu_runtime[@]}" --max-concurrent-sequences "$concurrency")
   mtp_note="off"
   [[ -n "$MTP_MODEL_ARG" ]] && mtp_note="on (draft head)"
-  runtime_note="context ${max_context:-262144} | KV ${kv_bits}-bit | cache ${prompt_cache_mode} | MTP ${mtp_note}"
+  # The cache mode in force, not the one asked for: above one slot the server
+  # switches the session-wide cache off, and a summary that said "multi-prefix"
+  # while the server ran `prompt_cache=off` would be a misreport.
+  cache_note="$prompt_cache_mode"
+  if (( concurrency > 1 )); then cache_note="off (above 1 at once)"; fi
+  runtime_note="context ${max_context:-262144} | KV ${kv_bits}-bit | cache ${cache_note} | MTP ${mtp_note}"
+  if (( concurrency > 1 )); then
+    runtime_note="$runtime_note | ${concurrency} at once (yours)"
+  else
+    runtime_note="$runtime_note | one generation at a time"
+  fi
   if [[ -n "$ram_gb" ]]; then
     runtime_note="$runtime_note | expert cache ${ram_gb} GB (yours)"
   else
@@ -998,11 +1094,17 @@ print_setup() {
   fi
   echo ""
   echo "Model: $MODEL_DIR"
-  echo "Thinking: $think_word | RAM: $ram_note | Port: $PORT | Ctrl-C to stop"
+  echo "Thinking: $think_word | RAM: $ram_note | At once: $concurrency | Port: $PORT | Ctrl-C to stop"
   if (( ram_over_rule )); then
     warn_red "WARNING: ${ram_gb} GB of expert cache is over the ${ram_rule_gb} GB this launcher"
     warn_red "         recommends for this Mac (30%). Expect swapping, a less stable"
     warn_red "         system and slower tokens."
+  fi
+  if (( concurrency > 1 )); then
+    warn_red "WARNING: ${concurrency} generations are served at once. Each holds its own KV"
+    warn_red "         cache, so memory use is up to ${concurrency}x one sequence, and one GPU"
+    warn_red "         shared ${concurrency} ways makes each answer about ${concurrency}x slower."
+    warn_red "         The prompt cache is off above 1."
   fi
   echo "============================================================"
   echo ""

@@ -137,10 +137,10 @@ import Testing
                                     reasoning: reasoning)
     }
 
-    /// Runs the scripted model through the backend: after the prompt it
-    /// says "hm", closes its thought, says "ok", and ends the turn.
-    private func generate(thinking: ModelThinkingMode, stops: [String] = []) async throws
-        -> (completion: ServerCompletion, events: [ServerInferenceEvent], tokens: [Int32]) {
+    /// The scripted backend, without running a generation: the tests that ask
+    /// the backend about itself need the object, not an answer.
+    private func scriptedBackend(thinking: ModelThinkingMode) async throws
+        -> (backend: CPUModelBackend, directory: URL, spoken: [Int32]) {
         let fixture = try TokenizerFixture.folder()
         let tok = try await GFTokenizer.load(from: fixture, thinkingMode: thinking)
         let prompt = tok.encode(try tok.applyChatTemplate(request().messages), addBOS: false)
@@ -155,9 +155,28 @@ import Testing
         try #require(Set(chain).count == chain.count, "the walk needs distinct tokens")
 
         let directory = try writeScriptedModel(chain: chain, tokenizer: fixture)
-        defer { try? FileManager.default.removeItem(at: directory) }
         let backend = try await CPUModelBackend(snapshotDirectory: directory, resident: false,
                                                 thinkingMode: thinking)
+        return (backend, directory, spoken)
+    }
+
+    /// The CPU engine holds no prompt cache at all, so a banner or a residency
+    /// line has to say `off` rather than repeat the mode the server was asked
+    /// for -- which is what the routing banner did before it asked the backend.
+    @Test func reportsNoPromptCache() async throws {
+        let (backend, directory, _) = try await scriptedBackend(thinking: .off)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(backend.promptCacheMode == .off)
+        #expect(ServerLog.promptCacheField(for: backend) == " prompt_cache=off",
+                "the field the residency line prints comes from this backend")
+    }
+
+    /// Runs the scripted model through the backend: after the prompt it
+    /// says "hm", closes its thought, says "ok", and ends the turn.
+    private func generate(thinking: ModelThinkingMode, stops: [String] = []) async throws
+        -> (completion: ServerCompletion, events: [ServerInferenceEvent], tokens: [Int32]) {
+        let (backend, directory, spoken) = try await scriptedBackend(thinking: thinking)
+        defer { try? FileManager.default.removeItem(at: directory) }
         let sink = Sink()
         let completion = try await backend.generate(request(stops: stops)) { sink.append($0) }
         return (completion, sink.all, spoken)

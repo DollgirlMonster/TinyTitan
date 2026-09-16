@@ -209,7 +209,7 @@ public actor ManagedModelBackend: ServerInferenceBackend, ResidencyManaging, Pro
         session = loaded
         lastActivity = .now
         startReaper()
-        ServerLog.residency("loaded")
+        ServerLog.residency("loaded" + ServerLog.promptCacheField(for: loaded))
         return loaded
     }
 

@@ -87,6 +87,18 @@ enum ServerLog {
         write("model \(transition)")
     }
 
+    /// `" prompt_cache=<mode>"` for a backend that can describe its cache, and
+    /// nothing at all for one that cannot.
+    ///
+    /// The residency lines run when a model loads, so the mode they name has to
+    /// come from the backend that just loaded: the server's own flag would
+    /// report the previous model's cache after a switch between a GPU install
+    /// and a CPU one, which has no cache to report.
+    static func promptCacheField(for backend: any ServerInferenceBackend) -> String {
+        guard let described = backend as? any PromptCacheDescribing else { return "" }
+        return " prompt_cache=\(described.promptCacheMode.rawValue)"
+    }
+
     /// Memory subsystem events. Operational only: never a memory's contents,
     /// which can be anything the model chose to write.
     static func memory(_ detail: String) {

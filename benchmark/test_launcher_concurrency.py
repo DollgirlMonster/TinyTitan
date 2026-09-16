@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""The launcher's concurrency choice: one by default, up to four on request.
+
+The batched width is the one server setting that changes what the machine has to
+hold *while it works* -- each running sequence keeps its own KV cache, one GPU is
+shared between them, and the prompt cache is switched off above one. So the
+launcher asks for it, defaults it to one, and warns in red above one. These tests
+pin the default, the choice, the refusal, the warning (including that it is
+really red on a terminal), the cache report, and the CPU engine's one-generation
+rule.
+
+Run from this directory, like the other benchmark tests:
+
+    cd benchmark && python3 -m unittest test_launcher_concurrency -v
+"""
+from __future__ import annotations
+
+import os
+import pathlib
+import pty
+import re
+import subprocess
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+LAUNCHER = ROOT / "tools/server_launcher.sh"
+SERVER = ROOT / ".build/release/TinyTitanServer"
+# The dense 2B is the one install both engines serve, so it is the model the CPU
+# test can name without guessing what the catalog holds.
+DENSE_DIR = ROOT / "models/qwen3.5_2B_4Bit"
+
+# Flags that answer every other question, so the concurrency question is the only
+# prompt left. `--ram 1` is under 30% of any Mac this runs on, so it cannot add a
+# red expert-cache warning to the output these tests read.
+QUIET_ANSWERS = ("--answers", "default", "--thinking", "off", "--ram", "1",
+                 "--engine", "gpu", "--port", "9123")
+
+
+def run_launcher(*args: str, env: dict | None = None, stdin: str = "",
+                 interactive: bool = False) -> subprocess.CompletedProcess[str]:
+    environment = dict(os.environ)
+    environment["TINYTITAN_LAUNCHER_DRY_RUN"] = "1"
+    if interactive:
+        environment["TINYTITAN_LAUNCHER_ASSUME_TTY"] = "1"
+    else:
+        environment.pop("TINYTITAN_LAUNCHER_ASSUME_TTY", None)
+    environment.pop("TINYTITAN_PORT", None)
+    if env:
+        environment.update(env)
+    return subprocess.run(
+        ["bash", str(LAUNCHER), "--dry-run", *args],
+        input=stdin, text=True, capture_output=True, check=False,
+        env=environment, timeout=120)
+
+
+def run_launcher_pty(*args: str, env: dict | None = None) -> tuple[int, str]:
+    """Run with stderr on a terminal, which is the only way warn_red colours."""
+    environment = dict(os.environ)
+    environment["TINYTITAN_LAUNCHER_DRY_RUN"] = "1"
+    environment["TINYTITAN_LAUNCHER_ASSUME_TTY"] = "1"
+    environment["TERM"] = "xterm-256color"
+    environment.pop("NO_COLOR", None)
+    if env:
+        environment.update(env)
+    master, slave = pty.openpty()
+    process = subprocess.Popen(
+        ["bash", str(LAUNCHER), "--dry-run", *args],
+        stdin=subprocess.DEVNULL, stdout=slave, stderr=slave,
+        env=environment, close_fds=True)
+    os.close(slave)
+    chunks: list[bytes] = []
+    while True:
+        try:
+            data = os.read(master, 65536)
+        except OSError:      # EIO: the child closed the slave side
+            break
+        if not data:
+            break
+        chunks.append(data)
+    process.wait(timeout=120)
+    os.close(master)
+    return process.returncode, b"".join(chunks).decode("utf-8", "replace")
+
+
+def reported_concurrency(run: subprocess.CompletedProcess[str]) -> str:
+    match = re.search(r"\| At once: (\d+) \|", run.stdout)
+    assert match, f"no concurrency in the summary:\n{run.stdout}\n{run.stderr}"
+    return match.group(1)
+
+
+class ConcurrencyChoiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        if not SERVER.is_file() or not DENSE_DIR.is_dir():
+            self.skipTest("no built server or no dense 2B install under models/")
+        self.base = ("--client", "server", "--model", "qwen35-2b", "--bits", "4")
+
+    def test_the_default_is_one_generation_at_a_time(self) -> None:
+        run = run_launcher(*self.base)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(reported_concurrency(run), "1")
+        self.assertIn("--max-concurrent-sequences 1", run.stdout)
+        self.assertIn("one generation at a time", run.stdout)
+
+    def test_the_default_does_not_warn(self) -> None:
+        run = run_launcher(*self.base)
+        self.assertNotIn("WARNING", run.stderr)
+        self.assertIn("cache multi-prefix | MTP", run.stdout)
+
+    def test_a_flagged_width_reaches_the_server_command(self) -> None:
+        run = run_launcher(*self.base, "--concurrency", "4")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(reported_concurrency(run), "4")
+        self.assertIn("--max-concurrent-sequences 4", run.stdout)
+        self.assertIn("4 at once (yours)", run.stdout)
+
+    def test_a_raised_width_warns_in_red(self) -> None:
+        run = run_launcher(*self.base, "--concurrency", "4")
+        # Once when the choice is made, and once more in the summary a person
+        # sees immediately before the model starts.
+        self.assertIn("WARNING: the server will serve 4 generations at once.",
+                      run.stderr)
+        self.assertIn("4 generations are served at once.", run.stderr)
+        self.assertIn("The prompt cache is off above 1.", run.stderr)
+
+    def test_the_cache_is_reported_as_the_server_will_run_it(self) -> None:
+        # The server forces the session-wide cache off above one slot. A summary
+        # that still advertised `multi-prefix` was a misreport: the operator saw
+        # a cache that was not there.
+        run = run_launcher(*self.base, "--concurrency", "2")
+        self.assertIn("cache off (above 1 at once) | MTP", run.stdout)
+
+    def test_bad_widths_are_refused_before_anything_starts(self) -> None:
+        for bad in ("0", "5", "abc", "-1"):
+            with self.subTest(concurrency=bad):
+                run = run_launcher(*self.base, "--concurrency", bad)
+                self.assertEqual(run.returncode, 2, run.stdout)
+                self.assertIn("unknown --concurrency", run.stderr)
+
+    def test_a_missing_value_is_refused_by_the_flag_itself(self) -> None:
+        # `${2:?}` is the script's shared contract for "this flag needs a
+        # value": bash exits 1 and names the flag, before any question is asked.
+        run = run_launcher(*self.base, "--concurrency", "")
+        self.assertEqual(run.returncode, 1, run.stdout)
+        self.assertIn("--concurrency needs 1, 2, 3 or 4", run.stderr)
+
+    def test_a_cpu_model_is_pinned_to_one_generation(self) -> None:
+        # The CPU backend's actor runs a generation to completion before the
+        # next starts, so a width above one buys nothing there. The launcher
+        # says so and pins the server to one rather than pretending.
+        run = run_launcher(*self.base, "--engine", "cpu", "--concurrency", "3")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("--concurrency", run.stderr)
+        self.assertIn("do not apply to the CPU engine", run.stderr)
+        self.assertIn("--max-concurrent-sequences 1", run.stdout)
+        self.assertNotIn("--max-concurrent-sequences 3", run.stdout)
+        self.assertNotIn("WARNING: the server will serve", run.stderr)
+
+
+class ConcurrencyQuestionTests(unittest.TestCase):
+    """The interactive question itself, through the launcher's test seam."""
+
+    def setUp(self) -> None:
+        if not SERVER.is_file() or not DENSE_DIR.is_dir():
+            self.skipTest("no built server or no dense 2B install under models/")
+        self.base = ("--client", "server", "--model", "qwen35-2b", "--bits", "4",
+                     *QUIET_ANSWERS)
+
+    def test_an_unattended_run_takes_one_without_asking(self) -> None:
+        run = run_launcher(*self.base)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertNotIn("serve at once?", run.stdout)
+        self.assertEqual(reported_concurrency(run), "1")
+
+    def test_enter_keeps_one(self) -> None:
+        run = run_launcher(*self.base, stdin="\n", interactive=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("How many generations should the server serve at once?",
+                      run.stdout)
+        self.assertEqual(reported_concurrency(run), "1")
+        self.assertNotIn("WARNING", run.stderr)
+
+    def test_typing_four_raises_the_width_and_warns(self) -> None:
+        run = run_launcher(*self.base, stdin="4\n", interactive=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(reported_concurrency(run), "4")
+        self.assertIn("WARNING: the server will serve 4 generations at once.",
+                      run.stderr)
+
+    def test_a_choice_outside_one_to_four_is_refused(self) -> None:
+        for bad in ("0", "5", "nine"):
+            with self.subTest(choice=bad):
+                run = run_launcher(*self.base, stdin=f"{bad}\n", interactive=True)
+                self.assertEqual(run.returncode, 2, run.stdout)
+                self.assertIn("invalid choice", run.stderr)
+
+    def test_the_flag_skips_the_question(self) -> None:
+        run = run_launcher(*self.base, "--concurrency", "2", stdin="\n",
+                           interactive=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertNotIn("serve at once?", run.stdout)
+        self.assertEqual(reported_concurrency(run), "2")
+
+
+class ConcurrencyColourTests(unittest.TestCase):
+    """The warning has to be red where it lands: on the operator's terminal."""
+
+    def setUp(self) -> None:
+        if not SERVER.is_file() or not DENSE_DIR.is_dir():
+            self.skipTest("no built server or no dense 2B install under models/")
+        self.base = ("--client", "server", "--model", "qwen35-2b", "--bits", "4",
+                     *QUIET_ANSWERS, "--concurrency", "2")
+
+    def test_the_warning_carries_the_escape_on_a_terminal(self) -> None:
+        status, output = run_launcher_pty(*self.base)
+        self.assertEqual(status, 0, output)
+        self.assertIn("\033[1;31m", output)
+        self.assertIn("WARNING: the server will serve 2 generations at once.",
+                      output)
+
+    def test_no_color_keeps_the_words_and_drops_the_escape(self) -> None:
+        status, output = run_launcher_pty(*self.base, env={"NO_COLOR": "1"})
+        self.assertEqual(status, 0, output)
+        self.assertNotIn("\033[1;31m", output)
+        self.assertIn("WARNING: the server will serve 2 generations at once.",
+                      output)
+
+
+if __name__ == "__main__":
+    unittest.main()

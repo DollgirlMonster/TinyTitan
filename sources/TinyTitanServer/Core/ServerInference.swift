@@ -103,6 +103,18 @@ public protocol PromptTokenCounting: Sendable {
     func countPromptTokens(_ request: ValidatedChatRequest) async throws -> Int
 }
 
+/// A backend that can say which prompt-cache mode it is really running.
+///
+/// Kept apart from `ServerInferenceBackend` for the same reason
+/// `PromptTokenCounting` is: an engine with no prompt cache (the CPU backend)
+/// and the test doubles should not have to answer for a cache they do not have.
+/// One resident slot serves a whole catalog, so a residency line that named the
+/// mode from the server's flags rather than from the backend that just loaded
+/// would report the previous model's cache after a switch.
+public protocol PromptCacheDescribing: Sendable {
+    /// The mode in force for this backend, never the one requested.
+    var promptCacheMode: ServerPromptCacheMode { get }
+}
 
 public protocol ServerInferenceBackend: Sendable {
     /// The backend's configured context window, used to validate
@@ -338,7 +350,7 @@ private final class GenerationDecodeState: @unchecked Sendable {
     }
 }
 
-public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
+public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, PromptCacheDescribing {
     /// Manifest-derived API model identifier used when --model-id is absent.
     public nonisolated let defaultModelID: String
     /// The session's configured context window; the HTTP layer validates
@@ -417,6 +429,25 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting {
         // plausible wrong output rather than an error, so batching runs with the
         // cache off and re-prefills each turn until it is slot-keyed.
         return slots > 1 ? .off : requested
+    }
+
+    /// The prompt cache a catalog server's *initial* model will really run,
+    /// which is what the routing banner states beside `engine=`.
+    ///
+    /// The extra input over `effectivePromptCacheMode` is the engine: a CPU
+    /// entry has no cache at all, so it reports `.off` rather than a mode the
+    /// server asked for that could never exist. The catalog loader never
+    /// attaches MTP, so the engine and the width are the whole rule. Kept here
+    /// rather than in the executable so both arms are testable without a
+    /// catalog on disk.
+    public static func initialPromptCacheMode(
+        backend: ModelCatalog.Backend,
+        requested: ServerPromptCacheMode,
+        maxConcurrentSequences: Int
+    ) -> ServerPromptCacheMode {
+        guard backend != .cpu else { return .off }
+        return effectivePromptCacheMode(requested: requested, mtpEnabled: false,
+                                        slots: maxConcurrentSequences)
     }
 
     /// lint:allow-long a sequential construction pipeline: tokenizer, Metal

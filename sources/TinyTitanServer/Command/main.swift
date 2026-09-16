@@ -62,6 +62,11 @@ do {
     let facts: ModelSessionFacts
     var managed: ManagedModelBackend?
     var router: ModelRouter?
+    /// The initial model's engine, set on the catalog path so the routing banner
+    /// can name it beside `prompt_cache`: the two only make sense together,
+    /// because a CPU entry has no cache and reports `.off` rather than the mode
+    /// the server was asked for.
+    var initialEngine: String?
     // The reasoning profile comes from an install's manifest, which a CPU
     // snapshot does not have. These models carry no reasoning-effort control
     // either, so the profile is the family's plain default.
@@ -92,9 +97,19 @@ do {
             + (arguments.lazyLoad ? "\(initial.id) loads on the first request" : "loaded \(initial.id)"))
         router = routing
         backend = routing
+        initialEngine = initial.backend.rawValue
         facts = ModelSessionFacts(modelID: initial.id,
                                   prefillChunkTokens: 0,
-                                  promptCacheMode: arguments.promptCacheMode)
+                                  // The mode the initial model will really run,
+                                  // not the one requested: the rule lives in
+                                  // `initialPromptCacheMode` so the banner, the
+                                  // residency line and a test all read the same
+                                  // answer, and the CPU arm is testable without
+                                  // a catalog on disk.
+                                  promptCacheMode: ServerModelSession.initialPromptCacheMode(
+                                      backend: initial.backend,
+                                      requested: arguments.promptCacheMode,
+                                      maxConcurrentSequences: concurrency))
         reasoningProfile = routing.servedModel(named: initial.id)?.reasoningProfile
     } else if arguments.cpu {
         // A different engine entirely: no Metal context, no expert
@@ -173,10 +188,14 @@ do {
         : ""
     if let router {
         // Prefill chunk and expert slots belong to whichever install is
-        // loaded, so the routing banner states the server's own settings.
-        print("TinyTitanServer ready at http://127.0.0.1:\(arguments.port) models=\(router.servedModels.count) initial=\(facts.modelID) context=\(arguments.maxContext) prompt_cache=\(facts.promptCacheMode.rawValue) reasoning=\(arguments.requestedReasoningLevel.rawValue) dynamic=on")
+        // loaded, so the routing banner states the server's own settings. The
+        // exception is `prompt_cache`, which belongs to the model: it reports
+        // the initial model's engine and real mode, and the residency line
+        // reports both again on every load and switch.
+        let engine = initialEngine.map { " engine=\($0)" } ?? ""
+        print("TinyTitanServer ready at http://127.0.0.1:\(arguments.port) models=\(router.servedModels.count) initial=\(facts.modelID)\(engine) context=\(arguments.maxContext) concurrency=\(concurrency) prompt_cache=\(facts.promptCacheMode.rawValue) reasoning=\(arguments.requestedReasoningLevel.rawValue) dynamic=on")
     } else {
-        print("TinyTitanServer ready at http://127.0.0.1:\(arguments.port) model=\(facts.modelID) context=\(arguments.maxContext) prefill_chunk=\(facts.prefillChunkTokens)\(facts.expertCacheSlots > 0 ? " expert_slots=\(facts.expertCacheSlots)" : "") prompt_cache=\(facts.promptCacheMode.rawValue) prompt_cache_memory_mib=\(cacheMemoryMiB) prompt_cache_disk=\(diskCache) thinking=\(reasoning.thinking.rawValue) mtp=\(mtp)\(residencyBanner)")
+        print("TinyTitanServer ready at http://127.0.0.1:\(arguments.port) model=\(facts.modelID) context=\(arguments.maxContext) concurrency=\(concurrency) prefill_chunk=\(facts.prefillChunkTokens)\(facts.expertCacheSlots > 0 ? " expert_slots=\(facts.expertCacheSlots)" : "") prompt_cache=\(facts.promptCacheMode.rawValue) prompt_cache_memory_mib=\(cacheMemoryMiB) prompt_cache_disk=\(diskCache) thinking=\(reasoning.thinking.rawValue) mtp=\(mtp)\(residencyBanner)")
     }
     WatchdogConfiguration.shared.announce()
     if arguments.unloadDiscardsWarmCache {

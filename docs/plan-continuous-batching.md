@@ -5,6 +5,12 @@ in the decision record) because the batching win is not only concurrency: one
 forward pass that carries B tokens from B conversations amortises the routed-
 expert reads that dominate decode, which a pool of independent runners cannot.
 
+> **Status update: the width is opt-in.** The shipped default is now 1, not 4 —
+> a plain launch serves one generation at a time, `--max-concurrent-sequences`
+> raises it, and `tools/server_launcher.sh` asks (1...4) and warns in red above 1.
+> The phases below landed with the default at 4 and are recorded as they landed;
+> read "default 4" in them as the value at the time.
+
 Goal: `POST /v1/responses` and `POST /v1/chat/completions` accept up to four
 generations at once through **one loaded model**, with the fifth and later
 queued exactly as today (`--queue-limit`). Batch size 1 must stay

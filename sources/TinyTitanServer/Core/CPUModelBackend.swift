@@ -18,7 +18,7 @@ import TinyTitan
 /// rebuilt per request, because a CPU engine's prefill is cheap relative to
 /// its decode and the cache's complexity buys little. No expert streaming:
 /// these models are dense. No MTP.
-public actor CPUModelBackend: ServerInferenceBackend {
+public actor CPUModelBackend: ServerInferenceBackend, PromptCacheDescribing {
 
     private let model: CPUQwen35
     private let tokenizer: GFTokenizer
@@ -46,6 +46,10 @@ public actor CPUModelBackend: ServerInferenceBackend {
     public nonisolated let threads: Int
     public nonisolated var maximumContext: Int { context }
     public nonisolated var samplingDefaults: GenerationDefaults.Sampling { defaults }
+    /// The CPU engine has no prompt cache, and says so rather than borrowing the
+    /// mode the server was asked for. `.off` is what the launch banner reports
+    /// for this backend, so the banner and the residency line agree.
+    public nonisolated var promptCacheMode: ServerPromptCacheMode { .off }
 
     /// Loads a snapshot and, unless told otherwise, makes it resident.
     ///
