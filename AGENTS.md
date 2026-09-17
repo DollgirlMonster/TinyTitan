@@ -59,7 +59,7 @@ means both, whether or not the change touched the wiki.
 swift build -c release
 .build/release/TinyTitanMac
 swift run -c release TinyTitanCLI \
-  --model models/qwen3.5_2B_4Bit \
+  --model models/qwen3.5_4B_4Bit \
   --prompt "The capital of France is" \
   --max-new 64
 ```
@@ -105,6 +105,17 @@ reinstall the model.
 
 Run package tests serially (`swift test --no-parallel`), passing extra arguments
 like `--filter` through. Run only one app, CLI, or model-using test at a time.
+
+**Ad-hoc model runs use the 4B or 9B, not the 2B, unless the task says
+otherwise.** That means any run that exercises a code path against a live model —
+a feature check, a live end-to-end, a hand-driven probe:
+`models/qwen3.5_4B_4Bit` or `models/qwen3.5_9B_4Bit`, the 4B first when only one
+is needed. The 2B loads in seconds and is the wrong instrument: it fails
+instruction-following, arithmetic and summarisation in ways that read as defects
+in the code under test, and a session spent chasing one is a session wasted. Reach
+for it only when the small model *is* the subject — its own limits, its own
+behaviour — and say in the report that it was deliberate. This does not change the
+golden-baseline targets below, which are what they are.
 
 `tools/lint.sh` runs the five gates CI enforces beyond the compiler: no `as!` /
 `try!` under `sources/` without a `lint:allow-force <reason>` comment above it; no
