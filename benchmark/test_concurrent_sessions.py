@@ -36,9 +36,10 @@ Against a server you started yourself, `BASE=http://127.0.0.1:8090` runs the che
 without launching anything. Exit status is non-zero if any model leaks or misroutes.
 
 A run on the 2B reports `task_wrong` and `own_missed`: that model genuinely
-mishandles arithmetic and two-part instructions (measured, see
-`docs/site/04-choosing-a-model.md`), which is answer quality rather than a mixed
-session and is deliberately not part of the separation verdict. `TOKEN_SCALE`,
+mishandles arithmetic and two-part instructions (measured; see the 2B note on
+https://github.com/Pummelchen/TinyTitan/wiki/Getting-Started), which is answer
+quality rather than a mixed session and is deliberately not part of the
+separation verdict. `TOKEN_SCALE`,
 `TEMPERATURE`, `TOP_P`/`TOP_K` and `SERVER_ARGS` exist for thinking runs, which
 need their family's own sampling and a budget big enough for the reasoning block.
 """

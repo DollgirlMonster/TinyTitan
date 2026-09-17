@@ -94,9 +94,8 @@ pipeline sees only the answer. Nothing installed yet? Start with
   ```bash
   curl -fsSL https://raw.githubusercontent.com/Pummelchen/TinyTitan/main/tools/install_tinytitan.sh | bash
   ```
-  From a clone, `tools/install_tinytitan.sh` does the same. See
-  [docs/site](docs/site/) for the plain-language article series, or
-  `tools/install_tinytitan.sh --help` for its flags.
+  From a clone, `tools/install_tinytitan.sh` does the same, and `--help` lists
+  its flags.
 - **OpenAI-compatible server:** A loopback Chat Completions and Responses API
   for starting TinyTitan and connecting supported coding clients.
 - **One server, one port, one launcher:** `tools/server_launcher.sh` starts the

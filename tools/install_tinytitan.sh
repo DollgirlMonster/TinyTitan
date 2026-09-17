@@ -180,7 +180,7 @@ say "4/6  Building (this is the slow part)"
 
 if ! swift build -c release; then
   die "The build failed. The last few lines explain why.
-     Copy the whole message to https://tinytitan.discourse.group/ and someone will help."
+     Copy the whole message to https://github.com/Pummelchen/TinyTitan/issues and someone will help."
 fi
 ok "Build complete"
 
@@ -277,5 +277,5 @@ echo "  http://127.0.0.1:8080/v1 with any API key; --port changes the port."
 echo "  Keep the window open while you use it; one model runs at a time."
 echo
 echo "  New to this? Start here:"
-echo "    https://github.com/Pummelchen/TinyTitan/blob/main/docs/site/01-what-is-tinytitan.md"
-echo "  Questions: https://tinytitan.discourse.group/"
+echo "    https://github.com/Pummelchen/TinyTitan/wiki/Getting-Started"
+echo "  Questions and bug reports: https://github.com/Pummelchen/TinyTitan/issues"

@@ -11,7 +11,7 @@ here was checked against the tree, and the counts are from that pass.
 | --- | --- | --- |
 | `sources/` | The Swift package's targets, one directory per target | yes |
 | `tests/` | Test targets, mirroring `sources/` path for path | yes |
-| `docs/` | Engineering documentation: plans, profiles, the findings register, the user-facing `docs/site/` | yes |
+| `docs/` | Engineering documentation: plans, profiles, the findings register, the runbooks | yes |
 | `tools/` | Build, install, verification and conversion drivers (`*.sh`, `*.py`) | yes |
 | `benchmark/` | Benchmark scripts, the golden outputs the baseline compares against, launch helpers | yes |
 | `plugins/` | Client-side bundles for tools that drive the server; `plugins/dsh-tinytitan/` is the DeepSeek Harness one | yes |

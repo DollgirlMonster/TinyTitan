@@ -46,10 +46,6 @@ Three places, and only the first is a literal:
    model joining or leaving the supported list — and the only version string in
    the tree is `ServerVersion.current` above.
 
-The dated `docs/site/*.md` articles say "at the time of writing" and are **not**
-bumped: they record when they were verified, and re-stamping them without
-re-verifying would be a false claim.
-
 ## 2. Write the release notes
 
 `docs/release-notes-vX.Y.md`, modelled on the previous one:
