@@ -39,8 +39,10 @@
 #
 # Flags:
 #   --yes, -y        answer yes to every question (unattended install)
-#   --model NAME     model to install; see tools/install_models.sh --help
-#                    (default: ornith15-8bit)
+#   --model NAME     install this model without asking. Omit it and, with a
+#                    terminal, the installer shows the model list to choose from
+#                    (`tools/install_models.sh --choose`); through a pipe it
+#                    takes ornith15-8bit rather than hanging on a question.
 #   --no-model       build only; download no model
 #   --web            also set up the browser chat window (asked interactively;
 #                    --yes alone does not install it, so an unattended run stays
@@ -81,6 +83,9 @@ ask() {
 
 # --- flags -----------------------------------------------------------------
 MODEL="$DEFAULT_MODEL"
+# Set by --model. It decides whether the model step shows the menu (nothing was
+# named, so ask) or installs the one that was named (do not second-guess it).
+MODEL_WAS_SET=0
 INSTALL_MODEL=1
 TARGET_DIR="$DEFAULT_DIR"
 # ask | yes | no. `--yes` deliberately does not imply `yes` here: pulling ~320 MB
@@ -90,7 +95,7 @@ WEB_MODE="ask"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --yes|-y)    ASSUME_YES=1 ;;
-    --model)     MODEL="${2:?--model needs a name}"; shift ;;
+    --model)     MODEL="${2:?--model needs a name}"; MODEL_WAS_SET=1; shift ;;
     --no-model)  INSTALL_MODEL=0 ;;
     --web)       WEB_MODE="yes" ;;
     --no-web)    WEB_MODE="no" ;;
@@ -243,28 +248,39 @@ if (( ! INSTALL_MODEL )); then
   ok "Skipped (--no-model)"
 elif installed_any; then
   ok "A model is already installed under models/"
-  echo "     Install another any time:  tools/install_models.sh $MODEL"
+  echo "     Install another any time:  tools/install_models.sh --choose"
 else
-  echo "  No model is installed yet. TinyTitan needs one to run."
-  if [[ "$MODEL" == "$DEFAULT_MODEL" ]]; then
-    echo "  The recommended starting model is Ornith 1.5 35B-A3B at 8-bit,"
-    echo "  about 37 GB installed. The 4-bit version is about 20 GB and faster"
-    echo "  to download if that is a lot:  tools/install_models.sh ornith15"
-  else
-    echo "  This run was asked for '$MODEL'. The download is measured in tens of"
-    echo "  gigabytes; tools/install_models.sh --help lists every target."
-  fi
-  if ask "Download $MODEL now?" yes; then
-    if ! tools/install_models.sh "$MODEL"; then
-      warn "The model download did not finish."
-      echo "     Re-run this installer to continue, or start it directly:"
-      echo "       tools/install_models.sh $MODEL"
+  # The model is the only real choice in this install, so it gets a list rather
+  # than a yes/no on one default: what each model is, how much disk it takes, and
+  # the verified default on the first line for someone who just presses Enter.
+  # It lives in `install_models.sh --choose` so the list, the labels and the
+  # sizes come from the one catalogue.
+  if (( MODEL_WAS_SET )) || [[ ! -t 0 ]]; then
+    echo "  No model is installed yet. TinyTitan needs one to run."
+    if [[ "$MODEL" == "$DEFAULT_MODEL" ]]; then
+      echo "  The recommended starting model is Ornith 1.5 35B-A3B at 8-bit,"
+      echo "  about 37 GB installed. The 4-bit version is about 20 GB and faster"
+      echo "  to download if that is a lot:  tools/install_models.sh ornith15"
     else
-      ok "Model installed"
+      echo "  This run was asked for '$MODEL'."
     fi
+    if ask "Download $MODEL now?" yes; then
+      if ! tools/install_models.sh "$MODEL"; then
+        warn "The model download did not finish."
+        echo "     Re-run this installer to continue, or start it directly:"
+        echo "       tools/install_models.sh $MODEL"
+      else
+        ok "Model installed"
+      fi
+    else
+      echo "  Fine — TinyTitan is built but will have nothing to load until you run:"
+      echo "       tools/install_models.sh --choose"
+    fi
+  elif ! tools/install_models.sh --choose; then
+    warn "No model was installed."
+    echo "     Pick one whenever you like:  tools/install_models.sh --choose"
   else
-    echo "  Fine — TinyTitan is built but will have nothing to load until you run:"
-    echo "       tools/install_models.sh $MODEL"
+    ok "Model installed"
   fi
 fi
 

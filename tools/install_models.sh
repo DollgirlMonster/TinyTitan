@@ -16,6 +16,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$ROOT/.build/release/TinyTitanRepack"
 MODELS="$ROOT/models"
 
+# The install menu's list of models, labels and sizes comes from the shared
+# catalogue so this file and the installer cannot disagree about what exists.
+# shellcheck source=tools/tinytitan_models.sh
+source "$ROOT/tools/tinytitan_models.sh"
+
 # The converters need a Python with numpy/ml_dtypes/safetensors at 3.10 or
 # newer. Resolved by capability rather than by name: `python3` is 3.9 on a
 # stock macOS and lacks the packages, while a pinned `python3.13` fails on a
@@ -110,6 +115,7 @@ status() {
     printf '%-20s %-8s %-10s %s\n' "$name" "${width}-bit" "$state" "$source"
   done
   echo
+  echo "tools/install_models.sh --choose        the install menu: pick a model"
   echo "tools/install_models.sh <name>          install one width"
   echo "tools/install_models.sh <name> both     4-bit and 8-bit from one download"
   echo "tools/install_models.sh --help          sources and disk sizes"
@@ -404,9 +410,55 @@ install_both() {
   return 2
 }
 
+# The one question an install has to ask.
+#
+# The model is the only real choice a person makes — everything else about
+# setting TinyTitan up is automatic — so it is shown as a list with the disk each
+# one costs and what it is for, with the verified default first. Enter takes the
+# default. The entries and their sizes come from `TINYTITAN_MODEL_CHOICES` in
+# tools/tinytitan_models.sh, so the installer cannot offer a model that does not
+# exist or quote a size no one re-measured.
+choose_model() {
+  local count=${#TINYTITAN_MODEL_CHOICES[@]}
+  local index key label bits gb note reply default_label
+  if (( count == 0 )); then
+    echo "no models are listed in TINYTITAN_MODEL_CHOICES" >&2
+    return 2
+  fi
+  IFS='|' read -r _ default_label _ _ _ <<<"${TINYTITAN_MODEL_CHOICES[0]}"
+
+  echo
+  echo "Which model? This is the only choice; the rest is automatic."
+  echo
+  printf '  %-4s %-32s %-6s %-10s %s\n' "#" "model" "bits" "on disk" "what it is for"
+  for (( index = 0; index < count; index++ )); do
+    IFS='|' read -r key label bits gb note <<<"${TINYTITAN_MODEL_CHOICES[$index]}"
+    printf '  %2d)  %-32s %-6s %7s GB  %s\n' \
+      "$((index + 1))" "$label" "${bits}-bit" "$gb" "$note"
+  done
+  echo
+  printf 'Choice [1-%d] (Enter for %s): ' "$count" "$default_label"
+  read -r reply || reply=""
+  reply="${reply:-1}"
+  if [[ ! "$reply" =~ ^[0-9]+$ ]] || (( reply < 1 || reply > count )); then
+    echo "not a choice: $reply" >&2
+    return 2
+  fi
+  key="${TINYTITAN_MODEL_CHOICES[$((reply - 1))]%%|*}"
+  echo
+  install_one "$key"
+}
+
 case "${1:-}" in
   "")            status ;;
   --help|-h)     usage ;;
+  # The install menu: one numbered list, default first, then install the pick.
+  --choose|--menu)
+                 if [[ ! -t 0 ]]; then
+                   echo "--choose needs a terminal to ask in; pass a model name instead" >&2
+                   exit 2
+                 fi
+                 choose_model ;;
   --all-4bit)    for row in "${CATALOGUE[@]}"; do IFS='|' read -r n _ w _ <<<"$row"
                    [[ "$w" == 4 ]] && install_one "$n"; done ;;
   --all-8bit)    for row in "${CATALOGUE[@]}"; do IFS='|' read -r n _ w _ <<<"$row"

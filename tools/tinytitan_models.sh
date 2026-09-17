@@ -36,6 +36,44 @@ TINYTITAN_CLIENTS=(
   "zed|Zed editor|editor|zed"
 )
 
+# --- What a person is offered to install ------------------------------------
+#
+# The install menu, in the order it is shown:
+#
+#   key|label|bits|installed GB|what it is for
+#
+# `key` is an `install_models.sh` target and a `TinyTitanRepack --model` selector.
+# `label` is what the menu prints; it is spelled out here rather than derived,
+# because `tinytitan_resolve_model` takes the base keys (ornith15, qwen38) and
+# not the `-8bit` targets or `qwen38flash`, and a menu that fell back to printing
+# `qwen35-4b-8bit` at a person is not a menu.
+#
+# The sizes are **installed** sizes, not downloads: a MoE install is built from a
+# ~70 GB bf16 fetch and the widths share it, so the number a person has to have
+# free is this one. The first row is the default, and it is the model every
+# release is verified against.
+#
+# Kept here rather than in the installer so the installer, the model installer
+# and any future menu cannot disagree about what exists or how big it is.
+TINYTITAN_MODEL_CHOICES=(
+  "ornith15-8bit|Ornith 1.5 35B-A3B|8|36.9|Recommended. Best measured coding and tooling results."
+  "ornith15|Ornith 1.5 35B-A3B|4|19.5|The same model at 4-bit: half the disk, faster decode."
+  "qwen36-8bit|Qwen 3.6 35B-A3B|8|37.8|The other 35B family, at 8-bit."
+  "qwen36|Qwen 3.6 35B-A3B|4|19.5|The other 35B family, at 4-bit."
+  "agentworld-8bit|Qwen-AgentWorld 35B-A3B|8|41.0|Tuned for agentic tool use."
+  "agentworld|Qwen-AgentWorld 35B-A3B|4|20.0|Agentic tool use at 4-bit."
+  "katcoder-8bit|KAT-Coder-V2.5-Dev 35B-A3B|8|38.0|Coding-specialised Qwen 3.6 fine-tune."
+  "katcoder|KAT-Coder-V2.5-Dev 35B-A3B|4|20.0|Coding-specialised, at 4-bit."
+  "qwen35-4b|Qwen 3.5 4B|4|3.7|Dense and small: the quickest way to see it work, and it runs on the CPU too."
+  "qwen35-4b-8bit|Qwen 3.5 4B|8|5.3|Dense 4B at 8-bit."
+  "qwen35-9b|Qwen 3.5 9B|4|7.5|Dense 9B: more capable, still light on disk."
+  "qwen35-9b-8bit|Qwen 3.5 9B|8|11.0|Dense 9B at 8-bit."
+  "qwen35-2b|Qwen 3.5 2B|4|2.3|Dense 2B: seconds to load. Weak at arithmetic and long instructions."
+  "qwen35-2b-8bit|Qwen 3.5 2B|8|2.2|Dense 2B at 8-bit."
+  "qwen38flash|Qwen3.8-Flash-Next 125B-A6B|4|162.0|The largest model, and the most disk."
+  "qwen38flash-8bit|Qwen3.8-Flash-Next 125B-A6B|8|220.0|The largest model at 8-bit."
+)
+
 # tinytitan_client_ids -> one client id per line, in menu order.
 tinytitan_client_ids() {
   local entry
