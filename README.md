@@ -87,10 +87,11 @@ Generated text goes to **stdout**; the timing footer goes to **stderr**, so a
 pipeline sees only the answer. Nothing installed yet? Start with
 [Getting Started](https://github.com/Pummelchen/TinyTitan/wiki/Getting-Started).
 
-- **Easiest install:** one command checks the Mac, builds TinyTitan, optionally
-  downloads a model, and leaves a `tinytitan` command that starts the server —
-  then offers to start it, so you finish with a base URL to point a client at.
-  Safe to re-run; it updates instead of cloning twice.
+- **Easiest install:** one command checks the Mac, downloads TinyTitan's
+  prebuilt arm64 binaries, optionally downloads a model, and leaves a
+  `tinytitan` command that starts the server — then offers to start it, so you
+  finish with a base URL to point a client at. Safe to re-run; a second run
+  updates what is already installed instead of fetching it twice.
   ```bash
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Pummelchen/TinyTitan/main/tools/install_tinytitan.sh)"
   ```
@@ -100,9 +101,10 @@ pipeline sees only the answer. Nothing installed yet? Start with
   script first and runs it with your terminal still on stdin, so the questions
   work. From a clone or an unzipped download, `bash tools/install_tinytitan.sh`
   does the same and never needs `chmod +x`, and `--help` lists its flags.
-  **Nothing needs Homebrew**, and no Python is needed to build or to start the
-  server — only the model *converters* use Python, and for the models the
-  repacker streams itself the installer prints the command that needs none.
+  **Nothing needs Homebrew, Xcode, git or Node**, and no Python is needed to
+  install or to start the server: the engine arrives built for `arm64`. Only the
+  model *converters* use Python, and for the models the repacker streams itself
+  the installer prints the command that needs none.
 - **A chat window, if you want one:** the installer can also set up TinyTitan's
   own [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — a
   local page in your browser with a prompt box, already pointed at the model you
