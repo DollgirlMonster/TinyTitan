@@ -30,6 +30,23 @@ whose traps still bite and are folded in below.
 > (`sources/TinyTitanServer/Core/ServerVersion.swift`), is printed in the server's
 > ready banner, and is checked against the release tag by `tools/release.sh`.
 
+> **The replacement window is DeepSeek Harness, installed not built.**
+> `tools/dsh_local.sh` installs a **pinned** `@deepseek-ai/dsh` (`0.1.5-rc.2`)
+> into `~/.tinytitan/dsh`, with our `plugins/dsh-tinytitan` bundle from this
+> checkout, and the launcher's `--web` starts the server and opens it in the
+> browser. Two things are load-bearing. **Isolation:** our copy uses its own
+> `DSH_HOME`, npm prefix, pnpm store, and port (7788, stepping up when taken), so a
+> DeepSeek Harness the user already runs — their `~/.dsh`, their `dsh` on PATH,
+> their 3080 UI — is never read, written or stopped. **No fork:** it is upstream's
+> code plus our plugin; the harness is in developer preview and says it will break
+> compatibility, which is exactly why the version is pinned and why nothing here
+> may start depending on a window existing. Two traps cost time and are recorded in
+> the script: a fresh `DSH_HOME` has no `settings.yaml`, so we create it before
+> `tools/dsh_route.sh --write` will touch it; and pnpm's npm-installed shim has no
+> shebang, which macOS refuses to `exec` (`spawnSync pnpm ENOEXEC`) — the private
+> shim execs `@pnpm/exe.darwin-arm64` instead. `tools/dsh_local.sh status` says what
+> is installed.
+
 ## Where the work stands
 
 | Piece | State |

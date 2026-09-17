@@ -96,6 +96,17 @@ pipeline sees only the answer. Nothing installed yet? Start with
   ```
   From a clone, `tools/install_tinytitan.sh` does the same, and `--help` lists
   its flags.
+- **A chat window, if you want one:** the installer can also set up TinyTitan's
+  own [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — a
+  local page in your browser with a prompt box, already pointed at the model you
+  installed. `--web` does it in one step, or answer yes when the installer asks.
+  It opens with `~/.local/bin/tinytitan-web` (or
+  `tools/server_launcher.sh --web`). It is installed under `~/.tinytitan`, pinned
+  to a tested DeepSeek Harness version, and kept isolated from any DeepSeek
+  Harness you run yourself, so our copy and yours never share a config, a
+  session or a port; see [tools/dsh_local.sh](tools/dsh_local.sh). This is a
+  client in the browser, not a bundled app — the engine and its server remain the
+  product.
 - **OpenAI-compatible server:** A loopback Chat Completions and Responses API
   for starting TinyTitan and connecting supported coding clients.
 - **One server, one port, one launcher:** `tools/server_launcher.sh` starts the

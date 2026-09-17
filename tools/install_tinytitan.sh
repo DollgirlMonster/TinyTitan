@@ -11,10 +11,19 @@
 # **TinyTitan server**: at the end it offers to start one and stays in the
 # foreground as it runs, so you finish with a base URL a client can be pointed at.
 #
+# It can also set up a **chat window**: TinyTitan's own DeepSeek Harness, a local
+# page with a prompt box that opens in the default browser, already pointed at
+# the server. That is offered once a model is installed, because a window with
+# nothing to load is not a working thing. It lives under ~/.tinytitan and is kept
+# entirely separate from any DeepSeek Harness you run yourself; see
+# tools/dsh_local.sh.
+#
 # Nothing here is destructive. It never deletes a model, never removes a
 # directory, and never touches anything outside its own folders:
 #   ~/TinyTitan                 the checkout (a clone started by this script)
 #   ~/.local/bin/tinytitan      the command that starts the server
+#   ~/.local/bin/tinytitan-web  the command that starts it with the browser window
+#   ~/.tinytitan                the private DeepSeek Harness, only with --web
 # Re-running it is safe: it updates an existing checkout instead of cloning
 # a second time.
 #
@@ -23,6 +32,10 @@
 #   --model NAME     model to install; see tools/install_models.sh --help
 #                    (default: ornith15-8bit)
 #   --no-model       build only; download no model
+#   --web            also set up the browser chat window (asked interactively;
+#                    --yes alone does not install it, so an unattended run stays
+#                    a server and nothing else)
+#   --no-web         do not offer the browser chat window
 #   --dir PATH       where to clone when there is no checkout (default ~/TinyTitan)
 #   --help, -h       this text
 set -euo pipefail
@@ -59,11 +72,17 @@ ask() {
 MODEL="$DEFAULT_MODEL"
 INSTALL_MODEL=1
 TARGET_DIR="$DEFAULT_DIR"
+# ask | yes | no. `--yes` deliberately does not imply `yes` here: pulling ~320 MB
+# of Node/DeepSeek Harness into someone's home on an unattended run is a side
+# effect that has to be asked for by name, with --web.
+WEB_MODE="ask"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --yes|-y)    ASSUME_YES=1 ;;
     --model)     MODEL="${2:?--model needs a name}"; shift ;;
     --no-model)  INSTALL_MODEL=0 ;;
+    --web)       WEB_MODE="yes" ;;
+    --no-web)    WEB_MODE="no" ;;
     --dir)       TARGET_DIR="${2:?--dir needs a path}"; shift ;;
     --help|-h)   sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d'; exit 0 ;;
     *)           die "unknown option: $1 (try --help)" ;;
@@ -252,6 +271,34 @@ if ! installed_any; then
   echo "       ~/.local/bin/tinytitan"
 fi
 
+# The chat window. Offered only once a model is on disk: the whole point is a
+# page that opens onto a model that is already there, and setting up 320 MB of
+# runtime for an empty picker helps nobody.
+WANT_WEB=0
+if ! installed_any; then
+  :
+elif [[ "$WEB_MODE" == "no" ]]; then
+  ok "Browser chat window: skipped (--no-web)"
+elif [[ "$WEB_MODE" == "yes" ]] \
+  || { (( ASSUME_YES == 0 )) && [[ -t 0 ]] \
+       && ask "Also set up a chat window in your browser?" yes; }; then
+  echo
+  if "$REPO_ROOT/tools/dsh_local.sh" ensure; then
+    WANT_WEB=1
+    cat > "$HOME/.local/bin/tinytitan-web" <<WEBRUNNER
+#!/bin/sh
+# Installed by tools/install_tinytitan.sh. Starts the server and opens
+# TinyTitan's own DeepSeek Harness in the browser.
+exec "$REPO_ROOT/tools/server_launcher.sh" --web "\$@"
+WEBRUNNER
+    chmod +x "$HOME/.local/bin/tinytitan-web"
+    ok "Chat window ready: ~/.local/bin/tinytitan-web"
+  else
+    warn "The chat window could not be set up; it does not affect the server."
+    warn "Retry any time with: $REPO_ROOT/tools/dsh_local.sh ensure"
+  fi
+fi
+
 # --- done -------------------------------------------------------------------
 echo
 # Hand over to the launcher whenever a person is there to watch: the launcher
@@ -260,21 +307,41 @@ echo
 # install prints the command instead, so a pipe never blocks on a server.
 if installed_any && (( ASSUME_YES == 0 )) && [[ -t 0 && -t 1 ]]; then
   if ask "Start the TinyTitan server now?" yes; then
-    say "Starting the server. Leave this window open; Ctrl-C stops it."
+    if (( WANT_WEB )); then
+      say "Starting the model and opening the chat window in your browser."
+    else
+      say "Starting the server. Leave this window open; Ctrl-C stops it."
+    fi
     echo
+    if (( WANT_WEB )); then
+      exec "$REPO_ROOT/tools/server_launcher.sh" --web
+    fi
     exec "$REPO_ROOT/tools/server_launcher.sh" --client server
   fi
 fi
 
 say "Done."
 echo
-echo "  Start the TinyTitan server:"
-echo "    ~/.local/bin/tinytitan"
-echo "    (or: $REPO_ROOT/tools/server_launcher.sh)"
-echo
-echo "  It prints the base URL to point a client at - by default"
-echo "  http://127.0.0.1:8080/v1 with any API key; --port changes the port."
-echo "  Keep the window open while you use it; one model runs at a time."
+if (( WANT_WEB )); then
+  echo "  Start TinyTitan with the browser chat window:"
+  echo "    ~/.local/bin/tinytitan-web"
+  echo "    (or: $REPO_ROOT/tools/server_launcher.sh --web)"
+  echo
+  echo "  A page opens in your browser with a prompt box, already pointed at"
+  echo "  the model. Keep the window open while you use it; Ctrl-C stops both."
+  echo "  The server alone is still:  ~/.local/bin/tinytitan"
+else
+  echo "  Start the TinyTitan server:"
+  echo "    ~/.local/bin/tinytitan"
+  echo "    (or: $REPO_ROOT/tools/server_launcher.sh)"
+  echo
+  echo "  It prints the base URL to point a client at - by default"
+  echo "  http://127.0.0.1:8080/v1 with any API key; --port changes the port."
+  echo "  Keep the window open while you use it; one model runs at a time."
+  echo
+  echo "  For a chat window in the browser instead, re-run this installer with"
+  echo "  --web, or run: $REPO_ROOT/tools/dsh_local.sh ensure"
+fi
 echo
 echo "  New to this? Start here:"
 echo "    https://github.com/Pummelchen/TinyTitan/wiki/Getting-Started"

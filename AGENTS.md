@@ -39,6 +39,15 @@ surface to build, keep in step with every engine feature, and support, and it wa
 removed for exactly that reason. Do not add one back, and do not take on work that
 only a GUI needs.
 
+The **one** sanctioned convenience is a client we merely install and configure, not
+build: `tools/dsh_local.sh` sets up a pinned, private DeepSeek Harness under
+`~/.tinytitan` and the launcher's `--web` opens it in the browser, so a user who
+wants a window gets one already pointed at their model. It is upstream's code with
+our plugin, isolated from any DeepSeek Harness the user runs, and it is a client of
+the loopback server like Zed or `curl` — not a front end this repository maintains.
+Keep it that way: no forking the harness, no GUI code in this tree, and nothing
+here may depend on a window existing.
+
 ## Layout and commands
 
 `sources/` holds one directory per SwiftPM target. `sources/TinyTitan/` is the

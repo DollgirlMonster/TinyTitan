@@ -66,6 +66,11 @@
 #              swapping. GPU models only: the CPU engine runs one generation at a
 #              time whatever it is told.
 #   --memory        enable persistent agent memory for this project
+#   --web           after the server is up, open TinyTitan's own DeepSeek
+#              Harness in the default browser: a local page with a prompt box,
+#              installed under ~/.tinytitan and isolated from any dsh you run
+#              yourself (see tools/dsh_local.sh). 7788 is its port, or the next
+#              free one.
 #   --dry-run       print the server command and client setup; start nothing
 #   --prompt-cache <multi-prefix|off>  prompt-state reuse (default multi-prefix,
 #              a 256 MiB cache). `off` is for the cache A/B harnesses, which
@@ -148,6 +153,12 @@ if [[ "${TINYTITAN_LAUNCHER_ASSUME_TTY:-0}" == "1" ]]; then INTERACTIVE=1; fi
 CLIENT=""; MODE=""; MODEL_ARG=""; BITS=""; ANSWERS=""; THINKING_ARG=""
 RAM_ARG=""; CONTEXT_ARG=""; KV_ARG=""; YARN=0; PORT_ARG=""; MEMORY=0; ENGINE_ARG=""
 CACHE_ARG=""; MTP_MODEL_ARG=""; MTP_MEMORY_ARG=""; CONCURRENCY_ARG=""
+# --web: after the server is up, hand the terminal over to TinyTitan's own
+# DeepSeek Harness, which opens a prompt box in the default browser. It is a
+# mode rather than a `--client` entry on purpose: the client list in
+# tools/tinytitan_models.sh is shared with the coder benchmark, which rejects
+# any kind that is not `coder` or `editor` and asserts the id set exactly.
+WEB=0
 positional=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -177,6 +188,7 @@ while [[ $# -gt 0 ]]; do
     # is one, so this only ever raises it, and raising it is warned about.
     --concurrency) CONCURRENCY_ARG="${2:?--concurrency needs a power of two}"; shift 2 ;;
     --memory)   MEMORY=1; shift ;;
+    --web)      WEB=1; shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
     --help|-h)  usage; exit 0 ;;
     --)         shift; while [[ $# -gt 0 ]]; do positional+=("$1"); shift; done ;;
@@ -273,7 +285,10 @@ normalize_client() {
   return 1
 }
 
-if [[ -z "$CLIENT" ]] && (( INTERACTIVE )); then
+# --web is its own handover, so it does not ask the client question: the browser
+# page is what comes next, and a coder CLI on top of it would fight for the
+# terminal.
+if [[ -z "$CLIENT" ]] && (( INTERACTIVE )) && (( ! WEB )); then
   menu_ids=()
   while IFS= read -r id; do menu_ids+=("$id"); done < <(tinytitan_client_ids)
   echo "What do you want to launch?"
@@ -1107,7 +1122,16 @@ print_setup() {
     echo "  Model:      $launch_model $api_model_note"
     echo "  Endpoints:  POST /v1/chat/completions, POST /v1/responses"
   fi
-  if (( non_default_port )); then
+  if (( WEB )); then
+    echo ""
+    echo "DeepSeek Harness is opening in your default browser: a prompt box"
+    echo "pointed at this server. It is this install's own copy under"
+    echo "~/.tinytitan (port ${TINYTITAN_DSH_PORT:-7788}, or the next free one), so a"
+    echo "DeepSeek Harness you run yourself is not touched."
+  fi
+  # The launcher's own route is written by `dsh_local.sh ensure --port` on the
+  # --web path, so the "regenerate it yourself" advice below would be noise there.
+  if (( non_default_port && ! WEB )); then
     echo ""
     echo "Port $PORT is not the default, so anything that assumes ${TINYTITAN_DEFAULT_PORT} needs"
     echo "telling. The DeepSeek Harness route is one of those; regenerate it"
@@ -1501,6 +1525,26 @@ esac
 # through --dry-run, so the default `server` path — which is what the installer
 # hands off to — started a server and never told the user its address.
 print_setup
+
+# --web: bring up TinyTitan's own DeepSeek Harness and let it take the terminal.
+# It opens the default browser itself and prints the tokenised URL, so there is
+# nothing else to tell the user. `ensure` writes the route against *this*
+# server's port, which is why it runs here rather than at install time: the port
+# is not known until now. The child is not `exec`ed — the trap above has to
+# survive so Ctrl-C stops the model with the page.
+if (( WEB )); then
+  if ! "$SCRIPT_DIR/dsh_local.sh" ensure --port "$PORT"; then
+    echo "ERROR: could not set up DeepSeek Harness (see above)." >&2
+    echo "       The server is still running on http://127.0.0.1:${PORT}/v1 —" >&2
+    echo "       point any OpenAI-compatible client at it." >&2
+    wait "$server_pid"
+    exit $?
+  fi
+  echo
+  echo "Opening DeepSeek Harness in your default browser..."
+  "$SCRIPT_DIR/dsh_local.sh" web
+  exit $?
+fi
 
 # A server-only run stays in the foreground so Ctrl-C stops the model.
 if [[ "$CLIENT" == "server" ]]; then
