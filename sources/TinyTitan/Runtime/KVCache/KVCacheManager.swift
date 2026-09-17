@@ -82,7 +82,12 @@ public final class KVCacheManager {
     public let slots: Int
 
     /// Hard cap, so a bad argument cannot ask for an absurd allocation.
-    public static let maximumSlots = 8
+    ///
+    /// Not the practical limit: what a machine can actually hold is decided per
+    /// load by `BatchedMemoryBudget`, which clamps the width to the worst-case
+    /// per-slot stores and logs what it built. This is the ceiling that keeps the
+    /// multiplication below in a sane range for a number someone typed.
+    public static let maximumSlots = 256
 
     /// Logical token cursor per slot. `position` is slot 0's -- the
     /// single-sequence case every existing caller uses.

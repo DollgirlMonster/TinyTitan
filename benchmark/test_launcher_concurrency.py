@@ -130,29 +130,45 @@ class ConcurrencyChoiceTests(unittest.TestCase):
         self.assertIn("cache off (above 1 at once) | MTP", run.stdout)
 
     def test_bad_widths_are_refused_before_anything_starts(self) -> None:
-        for bad in ("0", "5", "abc", "-1"):
+        # A power of two is the rule; anything else is a typo.
+        for bad in ("0", "3", "5", "6", "100", "512", "abc", "-1"):
             with self.subTest(concurrency=bad):
                 run = run_launcher(*self.base, "--concurrency", bad)
                 self.assertEqual(run.returncode, 2, run.stdout)
                 self.assertIn("unknown --concurrency", run.stderr)
+
+    def test_any_power_of_two_up_to_the_ceiling_is_accepted(self) -> None:
+        # Asking for more than this Mac can run is allowed on purpose: the server
+        # clamps the width it builds and logs it, so 256 is a legitimate request.
+        for good in ("8", "16", "256"):
+            with self.subTest(concurrency=good):
+                run = run_launcher(*self.base, "--concurrency", good)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual(reported_concurrency(run), good)
+                self.assertIn(f"--max-concurrent-sequences {good}", run.stdout)
+
+    def test_a_large_width_says_the_clamp_may_bind(self) -> None:
+        run = run_launcher(*self.base, "--concurrency", "256")
+        self.assertIn("the clamp is likely to bind", run.stderr)
+        self.assertIn("'batch width' line", run.stderr)
 
     def test_a_missing_value_is_refused_by_the_flag_itself(self) -> None:
         # `${2:?}` is the script's shared contract for "this flag needs a
         # value": bash exits 1 and names the flag, before any question is asked.
         run = run_launcher(*self.base, "--concurrency", "")
         self.assertEqual(run.returncode, 1, run.stdout)
-        self.assertIn("--concurrency needs 1, 2, 3 or 4", run.stderr)
+        self.assertIn("--concurrency needs a power of two", run.stderr)
 
     def test_a_cpu_model_is_pinned_to_one_generation(self) -> None:
         # The CPU backend's actor runs a generation to completion before the
         # next starts, so a width above one buys nothing there. The launcher
         # says so and pins the server to one rather than pretending.
-        run = run_launcher(*self.base, "--engine", "cpu", "--concurrency", "3")
+        run = run_launcher(*self.base, "--engine", "cpu", "--concurrency", "4")
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("--concurrency", run.stderr)
         self.assertIn("do not apply to the CPU engine", run.stderr)
         self.assertIn("--max-concurrent-sequences 1", run.stdout)
-        self.assertNotIn("--max-concurrent-sequences 3", run.stdout)
+        self.assertNotIn("--max-concurrent-sequences 4", run.stdout)
         self.assertNotIn("WARNING: the server will serve", run.stderr)
 
 
@@ -179,15 +195,33 @@ class ConcurrencyQuestionTests(unittest.TestCase):
         self.assertEqual(reported_concurrency(run), "1")
         self.assertNotIn("WARNING", run.stderr)
 
-    def test_typing_four_raises_the_width_and_warns(self) -> None:
-        run = run_launcher(*self.base, stdin="4\n", interactive=True)
+    def test_typing_four_gives_four_and_typing_five_gives_eight(self) -> None:
+        # The menu offers 1, 2, 4, 8, 16 and a custom entry; four is choice 3.
+        run = run_launcher(*self.base, stdin="3\n", interactive=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(reported_concurrency(run), "4")
         self.assertIn("WARNING: the server will serve 4 generations at once.",
                       run.stderr)
 
-    def test_a_choice_outside_one_to_four_is_refused(self) -> None:
-        for bad in ("0", "5", "nine"):
+        eight = run_launcher(*self.base, stdin="4\n", interactive=True)
+        self.assertEqual(eight.returncode, 0, eight.stderr)
+        self.assertEqual(reported_concurrency(eight), "8")
+
+    def test_a_custom_power_of_two_is_taken(self) -> None:
+        run = run_launcher(*self.base, stdin="6\n256\n", interactive=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(reported_concurrency(run), "256")
+        self.assertIn("--max-concurrent-sequences 256", run.stdout)
+        self.assertIn("WARNING: the server will serve 256 generations at once.",
+                      run.stderr)
+
+    def test_a_custom_number_that_is_not_a_power_of_two_is_refused(self) -> None:
+        run = run_launcher(*self.base, stdin="6\n100\n", interactive=True)
+        self.assertEqual(run.returncode, 2, run.stdout)
+        self.assertIn("a power of two", run.stderr)
+
+    def test_a_choice_outside_the_menu_is_refused(self) -> None:
+        for bad in ("0", "7", "nine"):
             with self.subTest(choice=bad):
                 run = run_launcher(*self.base, stdin=f"{bad}\n", interactive=True)
                 self.assertEqual(run.returncode, 2, run.stdout)

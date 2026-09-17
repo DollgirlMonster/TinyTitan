@@ -32,8 +32,10 @@ public final class GDNStateManager {
     /// one, and at `slots == 1` every region is at offset 0 exactly as before.
     public let slots: Int
 
-    /// Hard cap, mirroring `KVCacheManager.maximumSlots`.
-    public static let maximumSlots = 8
+    /// Hard cap, mirroring `KVCacheManager.maximumSlots`, which carries the
+    /// reasoning: a sanity bound on the argument, while the memory budget decides
+    /// what a machine can really hold.
+    public static let maximumSlots = KVCacheManager.maximumSlots
 
     private static let fp32Size = 4
     private static let fp16Size = 2

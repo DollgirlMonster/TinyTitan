@@ -53,15 +53,18 @@
 #   --kv <4|8|16>   KV-cache precision (default 8)
 #   --yarn          enable YaRN context scaling
 #   --port <n>      default 8080 (TINYTITAN_PORT overrides)
-#   --concurrency <1|2|3|4>  generations served at once through one model
-#              (default 1: one at a time). Above 1 each running sequence keeps
-#              its own KV cache, so memory use rises, and one GPU shared between
-#              them makes every answer slower -- it buys fairness (nobody
-#              queues), not throughput. The prompt cache is off above 1, so
-#              follow-up turns re-read their whole prompt. The launcher asks,
-#              and warns in red, because this is the setting a person turns on
-#              once and then wonders why the Mac is swapping. GPU models only:
-#              the CPU engine runs one generation at a time whatever it is told.
+#   --concurrency <n>  generations served at once through one model (default 1:
+#              one at a time). A power of two up to 256 -- 1, 2, 4, 8, 16, ... --
+#              because an agentic workload may want many, and the runtime clamps
+#              the width to what this Mac's memory can hold, logging what it
+#              built. Above 1 each running sequence keeps its own KV cache, so
+#              memory use rises, and one GPU shared between them makes every
+#              answer slower -- it buys fairness (nobody queues), not throughput.
+#              The prompt cache is off above 1, so follow-up turns re-read their
+#              whole prompt. The launcher asks, and warns in red, because this is
+#              the setting a person turns on once and then wonders why the Mac is
+#              swapping. GPU models only: the CPU engine runs one generation at a
+#              time whatever it is told.
 #   --memory        enable persistent agent memory for this project
 #   --dry-run       print the server command and client setup; start nothing
 #   --prompt-cache <multi-prefix|off>  prompt-state reuse (default multi-prefix,
@@ -172,7 +175,7 @@ while [[ $# -gt 0 ]]; do
     --port)     PORT_ARG="${2:?--port needs a number}"; shift 2 ;;
     # How many generations one server serves at once. The server's own default
     # is one, so this only ever raises it, and raising it is warned about.
-    --concurrency) CONCURRENCY_ARG="${2:?--concurrency needs 1, 2, 3 or 4}"; shift 2 ;;
+    --concurrency) CONCURRENCY_ARG="${2:?--concurrency needs a power of two}"; shift 2 ;;
     --memory)   MEMORY=1; shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
     --help|-h)  usage; exit 0 ;;
@@ -832,6 +835,21 @@ fi
 # own KV cache and scratch, and the single GPU is shared between them. The
 # runtime clamps the width when the worst case does not fit in memory, and says
 # so; that clamp is the backstop, not the reason to be quiet about the bill.
+# The engine's slot ceiling (`KVCacheManager.maximumSlots`). Kept as a number
+# here rather than derived, because this is a shell script and one constant to
+# keep beside the Swift one is cheaper than a build dependency.
+MAX_CONCURRENCY=256
+
+# A power of two in range. Asking for more than this Mac can run is allowed on
+# purpose -- the runtime clamps the width it builds and logs it -- but a number
+# that is not a power of two is a typo, and is refused here.
+valid_concurrency() {
+  local value="$1"
+  case "$value" in ''|*[!0-9]*) return 1 ;; esac
+  (( 10#$value >= 1 && 10#$value <= MAX_CONCURRENCY )) || return 1
+  (( (10#$value & (10#$value - 1)) == 0 ))
+}
+
 warn_concurrency() {
   # Unmissable and specific, the same way the expert-cache warning is: this is
   # the trade the operator is making, and the summary repeats it for anyone who
@@ -848,6 +866,10 @@ warn_concurrency() {
   warn_red "         The prompt cache is off above 1, so every follow-up turn"
   warn_red "         re-reads its whole prompt."
   warn_red "         Starting anyway with ${concurrency}, because you asked for it."
+  if (( concurrency > 16 )); then
+    warn_red "         At ${concurrency} the clamp is likely to bind: read the server's"
+    warn_red "         own 'batch width' line to see how many slots it really built."
+  fi
 }
 
 # A width of one is the default and needs no warning; only a raised one does.
@@ -860,10 +882,11 @@ concurrency=1
 # The flag is validated whether or not it can take effect, so a typo is refused
 # rather than silently swallowed on the CPU engine.
 if [[ -n "$CONCURRENCY_ARG" ]]; then
-  case "$CONCURRENCY_ARG" in
-    1|2|3|4) concurrency="$CONCURRENCY_ARG" ;;
-    *) echo "unknown --concurrency: $CONCURRENCY_ARG (1, 2, 3 or 4)" >&2; exit 2 ;;
-  esac
+  if ! valid_concurrency "$CONCURRENCY_ARG"; then
+    echo "unknown --concurrency: $CONCURRENCY_ARG (a power of two from 1 to $MAX_CONCURRENCY)" >&2
+    exit 2
+  fi
+  concurrency="$CONCURRENCY_ARG"
 fi
 
 if [[ "$ENGINE" == "cpu" ]]; then
@@ -882,12 +905,25 @@ elif (( INTERACTIVE )) && [[ -z "$CONCURRENCY_ARG" ]]; then
   echo "  its own KV cache, so memory use rises, and one GPU shared n ways"
   echo "  makes every answer about n times slower. The prompt cache is off"
   echo "  above 1, so follow-up turns re-read their whole prompt."
-  echo "  1) One at a time (default)  2) Two at once"
-  echo "  3) Three at once             4) Four at once"
-  printf "Choice [1-4] (default 1): "
+  echo "  This Mac may hold fewer than you ask for: the server clamps the width"
+  echo "  it builds to the memory available, and its log says what it built."
+  echo "  1) One (default)   2) Two        3) Four"
+  echo "  4) Eight           5) Sixteen    6) A custom power of two"
+  printf "Choice [1-6] (default 1): "
   read -r concurrency_choice || exit 1
   case "${concurrency_choice:-1}" in
-    1) concurrency=1 ;; 2) concurrency=2 ;; 3) concurrency=3 ;; 4) concurrency=4 ;;
+    1) concurrency=1 ;; 2) concurrency=2 ;; 3) concurrency=4 ;;
+    4) concurrency=8 ;; 5) concurrency=16 ;;
+    6)
+      printf "Power of two [1-%s] (default 32): " "$MAX_CONCURRENCY"
+      read -r custom_concurrency || exit 1
+      custom_concurrency="${custom_concurrency:-32}"
+      if ! valid_concurrency "$custom_concurrency"; then
+        echo "invalid choice: $custom_concurrency (a power of two from 1 to $MAX_CONCURRENCY)" >&2
+        exit 2
+      fi
+      concurrency="$custom_concurrency"
+      ;;
     *) echo "invalid choice: $concurrency_choice" >&2; exit 2 ;;
   esac
 fi
@@ -1105,6 +1141,9 @@ print_setup() {
     warn_red "         cache, so memory use is up to ${concurrency}x one sequence, and one GPU"
     warn_red "         shared ${concurrency} ways makes each answer about ${concurrency}x slower."
     warn_red "         The prompt cache is off above 1."
+    if (( concurrency > 16 )); then
+      warn_red "         This Mac may build fewer slots: see the server's 'batch width' line."
+    fi
   fi
   echo "============================================================"
   echo ""

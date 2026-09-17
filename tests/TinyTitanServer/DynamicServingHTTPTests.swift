@@ -381,17 +381,23 @@ struct DynamicServingArgumentTests {
         #expect(try parse(["--model", "/m"]).queueLimit + 1 >= 4)
     }
 
-    /// The batched width is opt-in: one generation at a time unless asked,
-    /// bounded to 1...4.
-    @Test func concurrentSequenceCountDefaultsToOneAndIsBounded() throws {
+    /// The batched width is opt-in and a power of two, so an agentic workload can
+    /// ask for many while a typo is still refused. What a machine really builds
+    /// is clamped by the memory budget at load, not by this argument.
+    @Test func concurrentSequenceCountIsAPowerOfTwoUpToTheEngineCeiling() throws {
         #expect(try parse(["--model", "/m"]).maxConcurrentSequences == 1)
-        #expect(try parse(["--model", "/m", "--max-concurrent-sequences", "4"])
-                    .maxConcurrentSequences == 4)
-        for bad in ["0", "5", "-1"] {
+        for good in ["1", "2", "4", "8", "16", "256"] {
+            #expect(try parse(["--model", "/m", "--max-concurrent-sequences", good])
+                        .maxConcurrentSequences == Int(good))
+        }
+        for bad in ["0", "3", "5", "6", "7", "-1", "512", "abc"] {
             #expect(throws: ServerArgumentError.self) {
                 try parse(["--model", "/m", "--max-concurrent-sequences", bad])
             }
         }
+        // The argument's ceiling is the engine's slot cap, so the two cannot
+        // drift apart: a width the server accepts is one the engine can build.
+        #expect(KVCacheManager.maximumSlots == 256)
     }
 
     /// More than one slot turns the single-sequence prompt cache off rather
@@ -431,12 +437,12 @@ struct DynamicServingArgumentTests {
     /// coordinator admitted four; this pins the width through the shared
     /// factory so that cannot recur silently.
     @Test func thePlanFactoryCarriesTheConfiguredWidth() throws {
-        let three = try parse(["--model", "/m", "--max-concurrent-sequences", "3"])
+        let eight = try parse(["--model", "/m", "--max-concurrent-sequences", "8"])
         let plan = ModelSessionPlan.from(
-            arguments: three,
+            arguments: eight,
             modelDirectory: URL(fileURLWithPath: "/m"),
             thinking: .off, reasoningEffort: nil, mtpModelDirectory: nil)
-        #expect(plan.slots == 3)
+        #expect(plan.slots == 8)
 
         let mtp = try parse(["--model", "/m", "--mtp-model", "/d"])
         let mtpPlan = ModelSessionPlan.from(

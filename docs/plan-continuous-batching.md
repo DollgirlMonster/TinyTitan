@@ -5,11 +5,17 @@ in the decision record) because the batching win is not only concurrency: one
 forward pass that carries B tokens from B conversations amortises the routed-
 expert reads that dominate decode, which a pool of independent runners cannot.
 
-> **Status update: the width is opt-in.** The shipped default is now 1, not 4 —
-> a plain launch serves one generation at a time, `--max-concurrent-sequences`
-> raises it, and `tools/server_launcher.sh` asks (1...4) and warns in red above 1.
-> The phases below landed with the default at 4 and are recorded as they landed;
-> read "default 4" in them as the value at the time.
+> **Status update: the width is opt-in, and its ceiling is the engine's, not 4.**
+> The shipped default is 1: a plain launch serves one generation at a time, and
+> `--max-concurrent-sequences` raises it. The argument is now **any power of two
+> up to 256** — an agentic workload may want many, and what a machine can actually
+> hold is decided per load by `BatchedMemoryBudget`, which clamps the width to the
+> worst-case per-slot stores and logs what it built. `KVCacheManager.maximumSlots`
+> (mirrored by `GDNStateManager`) was raised from 8 to 256 for that: it is the
+> sanity bound on a typed argument, never the practical limit. The launcher offers
+> 1 / 2 / 4 / 8 / 16 or a custom power of two and keeps its red warning above 1.
+> The phases below landed with the default at 4 and a cap of 4 and are recorded as
+> they landed; read those numbers as the values at the time.
 
 Goal: `POST /v1/responses` and `POST /v1/chat/completions` accept up to four
 generations at once through **one loaded model**, with the fifth and later

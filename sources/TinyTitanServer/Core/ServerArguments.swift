@@ -134,12 +134,14 @@ public struct ServerArguments: Equatable, Sendable {
       --rope-scaling <mode>  Context scaling: none or yarn (default none).
       --queue-limit <count>  Maximum queued requests (default 4).
       --max-concurrent-sequences <count>
-                             Generations served at once, 1...4 (default 1).
-                             Requests beyond this plus --queue-limit are shed
-                             with 429. Above 1 each sequence holds its own KV
-                             cache (so memory use rises) and answers take
-                             longer, because one GPU is shared; the prompt
-                             cache is off above 1.
+                             Generations served at once: a power of two from 1
+                             to 256 (default 1). Requests beyond this plus
+                             --queue-limit are shed with 429. Above 1 each
+                             sequence holds its own KV cache (so memory use
+                             rises) and answers take longer, because one GPU is
+                             shared; the prompt cache is off above 1. The width
+                             actually built is clamped to what memory allows,
+                             and the log says so when it is.
       --prompt-cache-mode <off|single-prefix|multi-prefix>
                              Prompt KV reuse mode (default multi-prefix).
       --prompt-cache-entries <count>
@@ -318,9 +320,19 @@ public struct ServerArguments: Equatable, Sendable {
                 }
                 queueLimit = parsed
             case "--max-concurrent-sequences":
-                guard let parsed = Int(value), (1...4).contains(parsed) else {
+                // A power of two, up to the engine's slot ceiling. The old bound
+                // of 4 was a policy limit, not an engineering one: the batched
+                // stores are sized per slot and `BatchedMemoryBudget` clamps the
+                // width to what the machine can actually hold at load, logging
+                // what it built. So the argument may ask for more than a given
+                // Mac will run — that is the operator's call, and the clamp is
+                // what keeps it honest.
+                guard let parsed = Int(value), parsed >= 1,
+                      parsed <= KVCacheManager.maximumSlots,
+                      parsed & (parsed - 1) == 0 else {
                     throw ServerArgumentError.invalid(
-                        "--max-concurrent-sequences must be between 1 and 4")
+                        "--max-concurrent-sequences must be a power of two between 1 and "
+                            + "\(KVCacheManager.maximumSlots)")
                 }
                 maxConcurrentSequences = parsed
             case "--prompt-cache-mode":
