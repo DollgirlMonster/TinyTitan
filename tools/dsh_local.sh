@@ -28,7 +28,10 @@
 # version here would turn a working install into a broken one overnight. Moving
 # the pin is a deliberate change, made with the plugin in hand.
 #
-#   tools/dsh_local.sh ensure [--port N]   install or refresh the private runtime
+#   tools/dsh_local.sh ensure [--port N] [--model ID]
+#                                          install or refresh the private runtime,
+#                                          and point the harness default at ID
+#                                          (default: the first model the route serves)
 #   tools/dsh_local.sh web [--dsh-port N]  run our `dsh web` (server already up)
 #   tools/dsh_local.sh port [--dsh-port N] print the free port `web` would use
 #   tools/dsh_local.sh status              what is installed, and where
@@ -54,6 +57,9 @@ DSH_VERSION="${TINYTITAN_DSH_VERSION:-0.1.5-rc.2}"
 NODE_VERSION="${TINYTITAN_DSH_NODE_VERSION:-26.8.2}"
 PNPM_VERSION="${TINYTITAN_DSH_PNPM_VERSION:-12.4.2}"
 DSH_PORT="${TINYTITAN_DSH_PORT:-7788}"
+# The served id the harness should open on. Empty means "the first one the route
+# serves", which is what a bare `ensure` from the installer uses.
+DEFAULT_MODEL_ID=""
 
 DSH_ROOT="${TINYTITAN_DSH_ROOT:-$HOME/.tinytitan/dsh}"
 DSH_HOME_DIR="$DSH_ROOT/home"
@@ -117,6 +123,22 @@ npm_bin() {
   private_npm
 }
 
+# `node`, `npm`, `pnpm` and `dsh` are all `#!/usr/bin/env node` scripts, so every
+# one of them needs *the Node we chose* on PATH — not merely a path to it. This
+# mattered the moment it was tested on a Mac with no Node: the private Node
+# unpacked correctly and the very next command died with
+# `env: node: No such file or directory`, because nothing had put its bin
+# directory on PATH. Use `tool_path` for every invocation of a JS tool.
+node_bin_dir() {
+  local node; node="$(node_bin)"
+  [[ -n "$node" ]] && dirname "$node"
+}
+
+tool_path() {
+  local node_dir; node_dir="$(node_bin_dir || true)"
+  printf '%s' "${node_dir:+$node_dir:}$DSH_BIN_DIR:$DSH_PREFIX/node_modules/.bin:$PATH"
+}
+
 # --- node -------------------------------------------------------------------
 
 # Fetch Node into our own root. Only reached when the Mac has no node at all,
@@ -167,6 +189,7 @@ install_dsh() {
   say "Installing the pinned DeepSeek Harness $DSH_VERSION"
   echo "  Into $DSH_PREFIX. Your own dsh and ~/.dsh are not touched."
   run "install @deepseek-ai/dsh@$DSH_VERSION" \
+    env PATH="$(tool_path)" \
     "$npm" install --prefix "$DSH_PREFIX" --no-fund --no-audit \
     "@deepseek-ai/dsh@$DSH_VERSION"
   (( DRY_RUN )) && return 0
@@ -204,6 +227,7 @@ install_pnpm() {
   if [[ ! -f "$mjs" ]]; then
     local npm; npm="$(npm_bin)"
     run "install pnpm@$PNPM_VERSION (private)" \
+      env PATH="$(tool_path)" \
       "$npm" install --prefix "$DSH_PREFIX" --no-fund --no-audit "pnpm@$PNPM_VERSION"
     (( DRY_RUN )) && return 0
   fi
@@ -241,7 +265,8 @@ ensure_home() {
   else
     say "Initialising the private DSH home"
     run "initialise the web profile under $DSH_HOME_DIR" \
-      env DSH_HOME="$DSH_HOME_DIR" "$(dsh_bin)" --profile web --dump-config
+      env DSH_HOME="$DSH_HOME_DIR" PATH="$(tool_path)" \
+      "$(dsh_bin)" --profile web --dump-config
     (( DRY_RUN )) || ok "Private DSH home at $DSH_HOME_DIR"
   fi
 
@@ -274,7 +299,7 @@ install_plugin() {
   # ~36 MB native pnpm binary would land in the user's own ~/Library/pnpm store.
   run "add dsh-tinytitan from the checkout" \
     env DSH_HOME="$DSH_HOME_DIR" \
-        PATH="$DSH_BIN_DIR:$DSH_PREFIX/node_modules/.bin:$PATH" \
+        PATH="$(tool_path)" \
         "$(dsh_bin)" plugin --profile web add --store-dir "$DSH_STORE" "file:$PLUGIN_DIR"
   (( DRY_RUN )) && return 0
   [[ -e "$DSH_HOME_DIR/profiles/web/node_modules/dsh-tinytitan" ]] \
@@ -294,6 +319,69 @@ write_route() {
     return 1
   fi
   (( DRY_RUN )) || ok "Route written to $DSH_HOME_DIR/settings.yaml"
+}
+
+# DeepSeek Harness ships `agent-default-model` pointing at **its own hosted
+# route** — `provider: deepseek-official, model: deepseek-flash`. A fresh private
+# install therefore opens on a provider we have no key for and fails with
+# `MISSING_CREDENTIAL: llm-deepseek`, which is the exact opposite of a window
+# that is ready to go. Writing a route is not enough; the default model has to be
+# pointed at it. This was found by dry-testing the install, not by reading it.
+#
+# The settings file is ours (we create it), so this is line surgery on a file we
+# own rather than on the user's: drop any existing top-level block, append ours.
+write_default_model() {
+  local provider="$1" model="$2"
+  [[ -n "$model" ]] || return 0
+  (( DRY_RUN )) && { echo "  would set agent-default-model to $provider/$model"; return 0; }
+  PROVIDER="$provider" MODEL="$model" python3 - "$DSH_HOME_DIR/settings.yaml" <<'PY'
+import os, sys
+
+path = sys.argv[1]
+provider = os.environ["PROVIDER"]
+model = os.environ["MODEL"]
+try:
+    lines = open(path, encoding="utf-8").read().splitlines()
+except FileNotFoundError:
+    lines = []
+
+out, i = [], 0
+while i < len(lines):
+    if lines[i].startswith("agent-default-model:"):
+        i += 1
+        while i < len(lines):
+            nxt = lines[i]
+            if nxt.strip() == "" or nxt[:1] in (" ", "\t") or nxt.startswith("#"):
+                i += 1
+                continue
+            break
+        continue
+    out.append(lines[i])
+    i += 1
+while out and out[-1].strip() == "":
+    out.pop()
+out += ["", "agent-default-model:", f"  provider: {provider}", f"  model: {model}"]
+with open(path, "w", encoding="utf-8") as handle:
+    handle.write("\n".join(out) + "\n")
+PY
+  ok "Harness default model: $provider/$model"
+}
+
+# The first served id in the route, skipping the `<id>-fast` chat alias: the
+# default a bare `ensure` gets when the caller did not name one.
+first_served_model() {
+  python3 - "$DSH_HOME_DIR/settings.yaml" <<'PY'
+import re, sys
+
+try:
+    text = open(sys.argv[1], encoding="utf-8").read()
+except FileNotFoundError:
+    sys.exit(0)
+for match in re.finditer(r"^\s*-\s*id:\s*(\S+)\s*$", text, re.M):
+    if not match.group(1).endswith("-fast"):
+        print(match.group(1))
+        break
+PY
 }
 
 # --- the browser port -------------------------------------------------------
@@ -423,6 +511,9 @@ cmd_ensure() {
   ensure_home
   install_plugin
   write_route
+  local model="$DEFAULT_MODEL_ID"
+  [[ -n "$model" ]] || model="$(first_served_model)"
+  write_default_model "tinytitan" "$model"
   echo
   say "Done."
   echo "  Start it with:  $REPO_ROOT/tools/server_launcher.sh --web"
@@ -437,7 +528,7 @@ cmd_web() {
   (( DSH_OPEN )) || open=(--no-open)
   # DSH opens the default browser itself and prints the tokenised URL.
   exec env DSH_HOME="$DSH_HOME_DIR" \
-           PATH="$DSH_BIN_DIR:$DSH_PREFIX/node_modules/.bin:$PATH" \
+           PATH="$(tool_path)" \
            "$(dsh_bin)" web --port "$port" "${open[@]}" "$@"
 }
 
@@ -453,6 +544,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --port) SERVER_PORT="${2:?--port needs a number}"; shift 2 ;;
     --dsh-port) DSH_PORT="${2:?--dsh-port needs a number}"; shift 2 ;;
+    --model) DEFAULT_MODEL_ID="${2:?--model needs a served id}"; shift 2 ;;
     --no-open) DSH_OPEN=0; shift ;;
     --help|-h) usage; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;

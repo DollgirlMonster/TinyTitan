@@ -1533,7 +1533,10 @@ print_setup
 # is not known until now. The child is not `exec`ed — the trap above has to
 # survive so Ctrl-C stops the model with the page.
 if (( WEB )); then
-  if ! "$SCRIPT_DIR/dsh_local.sh" ensure --port "$PORT"; then
+  # `--model` sets the harness's own default model: it ships pointing at
+  # DeepSeek's hosted route, so without this the window opens on a provider we
+  # have no key for. The launcher knows the served id; the harness does not.
+  if ! "$SCRIPT_DIR/dsh_local.sh" ensure --port "$PORT" --model "$MODEL"; then
     echo "ERROR: could not set up DeepSeek Harness (see above)." >&2
     echo "       The server is still running on http://127.0.0.1:${PORT}/v1 —" >&2
     echo "       point any OpenAI-compatible client at it." >&2
