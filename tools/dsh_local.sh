@@ -58,6 +58,9 @@ PLUGIN_DIR="$REPO_ROOT/plugins/dsh-tinytitan"
 # Pinned on purpose; see the header. 0.1.5-rc.2 is the version the plugin was
 # written and tested against.
 DSH_VERSION="${TINYTITAN_DSH_VERSION:-0.1.5-rc.2}"
+# The notice version the pinned harness gates its first-run modal on. Held here
+# next to the pin it belongs to: they move together.
+WELCOME_NOTICE_VERSION="2026-08-13.1"
 NODE_VERSION="${TINYTITAN_DSH_NODE_VERSION:-26.8.2}"
 PNPM_VERSION="${TINYTITAN_DSH_PNPM_VERSION:-12.4.2}"
 DSH_PORT="${TINYTITAN_DSH_PORT:-7788}"
@@ -380,25 +383,16 @@ write_route() {
   (( DRY_RUN )) || ok "Route written to $DSH_HOME_DIR/settings.yaml"
 }
 
-# DeepSeek Harness ships `agent-default-model` pointing at **its own hosted
-# route** — `provider: deepseek-official, model: deepseek-flash`. A fresh private
-# install therefore opens on a provider we have no key for and fails with
-# `MISSING_CREDENTIAL: llm-deepseek`, which is the exact opposite of a window
-# that is ready to go. Writing a route is not enough; the default model has to be
-# pointed at it. This was found by dry-testing the install, not by reading it.
-#
-# The settings file is ours (we create it), so this is line surgery on a file we
-# own rather than on the user's: drop any existing top-level block, append ours.
-write_default_model() {
-  local provider="$1" model="$2"
-  [[ -n "$model" ]] || return 0
-  (( DRY_RUN )) && { echo "  would set agent-default-model to $provider/$model"; return 0; }
-  PROVIDER="$provider" MODEL="$model" python3 - "$DSH_HOME_DIR/settings.yaml" <<'PY'
+# The settings file is ours (we create it), so a block is replaced with line
+# surgery rather than a YAML round-trip: that keeps our comments and the generated
+# route byte-for-byte, which a parse-and-dump would rewrite.
+set_settings_block() {
+  local key="$1"; shift
+  BLOCK_KEY="$key" python3 - "$DSH_HOME_DIR/settings.yaml" "$@" <<'PY'
 import os, sys
 
-path = sys.argv[1]
-provider = os.environ["PROVIDER"]
-model = os.environ["MODEL"]
+path, key = sys.argv[1], os.environ["BLOCK_KEY"]
+body = list(sys.argv[2:])
 try:
     lines = open(path, encoding="utf-8").read().splitlines()
 except FileNotFoundError:
@@ -406,7 +400,7 @@ except FileNotFoundError:
 
 out, i = [], 0
 while i < len(lines):
-    if lines[i].startswith("agent-default-model:"):
+    if lines[i].startswith(key + ":"):
         i += 1
         while i < len(lines):
             nxt = lines[i]
@@ -419,11 +413,41 @@ while i < len(lines):
     i += 1
 while out and out[-1].strip() == "":
     out.pop()
-out += ["", "agent-default-model:", f"  provider: {provider}", f"  model: {model}"]
+out += ["", key + ":"] + body
 with open(path, "w", encoding="utf-8") as handle:
     handle.write("\n".join(out) + "\n")
 PY
+}
+
+# DeepSeek Harness ships `agent-default-model` pointing at **its own hosted
+# route** — `provider: deepseek-official, model: deepseek-flash`. A fresh private
+# install therefore opens on a provider we have no key for and fails with
+# `MISSING_CREDENTIAL: llm-deepseek`, which is the exact opposite of a window
+# that is ready to go. Writing a route is not enough; the default model has to be
+# pointed at it. This was found by dry-testing the install, not by reading it.
+write_default_model() {
+  local provider="$1" model="$2"
+  [[ -n "$model" ]] || return 0
+  (( DRY_RUN )) && { echo "  would set agent-default-model to $provider/$model"; return 0; }
+  set_settings_block agent-default-model \
+    "  provider: $provider" \
+    "  model: $model"
   ok "Harness default model: $provider/$model"
+}
+
+# The harness opens on a blocking "Internal Testing Notice" — DeepSeek's own
+# notice that 0.1 is a developer preview. It is gated by a single version string,
+# and until Continue is clicked the modal masks the page and nothing else is
+# clickable: a person promised a prompt box meets a DeepSeek-branded banner
+# first. Marking it seen is the whole fix, and it is one line in a file we own.
+#
+# The value is the one the **pinned** harness carries. A pin that moves to a
+# release with a new notice version brings the notice back, which is visible
+# rather than silent — the person sees it once and can click through.
+suppress_welcome_notice() {
+  (( DRY_RUN )) && { echo "  would mark the harness testing notice as seen"; return 0; }
+  set_settings_block ui-onboarding "  welcomeNoticeVersion: $WELCOME_NOTICE_VERSION"
+  ok "Testing notice marked as seen (no first-run modal)"
 }
 
 # The first served id in the route, skipping the `<id>-fast` chat alias: the
@@ -574,6 +598,7 @@ cmd_ensure() {
   local model="$DEFAULT_MODEL_ID"
   [[ -n "$model" ]] || model="$(first_served_model)"
   write_default_model "tinytitan" "$model"
+  suppress_welcome_notice
   echo
   say "Done."
   echo "  Start it with:  $REPO_ROOT/tools/server_launcher.sh --web"

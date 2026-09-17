@@ -1128,6 +1128,8 @@ print_setup() {
     echo "pointed at this server. It is this install's own copy under"
     echo "~/.tinytitan (port ${TINYTITAN_DSH_PORT:-7788}, or the next free one), so a"
     echo "DeepSeek Harness you run yourself is not touched."
+    echo "Engine is in fast mode: the coding agent's system prompt and tool"
+    echo "definitions are stripped before prefill, so answers start in seconds."
   fi
   # The launcher's own route is written by `dsh_local.sh ensure --port` on the
   # --web path, so the "regenerate it yourself" advice below would be noise there.
@@ -1243,7 +1245,19 @@ fi
 
 echo "Starting TinyTitanServer ($MODEL_NAME ${MODEL_QUANT}-bit, $model_word, $mode_word, thinking $think_word) on port $PORT..."
 
-"${server_cmd[@]}" &
+# --web runs the engine in **fast mode**: TINYTITAN_STRIP_CLI_PROMPT enables the
+# same CLI-strip the "<model>-fast" alias selects, for every request. The harness
+# is a coding agent, so each turn carries a multi-thousand-token system prompt
+# and 27 tool definitions that a plain prompt box never needs; stripping them
+# leaves the real user/assistant conversation — a few hundred tokens instead of
+# several thousand — which is the difference between an answer in seconds and the
+# page sitting on "Deep diving...". The engine logs a strip report per request,
+# so what was removed is visible rather than assumed.
+if (( WEB )); then
+  TINYTITAN_STRIP_CLI_PROMPT=1 "${server_cmd[@]}" &
+else
+  "${server_cmd[@]}" &
+fi
 server_pid=$!
 
 # The trap belongs here, with the server, not only on the client path below.
