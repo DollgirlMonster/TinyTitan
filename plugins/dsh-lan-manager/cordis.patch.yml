@@ -1,0 +1,31 @@
+# Bundle patch: mounts this plugin's own row at the profile root, which is what
+# runs its apply() and registers the management route on the harness web server.
+#
+# Every field is optional; these are the defaults written out. The one that is
+# deliberately absent is `token`: with no token, anything inside the allowlist
+# may call the API, which is the right default for a single-user LAN and the
+# wrong one for a shared network. Set it there:
+#
+#   token: !env DSH_LAN_TOKEN
+#
+# or export DSH_LAN_TOKEN and leave this file alone (the environment is read as
+# a fallback). A token written literally into this file ends up in git.
+- insert:
+    - id: dsh-lan-manager
+      name: dsh-lan-manager
+      config:
+        # Route prefix. The API answers at <basePath>/health, <basePath>/workspaces, …
+        basePath: /dsh-lan
+        # Workspaces with no visible session are not shown by the web page; they
+        # are hidden here too unless this is true.
+        includeEmptyWorkspaces: false
+        # Refuse a mutating request whose Origin is a foreign site. Turning this
+        # off leaves an allowlisted browser usable as a confused deputy.
+        enforceOrigin: true
+        # An Origin that is itself a LAN/loopback address is accepted, which is
+        # what makes the API usable from a page served by the same host.
+        allowPrivateOrigins: true
+        # Echo mount/denial lines to the harness log.
+        logToHost: true
+        # Requests are prompts, not uploads.
+        maxBodyBytes: 262144
