@@ -11,6 +11,7 @@
 #   unchecked-sendable  new `@unchecked Sendable` must document its invariant
 #   converter           routed experts must land at their own index
 #   arch-path           no hardcoded SwiftPM triple in a build path (see below)
+#   shell-portability   scripts run on the system bash (3.2), not just the dev one
 #
 # Opting out of force-cast: put `lint:allow-force <reason>` in a comment on
 # the line immediately above. The reason is mandatory and is what a reviewer
@@ -391,14 +392,115 @@ PY
   fi
 }
 
+# --- shell-portability ------------------------------------------------------
+# Every user-facing script carries `#!/usr/bin/env bash`, which on a factory Mac
+# resolves to `/bin/bash` **3.2.57** — not the Homebrew 5.x a developer has, and
+# which `bash` finds first on a development machine. Two classes of bug reached
+# main before this gate existed:
+#
+#   * a single-quoted heredoc containing an apostrophe inside `$( )`, which 3.2
+#     refuses to *parse* — the whole script dies before its first line;
+#   * bash-4 expansions and builtins (`${v^^}`, `mapfile`), which 3.2 parses and
+#     then fails on at run time, halfway through a menu; and
+#   * a whole-array expansion `"${a[@]}"` on an **empty** array, which 3.2 makes
+#     `a[@]: unbound variable` under the `set -u` every script here sets. 5.x
+#     accepts it, so it is invisible on a development machine. Write it
+#     `${a[@]+"${a[@]}"}` (and likewise `[*]`), which means the same thing for a
+#     non-empty array on both shells.
+#
+# The parse half needs the old shell, so it runs `/bin/bash` whatever that is; the
+# two pattern halves are version-independent and catch the other classes anywhere.
+# Opting out: `lint:allow-shell <reason>` on the line immediately above, for a
+# deliberate use rather than an oversight.
+check_shell_portability() {
+  echo "== shell-portability: runs on the system bash, not only the developer's =="
+  local old_bash="/bin/bash" version scripts=() f hit failed=0
+  version="$("$old_bash" --version 2>/dev/null | sed -n 's/.*version \([0-9][0-9.]*\).*/\1/p' | head -1)"
+
+  # Every shell script in the tree, not only the ones the installer runs: the
+  # rule is a property of the shell, and `docs/paper/build.sh` is a script too.
+  while IFS= read -r f; do scripts+=("$f"); done < <(
+    find "$ROOT/tools" "$ROOT/benchmark" "$ROOT/docs" -name '*.sh' -not -path '*/.build/*' 2>/dev/null | sort)
+
+  for f in "${scripts[@]+"${scripts[@]}"}"; do
+    if ! "$old_bash" -n "$f" >/dev/null 2>&1; then
+      echo "  FAIL: $f does not parse under $old_bash"
+      "$old_bash" -n "$f" 2>&1 | head -2 | sed 's/^/    /'
+      failed=1
+    fi
+  done
+
+  # lint:allow-shell the rule's own pattern, not a use of the rule
+  local pattern='\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(\^\^|,,|\^\}|,)\}|\b(mapfile|readarray)\b|declare -A|local -A|declare -n|local -n|&>>|\|&|wait -n|;;&|\[\[ -v |shopt -s globstar'
+  if [ "${#scripts[@]}" -gt 0 ]; then
+    while IFS= read -r hit; do
+      [ -n "$hit" ] || continue
+      local file line code trimmed
+      file="${hit%%:*}"
+      line="$(printf '%s' "$hit" | cut -d: -f2)"
+      code="$(printf '%s' "$hit" | cut -d: -f3-)"
+      # A comment that names the rule is not a use of it, and this repository
+      # explains these constructs in prose right where it avoids them.
+      trimmed="$(printf '%s' "$code" | sed 's/^[[:space:]]*//')"
+      case "$trimmed" in \#*) continue ;; esac
+      if [ "$line" -gt 1 ] && sed -n "$((line - 1))p" "$file" | grep -q 'lint:allow-shell'; then
+        continue
+      fi
+      echo "  FAIL: $file:$line uses a bash 4+ feature; the system bash is 3.2"
+      echo "    $trimmed"
+      failed=1
+    done < <(grep -rnE "$pattern" "${scripts[@]+"${scripts[@]}"}" 2>/dev/null)
+  fi
+
+  # A whole-array expansion with no `+` guard. A bare `"${a[@]}"` is correct on
+  # 5.x for any array, so the only way to catch it is by shape: mask the guarded
+  # `${a[@]+"${a[@]}"}` down to its test, and anything still expanding a whole
+  # array was written bare.
+  local array_pattern='\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}'
+  if [ "${#scripts[@]}" -gt 0 ]; then
+    while IFS= read -r hit; do
+      [ -n "$hit" ] || continue
+      local file line code trimmed masked
+      file="${hit%%:*}"
+      line="$(printf '%s' "$hit" | cut -d: -f2)"
+      code="$(printf '%s' "$hit" | cut -d: -f3-)"
+      trimmed="$(printf '%s' "$code" | sed 's/^[[:space:]]*//')"
+      case "$trimmed" in \#*) continue ;; esac
+      if [ "$line" -gt 1 ] && sed -n "$((line - 1))p" "$file" | grep -q 'lint:allow-shell'; then
+        continue
+      fi
+      masked="$(printf '%s' "$code" \
+        | sed -E 's/[+]"\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}"/+GUARDED/g')"
+      printf '%s' "$masked" | grep -qE "$array_pattern" || continue
+      echo "  FAIL: $file:$line expands a whole array without the empty-array guard"
+      echo "    $trimmed"
+      echo "    on bash 3.2 an empty array there is 'unbound variable' under set -u;"
+      echo "    the guard is the form documented above this check"
+      failed=1
+    done < <(grep -rnE "$array_pattern" "${scripts[@]+"${scripts[@]}"}" 2>/dev/null)
+  fi
+
+  if [ "$failed" -eq 0 ]; then
+    echo "  ok (${#scripts[@]} scripts, system bash ${version:-unknown})"
+  else
+    echo "  fix: use a tr/while-read equivalent, or put"
+    echo "       'lint:allow-shell <reason>' on the line above a deliberate use"
+    # The gates share one exit status; a returned non-zero from the `all` list
+    # would be swallowed and the gate would report a failure while exiting 0.
+    status=1
+  fi
+  return $failed
+}
+
 case "$want" in
-  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path ;;
+  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability ;;
   force-cast)  check_force_cast ;;
   func-length) check_func_length ;;
   sendable)    check_unchecked_sendable ;;
   converter)   check_converter_expert_order ;;
   arch-path)   check_arch_path ;;
-  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path)" >&2; exit 2 ;;
+  shell)       check_shell_portability ;;
+  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell)" >&2; exit 2 ;;
 esac
 
 exit $status

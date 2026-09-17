@@ -107,7 +107,7 @@ USAGE
 
 status() {
   printf '%-20s %-8s %-10s %s\n' MODEL WIDTH STATE SOURCE
-  for row in "${CATALOGUE[@]}"; do
+  for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
     IFS='|' read -r name dir width source preset_field sibling_field <<<"$row"
     if [[ -d "$MODELS/$dir" ]]; then
       state="installed"
@@ -142,7 +142,7 @@ tinytitan_repack_streams() {
 # instead of leaving the person at "no usable Python interpreter found".
 tinytitan_no_python_fallback() {
   local want="$1" row name dir
-  for row in "${CATALOGUE[@]}"; do
+  for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
     IFS='|' read -r name dir _ <<<"$row"
     [[ "$name" == "$want" ]] || continue
     echo >&2
@@ -167,7 +167,7 @@ install_one() {
   # once, here, rather than emitting a raw "command not found" per call.
   local python
   python="$(tinytitan_resolve_python)" || { tinytitan_no_python_fallback "$want"; return 1; }
-  for row in "${CATALOGUE[@]}"; do
+  for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
     # Six fields on the MoE rows, four elsewhere; the trailing two are only
     # read by the convert_qwen35moe branch.
     IFS='|' read -r name dir width source preset_field sibling_field <<<"$row"
@@ -392,7 +392,7 @@ EOF
 # nothing to pair with, so say so rather than silently installing one width.
 install_both() {
   local want="$1" row name dir width source preset sibling
-  for row in "${CATALOGUE[@]}"; do
+  for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
     IFS='|' read -r name dir width source preset sibling <<<"$row"
     [[ "$name" == "$want" ]] || continue
     if [[ "$source" != convert_qwen35moe || -z "$sibling" ]]; then
@@ -461,9 +461,9 @@ case "${1:-}" in
                    exit 2
                  fi
                  choose_model ;;
-  --all-4bit)    for row in "${CATALOGUE[@]}"; do IFS='|' read -r n _ w _ <<<"$row"
+  --all-4bit)    for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do IFS='|' read -r n _ w _ <<<"$row"
                    [[ "$w" == 4 ]] && install_one "$n"; done ;;
-  --all-8bit)    for row in "${CATALOGUE[@]}"; do IFS='|' read -r n _ w _ <<<"$row"
+  --all-8bit)    for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do IFS='|' read -r n _ w _ <<<"$row"
                    [[ "$w" == 8 ]] && install_one "$n"; done ;;
   # `both` installs a model's 4-bit and 8-bit builds from ONE download. The
   # MoE checkpoints convert both widths in a single pass, so asking for them

@@ -265,7 +265,7 @@ BIN="$(cd "$BIN" && pwd -P)"
 # --- stage ------------------------------------------------------------------
 step "stage"
 rm -rf "$STAGE" && mkdir -p "$STAGE"
-for p in "${PRODUCTS[@]}"; do
+for p in "${PRODUCTS[@]+"${PRODUCTS[@]}"}"; do
   [ -x "$BIN/$p" ] || die "missing product: $p"
   cp "$BIN/$p" "$STAGE/"
 done
@@ -381,7 +381,7 @@ if [ -n "$NOTES" ]; then
   python3 "$SCRIPT_DIR/compact-release-notes.py" "$RENDERED_NOTES" \
     --out "$COMPACT_NOTES" \
     --max-chars "$NOTES_MAX_CHARS" \
-    "${REQUIRE_ARGS[@]}" \
+    "${REQUIRE_ARGS[@]+"${REQUIRE_ARGS[@]}"}" \
     || die "the notes did not survive compaction, or are over the ${NOTES_MAX_CHARS}-character budget (raise it with TINYTITAN_RELEASE_NOTES_MAX_CHARS)"
 fi
 

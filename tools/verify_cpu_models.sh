@@ -27,7 +27,7 @@ GUARD='TinyTitanServer|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper
 if [ "$#" -gt 0 ]; then
   targets=("$@")
 else
-  targets=("${DEFAULT_MODELS[@]}")
+  targets=("${DEFAULT_MODELS[@]+"${DEFAULT_MODELS[@]}"}")
 fi
 
 if pgrep -fl "$GUARD" >/dev/null 2>&1; then
@@ -37,7 +37,7 @@ if pgrep -fl "$GUARD" >/dev/null 2>&1; then
 fi
 
 cd "$ROOT" || exit 1
-for model in "${targets[@]}"; do
+for model in "${targets[@]+"${targets[@]}"}"; do
   [ -f "$MODELS/$model/manifest.json" ] || {
     echo "no $MODELS/$model (an installed .gturbo)"; exit 1; }
 done
@@ -46,7 +46,7 @@ swift build -c release --product TinyTitanBench || exit 1
 BENCH="$(swift build -c release --show-bin-path)/TinyTitanBench"
 
 status=0
-for model in "${targets[@]}"; do
+for model in "${targets[@]+"${targets[@]}"}"; do
   echo "== $model"
   out="$(/usr/bin/time -l "$BENCH" cpu35 "$MODELS/$model" 2>&1)"
   # /usr/bin/time -l prints a page of counters per run; keep the verdict and

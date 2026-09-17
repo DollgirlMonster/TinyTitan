@@ -70,7 +70,7 @@ esac
 if [ "$CHUNK" = 4096 ]; then SIDECAR="ane_prefill"; else SIDECAR="ane_prefill-$CHUNK"; fi
 
 if [ "${#REQUESTED[@]}" -gt 0 ]; then
-  candidates=("${REQUESTED[@]}")
+  candidates=("${REQUESTED[@]+"${REQUESTED[@]}"}")
 else
   candidates=()
   for dir in "$MODELS_DIR"/*/; do
@@ -80,7 +80,7 @@ fi
 
 skipped=() ; exported=() ; verified=() ; failed=()
 
-for name in "${candidates[@]}"; do
+for name in "${candidates[@]+"${candidates[@]}"}"; do
   model="$MODELS_DIR/$name"
   if [ ! -f "$model/manifest.json" ]; then
     echo "== $name: no manifest at $model — not installed"
@@ -154,11 +154,11 @@ print(json.load(open('$model/manifest.json'))['arch']['family'])")"
 done
 
 echo
-echo "verified: ${#verified[@]}${verified:+ — ${verified[*]}}"
-[ "${#exported[@]}" -gt 0 ] && echo "exported: ${exported[*]}"
-[ "${#skipped[@]}" -gt 0 ] && echo "skipped : ${skipped[*]}"
+echo "verified: ${#verified[@]}${verified:+ — ${verified[*]+"${verified[*]}"}}"
+[ "${#exported[@]}" -gt 0 ] && echo "exported: ${exported[*]+"${exported[*]}"}"
+[ "${#skipped[@]}" -gt 0 ] && echo "skipped : ${skipped[*]+"${skipped[*]}"}"
 if [ "${#failed[@]}" -gt 0 ]; then
-  printf 'FAILED  : %s\n' "${failed[@]}" >&2
+  printf 'FAILED  : %s\n' "${failed[@]+"${failed[@]}"}" >&2
   exit 1
 fi
 exit 0

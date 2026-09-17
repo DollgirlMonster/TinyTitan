@@ -77,14 +77,14 @@ TINYTITAN_MODEL_CHOICES=(
 # tinytitan_client_ids -> one client id per line, in menu order.
 tinytitan_client_ids() {
   local entry
-  for entry in "${TINYTITAN_CLIENTS[@]}"; do printf '%s\n' "${entry%%|*}"; done
+  for entry in "${TINYTITAN_CLIENTS[@]+"${TINYTITAN_CLIENTS[@]}"}"; do printf '%s\n' "${entry%%|*}"; done
 }
 
 # tinytitan_client_field <id> <2 label | 3 kind | 4 binaries> -> that field.
 # Returns 1 for an id the list does not carry.
 tinytitan_client_field() {
   local entry rest
-  for entry in "${TINYTITAN_CLIENTS[@]}"; do
+  for entry in "${TINYTITAN_CLIENTS[@]+"${TINYTITAN_CLIENTS[@]}"}"; do
     [[ "${entry%%|*}" == "$1" ]] || continue
     rest="${entry#*|}"
     case "$2" in
@@ -337,11 +337,11 @@ tinytitan_catalog_keep_installed() {
   done
   tinytitan_reset_catalog
   (( ${#ids[@]} > 0 )) || return 1
-  TINYTITAN_CAT_ID=("${ids[@]}"); TINYTITAN_CAT_NAME=("${names[@]}")
-  TINYTITAN_CAT_QUANT=("${quants[@]}"); TINYTITAN_CAT_BACKEND=("${backends[@]}")
-  TINYTITAN_CAT_PATH=("${paths[@]}"); TINYTITAN_CAT_THINKING=("${thinking[@]}")
-  TINYTITAN_CAT_SIZE=("${sizes[@]}"); TINYTITAN_CAT_FAMILY=("${families[@]}")
-  TINYTITAN_CAT_ENGINES=("${engines[@]}")
+  TINYTITAN_CAT_ID=("${ids[@]+"${ids[@]}"}"); TINYTITAN_CAT_NAME=("${names[@]+"${names[@]}"}")
+  TINYTITAN_CAT_QUANT=("${quants[@]+"${quants[@]}"}"); TINYTITAN_CAT_BACKEND=("${backends[@]+"${backends[@]}"}")
+  TINYTITAN_CAT_PATH=("${paths[@]+"${paths[@]}"}"); TINYTITAN_CAT_THINKING=("${thinking[@]+"${thinking[@]}"}")
+  TINYTITAN_CAT_SIZE=("${sizes[@]+"${sizes[@]}"}"); TINYTITAN_CAT_FAMILY=("${families[@]+"${families[@]}"}")
+  TINYTITAN_CAT_ENGINES=("${engines[@]+"${engines[@]}"}")
 }
 
 # tinytitan_static_catalog <models-dir>: the same arrays from the built-in list,
@@ -357,7 +357,7 @@ tinytitan_static_catalog() {
   local models_dir="$1" key bits dir added
   local missing=()
   tinytitan_reset_catalog
-  for key in "${TINYTITAN_ALL_MODELS[@]}"; do
+  for key in "${TINYTITAN_ALL_MODELS[@]+"${TINYTITAN_ALL_MODELS[@]}"}"; do
     tinytitan_resolve_model "$key"
     added=0
     for bits in 8 4; do
@@ -373,7 +373,7 @@ tinytitan_static_catalog() {
     done
     (( added )) || missing+=("$TINYTITAN_MODEL_LABEL")
   done
-  (( ${#missing[@]} > 0 )) && TINYTITAN_CATALOG_MISSING=("${missing[@]}")
+  (( ${#missing[@]} > 0 )) && TINYTITAN_CATALOG_MISSING=("${missing[@]+"${missing[@]}"}")
   if (( ${#TINYTITAN_CAT_ID[@]} == 0 )); then
     TINYTITAN_CATALOG_ERROR="no install under $models_dir matches the built-in list"
     return 1

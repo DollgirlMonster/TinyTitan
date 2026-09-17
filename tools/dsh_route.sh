@@ -120,7 +120,7 @@ if (( FROM_SERVER )); then
   done < <(printf '%s' "$listing" \
     | python3 -c 'import json,sys; [print(m["id"]) for m in json.load(sys.stdin)["data"]]')
   (( ${#served[@]} > 0 )) || die "the server on port $PORT listed no models"
-  for id in "${served[@]}"; do
+  for id in "${served[@]+"${served[@]}"}"; do
     # A served id carries the width and nothing else human-readable is known
     # here, so the name is the id without its `_N-Bit` suffix and the label adds
     # the width back once.
@@ -147,7 +147,7 @@ if (( ${#FILTER[@]} > 0 )); then
   # the install directory's name. An install key resolves through the shared
   # catalogue to its stem, which is what the directory is called.
   patterns=()
-  for needle in "${FILTER[@]}"; do
+  for needle in "${FILTER[@]+"${FILTER[@]}"}"; do
     patterns+=("$needle")
     if stem="$(tinytitan_resolve_model "$needle" 2>/dev/null && echo "$TINYTITAN_MODEL_STEM")"; then
       patterns+=("$stem")
@@ -157,7 +157,7 @@ if (( ${#FILTER[@]} > 0 )); then
   for (( i = 0; i < ${#ids[@]}; i++ )); do
     wanted=0
     haystack="${ids[$i]} ${names[$i]} ${families[$i]} $(basename "${paths[$i]:-}")"
-    for pattern in "${patterns[@]}"; do
+    for pattern in "${patterns[@]+"${patterns[@]}"}"; do
       case "$haystack" in *"$pattern"*) wanted=1 ;; esac
     done
     (( wanted )) || continue
@@ -165,10 +165,10 @@ if (( ${#FILTER[@]} > 0 )); then
     keep_levels+=("${levels[$i]}"); keep_families+=("${families[$i]}")
     keep_paths+=("${paths[$i]:-}")
   done
-  (( ${#keep_ids[@]} > 0 )) || die "no install matches: ${FILTER[*]}"
-  ids=("${keep_ids[@]}"); names=("${keep_names[@]}")
-  levels=("${keep_levels[@]}"); families=("${keep_families[@]}")
-  paths=("${keep_paths[@]}")
+  (( ${#keep_ids[@]} > 0 )) || die "no install matches: ${FILTER[*]+"${FILTER[*]}"}"
+  ids=("${keep_ids[@]+"${keep_ids[@]}"}"); names=("${keep_names[@]+"${keep_names[@]}"}")
+  levels=("${keep_levels[@]+"${keep_levels[@]}"}"); families=("${keep_families[@]+"${keep_families[@]}"}")
+  paths=("${keep_paths[@]+"${keep_paths[@]}"}")
 fi
 
 # --- The block --------------------------------------------------------------
@@ -181,7 +181,7 @@ efforts_block() {
   local list="$1" level
   echo "          reasoningEfforts:"
   IFS=',' read -r -a split <<< "$list"
-  for level in "${split[@]}"; do
+  for level in "${split[@]+"${split[@]}"}"; do
     level="${level// /}"
     [[ -z "$level" ]] && continue
     case "$level" in

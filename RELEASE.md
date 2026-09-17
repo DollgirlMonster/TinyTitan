@@ -210,8 +210,8 @@ repository.
   executables** — `TinyTitanServer`, `TinyTitanCLI`,
   `TinyTitanRepack`, `TinyTitanBench` — plus the
   `.bundle` resources, licence and notices.
-- **Gates** `tools/lint.sh` (five gates: force-cast, func-length, sendable,
-  converter, arch-path); `swift test --no-parallel`; **every installed model with
+- **Gates** `tools/lint.sh` (six gates: force-cast, func-length, sendable,
+  converter, arch-path, shell-portability); `swift test --no-parallel`; **every installed model with
   a golden target**, through `tools/golden-baseline.sh --check`; then a clean
   scratch build with the warning scan.
 - **Mandatory, and run by the runbook rather than by `release.sh`**

@@ -144,7 +144,7 @@ wait_ready() {
 trap stop_server EXIT
 
 for RUN in $(seq "$FIRST_RUN" $(( FIRST_RUN + RUNS - 1 ))); do
-for ARM in "${ARMS[@]}"; do
+for ARM in "${ARMS[@]+"${ARMS[@]}"}"; do
   case "$ARM" in
     control|summary) MEMORY=0; TOOLS=off ;;
     auto)            MEMORY=1; TOOLS=off ;;      # memory on, no tools: the engine writes
@@ -170,7 +170,7 @@ for ARM in "${ARMS[@]}"; do
     TINYTITAN_MEMORY_DIR="$MEMDIR" TINYTITAN_MEMORY_JOURNAL=1 \
     TINYTITAN_MEMORY_GUARD="${TINYTITAN_MEMORY_GUARD:-1}" \
     TINYTITAN_MEMORY_CONSOLIDATION=1 TINYTITAN_MEMORY_CONSOLIDATION_IDLE_SECONDS="$IDLE" \
-      exec "${LAUNCH[@]}"
+      exec "${LAUNCH[@]+"${LAUNCH[@]}"}"
   ) >"$SERVER_LOG" 2>&1 &
   LAUNCHER_PID=$!
   wait_ready

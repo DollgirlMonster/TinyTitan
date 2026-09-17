@@ -627,7 +627,7 @@ cmd_web() {
            TINYTITAN_REPO="$REPO_ROOT" \
            TINYTITAN_MODELS_DIR="$REPO_ROOT/models" \
            PATH="$(tool_path)" \
-           "$(dsh_bin)" web --port "$port" "${open[@]}" "$@"
+           "$(dsh_bin)" web --port "$port" "${open[@]+"${open[@]}"}" "$@"
 }
 
 # What `web` would bind, without starting anything. Prints only the number on
@@ -725,7 +725,7 @@ cmd_smoke() {
   # `playwright` is not. The copy is refreshed every run, so it cannot go stale.
   cp -f "$REPO_ROOT/tools/dsh_smoke.mjs" "$SMOKE_DIR/dsh_smoke.mjs"
   env PLAYWRIGHT_BROWSERS_PATH="$SMOKE_BROWSERS" PATH="$(tool_path)" \
-    node "$SMOKE_DIR/dsh_smoke.mjs" --url "$url" "${PASSTHROUGH[@]}" || status=$?
+    node "$SMOKE_DIR/dsh_smoke.mjs" --url "$url" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}" || status=$?
   smoke_cleanup
   trap - EXIT INT TERM
   return $status

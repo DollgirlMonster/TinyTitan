@@ -386,7 +386,7 @@ if (( ! dynamic )); then
     exit 2
   fi
   if (( ${#TINYTITAN_CATALOG_MISSING[@]} > 0 )); then
-    echo "      Supported but not installed here: ${TINYTITAN_CATALOG_MISSING[*]}" >&2
+    echo "      Supported but not installed here: ${TINYTITAN_CATALOG_MISSING[*]+"${TINYTITAN_CATALOG_MISSING[*]}"}" >&2
   fi
 fi
 
@@ -449,7 +449,7 @@ else
   else
     if ! tinytitan_resolve_model "$MODEL_ARG" 2>/dev/null; then
       echo "unknown model: $MODEL_ARG (a model id, or ornith|qwen36|agentworld|katcoder|qwen38|qwen35-2b|qwen35-4b|qwen35-9b)" >&2
-      if (( dynamic )); then echo "installed: ${TINYTITAN_CAT_ID[*]}" >&2; fi
+      if (( dynamic )); then echo "installed: ${TINYTITAN_CAT_ID[*]+"${TINYTITAN_CAT_ID[*]}"}" >&2; fi
       exit 2
     fi
     # No width given means 8-bit, the historical default.
@@ -496,7 +496,7 @@ engine_family="${TINYTITAN_CAT_FAMILY[$idx]:--}"
 engine_name() { if [[ "$1" == cpu ]]; then echo CPU; else echo GPU; fi; }
 engine_available() {
   local candidate
-  for candidate in "${engines[@]}"; do [[ "$candidate" == "$1" ]] && return 0; done
+  for candidate in "${engines[@]+"${engines[@]}"}"; do [[ "$candidate" == "$1" ]] && return 0; done
   return 1
 }
 engine_reason() {
@@ -547,7 +547,7 @@ fi
 # shows the default; this says which one this run will use and why there is (or
 # is not) an alternative.
 if (( ${#engines[@]} > 1 )); then
-  engine_line="$(engine_name "$ENGINE") -- your choice of $(printf '%s' "${engines[*]}" | tr ' ' '/')"
+  engine_line="$(engine_name "$ENGINE") -- your choice of $(printf '%s' "${engines[*]+"${engines[*]}"}" | tr ' ' '/')"
 else
   engine_line="$(engine_name "$ENGINE") only -- $(engine_reason "$ENGINE")"
 fi
@@ -594,7 +594,7 @@ fi
 thinking_label() { case "$1" in xhigh) echo "extra high" ;; *) echo "$1" ;; esac; }
 has_level() {
   local level
-  for level in "${levels[@]}"; do [[ "$level" == "$1" ]] && return 0; done
+  for level in "${levels[@]+"${levels[@]}"}"; do [[ "$level" == "$1" ]] && return 0; done
   return 1
 }
 normalize_level() {
@@ -621,7 +621,7 @@ level_for_model() {
 }
 level_names() {
   local level out=""
-  for level in "${levels[@]}"; do out="${out:+$out, }$(thinking_label "$level")"; done
+  for level in "${levels[@]+"${levels[@]}"}"; do out="${out:+$out, }$(thinking_label "$level")"; done
   echo "$out"
 }
 
@@ -656,7 +656,7 @@ elif (( ! INTERACTIVE )); then
   thinking_level="$default_level"
 else
   echo ""
-  if [[ "${levels[*]}" == "off on" ]]; then
+  if [[ "${levels[*]+"${levels[*]}"}" == "off on" ]]; then
     echo "Reasoning (thinking)? $MODEL_NAME ${MODEL_QUANT}-bit defines the binary switch"
     echo "off|on; a client can switch it per request with reasoning_effort."
   else
@@ -1000,8 +1000,8 @@ if [[ "$ENGINE" == "cpu" ]]; then
   [[ -n "$CONCURRENCY_ARG" ]] && inert_flags+=(--concurrency)
   (( YARN )) && inert_flags+=(--yarn)
   if (( ${#inert_flags[@]} > 0 )); then
-    echo "NOTE: ${inert_flags[*]} do not apply to the CPU engine; ignoring" >&2
-    echo "      ${inert_flags[*]} for $MODEL_NAME." >&2
+    echo "NOTE: ${inert_flags[*]+"${inert_flags[*]}"} do not apply to the CPU engine; ignoring" >&2
+    echo "      ${inert_flags[*]+"${inert_flags[*]}"} for $MODEL_NAME." >&2
   fi
   kv_bits=""; max_context=""; rope_scaling="none"
 fi
@@ -1064,7 +1064,7 @@ if [[ "$MODEL_BACKEND" == "cpu" ]]; then
   server_cmd+=(--max-concurrent-sequences 1)
   runtime_note="$runtime_note | one generation at a time"
 else
-  server_cmd+=("${gpu_runtime[@]}" --max-concurrent-sequences "$concurrency")
+  server_cmd+=("${gpu_runtime[@]+"${gpu_runtime[@]}"}" --max-concurrent-sequences "$concurrency")
   mtp_note="off"
   [[ -n "$MTP_MODEL_ARG" ]] && mtp_note="on (draft head)"
   # The cache mode in force, not the one asked for: above one slot the server
@@ -1190,7 +1190,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   rule
   echo "Client:     $(client_label "$CLIENT")"
   echo "Server cmd:"
-  printf '  '; printf '%q ' "${server_cmd[@]}"; echo ""
+  printf '  '; printf '%q ' "${server_cmd[@]+"${server_cmd[@]}"}"; echo ""
   echo ""
   echo "Client setup the launcher would write/use:"
   case "$CLIENT" in
@@ -1262,9 +1262,9 @@ echo "Starting TinyTitanServer ($MODEL_NAME ${MODEL_QUANT}-bit, $model_word, $mo
 # page sitting on "Deep diving...". The engine logs a strip report per request,
 # so what was removed is visible rather than assumed.
 if (( WEB )); then
-  TINYTITAN_STRIP_CLI_PROMPT=1 "${server_cmd[@]}" &
+  TINYTITAN_STRIP_CLI_PROMPT=1 "${server_cmd[@]+"${server_cmd[@]}"}" &
 else
-  "${server_cmd[@]}" &
+  "${server_cmd[@]+"${server_cmd[@]}"}" &
 fi
 server_pid=$!
 

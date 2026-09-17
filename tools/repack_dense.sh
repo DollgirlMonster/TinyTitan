@@ -74,8 +74,8 @@ swift build -c release
 # the same moment during verification, so the peak is two copies of the largest
 # model, not two copies of all of them.
 pairs=()
-for key in "${keys[@]}"; do
-  for bits in "${want_bits[@]}"; do
+for key in "${keys[@]+"${keys[@]}"}"; do
+  for bits in "${want_bits[@]+"${want_bits[@]}"}"; do
     # `tr` rather than `${key^^}`: bash 4+, and /bin/bash is 3.2 on a factory Mac.
     dir="qwen3.5_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')_${bits}Bit"
     snapshot="$STAGE/qwen35-${key}-affine-${bits}bit"
@@ -120,7 +120,7 @@ if [[ ${#pairs[@]} -eq 0 ]]; then
   exit 1
 fi
 
-joined=$(IFS=,; echo "${pairs[*]}")
+joined=$(IFS=,; echo "${pairs[*]+"${pairs[*]}"}")
 echo
 echo "logit equivalence gate over ${#pairs[@]} model(s)"
 TINYTITAN_DENSE_EQUIV=1 TINYTITAN_DENSE_EQUIV_PAIRS="$joined" \

@@ -131,17 +131,25 @@ for it only when the small model *is* the subject — its own limits, its own
 behaviour — and say in the report that it was deliberate. This does not change the
 golden-baseline targets below, which are what they are.
 
-`tools/lint.sh` runs the five gates CI enforces beyond the compiler: no `as!` /
+`tools/lint.sh` runs the six gates CI enforces beyond the compiler: no `as!` /
 `try!` under `sources/` without a `lint:allow-force <reason>` comment above it; no
 function over 120 lines without an inline `lint:allow-long <reason>` — the ratchet
 file `tools/func-length-baseline.txt` is currently **empty**, because every long
 function carries its own justification, and the gate fails on a stale exemption row
 as well as on a new offender; every `@unchecked Sendable` carrying an
 `unchecked-invariant:` note; a `converter` probe that files routed experts by index
-rather than arrival order; and no hardcoded SwiftPM target triple in a build path,
-which points at nothing on a newer toolchain or at a stale binary on this one.
-`tools/lint.sh <mode>` runs a single gate (`force-cast`, `func-length`, `sendable`,
-`converter`, `arch-path`).
+rather than arrival order; no hardcoded SwiftPM target triple in a build path,
+which points at nothing on a newer toolchain or at a stale binary on this one; and
+**every shell script parsing and running under `/bin/bash`, which is 3.2.57 on a
+factory Mac** — not the Homebrew 5.x a development machine puts first on `PATH`.
+That last one is not academic: a single-quoted heredoc holding an apostrophe
+inside `$( )` stops 3.2 parsing the file at all; `${v^^}` or `mapfile` parses and
+then dies mid-menu; and a whole-array expansion `"${a[@]}"` on an **empty** array
+is `a[@]: unbound variable` under the `set -u` these scripts set, which 5.x
+accepts silently. Write it `${a[@]+"${a[@]}"}` (likewise `[*]`), which means the
+same thing for a non-empty array on both shells — every script here does, and the
+gate fails on a bare one. `tools/lint.sh <mode>` runs a single gate (`force-cast`,
+`func-length`, `sendable`, `converter`, `arch-path`, `shell`).
 
 `tools/golden-baseline.sh --check <target>` compares greedy, fixed-seed generation
 against `benchmark/golden/`. It is the only check that exercises real inference, so

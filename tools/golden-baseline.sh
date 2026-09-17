@@ -254,7 +254,7 @@ PY
   rm -rf "$work"; return 1
 }
 
-for t in "${targets[@]}"; do
+for t in "${targets[@]+"${targets[@]}"}"; do
   case "$t" in
     4|ornith-4) dir="ornith-1.5_35B_A3B_4Bit"; file="ornith-1.5-35b-a3b-4bit.txt"; q=4 ;;
     8|ornith-8) dir="ornith-1.5_35B_A3B_8Bit"; file="ornith-1.5-35b-a3b-8bit.txt"; q=8 ;;
