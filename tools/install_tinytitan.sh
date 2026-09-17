@@ -213,7 +213,12 @@ install_from_release() {
   fi
   if curl -fsSL -o "$tmp/$asset.sha256" \
       "https://github.com/Pummelchen/TinyTitan/releases/download/$tag/$asset.sha256"; then
-    if ( cd "$tmp" && shasum -a 256 -c "$asset.sha256" >/dev/null 2>&1 ); then
+    # `shasum` ships with macOS, so this is a guard rather than an expectation —
+    # without it a missing tool would fall through to the mismatch branch and
+    # blame the download for a problem it does not have.
+    if ! command -v shasum >/dev/null 2>&1; then
+      warn "shasum is missing, so the download could not be verified."
+    elif ( cd "$tmp" && shasum -a 256 -c "$asset.sha256" >/dev/null 2>&1 ); then
       ok "Checksum verified"
     else
       rm -rf "$tmp"

@@ -404,7 +404,10 @@ if [[ -z "$MODEL_ARG" ]]; then
   engine_column() {
     local list="$1"
     if [[ "$list" == *,* ]]; then
-      printf '%s' "${list^^}" | tr ',' '+'
+      # `tr` rather than `${list^^}`: the uppercase expansion is bash 4+, and
+      # /bin/bash is 3.2 on a factory Mac ("bad substitution", at runtime, in the
+      # middle of the model menu).
+      printf '%s' "$list" | tr '[:lower:]' '[:upper:]' | tr ',' '+'
     else
       [[ "$list" == cpu ]] && echo CPU || echo GPU
     fi
@@ -1580,17 +1583,22 @@ if (( WEB )); then
     echo
     echo "Warming the expert cache (one throwaway prompt, ~$warm_tokens tokens;"
     echo "this is the slow part of the first answer, moved here)."
-    warm_body="$(MODEL="$MODEL" TOKENS="$warm_tokens" python3 - <<'WARMPY'
-import json, os
-# Long enough to route through every layer's expert set, which is what the cache
-# holds; the exact words do not matter, the token count does.
-text = "The quick brown fox jumps over the lazy dog. " * max(1, int(os.environ["TOKENS"]) // 11)
-print(json.dumps({"model": os.environ["MODEL"],
-                  "messages": [{"role": "user", "content": text + "\nReply with the single word: ready"}],
-                  "max_tokens": 1,
-                  "stream": False}))
-WARMPY
-)"
+    # Built in shell rather than by python3 for two reasons. It keeps a python3
+    # requirement out of a path that has to work on a Mac that has none — and a
+    # single-quoted heredoc containing an apostrophe inside `$( )` is a **bash 3.2
+    # parse error**, and /bin/bash is 3.2 on a factory Mac, so the script failed
+    # to parse at all before it ran a line. Reproduced in isolation; the same
+    # heredoc parses under 5.x, which is why it went unnoticed here.
+    warm_sentence="The quick brown fox jumps over the lazy dog. "
+    warm_repeat=$(( warm_tokens / 11 ))
+    (( warm_repeat < 1 )) && warm_repeat=1
+    warm_text=""
+    warm_i=0
+    while (( warm_i < warm_repeat )); do
+      warm_text="${warm_text}${warm_sentence}"
+      warm_i=$(( warm_i + 1 ))
+    done
+    warm_body="$(printf '{"model":"%s","messages":[{"role":"user","content":"%s\\nReply with the single word: ready"}],"max_tokens":1,"stream":false}' "$MODEL" "$warm_text")"
     warm_started="$(date +%s)"
     if curl -s --max-time "${TINYTITAN_WARM_TIMEOUT:-900}" \
          "http://127.0.0.1:${PORT}/v1/chat/completions" \

@@ -76,7 +76,8 @@ swift build -c release
 pairs=()
 for key in "${keys[@]}"; do
   for bits in "${want_bits[@]}"; do
-    dir="qwen3.5_${key^^}_${bits}Bit"
+    # `tr` rather than `${key^^}`: bash 4+, and /bin/bash is 3.2 on a factory Mac.
+    dir="qwen3.5_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')_${bits}Bit"
     snapshot="$STAGE/qwen35-${key}-affine-${bits}bit"
 
     echo

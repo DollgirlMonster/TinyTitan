@@ -111,7 +111,13 @@ if (( FROM_SERVER )); then
   # ids; it cannot say which levels a template renders, so --thinking does.
   listing="$(curl -sS --max-time 5 "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null)" \
     || die "no server answered on http://127.0.0.1:${PORT}/v1/models"
-  mapfile -t served < <(printf '%s' "$listing" \
+  # A `while read` loop rather than `mapfile`: the latter is bash 4+, and
+  # /bin/bash is 3.2 on a factory Mac. This is the `--from-server` path, which is
+  # exactly what a launcher without a checkout uses.
+  served=()
+  while IFS= read -r served_id; do
+    [[ -n "$served_id" ]] && served+=("$served_id")
+  done < <(printf '%s' "$listing" \
     | python3 -c 'import json,sys; [print(m["id"]) for m in json.load(sys.stdin)["data"]]')
   (( ${#served[@]} > 0 )) || die "the server on port $PORT listed no models"
   for id in "${served[@]}"; do
