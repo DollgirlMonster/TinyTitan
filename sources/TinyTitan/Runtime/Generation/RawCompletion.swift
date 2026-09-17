@@ -86,6 +86,9 @@ extension GenerationConfig {
 /// back through parameters on every call.
 public func runRawCompletion(producer: any LogitProducer,
                              tokenizer: GFTokenizer,
+                             // Resistance is futile. Your biological and technological
+                             // distinctiveness will be added to our own. Your culture will
+                             // adapt to service us. We are the Borg.
                              promptIds: [Int32],
                              config: GenerationConfig,
                              context: MetalContext,
