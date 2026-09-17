@@ -1561,6 +1561,40 @@ if (( WEB )); then
     wait "$server_pid"
     exit $?
   fi
+  # Warm the expert cache before the window opens.
+  #
+  # The first request after a load pays for every expert sweep it misses.
+  # Measured on the 35B-A3B 4-bit: the same ~4.2k-token prompt took **161s cold**
+  # and **72s** once the cache held the working set. A throwaway prefill moves
+  # that cost to startup, where this script can say what it is doing, instead of
+  # leaving it on the person's first question with the page stuck on "Deep
+  # diving...". Set TINYTITAN_WARM=0 to skip it, or TINYTITAN_WARM_TOKENS to
+  # change the size.
+  if [[ "${TINYTITAN_WARM:-1}" != "0" ]]; then
+    warm_tokens="${TINYTITAN_WARM_TOKENS:-4000}"
+    echo
+    echo "Warming the expert cache (one throwaway prompt, ~$warm_tokens tokens;"
+    echo "this is the slow part of the first answer, moved here)."
+    warm_body="$(MODEL="$MODEL" TOKENS="$warm_tokens" python3 - <<'WARMPY'
+import json, os
+# Long enough to route through every layer's expert set, which is what the cache
+# holds; the exact words do not matter, the token count does.
+text = "The quick brown fox jumps over the lazy dog. " * max(1, int(os.environ["TOKENS"]) // 11)
+print(json.dumps({"model": os.environ["MODEL"],
+                  "messages": [{"role": "user", "content": text + "\nReply with the single word: ready"}],
+                  "max_tokens": 1,
+                  "stream": False}))
+WARMPY
+)"
+    warm_started="$(date +%s)"
+    if curl -s --max-time "${TINYTITAN_WARM_TIMEOUT:-900}" \
+         "http://127.0.0.1:${PORT}/v1/chat/completions" \
+         -H 'Content-Type: application/json' -d "$warm_body" >/dev/null 2>&1; then
+      echo "Expert cache warm ($(( $(date +%s) - warm_started ))s)."
+    else
+      warn_red "The warm-up did not finish; the first answer will be slower."
+    fi
+  fi
   echo
   echo "Opening DeepSeek Harness in your default browser..."
   # `--port` matters here as much as it does to `ensure`: `web` exports it as

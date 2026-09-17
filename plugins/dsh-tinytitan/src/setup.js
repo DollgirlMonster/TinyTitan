@@ -84,6 +84,57 @@ export function repointCompactionRow(
 }
 
 /**
+ * The rows that make an agent preset expensive for a prompt box, and are not
+ * tool definitions — so `TINYTITAN_STRIP_CLI_PROMPT` cannot remove them.
+ *
+ * `agent-instructions` injects `AGENTS.md`/`CLAUDE.md` into every turn (up to
+ * 64 KB by its own config), `skill-filesystem` supplies a skill tree and
+ * `tool-skill` injects the skill catalog that lists it. Measured on a nine-word
+ * question through the browser window, the harness request that reached the
+ * engine after stripping was 4,222 tokens across four user messages; the
+ * question itself is about ten of them. That is prefill the user pays for on
+ * every turn, and at the 35B's measured ~65 tok/s it is a minute of it.
+ *
+ * @param text - a preset composition.
+ * @param ids - row ids to remove; defaults to the chat-noise set.
+ * @returns the composition without those rows, and whether anything changed.
+ */
+export const CHAT_NOISE_ROWS = ["agent-instructions", "skill-filesystem", "tool-skill"];
+
+export function withoutRows(text, ids = CHAT_NOISE_ROWS) {
+  const drop = new Set(ids);
+  const lines = text.split("\n");
+  const out = [];
+  let index = 0;
+  let changed = false;
+  while (index < lines.length) {
+    const header = /^(\s*)- id:\s*(\S+)\s*$/.exec(lines[index]);
+    if (header === null || !drop.has(header[2])) {
+      out.push(lines[index]);
+      index += 1;
+      continue;
+    }
+    // The row's own body: blank lines and anything indented deeper than its
+    // `- id:` key.
+    const indent = header[1];
+    let end = index + 1;
+    while (end < lines.length) {
+      const line = lines[end];
+      if (line.trim() === "" || line.startsWith(`${indent}  `)) {
+        end += 1;
+        continue;
+      }
+      break;
+    }
+    out.push(`${indent}# Removed by dsh-tinytitan: not a tool definition, so the`);
+    out.push(`${indent}# CLI-strip cannot drop its prompt cost. See CHAT_NOISE_ROWS.`);
+    index = end;
+    changed = true;
+  }
+  return { text: out.join("\n"), changed };
+}
+
+/**
  * The preset `agent-presets.default` names, or null when the file names none.
  * @param settingsText - the settings file.
  * @returns the preset id, or null.
@@ -151,7 +202,12 @@ export function ensureCompactionPreset({
     return result;
   }
   const presetPath = join(dshHome, ".agent-presets", presetId, "agent.cordis.yml");
-  const generated = repointCompactionRow(readFileSync(standardPath, "utf8"), { maxTokens });
+  // Chat noise first: those rows are not tool definitions, so the server-side
+  // CLI-strip cannot drop their cost, and they are injected on every turn
+  // whether or not the person is coding. This preset is for TinyTitan's own
+  // browser window, which is a prompt box.
+  const chatText = withoutRows(readFileSync(standardPath, "utf8")).text;
+  const generated = repointCompactionRow(chatText, { maxTokens });
   if (!existsSync(presetPath) || readFileSync(presetPath, "utf8") !== generated.text) {
     mkdirSync(dirname(presetPath), { recursive: true });
     backup(presetPath, stamp);

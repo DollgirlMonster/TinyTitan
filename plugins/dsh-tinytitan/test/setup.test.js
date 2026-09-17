@@ -6,11 +6,13 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  CHAT_NOISE_ROWS,
   COMPACTION_BACKEND,
   defaultPreset,
   ensureCompactionPreset,
   repointCompactionRow,
   setDefaultPreset,
+  withoutRows,
 } from "../src/setup.js";
 
 const STANDARD = fileURLToPath(new URL("./fixtures/standard-preset.yml", import.meta.url));
@@ -144,4 +146,61 @@ test("a missing standard preset is reported, not fatal", () => {
                                           log: (message) => messages.push(message) });
   assert.equal(result.preset, null);
   assert.ok(messages.some((message) => message.includes("no standard preset")));
+});
+
+test("withoutRows drops a row with its body and keeps the rest", () => {
+  // The rows it targets are not tool definitions, so the engine's CLI-strip
+  // cannot drop their prompt cost; the tool rows around them must survive,
+  // because that strip is what handles those.
+  const text = [
+    "- id: persona",
+    "  name: '@deepseek-ai/dsh-persona'",
+    "- id: agent-instructions",
+    "  name: '@deepseek-ai/dsh-agent-instructions'",
+    "  config:",
+    "    maxBytes: 65536",
+    "- id: tool-bash",
+    "  name: '@deepseek-ai/dsh-tool-bash'",
+    "- id: tool-skill",
+    "  name: '@deepseek-ai/dsh-tool-skill'",
+    "  config:",
+    "    catalog: true",
+    "- id: tool-fs",
+    "  name: '@deepseek-ai/dsh-tool-fs'",
+  ].join("\n");
+  const { text: stripped, changed } = withoutRows(text);
+  assert.equal(changed, true);
+  assert.equal(stripped.includes("agent-instructions"), false);
+  assert.equal(stripped.includes("maxBytes"), false, "the row's whole body goes");
+  assert.equal(stripped.includes("tool-skill"), false);
+  assert.equal(stripped.includes("catalog: true"), false);
+  assert.ok(stripped.includes("persona"));
+  assert.ok(stripped.includes("dsh-tool-bash"));
+  assert.ok(stripped.includes("dsh-tool-fs"));
+  // Idempotent: nothing left to remove the second time.
+  assert.equal(withoutRows(stripped).changed, false);
+});
+
+test("the generated preset is chat-shaped, not agent-shaped", () => {
+  const dshHome = home("agent-presets:\n  default: qwen38\n");
+  const standardPath = join(dshHome, "standard.yml");
+  writeFileSync(standardPath, [
+    "- id: agent-instructions",
+    "  name: '@deepseek-ai/dsh-agent-instructions'",
+    "- id: compaction",
+    "  name: cordis:group",
+    "  config:",
+    "    - id: compaction-basic",
+    "      name: '@deepseek-ai/dsh-compaction-basic'",
+    "- id: tool-skill",
+    "  name: '@deepseek-ai/dsh-tool-skill'",
+  ].join("\n"));
+  ensureCompactionPreset({ dshHome, presetId: "tinytitan", standardPath,
+                           adopt: false, log: () => {} });
+  const written = readFileSync(presetAt(dshHome, "tinytitan"), "utf8");
+  for (const row of CHAT_NOISE_ROWS) {
+    assert.equal(written.includes(`- id: ${row}`), false, `${row} should be dropped`);
+  }
+  // The compaction mount still happens: that is this module's other job.
+  assert.ok(written.includes(COMPACTION_BACKEND));
 });
