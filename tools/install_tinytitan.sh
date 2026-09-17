@@ -13,29 +13,32 @@
 # questions work. `bash tools/install_tinytitan.sh` never needs `chmod +x`
 # either, which matters because a zip that lost the executable bit still runs.
 #
-# Nothing here needs Homebrew. Python is not needed to build the engine; only the
-# model *converters* use it, and the installer says so if this Mac has none.
+# Nothing here needs Homebrew, Python, Node, git or Xcode. The engine is
+# downloaded built, from the newest published release; the tools that drive it
+# arrive as text; Node is fetched privately only if this Mac has none. The model
+# is the one thing a person chooses, and the installer asks for it with a list.
 #
-# It checks the Mac, gets the source, builds the server, optionally downloads a
-# model, and installs a `tinytitan` command that starts it. The aim is a working
-# **TinyTitan server**: at the end it offers to start one and stays in the
-# foreground as it runs, so you finish with a base URL a client can be pointed at.
+# It checks the Mac, installs TinyTitan under ~/.tinytitan, asks which model to
+# download, and installs a `tinytitan` command that starts the server — then
+# offers to start it, so you finish with a base URL a client can be pointed at.
+# Everything it creates is under ~/.tinytitan and ~/.local/bin, so removing those
+# two directories removes the install.
 #
 # It can also set up a **chat window**: TinyTitan's own DeepSeek Harness, a local
 # page with a prompt box that opens in the default browser, already pointed at
 # the server. That is offered once a model is installed, because a window with
-# nothing to load is not a working thing. It lives under ~/.tinytitan and is kept
-# entirely separate from any DeepSeek Harness you run yourself; see
+# nothing to load is not a working thing. It lives under ~/.tinytitan too, and is
+# kept entirely separate from any DeepSeek Harness you run yourself; see
 # tools/dsh_local.sh.
 #
-# Nothing here is destructive. It never deletes a model, never removes a
-# directory, and never touches anything outside its own folders:
-#   ~/TinyTitan                 the checkout (a clone started by this script)
+# Nothing here is destructive. It never deletes a model and never touches
+# anything outside its own folders:
+#   ~/.tinytitan                the engine, the tools, the models, the chat window
 #   ~/.local/bin/tinytitan      the command that starts the server
 #   ~/.local/bin/tinytitan-web  the command that starts it with the browser window
-#   ~/.tinytitan                the private DeepSeek Harness, only with --web
-# Re-running it is safe: it updates an existing checkout instead of cloning
-# a second time.
+#   ~/TinyTitan                 only with --from-source: the clone it builds in
+# Re-running it is safe: it replaces the engine and tools in place and keeps the
+# models.
 #
 # Flags:
 #   --yes, -y        answer yes to every question (unattended install)
@@ -43,12 +46,15 @@
 #                    terminal, the installer shows the model list to choose from
 #                    (`tools/install_models.sh --choose`); through a pipe it
 #                    takes ornith15-8bit rather than hanging on a question.
-#   --no-model       build only; download no model
+#   --no-model       install no model
 #   --web            also set up the browser chat window (asked interactively;
 #                    --yes alone does not install it, so an unattended run stays
 #                    a server and nothing else)
 #   --no-web         do not offer the browser chat window
-#   --dir PATH       where to clone when there is no checkout (default ~/TinyTitan)
+#   --version TAG    install that release instead of the newest (e.g. --version v5.7)
+#   --from-source    clone and `swift build` instead of downloading a release.
+#                    For contributors; needs Xcode and takes much longer.
+#   --dir PATH       where --from-source clones to (default ~/TinyTitan)
 #   --help, -h       this text
 set -euo pipefail
 
@@ -92,6 +98,11 @@ TARGET_DIR="$DEFAULT_DIR"
 # of Node/DeepSeek Harness into someone's home on an unattended run is a side
 # effect that has to be asked for by name, with --web.
 WEB_MODE="ask"
+# Empty means "the newest release", which is what a person wants and what the
+# release runbook publishes. `--version v5.7` pins one; a contributor who wants
+# `main` builds from source instead.
+RELEASE_TAG=""
+FROM_SOURCE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --yes|-y)    ASSUME_YES=1 ;;
@@ -99,12 +110,32 @@ while [[ $# -gt 0 ]]; do
     --no-model)  INSTALL_MODEL=0 ;;
     --web)       WEB_MODE="yes" ;;
     --no-web)    WEB_MODE="no" ;;
+    --version)   RELEASE_TAG="${2:?--version needs a tag like v5.7}"; shift ;;
+    --from-source) FROM_SOURCE=1 ;;
     --dir)       TARGET_DIR="${2:?--dir needs a path}"; shift ;;
     --help|-h)   sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d'; exit 0 ;;
     *)           die "unknown option: $1 (try --help)" ;;
   esac
   shift
 done
+
+# --- where everything goes --------------------------------------------------
+#
+# One private root, and nothing outside it. This is what makes the install
+# "uninstall by deleting a directory", and it is why the engine can arrive as a
+# release tarball instead of a build: `.build/release` only exists in a checkout,
+# so an installed copy keeps its binaries in `$INSTALL_ROOT/bin` and tells the
+# tools where with TINYTITAN_BIN_DIR.
+INSTALL_ROOT="${TINYTITAN_ROOT:-$HOME/.tinytitan}"
+BIN_PATH="$INSTALL_ROOT/bin"
+SRC_PATH="$INSTALL_ROOT/src"
+MODELS_PATH="$INSTALL_ROOT/models"
+
+# Steps depend on the path: a release install has no toolchain step and no build.
+STEP=0
+TOTAL=4
+(( FROM_SOURCE )) && TOTAL=5
+step() { STEP=$((STEP + 1)); say "$STEP/$TOTAL  $*"; }
 
 say "TinyTitan installer"
 echo "  This takes a while and mostly waits. You can stop it with Ctrl-C at any"
@@ -126,7 +157,7 @@ if [[ ! -t 0 ]] && (( ASSUME_YES == 0 )); then
 fi
 
 # --- 1) the machine ---------------------------------------------------------
-say "1/6  Checking this Mac"
+step "Checking this Mac"
 
 os_version="$(sw_vers -productVersion 2>/dev/null || echo 0)"
 os_major="${os_version%%.*}"
@@ -137,7 +168,7 @@ fi
 ok "Apple Silicon ($arch), macOS $os_version"
 if [[ "${os_major:-0}" -lt 26 ]]; then
   warn "TinyTitan targets macOS 26 or later; this is $os_version."
-  warn "The build may fail. If it does, updating macOS fixes it."
+  warn "The engine may refuse to start. If it does, updating macOS fixes it."
 fi
 
 free_kb="$(df -Pk "$HOME" | awk 'NR==2 {print $4}')"
@@ -155,90 +186,173 @@ if [[ "$(pgrep -fl 'TinyTitanServer|TinyTitanCLI' 2>/dev/null | wc -l | tr -d ' 
   warn "since one model runs at a time on this Mac."
 fi
 
-# --- 2) the source ----------------------------------------------------------
-say "2/6  Getting the source"
+# --- 2) TinyTitan itself ----------------------------------------------------
+step "Installing TinyTitan"
 
-# Are we inside a checkout? Walk up from both this script and the directory
-# the user is standing in, so `cd ~/TinyTitan && tools/install_tinytitan.sh` and
-# `bash tools/install_tinytitan.sh` both work.
-find_checkout() {
-  local start="$1" probe
-  probe="$start"
-  while [[ -n "$probe" && "$probe" != "/" ]]; do
-    if [[ -f "$probe/Package.swift" ]]; then printf '%s' "$probe"; return 0; fi
-    probe="$(dirname "$probe")"
-  done
-  return 1
+# The release that carries the engine binaries. Empty means the newest one, which
+# is what a person wants and what the release runbook publishes.
+latest_tag() {
+  curl -fsSL "https://api.github.com/repos/Pummelchen/TinyTitan/releases/latest" 2>/dev/null \
+    | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
 }
 
-REPO_ROOT=""
-if ! REPO_ROOT="$(find_checkout "$(cd "$(dirname "$0")" && pwd)")"; then
-  REPO_ROOT="$(find_checkout "$PWD" || true)"
-fi
+# Download the published arm64 binaries and the matching source, and put them
+# under $INSTALL_ROOT. No git, no Xcode, no Swift, no brew, no Python: the engine
+# arrives built, and the tools that drive it arrive as text.
+install_from_release() {
+  local tag="$1" tmp asset src_url src_dir
+  [[ "$tag" == v* ]] || tag="v$tag"
+  asset="tinytitan-${tag#v}-macos-arm64.tar.gz"
+  tmp="$(mktemp -d)"
 
-if [[ -n "$REPO_ROOT" ]]; then
-  ok "Using the checkout at $REPO_ROOT"
-else
-  command -v git >/dev/null 2>&1 \
-    || die "git is missing. Install Xcode (App Store), open it once, then re-run."
-  if [[ -d "$TARGET_DIR/.git" ]]; then
-    ok "Updating the existing checkout at $TARGET_DIR"
-    git -C "$TARGET_DIR" pull --ff-only || warn "Could not update; using what is there."
-    REPO_ROOT="$TARGET_DIR"
+  say "Downloading TinyTitan ${tag#v} (about 25 MB)"
+  if ! curl -fL --progress-bar -o "$tmp/$asset" \
+      "https://github.com/Pummelchen/TinyTitan/releases/download/$tag/$asset"; then
+    rm -rf "$tmp"
+    die "Could not download $tag. Check your connection, or that the release exists."
+  fi
+  if curl -fsSL -o "$tmp/$asset.sha256" \
+      "https://github.com/Pummelchen/TinyTitan/releases/download/$tag/$asset.sha256"; then
+    if ( cd "$tmp" && shasum -a 256 -c "$asset.sha256" >/dev/null 2>&1 ); then
+      ok "Checksum verified"
+    else
+      rm -rf "$tmp"
+      die "The download does not match its published checksum. Try again."
+    fi
   else
-    [[ -e "$TARGET_DIR" ]] && die "$TARGET_DIR already exists and is not a checkout. Move it or use --dir."
-    echo "  Downloading TinyTitan into $TARGET_DIR ..."
-    git clone --depth 1 "$REPO_URL" "$TARGET_DIR" || die "Could not download TinyTitan. Check your connection."
-    REPO_ROOT="$TARGET_DIR"
+    warn "No checksum published for $tag; continuing without verification."
   fi
-  ok "Source ready"
-fi
-cd "$REPO_ROOT"
 
-# --- 3) the toolchain -------------------------------------------------------
-say "3/6  Checking the Swift toolchain"
+  rm -rf "$BIN_PATH"
+  mkdir -p "$BIN_PATH"
+  tar -xzf "$tmp/$asset" -C "$BIN_PATH" --strip-components=1 || {
+    rm -rf "$tmp"; die "Could not unpack the download."; }
+  [[ -x "$BIN_PATH/TinyTitanServer" ]] || {
+    rm -rf "$tmp"; die "The download did not contain TinyTitanServer."; }
+  # Downloaded through curl rather than a browser, so there is normally no
+  # quarantine attribute; clearing it anyway costs nothing and covers the case
+  # where these files were moved here from a browser download.
+  xattr -dr com.apple.quarantine "$BIN_PATH" 2>/dev/null || true
+  ok "Engine in $BIN_PATH"
 
-if ! command -v swift >/dev/null 2>&1; then
-  warn "Swift is not installed yet."
-  echo "  Pressing Enter opens the installer for Apple's command-line tools."
-  if ask "Install them now?" yes; then
-    xcode-select --install 2>/dev/null || true
-    echo
-    echo "  A dialog should appear. Accept it, wait for it to finish (it can take"
-    echo "  several minutes), then run this installer again."
+  # The tools, the DSH plugin and the docs, from the same tag. Small, and it is
+  # what makes the layout identical to a checkout apart from the build.
+  say "Downloading the matching tools"
+  src_url="https://github.com/Pummelchen/TinyTitan/archive/refs/tags/$tag.tar.gz"
+  if ! curl -fL --progress-bar -o "$tmp/src.tar.gz" "$src_url"; then
+    rm -rf "$tmp"; die "Could not download the tools for $tag."
   fi
-  exit 1
-fi
+  rm -rf "$SRC_PATH"
+  mkdir -p "$SRC_PATH"
+  tar -xzf "$tmp/src.tar.gz" -C "$SRC_PATH" --strip-components=1 || {
+    rm -rf "$tmp"; die "Could not unpack the tools."; }
+  rm -rf "$tmp"
+  [[ -f "$SRC_PATH/tools/server_launcher.sh" ]] || die "The tools are incomplete."
+  ok "Tools in $SRC_PATH"
+}
 
-swift_line="$(swift --version 2>&1 | head -1)"
-swift_ver="$(printf '%s' "$swift_line" | grep -oE 'Swift version [0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+' | head -1)"
-if [[ -z "$swift_ver" ]]; then
-  warn "Could not read a Swift version from: $swift_line"
-  ask "Try the build anyway?" yes || exit 1
-elif (( $(printf '%s' "$swift_ver" | cut -d. -f1) < 6 )) \
-  || { [[ "$(printf '%s' "$swift_ver" | cut -d. -f1)" == "6" ]] \
-       && (( $(printf '%s' "$swift_ver" | cut -d. -f2) < 4 )); }; then
-  die "TinyTitan needs Swift 6.4 or later; this Mac has $swift_ver.
+# The contributor path: a checkout, a toolchain and a build. Unchanged apart from
+# being opt-in, because it is the slow one and needs Xcode.
+install_from_source() {
+  find_checkout() {
+    local start="$1" probe
+    probe="$start"
+    while [[ -n "$probe" && "$probe" != "/" ]]; do
+      if [[ -f "$probe/Package.swift" ]]; then printf '%s' "$probe"; return 0; fi
+      probe="$(dirname "$probe")"
+    done
+    return 1
+  }
+
+  REPO_ROOT=""
+  if ! REPO_ROOT="$(find_checkout "$(cd "$(dirname "$0")" && pwd)")"; then
+    REPO_ROOT="$(find_checkout "$PWD" || true)"
+  fi
+  if [[ -n "$REPO_ROOT" ]]; then
+    ok "Using the checkout at $REPO_ROOT"
+  else
+    command -v git >/dev/null 2>&1 \
+      || die "git is missing. Install Xcode (App Store), open it once, then re-run."
+    if [[ -d "$TARGET_DIR/.git" ]]; then
+      ok "Updating the existing checkout at $TARGET_DIR"
+      git -C "$TARGET_DIR" pull --ff-only || warn "Could not update; using what is there."
+      REPO_ROOT="$TARGET_DIR"
+    else
+      [[ -e "$TARGET_DIR" ]] && die "$TARGET_DIR already exists and is not a checkout. Move it or use --dir."
+      echo "  Downloading TinyTitan into $TARGET_DIR ..."
+      git clone --depth 1 "$REPO_URL" "$TARGET_DIR" || die "Could not download TinyTitan. Check your connection."
+      REPO_ROOT="$TARGET_DIR"
+    fi
+    ok "Source ready"
+  fi
+  cd "$REPO_ROOT"
+
+  say "Checking the Swift toolchain"
+  if ! command -v swift >/dev/null 2>&1; then
+    warn "Swift is not installed yet."
+    echo "  Pressing Enter opens the installer for Apple's command-line tools."
+    if ask "Install them now?" yes; then
+      xcode-select --install 2>/dev/null || true
+      echo
+      echo "  A dialog should appear. Accept it, wait for it to finish (it can take"
+      echo "  several minutes), then run this installer again."
+    fi
+    exit 1
+  fi
+  swift_line="$(swift --version 2>&1 | head -1)"
+  swift_ver="$(printf '%s' "$swift_line" | grep -oE 'Swift version [0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+' | head -1)"
+  if [[ -z "$swift_ver" ]]; then
+    warn "Could not read a Swift version from: $swift_line"
+    ask "Try the build anyway?" yes || exit 1
+  elif (( $(printf '%s' "$swift_ver" | cut -d. -f1) < 6 )) \
+    || { [[ "$(printf '%s' "$swift_ver" | cut -d. -f1)" == "6" ]] \
+         && (( $(printf '%s' "$swift_ver" | cut -d. -f2) < 4 )); }; then
+    die "TinyTitan needs Swift 6.4 or later; this Mac has $swift_ver.
      Update Xcode from the App Store (or set it with xcode-select), then re-run."
-else
-  ok "Swift $swift_ver"
-fi
+  else
+    ok "Swift $swift_ver"
+  fi
 
-# --- 4) build ---------------------------------------------------------------
-say "4/6  Building (this is the slow part)"
-
-if ! swift build -c release; then
-  die "The build failed. The last few lines explain why.
+  say "Building (this is the slow part)"
+  if ! swift build -c release; then
+    die "The build failed. The last few lines explain why.
      Copy the whole message to https://github.com/Pummelchen/TinyTitan/issues and someone will help."
-fi
-ok "Build complete"
+  fi
+  ok "Build complete"
 
-# --- 5) a model -------------------------------------------------------------
-say "5/6  Model"
+  TOOLS_PATH="$REPO_ROOT/tools"
+  BIN_PATH_FINAL="$REPO_ROOT/.build/release"
+  MODELS_PATH_FINAL="$REPO_ROOT/models"
+}
+
+if (( FROM_SOURCE )); then
+  install_from_source
+else
+  if [[ -z "$RELEASE_TAG" ]]; then
+    RELEASE_TAG="$(latest_tag)"
+    [[ -n "$RELEASE_TAG" ]] \
+      || die "Could not reach GitHub to find the newest release. Check your connection,
+     or name one yourself with --version v5.7, or build from a clone with --from-source."
+  fi
+  install_from_release "$RELEASE_TAG"
+  TOOLS_PATH="$SRC_PATH/tools"
+  BIN_PATH_FINAL="$BIN_PATH"
+  MODELS_PATH_FINAL="$MODELS_PATH"
+fi
+
+# Exported so every tool this installer runs — the model installer, the launcher,
+# the route writer, the DSH setup — finds the binaries and the models without
+# anyone having to pass them down. A checkout's defaults still apply when these
+# are unset, so this changes nothing for `swift build` users.
+export TINYTITAN_BIN_DIR="$BIN_PATH_FINAL"
+export TINYTITAN_MODELS_DIR="$MODELS_PATH_FINAL"
+
+# --- 3) a model -------------------------------------------------------------
+step "Model"
 
 installed_any() {
   local d
-  for d in "$REPO_ROOT"/models/*/manifest.json; do
+  for d in "$MODELS_PATH_FINAL"/*/manifest.json; do
     [[ -f "$d" ]] && return 0
   done
   return 1
@@ -247,8 +361,8 @@ installed_any() {
 if (( ! INSTALL_MODEL )); then
   ok "Skipped (--no-model)"
 elif installed_any; then
-  ok "A model is already installed under models/"
-  echo "     Install another any time:  tools/install_models.sh --choose"
+  ok "A model is already installed under $MODELS_PATH_FINAL"
+  echo "     Install another any time:  $TOOLS_PATH/install_models.sh --choose"
 else
   # The model is the only real choice in this install, so it gets a list rather
   # than a yes/no on one default: what each model is, how much disk it takes, and
@@ -260,40 +374,44 @@ else
     if [[ "$MODEL" == "$DEFAULT_MODEL" ]]; then
       echo "  The recommended starting model is Ornith 1.5 35B-A3B at 8-bit,"
       echo "  about 37 GB installed. The 4-bit version is about 20 GB and faster"
-      echo "  to download if that is a lot:  tools/install_models.sh ornith15"
+      echo "  to download if that is a lot:  $TOOLS_PATH/install_models.sh ornith15"
     else
       echo "  This run was asked for '$MODEL'."
     fi
     if ask "Download $MODEL now?" yes; then
-      if ! tools/install_models.sh "$MODEL"; then
+      if ! "$TOOLS_PATH/install_models.sh" "$MODEL"; then
         warn "The model download did not finish."
         echo "     Re-run this installer to continue, or start it directly:"
-        echo "       tools/install_models.sh $MODEL"
+        echo "       $TOOLS_PATH/install_models.sh $MODEL"
       else
         ok "Model installed"
       fi
     else
-      echo "  Fine — TinyTitan is built but will have nothing to load until you run:"
-      echo "       tools/install_models.sh --choose"
+      echo "  Fine — TinyTitan is installed but will have nothing to load until you run:"
+      echo "       $TOOLS_PATH/install_models.sh --choose"
     fi
-  elif ! tools/install_models.sh --choose; then
+  elif ! "$TOOLS_PATH/install_models.sh" --choose; then
     warn "No model was installed."
-    echo "     Pick one whenever you like:  tools/install_models.sh --choose"
+    echo "     Pick one whenever you like:  $TOOLS_PATH/install_models.sh --choose"
   else
     ok "Model installed"
   fi
 fi
 
-# --- 6) a server you can start ----------------------------------------------
-say "6/6  Your server"
+# --- 4) a server you can start ----------------------------------------------
+step "Your server"
 
-# A command for the terminal-minded: it starts the server from this checkout,
-# and only ever stops a server that launcher started.
+# A command for the terminal-minded: it starts the server from these tools, and
+# only ever stops a server that launcher started. The three exports are what let
+# one launcher work in both layouts — a checkout's `.build/release` or an
+# installed copy's `~/.tinytitan/bin`.
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/tinytitan" <<RUNNER
 #!/bin/sh
-# Installed by tools/install_tinytitan.sh. Starts the TinyTitan server from its checkout.
-exec "$REPO_ROOT/tools/server_launcher.sh" "\$@"
+# Installed by tools/install_tinytitan.sh. Starts the TinyTitan server.
+export TINYTITAN_BIN_DIR="$BIN_PATH_FINAL"
+export TINYTITAN_MODELS_DIR="$MODELS_PATH_FINAL"
+exec "$TOOLS_PATH/server_launcher.sh" "\$@"
 RUNNER
 chmod +x "$HOME/.local/bin/tinytitan"
 ok "Start it with: ~/.local/bin/tinytitan"
@@ -308,7 +426,7 @@ if ! installed_any; then
   echo
   warn "No model is installed yet, so a server would have nothing to load."
   echo "     Install one, then start the server:"
-  echo "       $REPO_ROOT/tools/install_models.sh $MODEL"
+  echo "       $TOOLS_PATH/install_models.sh $MODEL"
   echo "       ~/.local/bin/tinytitan"
 fi
 
@@ -324,19 +442,21 @@ elif [[ "$WEB_MODE" == "yes" ]] \
   || { (( ASSUME_YES == 0 )) && [[ -t 0 ]] \
        && ask "Also set up a chat window in your browser?" yes; }; then
   echo
-  if "$REPO_ROOT/tools/dsh_local.sh" ensure; then
+  if "$TOOLS_PATH/dsh_local.sh" ensure; then
     WANT_WEB=1
     cat > "$HOME/.local/bin/tinytitan-web" <<WEBRUNNER
 #!/bin/sh
 # Installed by tools/install_tinytitan.sh. Starts the server and opens
 # TinyTitan's own DeepSeek Harness in the browser.
-exec "$REPO_ROOT/tools/server_launcher.sh" --web "\$@"
+export TINYTITAN_BIN_DIR="$BIN_PATH_FINAL"
+export TINYTITAN_MODELS_DIR="$MODELS_PATH_FINAL"
+exec "$TOOLS_PATH/server_launcher.sh" --web "\$@"
 WEBRUNNER
     chmod +x "$HOME/.local/bin/tinytitan-web"
     ok "Chat window ready: ~/.local/bin/tinytitan-web"
   else
     warn "The chat window could not be set up; it does not affect the server."
-    warn "Retry any time with: $REPO_ROOT/tools/dsh_local.sh ensure"
+    warn "Retry any time with: $TOOLS_PATH/dsh_local.sh ensure"
   fi
 fi
 
@@ -355,9 +475,9 @@ if installed_any && (( ASSUME_YES == 0 )) && [[ -t 0 && -t 1 ]]; then
     fi
     echo
     if (( WANT_WEB )); then
-      exec "$REPO_ROOT/tools/server_launcher.sh" --web
+      exec "$TOOLS_PATH/server_launcher.sh" --web
     fi
-    exec "$REPO_ROOT/tools/server_launcher.sh" --client server
+    exec "$TOOLS_PATH/server_launcher.sh" --client server
   fi
 fi
 
@@ -366,7 +486,7 @@ echo
 if (( WANT_WEB )); then
   echo "  Start TinyTitan with the browser chat window:"
   echo "    ~/.local/bin/tinytitan-web"
-  echo "    (or: $REPO_ROOT/tools/server_launcher.sh --web)"
+  echo "    (or: $TOOLS_PATH/server_launcher.sh --web)"
   echo
   echo "  A page opens in your browser with a prompt box, already pointed at"
   echo "  the model. Keep the window open while you use it; Ctrl-C stops both."
@@ -374,14 +494,14 @@ if (( WANT_WEB )); then
 else
   echo "  Start the TinyTitan server:"
   echo "    ~/.local/bin/tinytitan"
-  echo "    (or: $REPO_ROOT/tools/server_launcher.sh)"
+  echo "    (or: $TOOLS_PATH/server_launcher.sh)"
   echo
   echo "  It prints the base URL to point a client at - by default"
   echo "  http://127.0.0.1:8080/v1 with any API key; --port changes the port."
   echo "  Keep the window open while you use it; one model runs at a time."
   echo
   echo "  For a chat window in the browser instead, re-run this installer with"
-  echo "  --web, or run: $REPO_ROOT/tools/dsh_local.sh ensure"
+  echo "  --web, or run: $TOOLS_PATH/dsh_local.sh ensure"
 fi
 echo
 echo "  New to this? Start here:"

@@ -13,8 +13,10 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$ROOT/.build/release/TinyTitanRepack"
-MODELS="$ROOT/models"
+# Same override as the launcher: a checkout builds into `.build/release`, an
+# install from the release tarball keeps its binaries in `~/.tinytitan/bin`.
+BIN="${TINYTITAN_BIN_DIR:-$ROOT/.build/release}/TinyTitanRepack"
+MODELS="${TINYTITAN_MODELS_DIR:-$ROOT/models}"
 
 # The install menu's list of models, labels and sizes comes from the shared
 # catalogue so this file and the installer cannot disagree about what exists.

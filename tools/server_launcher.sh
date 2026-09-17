@@ -107,7 +107,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARY="$BASE_DIR/.build/release/TinyTitanServer"
+# Where the built binaries are. A checkout builds into `.build/release`; an
+# install from the release tarball keeps them in `~/.tinytitan/bin` and says so
+# with TINYTITAN_BIN_DIR, because there is no `.build` in that layout — the whole
+# point of installing a release is that nothing had to be built.
+BIN_DIR="${TINYTITAN_BIN_DIR:-$BASE_DIR/.build/release}"
+BINARY="$BIN_DIR/TinyTitanServer"
 MODELS_DIR="${TINYTITAN_MODELS_DIR:-$BASE_DIR/models}"
 # One catalogue for the model list, the install paths and the port.
 # shellcheck source=tools/tinytitan_models.sh
