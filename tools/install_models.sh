@@ -115,12 +115,50 @@ status() {
   echo "tools/install_models.sh --help          sources and disk sizes"
 }
 
+# Does `TinyTitanRepack --model <key>` stream this one itself?
+#
+# These are the checkpoints the repacker fetches from Hugging Face and packages
+# in one pass, with no converter involved — which means no Python. The keys are
+# the same strings as this script's own, and the list is exactly what
+# `TinyTitanRepack --help` accepts.
+tinytitan_repack_streams() {
+  case "$1" in
+    qwen36|qwen36-8bit|qwen36-mtp|ornith15|ornith15-8bit|qwen38flash|qwen38flash-mtp) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# A Mac that has only Xcode's command-line tools ships Python 3.9, below the
+# converters' 3.10 floor, and there is no Homebrew to install a newer one. Some
+# of these models do not need a converter at all, so say which command works
+# instead of leaving the person at "no usable Python interpreter found".
+tinytitan_no_python_fallback() {
+  local want="$1" row name dir
+  for row in "${CATALOGUE[@]}"; do
+    IFS='|' read -r name dir _ <<<"$row"
+    [[ "$name" == "$want" ]] || continue
+    echo >&2
+    if tinytitan_repack_streams "$want"; then
+      echo "  This one does not need Python: the repacker streams it itself." >&2
+      echo "      swift run -c release TinyTitanRepack --model $want --output models/$dir" >&2
+      echo "  or, with the release build already made," >&2
+      echo "      .build/release/TinyTitanRepack --model $want --output models/$dir" >&2
+    else
+      echo "  This one is quantized here from its bf16 release by a Python" >&2
+      echo "  converter, so it does need Python 3.10+. The repacker can stream" >&2
+      echo "  qwen36, ornith15 and qwen38flash without any Python at all." >&2
+    fi
+    return 0
+  done
+  return 0
+}
+
 install_one() {
   local want="$1" found=0
   # Every conversion path runs a Python converter, so resolve the interpreter
   # once, here, rather than emitting a raw "command not found" per call.
   local python
-  python="$(tinytitan_resolve_python)" || return 1
+  python="$(tinytitan_resolve_python)" || { tinytitan_no_python_fallback "$want"; return 1; }
   for row in "${CATALOGUE[@]}"; do
     # Six fields on the MoE rows, four elsewhere; the trailing two are only
     # read by the convert_qwen35moe branch.

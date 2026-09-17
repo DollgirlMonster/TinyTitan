@@ -3,8 +3,18 @@
 #
 # Two ways to run it:
 #
-#   curl -fsSL https://raw.githubusercontent.com/Pummelchen/TinyTitan/main/tools/install_tinytitan.sh | bash
-#   tools/install_tinytitan.sh                      # from a clone, installs that clone
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Pummelchen/TinyTitan/main/tools/install_tinytitan.sh)"
+#   bash tools/install_tinytitan.sh                 # from a clone or an unzipped download
+#
+# Use those forms rather than `curl ... | bash`. A pipe makes this script's stdin
+# the pipe, so it cannot ask anything and silently takes the default at every
+# step — including "no model" and "no browser window". `bash -c "$(curl ...)"`
+# downloads the script first and runs it with the terminal still on stdin, so the
+# questions work. `bash tools/install_tinytitan.sh` never needs `chmod +x`
+# either, which matters because a zip that lost the executable bit still runs.
+#
+# Nothing here needs Homebrew. Python is not needed to build the engine; only the
+# model *converters* use it, and the installer says so if this Mac has none.
 #
 # It checks the Mac, gets the source, builds the server, optionally downloads a
 # model, and installs a `tinytitan` command that starts it. The aim is a working
@@ -41,6 +51,7 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/Pummelchen/TinyTitan.git"
+REPO_URL_RAW="https://raw.githubusercontent.com/Pummelchen/TinyTitan/main"
 DEFAULT_MODEL="ornith15-8bit"
 DEFAULT_DIR="$HOME/TinyTitan"
 
@@ -94,6 +105,20 @@ say "TinyTitan installer"
 echo "  This takes a while and mostly waits. You can stop it with Ctrl-C at any"
 echo "  point; run it again later and it continues where it can."
 echo
+
+# A pipe takes the default at every question, and a person who expected to choose
+# would otherwise never learn why nothing asked them. Say what is about to happen
+# and how to get the questions, before the 37 GB download rather than after it.
+if [[ ! -t 0 ]] && (( ASSUME_YES == 0 )); then
+  warn "This is running from a pipe, so it cannot ask you anything."
+  warn "It will take the default at every step — including downloading $MODEL"
+  warn "and setting up the browser window."
+  echo "     To choose instead, run:"
+  echo "       bash -c \"\$(curl -fsSL $REPO_URL_RAW/tools/install_tinytitan.sh)\""
+  echo "     Flags still work through a pipe:"
+  echo "       curl -fsSL $REPO_URL_RAW/tools/install_tinytitan.sh | bash -s -- --no-model"
+  echo
+fi
 
 # --- 1) the machine ---------------------------------------------------------
 say "1/6  Checking this Mac"
