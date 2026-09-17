@@ -54,13 +54,15 @@ running the copy it made.
 ## Configure
 
 Every field is optional; these are the defaults the `cordis.patch.yml` row writes
-out, and `TINYTITAN_PORT` / `TINYTITAN_REPO` / `TINYTITAN_SERVER` /
-`TINYTITAN_MODELS_DIR` / `DSH_HOME` are the environment fallbacks.
+out, and `TINYTITAN_PORT` / `TINYTITAN_REASONING` / `TINYTITAN_REPO` /
+`TINYTITAN_SERVER` / `TINYTITAN_MODELS_DIR` / `DSH_HOME` are the environment
+fallbacks.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `port` | resolved: `config.port`, else `TINYTITAN_PORT`, else `8080` | the port the TinyTitan server serves on. Nothing in this bundle pins it, so the environment can point the route at a server on another port |
 | `provider` | `tinytitan` | the `llm-pi-ai` provider route name |
+| `reasoning` | resolved: `config.reasoning`, else `TINYTITAN_REASONING`, else `medium` | the route's declared default reasoning level. It must match how the server was started: a route that says "think" against a server running `--reasoning off` makes a dense Qwen spend its whole output budget inside the reasoning block and never answer |
 | `presetId` | `tinytitan` | the agent preset this plugin generates |
 | `registerRoute` | `true` | refresh the route block from `tools/dsh_route.sh` |
 | `watchModels` | `true` | keep watching `models/` and refresh when an install appears or disappears |

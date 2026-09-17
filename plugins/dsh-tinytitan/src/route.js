@@ -61,6 +61,11 @@ export function registerRoute({
       "--settings",
       join(dshHome, "settings.yaml"),
     ];
+    // Not decorative: without this the script falls back to its own `medium`,
+    // and a boot-time refresh silently turns thinking back on for a server that
+    // was started with it off — after which the model reasons until its output
+    // budget is gone and the page never shows an answer.
+    if (reasoning) args.push("--reasoning", String(reasoning));
     try {
       const stdout = run("bash", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
       const first = String(stdout).trim().split("\n")[0] || "written";

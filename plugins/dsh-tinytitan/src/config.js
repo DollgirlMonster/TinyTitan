@@ -23,6 +23,19 @@ export function defaultDshHome() {
 /** The route this plugin keeps current. */
 export const DEFAULT_PROVIDER = "tinytitan";
 
+/**
+ * The route's default reasoning level when nothing overrides it.
+ *
+ * The level a route declares is what the harness asks for on every call that
+ * names none of its own, so it has to agree with how the server was started.
+ * `medium` (thinking on) against a server running `--reasoning off` is not a
+ * harmless disagreement: a dense Qwen asked to think spends its entire output
+ * budget inside the reasoning block and never emits an answer. Measured on the
+ * 4B — thinking off: `finish: stop`, content "42", 3 tokens. Thinking on:
+ * `finish: length`, 64/64 reasoning tokens, empty content.
+ */
+export const DEFAULT_REASONING = "medium";
+
 /** The preset it generates, so it never has to touch a person's own. */
 export const DEFAULT_PRESET_ID = "tinytitan";
 
@@ -124,6 +137,12 @@ export function resolveConfig(config = {}) {
   }
   const provider = String(config.provider ?? DEFAULT_PROVIDER).trim();
   if (provider.length === 0) throw new Error("dsh-tinytitan: provider must not be empty");
+  // TINYTITAN_REASONING is the fallback, for the same reason the port has one:
+  // `tools/dsh_route.sh` defaults to `medium`, so a route refreshed at boot
+  // would silently put back a level the caller had chosen against.
+  const reasoning = String(
+    config.reasoning ?? process.env.TINYTITAN_REASONING ?? DEFAULT_REASONING).trim();
+  if (reasoning.length === 0) throw new Error("dsh-tinytitan: reasoning must not be empty");
   const presetId = String(config.presetId ?? DEFAULT_PRESET_ID).trim();
   if (presetId.length === 0) throw new Error("dsh-tinytitan: presetId must not be empty");
   const repoRoot = findRepoRoot({ explicit: config.repoRoot, env: process.env });
@@ -135,6 +154,7 @@ export function resolveConfig(config = {}) {
   return {
     port,
     provider,
+    reasoning,
     presetId,
     repoRoot: repoRoot.root,
     repoFound: repoRoot.found,

@@ -1536,7 +1536,11 @@ if (( WEB )); then
   # `--model` sets the harness's own default model: it ships pointing at
   # DeepSeek's hosted route, so without this the window opens on a provider we
   # have no key for. The launcher knows the served id; the harness does not.
-  if ! "$SCRIPT_DIR/dsh_local.sh" ensure --port "$PORT" --model "$MODEL"; then
+  # `--reasoning` has to travel with it: the route's declared level is what the
+  # harness asks for per request, and a route that says "think" against a server
+  # started thinking-off is the page hanging on "Deep diving..." forever.
+  if ! "$SCRIPT_DIR/dsh_local.sh" ensure --port "$PORT" --model "$MODEL" \
+       --reasoning "$thinking_level"; then
     echo "ERROR: could not set up DeepSeek Harness (see above)." >&2
     echo "       The server is still running on http://127.0.0.1:${PORT}/v1 —" >&2
     echo "       point any OpenAI-compatible client at it." >&2
@@ -1545,7 +1549,10 @@ if (( WEB )); then
   fi
   echo
   echo "Opening DeepSeek Harness in your default browser..."
-  "$SCRIPT_DIR/dsh_local.sh" web
+  # `--port` matters here as much as it does to `ensure`: `web` exports it as
+  # TINYTITAN_PORT so the plugin's boot-time route refresh keeps this server's
+  # address instead of rewriting it to the default 8080.
+  "$SCRIPT_DIR/dsh_local.sh" web --port "$PORT"
   exit $?
 fi
 

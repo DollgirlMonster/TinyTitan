@@ -33,6 +33,10 @@
 #                                          and point the harness default at ID
 #                                          (default: the first model the route serves)
 #   tools/dsh_local.sh web [--dsh-port N]  run our `dsh web` (server already up)
+#   tools/dsh_local.sh smoke [-- args]     drive the real page in a headless
+#                                          browser and prove a prompt is answered;
+#                                          needs a server already running, and
+#                                          takes `--prompt`, `--expect`, `--timeout`
 #   tools/dsh_local.sh port [--dsh-port N] print the free port `web` would use
 #   tools/dsh_local.sh status              what is installed, and where
 #   tools/dsh_local.sh paths               the private paths, for scripting
@@ -60,6 +64,16 @@ DSH_PORT="${TINYTITAN_DSH_PORT:-7788}"
 # The served id the harness should open on. Empty means "the first one the route
 # serves", which is what a bare `ensure` from the installer uses.
 DEFAULT_MODEL_ID=""
+# The route's default reasoning level, and it must match the level the server was
+# started with. `medium` here against a server running `--reasoning off` is not a
+# harmless mismatch: the harness reads the route and turns thinking ON, and a
+# dense Qwen 3.5 that is asked to think fills whatever budget it is given with
+# reasoning and never emits an answer. Measured on the 4B: thinking off gives
+# `finish: stop` with content "42" in 3 tokens; thinking on gives `finish: length`
+# with 64/64 reasoning tokens and empty content. At the route's maxTokens of
+# 32768 that is the browser page sitting on "Deep diving..." for a quarter of an
+# hour. `off` matches the launcher's own default.
+REASONING="off"
 
 DSH_ROOT="${TINYTITAN_DSH_ROOT:-$HOME/.tinytitan/dsh}"
 DSH_HOME_DIR="$DSH_ROOT/home"
@@ -67,6 +81,10 @@ DSH_PREFIX="$DSH_ROOT/npm-prefix"
 DSH_NODE_DIR="$DSH_ROOT/node"
 DSH_STORE="$DSH_ROOT/store"
 DSH_BIN_DIR="$DSH_ROOT/bin"
+# Test-only dependencies and their browser download. Kept in the private root
+# with everything else: the smoke test is a check, not something a user installs.
+SMOKE_DIR="$DSH_ROOT/smoke"
+SMOKE_BROWSERS="$DSH_ROOT/browsers"
 VERSION_MARKER="$DSH_ROOT/.dsh-version"
 
 DRY_RUN=0
@@ -286,6 +304,46 @@ YAML
   fi
 }
 
+# A fresh DSH home has **no workspace**, and the harness will not accept a prompt
+# until one is chosen: the composer is disabled and reads "Choose a workspace to
+# start". That is a dead first run for someone who was promised a window they can
+# type in, so one is seeded — the checkout by default, since it exists and is the
+# folder TinyTitan is installed in. The person can change or add workspaces in the
+# UI; this only removes the empty state. Found by driving the real page.
+seed_workspace() {
+  local ws="${TINYTITAN_WORKSPACE:-$REPO_ROOT}"
+  if (( DRY_RUN )); then
+    echo "  would seed the workspace $ws"
+    return 0
+  fi
+  DSH_WORKSPACE="$ws" python3 - "$DSH_HOME_DIR/storages/workspace.json" <<'PY'
+import datetime, json, os, sys, uuid
+
+path = sys.argv[1]
+workspace = os.environ["DSH_WORKSPACE"]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+try:
+    data = json.load(open(path, encoding="utf-8"))
+except Exception:
+    data = {"unit": {"name": "workspace", "version": 2},
+            "global": {"initialized": True, "workspaceIds": [], "archivedSessionIds": []},
+            "tables": {"workspaces": {}}}
+data.setdefault("global", {}).setdefault("workspaceIds", [])
+data.setdefault("tables", {}).setdefault("workspaces", {})
+known = data["tables"]["workspaces"]
+if any(entry.get("path") == workspace for entry in known.values()):
+    sys.exit(0)
+identifier = str(uuid.uuid4())
+now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+known[identifier] = {"path": workspace, "title": os.path.basename(workspace) or workspace,
+                     "sessionIds": [], "createdAt": now, "updatedAt": now}
+data["global"]["workspaceIds"] = [identifier] + [i for i in data["global"]["workspaceIds"]]
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2)
+PY
+  ok "Workspace seeded: $ws"
+}
+
 # The plugin is installed from this checkout on purpose: it is project-internal,
 # not published to npm, so there is no registry package to depend on and no
 # second copy to keep in step. A `file:` install is a copy, so re-running `add`
@@ -313,7 +371,8 @@ write_route() {
   say "Writing the TinyTitan route (port $SERVER_PORT)"
   if ! run "generate the llm-pi-ai route into the private settings.yaml" \
       "$REPO_ROOT/tools/dsh_route.sh" --write \
-      --settings "$DSH_HOME_DIR/settings.yaml" --port "$SERVER_PORT"; then
+      --settings "$DSH_HOME_DIR/settings.yaml" --port "$SERVER_PORT" \
+      --reasoning "$REASONING"; then
     warn "Could not write the route — is a model installed under models/?"
     warn "Install one, then re-run: tools/dsh_local.sh ensure"
     return 1
@@ -509,6 +568,7 @@ cmd_ensure() {
   install_dsh
   install_pnpm
   ensure_home
+  seed_workspace
   install_plugin
   write_route
   local model="$DEFAULT_MODEL_ID"
@@ -526,8 +586,21 @@ cmd_web() {
   local port; port="$(resolve_port "$DSH_PORT")"
   local open=()
   (( DSH_OPEN )) || open=(--no-open)
+  # TINYTITAN_PORT / TINYTITAN_REASONING / TINYTITAN_REPO / TINYTITAN_MODELS_DIR
+  # are not decoration: the dsh-tinytitan plugin refreshes the route at **every**
+  # boot. With TINYTITAN_PORT unset it regenerates the baseURL for the default
+  # 8080; with TINYTITAN_REASONING unset it puts back `medium`, i.e. thinking on,
+  # against a server started with thinking off. The first makes the page say
+  # "Retrying model request"; the second makes it sit on "Deep diving..." while
+  # the model spends 32768 tokens reasoning and never answers. Both were found by
+  # driving the real page, not by reading the code: `ensure` writes the route
+  # once, and this is what stops the boot-time refresh from undoing it.
   # DSH opens the default browser itself and prints the tokenised URL.
   exec env DSH_HOME="$DSH_HOME_DIR" \
+           TINYTITAN_PORT="$SERVER_PORT" \
+           TINYTITAN_REASONING="$REASONING" \
+           TINYTITAN_REPO="$REPO_ROOT" \
+           TINYTITAN_MODELS_DIR="$REPO_ROOT/models" \
            PATH="$(tool_path)" \
            "$(dsh_bin)" web --port "$port" "${open[@]}" "$@"
 }
@@ -536,16 +609,118 @@ cmd_web() {
 # stdout, so a caller can capture it.
 cmd_port() { resolve_port "$DSH_PORT"; }
 
+# --- smoke test -------------------------------------------------------------
+
+# Playwright and its headless Chromium, into the private root. One-time, ~150 MB,
+# and never exported to the repo or the system.
+ensure_smoke_deps() {
+  if [[ ! -x "$SMOKE_DIR/node_modules/.bin/playwright" ]]; then
+    say "Installing Playwright into the private root (one time)"
+    run "install playwright" env PATH="$(tool_path)" \
+      "$(npm_bin)" install --prefix "$SMOKE_DIR" --no-fund --no-audit playwright
+    (( DRY_RUN )) || ok "Playwright installed"
+  fi
+  local browsers; browsers="$(compgen -G "$SMOKE_BROWSERS/chromium*" | head -1 || true)"
+  if [[ -z "$browsers" ]]; then
+    say "Downloading the headless browser (one time, about 150 MB)"
+    run "download headless chromium" env PLAYWRIGHT_BROWSERS_PATH="$SMOKE_BROWSERS" \
+      "$SMOKE_DIR/node_modules/.bin/playwright" install chromium --only-shell
+    (( DRY_RUN )) || ok "Headless browser installed"
+  fi
+}
+
+# Drive the real page: start our harness against an already-running server, load
+# the tokenised URL in headless Chromium, type a prompt, and wait for the answer.
+# Everything the page needs that a curl cannot see -- the composer appearing, the
+# send button enabling, the route's model and reasoning level -- is exercised.
+#
+# The harness's pid lives in a script-level variable on purpose: a trap that reads
+# a `local` fires after the function has returned, and under `set -u` it then dies
+# with "web_pid: unbound variable" instead of cleaning up.
+SMOKE_WEB_PID=""
+SMOKE_WEB_LOG=""
+
+smoke_cleanup() {
+  if [[ -n "$SMOKE_WEB_PID" ]]; then
+    kill "$SMOKE_WEB_PID" 2>/dev/null || true
+    SMOKE_WEB_PID=""
+  fi
+  if [[ -n "$SMOKE_WEB_LOG" ]]; then
+    rm -f "$SMOKE_WEB_LOG"
+    SMOKE_WEB_LOG=""
+  fi
+}
+
+cmd_smoke() {
+  [[ -x "$(dsh_bin)" ]] || die "DeepSeek Harness is not installed. Run: tools/dsh_local.sh ensure"
+  if ! curl -s --max-time 3 "http://127.0.0.1:${SERVER_PORT}/health" >/dev/null 2>&1; then
+    die "no TinyTitan server on port $SERVER_PORT.
+     Start one first, in another window:
+       $REPO_ROOT/tools/server_launcher.sh --client server --port $SERVER_PORT"
+  fi
+  ensure_smoke_deps
+
+  local port; port="$(resolve_port "$DSH_PORT")"
+  SMOKE_WEB_LOG="$(mktemp)"
+  say "Starting the harness on port $port for the test"
+  # Same environment `web` uses, so the plugin's boot-time route refresh keeps
+  # this server's address and reasoning level (see the note in cmd_web).
+  env DSH_HOME="$DSH_HOME_DIR" \
+      TINYTITAN_PORT="$SERVER_PORT" \
+      TINYTITAN_REASONING="$REASONING" \
+      TINYTITAN_REPO="$REPO_ROOT" \
+      TINYTITAN_MODELS_DIR="$REPO_ROOT/models" \
+      PATH="$(tool_path)" \
+      "$(dsh_bin)" web --no-open --port "$port" >"$SMOKE_WEB_LOG" 2>&1 &
+  SMOKE_WEB_PID=$!
+  trap smoke_cleanup EXIT INT TERM
+
+  local url="" _ status=0
+  for _ in $(seq 1 60); do
+    # `|| true` is load-bearing: a grep that matches nothing exits 1, and an
+    # assignment takes its command substitution's status, so under `set -e` the
+    # whole run died silently on the first second before the URL was printed.
+    url="$(grep -oE 'http://127\.0\.0\.1:[0-9]+/\?token=[A-Za-z0-9_-]+' "$SMOKE_WEB_LOG" 2>/dev/null | tail -1 || true)"
+    [[ -n "$url" ]] && break
+    kill -0 "$SMOKE_WEB_PID" 2>/dev/null || break
+    sleep 1
+  done
+  if [[ -z "$url" ]]; then
+    warn "the harness did not start:"
+    sed 's/^/  /' "$SMOKE_WEB_LOG" >&2
+    smoke_cleanup
+    trap - EXIT INT TERM
+    return 1
+  fi
+
+  # ESM resolves `playwright` by walking up from the importing file, and
+  # NODE_PATH does not apply to it -- so the script runs from a copy inside the
+  # directory that has the dependency. A copy rather than a symlink because Node
+  # resolves a symlink to its real path, which puts it back in the repo where
+  # `playwright` is not. The copy is refreshed every run, so it cannot go stale.
+  cp -f "$REPO_ROOT/tools/dsh_smoke.mjs" "$SMOKE_DIR/dsh_smoke.mjs"
+  env PLAYWRIGHT_BROWSERS_PATH="$SMOKE_BROWSERS" PATH="$(tool_path)" \
+    node "$SMOKE_DIR/dsh_smoke.mjs" --url "$url" "${PASSTHROUGH[@]}" || status=$?
+  smoke_cleanup
+  trap - EXIT INT TERM
+  return $status
+}
+
 usage() { sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d'; }
 
 COMMAND="${1:-}"
 [[ $# -gt 0 ]] && shift
+# Everything after `--` goes to `smoke`'s test harness (`--expect`, `--prompt`,
+# `--timeout`), which this script does not interpret.
+PASSTHROUGH=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --port) SERVER_PORT="${2:?--port needs a number}"; shift 2 ;;
     --dsh-port) DSH_PORT="${2:?--dsh-port needs a number}"; shift 2 ;;
     --model) DEFAULT_MODEL_ID="${2:?--model needs a served id}"; shift 2 ;;
+    --reasoning) REASONING="${2:?--reasoning needs a level}"; shift 2 ;;
     --no-open) DSH_OPEN=0; shift ;;
+    --) shift; PASSTHROUGH=("$@"); break ;;
     --help|-h) usage; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
   esac
@@ -554,6 +729,7 @@ done
 case "$COMMAND" in
   ensure) cmd_ensure ;;
   web)    cmd_web ;;
+  smoke)  cmd_smoke ;;
   port)   cmd_port ;;
   status) cmd_status ;;
   paths)  cmd_paths ;;

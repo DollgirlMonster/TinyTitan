@@ -40,6 +40,40 @@ test("the route is refreshed by running the checkout's tool", () => {
   assert.ok(messages.some((message) => message.includes("route refreshed")));
 });
 
+test("the route refresh carries the reasoning level it was given", () => {
+  // Regression: the level was resolved but never passed to the script, so the
+  // script's own `medium` default won and a boot-time refresh turned thinking
+  // back on for a server started with it off. On a dense Qwen that is the model
+  // reasoning until its budget runs out and never answering.
+  const calls = [];
+  registerRoute({
+    repoRoot: repo(true),
+    port: 8096,
+    provider: "tinytitan",
+    reasoning: "off",
+    dshHome: "/tmp/dsh-home",
+    run: (command, args) => { calls.push(args); return "replaced\n"; },
+    log: () => {},
+  });
+  assert.deepEqual(calls[0].slice(1), [
+    "--write", "--port", "8096", "--provider", "tinytitan",
+    "--settings", "/tmp/dsh-home/settings.yaml",
+    "--reasoning", "off",
+  ]);
+});
+
+test("no reasoning level is passed when the caller names none", () => {
+  // The script keeps its own default then, which is the historical behaviour.
+  const calls = [];
+  registerRoute({
+    repoRoot: repo(true), port: 8080, provider: "tinytitan",
+    dshHome: "/tmp/dsh-home",
+    run: (command, args) => { calls.push(args); return "written\n"; },
+    log: () => {},
+  });
+  assert.equal(calls[0].includes("--reasoning"), false);
+});
+
 test("a checkout without the tool is reported, not fatal", () => {
   const messages = [];
   const result = registerRoute({ repoRoot: repo(false), port: 8080, provider: "tinytitan",
@@ -105,6 +139,24 @@ test("config refuses what it cannot use", () => {
   assert.throws(() => resolveConfig({ port: "http" }), /port must be a port number/);
   assert.throws(() => resolveConfig({ provider: "  " }), /provider must not be empty/);
   assert.throws(() => resolveConfig({ presetId: "" }), /presetId must not be empty/);
+  assert.throws(() => resolveConfig({ reasoning: "" }), /reasoning must not be empty/);
+});
+
+test("the reasoning level comes from the config, then the environment, then the default", () => {
+  // The route's declared level is what the harness asks for on every call that
+  // names none, so it has to be settable from outside without editing a profile.
+  const saved = process.env.TINYTITAN_REASONING;
+  delete process.env.TINYTITAN_REASONING;
+  try {
+    assert.equal(resolveConfig().reasoning, "medium");
+    process.env.TINYTITAN_REASONING = "off";
+    assert.equal(resolveConfig().reasoning, "off");
+    // A configured level is an explicit choice and still wins.
+    assert.equal(resolveConfig({ reasoning: "xhigh" }).reasoning, "xhigh");
+  } finally {
+    if (saved === undefined) delete process.env.TINYTITAN_REASONING;
+    else process.env.TINYTITAN_REASONING = saved;
+  }
 });
 
 test("the checkout is found from a hint, the environment, the module, or the profile", () => {
