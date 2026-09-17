@@ -33,7 +33,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SERVER = ROOT / ".build/release/TinyTitanServer"
 PORT = 8112
 PROCESS_PATTERN = (
-    "TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|"
+    "TinyTitanServer|TinyTitanCLI|TinyTitanPackageTests|"
     "swiftpm-testing-helper|mlx_lm|mlx-lm|llama-server|unsloth-studio"
 )
 PROMPTS = {

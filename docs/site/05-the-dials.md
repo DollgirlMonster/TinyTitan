@@ -21,7 +21,7 @@ fiddle with most, and mostly should not.
 | **Temperature** | 0.6 (1.0 on Qwen 3.8 Flash Next) | Lower = more literal and predictable. Higher = more varied and creative. **0 = always pick the single most likely word** — fully repeatable. |
 | **Top-K** | 20 | Only consider the 20 best candidate words at each step. `0` turns the limit off. |
 | **Top-P** | 0.95 | Consider candidates until they add up to 95% of the probability. A gentler cousin of Top-K. |
-| **Max new tokens** | 1,024 in the CLI; the rest of the context in the app and server | The longest answer allowed. It stops early when finished. |
+| **Max new tokens** | 1,024 in the CLI; the rest of the context through the server | The longest answer allowed. It stops early when finished. |
 | **Stop text** | none | Stop as soon as this text appears. Useful for automation. |
 | **Seed** | off | Fixes the randomness so the same input gives the same output. |
 | **Repetition penalty** | 1.0 (off) | Discourages repeating itself. `1.0` means no penalty. |

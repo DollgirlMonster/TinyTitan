@@ -17,6 +17,19 @@
 This is the only current brief. It supersedes the handover that preceded it,
 whose traps still bite and are folded in below.
 
+> **The product shape changed: the GUI is gone.** The Mac app, the out-of-process
+> decode service, the app's library and test targets and `tools/make_app_icon.py`
+> were all removed. TinyTitan is an **LLM engine plus its loopback server**:
+> `tools/install_tinytitan.sh` builds the server, optionally downloads a model,
+> installs `~/.local/bin/tinytitan`, and offers to start the server; that command
+> runs `tools/server_launcher.sh`, which prints the base URL a client is pointed
+> at. **Do not add a GUI, a desktop front end, or any work that only one needs** —
+> `AGENTS.md` states the policy and the reason, and this is not a pause.
+> The app's `Info.plist` was also the tree's only version literal; that literal now
+> lives in `ServerVersion.current`
+> (`sources/TinyTitanServer/Core/ServerVersion.swift`), is printed in the server's
+> ready banner, and is checked against the release tag by `tools/release.sh`.
+
 ## Where the work stands
 
 | Piece | State |
@@ -129,10 +142,9 @@ whose traps still bite and are folded in below.
    (measured: 14.72 GB RSS, 11% system memory free). A `TINYTITAN_KEEP_WIRED=0`
    path trades the TTFT win for a pageable cache.
 4. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
-   the GPU, a higher expert slot budget, the n-gram gather a token ahead); the
-   app features from issue #5 (image upload — every supported model is text-only,
-the hardware blockers in tracker section 2   (validation on M1/M2/M4/M5/M6, ANE across generations, long-context parity
-   past the exactness window).
+   the GPU, a higher expert slot budget, the n-gram gather a token ahead), and the
+   hardware blockers in tracker section 2 (validation on M1/M2/M4/M5/M6, ANE across
+   generations, long-context parity past the exactness window).
 
 ## Traps worth carrying forward
 

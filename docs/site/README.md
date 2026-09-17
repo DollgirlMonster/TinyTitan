@@ -23,9 +23,12 @@ into the wiki for the precise version of whatever it simplified.
 ## Two things to keep in mind about the audience
 
 Roughly half of TinyTitan's users are not programmers. They should be able to
-read the whole series without compiling anything, and the one unavoidable
-setup step is stated plainly rather than hidden (article 02). Once TinyTitan is
-running, the Mac app needs no code at all.
+read the whole series without compiling anything themselves, and the unavoidable
+setup steps are stated plainly rather than hidden: article 02 is one command you
+paste, and every question the launcher asks has a default. TinyTitan has no
+no-code app to fall back on, so the articles name the real step — a command, a
+paste — and say where the launcher spares the reader work, such as starting the
+server and opening a client.
 
 The other half *are* programmers, and they will notice if a number or a
 limit is glossed over. "Not a coder" is not "not paying attention" — the
@@ -72,9 +75,10 @@ the way it is, and what it will not do.
 > ```
 >
 > The installer checks your Mac, builds TinyTitan, optionally downloads a model,
-> and puts a proper double-clickable **TinyTitan app** in your Applications
-> folder. [Article 02](02-getting-tinytitan-running.md) shows the same steps by
-> hand if you would rather see what is happening.
+> and installs a **`tinytitan` command** that starts the server. At the end it
+> offers to start the server for you and stays in the foreground, so you finish
+> with the address a client points at. [Article 02](02-getting-tinytitan-running.md)
+> shows the same steps by hand if you would rather see what is happening.
 >
 > If you want the precise version — exact settings, measured numbers, and
 > the honest limits — the [wiki](https://github.com/Pummelchen/TinyTitan/wiki)
@@ -85,8 +89,8 @@ the way it is, and what it will not do.
 > - 📗 **New here?** Start with [What TinyTitan is](01-what-is-tinytitan.md), then
 >   [Getting TinyTitan running](02-getting-tinytitan-running.md).
 > - 🖥️ **Already running?** [Choosing a model](04-choosing-a-model.md) and
->   [The dials](05-the-dials.md) explain the choices in the app and the
->   launcher.
+>   [The dials](05-the-dials.md) explain the launcher's questions and the
+>   dials behind them.
 > - 🔌 **Connecting an app?** [Connecting your apps](06-connecting-your-apps.md).
 > - 🧠 **The interesting part?** [Memory that remembers](08-memory-that-remembers.md).
 > - 🐞 **Something broke?** [What TinyTitan will not do](10-what-tinytitan-will-not-do.md).

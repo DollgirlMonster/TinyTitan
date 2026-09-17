@@ -20,7 +20,7 @@ check that nothing else is running:
 
 ```bash
 memory_pressure -Q
-pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI'
+pgrep -fl 'TinyTitanServer|TinyTitanCLI'
 ```
 
 The second command should print nothing. If it prints something, a model is
@@ -101,7 +101,7 @@ Three checks find most issues:
 
 ```bash
 # 1. Is something already using a model?
-pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI'
+pgrep -fl 'TinyTitanServer|TinyTitanCLI'
 
 # 2. Is memory tight?
 memory_pressure -Q
@@ -138,10 +138,12 @@ No. Apple Silicon only.
 Not through the server — it must stay local. Run TinyTitan on the device you want
 to use it from.
 
-**The app will not open.**
-It is ad-hoc signed and built locally, not notarized. If macOS complains,
-right-click the app and choose Open once. If it still fails, re-run the
-installer — [Getting TinyTitan running](02-getting-tinytitan-running.md).
+**The server will not start.**
+The launcher prints the reason in its last few lines. The common ones: no model
+is installed yet, another model process is already running, or the port is
+already held by something else — the launcher asks which port to use, and
+`--port` or `TINYTITAN_PORT` sets it. The tables in
+[Getting TinyTitan running](02-getting-tinytitan-running.md) cover the rest.
 
 **Something is unclear in these articles.**
 That is a documentation bug, and telling us is genuinely useful. Say which
@@ -170,9 +172,9 @@ Being straight with you:
 - **You need image or audio understanding.** Not supported.
 - **You need a hosted API for a team.** The server is loopback-only by
   design.
-- **You want a signed, notarized, double-click installer.** Today it is built
-  from source on your machine. The installer script makes that one step, but
-  it is still a build.
+- **You want a signed, notarized installer.** Today it is built
+  from source on your machine. The installer script makes that one command, but
+  it is still a build, and it still starts in the Terminal.
 - **You are on a deadline and cannot debug.** This is a young, fast-moving
   project built on measurement. It is honest about its limits, but it is not
   a product with a support contract.

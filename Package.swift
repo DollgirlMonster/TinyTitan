@@ -26,8 +26,6 @@ let package = Package(
         .library(name: "ContinuityCore", targets: ["ContinuityCore"]),
         .executable(name: "TinyTitanRepack", targets: ["TinyTitanRepack"]),
         .executable(name: "TinyTitanCLI", targets: ["TinyTitanCLI"]),
-        .executable(name: "TinyTitanMac", targets: ["TinyTitanMac"]),
-        .executable(name: "TinyTitanDecodeService", targets: ["TinyTitanDecodeService"]),
         .executable(name: "TinyTitanServer", targets: ["TinyTitanServer"]),
         .executable(name: "TinyTitanBench", targets: ["TinyTitanBench"]),
         .executable(name: "ContinuityDemo", targets: ["ContinuityDemo"]),
@@ -89,32 +87,6 @@ let package = Package(
             name: "TinyTitanCLI",
             dependencies: ["TinyTitanCLICore"],
             path: "sources/TinyTitanCLI/Command",
-            swiftSettings: tinytitanLanguageStandard
-        ),
-        .target(
-            name: "TinyTitanAppCore",
-            dependencies: ["TinyTitan", "TinyTitanRepackCore", "TinyTitanDecodeProtocol"],
-            path: "sources/TinyTitanApp/Core",
-            resources: [
-                .copy("Resources/app-prompts.json"),
-            ],
-            swiftSettings: tinytitanLanguageStandard
-        ),
-        .target(
-            name: "TinyTitanMacPresentation",
-            dependencies: ["TinyTitanAppCore"],
-            path: "sources/TinyTitanApp/MacPresentation",
-            swiftSettings: tinytitanLanguageStandard
-        ),
-        .target(
-            name: "TinyTitanDecodeProtocol",
-            path: "sources/TinyTitanDecodeProtocol",
-            swiftSettings: tinytitanLanguageStandard
-        ),
-        .executableTarget(
-            name: "TinyTitanDecodeService",
-            dependencies: ["TinyTitanAppCore", "TinyTitanDecodeProtocol"],
-            path: "sources/TinyTitanDecodeService",
             swiftSettings: tinytitanLanguageStandard
         ),
         // Continuity: sessions, task memory and context assembly, in this
@@ -182,15 +154,6 @@ let package = Package(
             path: "sources/TinyTitanBench",
             swiftSettings: tinytitanLanguageStandard
         ),
-        .executableTarget(
-            name: "TinyTitanMac",
-            dependencies: ["TinyTitanAppCore", "TinyTitanMacPresentation"],
-            path: "sources/TinyTitanApp/Mac",
-            resources: [
-                .copy("Resources/tinytitan-app-icon.png"),
-            ],
-            swiftSettings: tinytitanLanguageStandard
-        ),
         .target(
             name: "TinyTitanValidationSupport",
             dependencies: ["TinyTitan"],
@@ -213,24 +176,6 @@ let package = Package(
             dependencies: ["TinyTitanRepackCore", "TinyTitanFormat"],
             path: "tests/TinyTitanRepack/Core",
             resources: [.copy("Support/qwen38_tensor_names.txt")],
-            swiftSettings: tinytitanLanguageStandard
-        ),
-        .testTarget(
-            name: "TinyTitanAppCoreTests",
-            dependencies: ["TinyTitanAppCore", "TinyTitan", "TinyTitanRepackCore", "TinyTitanDecodeProtocol"],
-            path: "tests/TinyTitanApp/Core",
-            swiftSettings: tinytitanLanguageStandard
-        ),
-        .testTarget(
-            name: "TinyTitanDecodeServiceTests",
-            dependencies: ["TinyTitanDecodeService", "TinyTitanAppCore", "TinyTitanDecodeProtocol"],
-            path: "tests/TinyTitanDecodeService",
-            swiftSettings: tinytitanLanguageStandard
-        ),
-        .testTarget(
-            name: "TinyTitanMacPresentationTests",
-            dependencies: ["TinyTitanAppCore", "TinyTitanMacPresentation"],
-            path: "tests/TinyTitanApp/MacPresentation",
             swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(

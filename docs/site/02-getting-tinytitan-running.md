@@ -11,15 +11,23 @@ curl -fsSL https://raw.githubusercontent.com/Pummelchen/TinyTitan/main/tools/ins
 ```
 
 That script checks your Mac, downloads and builds TinyTitan, offers to fetch a
-model, and installs a proper double-clickable **TinyTitan app** into your
-Applications folder. Budget an evening rather than a coffee break — building
-and downloading a model is mostly waiting, and how long depends on your
+model, and installs a **`tinytitan` command** that starts the server. At the end
+it offers to start the server for you and stays in the foreground while it runs,
+so you finish with the address a client can point at — usually
+`http://127.0.0.1:8080/v1`. Budget an evening rather than a coffee break —
+building and downloading a model is mostly waiting, and how long depends on your
 connection and the model you pick. It is safe to re-run: if something
 interrupts it, running it again picks up where it can instead of starting
 over.
 
-After it finishes, **you never need the Terminal again** to *use* TinyTitan — the
-app is a normal Mac app.
+TinyTitan itself has no window to install. The program is a local server, and
+the window is whatever client you point at it; the launcher can write that
+client's settings and open it for you, so everyday use is a normal app. But
+starting the server — the first time, and again after a restart — is a command
+you paste into the Terminal. The installer offers to do that last step for you
+at the end, and there is no way to avoid the Terminal entirely. That is the
+honest friction of a server-first product, and it is worth knowing before you
+begin.
 
 If you have never opened the Terminal: you can still do this. The rest of this
 article is the same installation **by hand**, one step at a time, for anyone
@@ -209,6 +217,9 @@ folder:
 ~/TinyTitan/tools/server_launcher.sh
 ```
 
+The installer also puts this same launcher at `~/.local/bin/tinytitan`, so once
+that folder is on your `PATH` the shorter command works from anywhere.
+
 It asks a few things in plain language — which API your client uses, which
 model to load, whether you want the model to think before answering. Press
 Enter to accept each default. Then leave that window open: **the launcher is
@@ -232,7 +243,7 @@ else is already using a model:
 
 ```bash
 memory_pressure -Q
-pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI'
+pgrep -fl 'TinyTitanServer|TinyTitanCLI'
 ```
 
 The first line should report a healthy amount of free memory. The second
@@ -245,7 +256,7 @@ you did not start yourself.
 | What you see | What it usually means |
 | --- | --- |
 | `command not found: swift` | Xcode's tools are not installed — redo step 1 |
-| `error: 'tinytitan': Invalid manifest` | The Swift toolchain is too old; you need 6.3+ |
+| `error: 'tinytitan': Invalid manifest` | The Swift toolchain is too old; you need 6.4+ |
 | Build stops with an error | Copy the **whole** message to the forum; the last 20 lines matter most |
 | Download restarts from zero | Use `--resume` as shown in step 4 |
 | Launcher says a model is not installed | The download has not finished, or it landed outside the `models/` folder |

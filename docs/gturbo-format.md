@@ -4,7 +4,7 @@
 first written. It did not exist. This is it.
 
 A `.gturbo` install is a directory. It is the only install shape this project
-ships: the runtime, the installer, `--verify-install`, and the Mac app all
+ships: the runtime, the installer and `--verify-install` all
 assume it. The dense Qwen 3.5 2B/4B/9B installs used to be the exception — an
 affine safetensors snapshot with no manifest and no receipt — and they are
 `.gturbo` now too (`tools/repack_dense.sh`).

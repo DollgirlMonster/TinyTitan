@@ -19,7 +19,6 @@
 import { execFileSync } from "node:child_process";
 import { accessSync, constants, copyFileSync, existsSync, readFileSync, statSync, writeFileSync }
   from "node:fs";
-import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { scanModelsFolder } from "./catalog-scan.js";
@@ -386,19 +385,22 @@ export function pathLookup(name, env = process.env, isExecutable = defaultIsExec
 /**
  * Find a TinyTitan server binary.
  *
- * Explicit config wins, then `TINYTITAN_SERVER`, then PATH, then the app bundle a
- * built app ships, then the checkout's release build. The checkout is last on
- * purpose: an installed app is the newer, user-visible copy, and the catalogue
- * package this fallback exists for usually has no `.build/` at all.
+ * Explicit config wins, then `TINYTITAN_SERVER`, then PATH, then the checkout's
+ * release build. The checkout is last on purpose: it is the copy the installer
+ * leaves behind, and the catalogue package this fallback exists for usually has
+ * no `.build/` at all.
  *
- * @param options - `explicit`, `env`, `repoRoot`, `home`, `isExecutable`.
+ * There is deliberately no app-bundle candidate. The project has no GUI app, so
+ * `~/Applications/TinyTitan.app` cannot exist, and a probe for it would only
+ * make a failure harder to read.
+ *
+ * @param options - `explicit`, `env`, `repoRoot`, `isExecutable`.
  * @returns the path, or null when nothing is found.
  */
 export function findServerBinary({
   explicit,
   env = process.env,
   repoRoot,
-  home = homedir(),
   isExecutable = defaultIsExecutable,
 } = {}) {
   const candidates = [];
@@ -406,7 +408,6 @@ export function findServerBinary({
   if (env.TINYTITAN_SERVER) candidates.push(String(env.TINYTITAN_SERVER));
   const onPath = pathLookup(SERVER_BINARY_NAME, env, isExecutable);
   if (onPath !== null) candidates.push(onPath);
-  candidates.push(join(home, "Applications", "TinyTitan.app", "Contents", "MacOS", SERVER_BINARY_NAME));
   if (repoRoot) {
     candidates.push(join(repoRoot, ".build", "arm64-apple-macosx", "release", SERVER_BINARY_NAME));
     candidates.push(join(repoRoot, ".build", "release", SERVER_BINARY_NAME));
@@ -421,7 +422,7 @@ export function findServerBinary({
  * Find the directory of installed models.
  *
  * Explicit config wins, then `TINYTITAN_MODELS_DIR`, then `<repoRoot>/models`.
- * There is deliberately no app-bundle guess: the app does not ship models, so a
+ * There is deliberately no bundle guess: models live beside the checkout, so a
  * wrong directory would describe nothing rather than describe it wrongly.
  *
  * @param options - `explicit`, `env`, `repoRoot`, `isDirectory`.
@@ -451,7 +452,7 @@ export function findModelsDir({
  *
  * @param options - resolved config (`port`, `provider`, `repoRoot`, `dshHome`,
  *   optional `serverBinary`/`modelsDir`), plus injectable `env`, `run`, `log`,
- *   `home`, `isExecutable`, `isDirectory`, `stamp` and `backup` for tests.
+ *   `isExecutable`, `isDirectory`, `stamp` and `backup` for tests.
  * @returns `{status, detail, …}` with status `written-self-contained`, `missing`
  *   or `failed`.
  */
@@ -469,7 +470,6 @@ export function generateRoute({
   env = process.env,
   run = execFileSync,
   log = () => {},
-  home = homedir(),
   isExecutable = defaultIsExecutable,
   isDirectory = defaultIsDirectory,
   stamp = new Date().toISOString().replace(/[:.]/g, "-"),
@@ -481,7 +481,7 @@ export function generateRoute({
     log(`dsh-tinytitan: ${detail}; leaving the llm-pi-ai route as it is`);
     return { status: "missing", detail, serverBinary: null, modelsDir: null };
   }
-  const binary = findServerBinary({ explicit: serverBinary, env, repoRoot, home, isExecutable });
+  const binary = findServerBinary({ explicit: serverBinary, env, repoRoot, isExecutable });
 
   // The server is the authority on the catalog while it can answer. A profile
   // that installed models but has not built the server yet has nothing to ask,

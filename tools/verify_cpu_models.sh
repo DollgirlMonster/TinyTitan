@@ -22,7 +22,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODELS="$ROOT/models"
 DEFAULT_MODELS=(qwen3.5_2B_4Bit qwen3.5_2B_8Bit qwen3.5_4B_4Bit qwen3.5_4B_8Bit)
-GUARD='TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'
+GUARD='TinyTitanServer|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'
 
 if [ "$#" -gt 0 ]; then
   targets=("$@")

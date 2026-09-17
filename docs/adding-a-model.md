@@ -107,7 +107,7 @@ skips a missing optional file rather than failing. But the *runtime* needs
 chat_template.jinja" — so a checkpoint that omits it needs a template supplied
 even though the converter would not complain.
 
-## 2. The nine wiring points
+## 2. The eight wiring points
 
 | # | Where | What |
 | --- | --- | --- |
@@ -116,10 +116,9 @@ even though the converter would not complain.
 | 3 | `tools/tinytitan_models.sh` | The key/stem/label `case` with the fallback fields it carries beside them — `ENGINES`, `THINKING` and `FAMILY` — because that list is what the launcher offers when the server cannot report a catalog; plus the unknown-model help text and `TINYTITAN_ALL_MODELS` |
 | 4 | `tools/server_launcher.sh` | The model-key list in the header comment and in the unknown-model error |
 | 5 | `ModelProfile.swift` | One row per width. Sample from the **checkpoint's** config; say in the comment when cache/prefetch values are inherited from identical geometry rather than measured |
-| 6 | `ModelCatalog.swift` — `displayNames` | The served id → human name (`/v1/models` and the app read this) |
-| 7 | `AppModelInstallDescriptor.swift` | Two `converted(...)` descriptors, `all`, `installerTarget`, `selectedDescriptor` — **see §5 for the fingerprint** |
-| 8 | `tests/` | `ModelProfileTests.shipped` (and the table count) and the app test's build table |
-| 9 | ANE prefill sidecar | `tools/ane_sidecars.sh <install>` — export and verify it. A GPU-path install without one has no ANE prefill at all: the switch is on by default, the runtime asks for the sidecar, and finds nothing. Two kinds are skipped. The exporter has no graph for the one-layer MTP draft, which the runtime verifies rather than prefills on the ANE. And the ANE has been *measured not to pay* for `qwen38flash`: its GPU path already attends to only the indexer's ~2,051 selected keys while the ANE graph is dense over the context, so a sidecar there only slows the default path (0.72×, `benchmark/ane-prefill/README.md`). Its block is still exportable — the runtime folds the QSA selection into the mask — but export one explicitly to re-measure, never to install |
+| 6 | `ModelCatalog.swift` — `displayNames` | The served id → human name (`/v1/models` reads this) |
+| 7 | `tests/` | `ModelProfileTests.shipped` (and the table count) |
+| 8 | ANE prefill sidecar | `tools/ane_sidecars.sh <install>` — export and verify it. A GPU-path install without one has no ANE prefill at all: the switch is on by default, the runtime asks for the sidecar, and finds nothing. Two kinds are skipped. The exporter has no graph for the one-layer MTP draft, which the runtime verifies rather than prefills on the ANE. And the ANE has been *measured not to pay* for `qwen38flash`: its GPU path already attends to only the indexer's ~2,051 selected keys while the ANE graph is dense over the context, so a sidecar there only slows the default path (0.72×, `benchmark/ane-prefill/README.md`). Its block is still exportable — the runtime folds the QSA selection into the mask — but export one explicitly to re-measure, never to install |
 
 Validate 1 before any download:
 
@@ -219,23 +218,7 @@ The project's bar, in this order:
 5. **A first measured row** (TTFT, decode) from the model's own install, with
    the machine and commit stated.
 
-## 5. The app's fingerprint (the piece that needs the conversion)
-
-`AppModelInstallDescriptor.sourceIndexSHA256` is the **converted snapshot's**
-`model.safetensors.index.json` hash — the same value TinyTitanRepack records in the
-install manifest as `sourceSnapshotHash`. It is *not* the source repository's
-index, and it cannot be known before the conversion runs. Read it back:
-
-```bash
-python3 -c "import json;print(json.load(open('models/<dir>/manifest.json'))['sourceSnapshotHash'])"
-```
-
-Then add the two descriptors, the entries in `all`, the `installerTarget` cases
-and the `selectedDescriptor` selectors, and extend the app test's table. The
-test asserts the fingerprints are unique across `all`, so two widths of one
-checkpoint must not share a value — which is exactly why this one is per-width.
-
-## 6. Document it where a user will look
+## 5. Document it where a user will look
 
 - `README.md` — the supported list, with the status stated honestly.
 - The wiki: `Getting-Started` (the install table), `Features` (the model row),
@@ -249,7 +232,7 @@ checkpoint must not share a value — which is exactly why this one is per-width
 Never mark a model "supported" before §4 passes. "Install path landed,
 verification pending" is the honest state, and it is worth writing down.
 
-## 7. After the checkout moves
+## 6. After the checkout moves
 
 An install receipt is bound to its absolute path. Moving or renaming the
 checkout invalidates **every** install's receipt, with
@@ -275,6 +258,5 @@ moved or swapped directory.
 - [ ] All eight wiring points above
 - [ ] Conversion and install, one width at a time, snapshots deleted after
 - [ ] Continuations, golden target, receipt, catalog, launcher keys
-- [ ] App descriptors with the fingerprints read back from the manifests
 - [ ] README, wiki pages, tracker, roadmap — with deviations and status
 - [ ] Committed, pushed, and the receipts re-issued if the checkout moved

@@ -16,7 +16,7 @@ release notes are `docs/release-notes-vX.Y.md`.
 | macOS 26+, Swift 6.4+ | `sw_vers`, `swift --version` | The runtime's floor; the release notes state it |
 | Disk | `df -h .` | A clean scratch build plus the staged archive wants ~10 GB |
 | Memory | `memory_pressure -Q` | The golden baselines load real models |
-| **No model process** | `pgrep -fl 'TinyTitanServer\|TinyTitanMac\|TinyTitanDecodeService\|TinyTitanCLI\|TinyTitanPackageTests\|swiftpm-testing-helper\|mlx_lm\|mlx-lm'` | The golden gate refuses to run beside one; see §5 |
+| **No model process** | `pgrep -fl 'TinyTitanServer\|TinyTitanCLI\|TinyTitanPackageTests\|swiftpm-testing-helper\|mlx_lm\|mlx-lm'` | The golden gate refuses to run beside one; see §5 |
 | `gh` authenticated | `gh auth status` | Publishing uses it; it must be the repo owner's account |
 | A release build exists | `ls .build/release/TinyTitanCLI` | The golden gate drives that binary and runs *before* the clean scratch build; `release.sh` refuses to start without it |
 | The installs to verify | `ls models/*/verified-install.json` | The gate verifies only what is installed, and never fetches a model; see §5 |
@@ -29,10 +29,11 @@ yours, stop and ask the human — §5 is the long version.
 
 Three places, and only the first is a literal:
 
-1. **`tools/install_tinytitan.sh`** — `CFBundleVersion` and
-   `CFBundleShortVersionString` in the app bundle it writes. That is the only
-   version literal in the tree. Grep for the previous version before believing
-   this: `grep -rn "5\.1\b" --include="*.sh" --include="*.swift" sources/ tools/`.
+1. **`sources/TinyTitanServer/Core/ServerVersion.swift`** — `ServerVersion.current`.
+   That is the only version literal in the tree, and the server prints it in its
+   ready banner; `tools/release.sh` refuses to publish a tag that disagrees with
+   it. Grep for the previous version before believing this: `grep -rn "5\.1\b"
+   --include="*.sh" --include="*.swift" sources/ tools/`.
 2. **The wiki `Changelog.md`** (`.qwen/wiki/Changelog.md`) — a new `## X.Y — <headline>`
    section at the top, with `[Release vX.Y](https://github.com/Pummelchen/TinyTitan/releases/tag/vX.Y)`
    and user-facing bullets. Keep it compact: what a *user* can do now that they
@@ -43,7 +44,7 @@ Three places, and only the first is a literal:
    reader finds it once instead of the README accumulating a section per release.
    The README changes only when a fact it states changes — a new benchmark row, a
    model joining or leaving the supported list — and the only version string in
-   the tree is the installer literal below.
+   the tree is `ServerVersion.current` above.
 
 The dated `docs/site/*.md` articles say "at the time of writing" and are **not**
 bumped: they record when they were verified, and re-stamping them without
@@ -112,7 +113,7 @@ The annotated tag's message is the starting point for the notes, so make it the
 headline plus the lead paragraph.
 
 ```bash
-git add -A && git commit -m "Prepare X.Y: release notes, the changelog entry, and the app version"
+git add -A && git commit -m "Prepare X.Y: release notes, the changelog entry, and the version literal"
 git push origin main
 git tag -a vX.Y -m "TinyTitan X.Y — <headline>
 
@@ -147,7 +148,7 @@ What the dry run does, in order:
    .build/releases/.../build`, with the log scanned for compiler warnings. It is
    deliberately not an incremental build: an incremental one compiles nothing
    and the warning gate passes vacuously.
-4. **Stage and package** — the six executables, the `.bundle` resources (the
+4. **Stage and package** — the four executables, the `.bundle` resources (the
    Metal shader library — the runtime cannot load kernels without them), the
    licence and notices, `README-binaries.txt`, then the tarball and its
    `.sha256`.
@@ -396,6 +397,6 @@ machine it was measured on, and leave previous releases' tables alone.
 - [ ] The notes are compact: the Release page is bullets, and the compact form is
       under the `TINYTITAN_RELEASE_NOTES_MAX_CHARS` budget (`release.sh` compacts
       and enforces this on any run that passes `--notes`)
-- [ ] Staged archive inspected (six executables, bundles, licence, notices)
+- [ ] Staged archive inspected (four executables, bundles, licence, notices)
 - [ ] `--publish --notes docs/release-notes-vX.Y.md`, then `gh release view`
 - [ ] No model process left running afterwards

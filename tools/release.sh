@@ -24,7 +24,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO="${TINYTITAN_RELEASE_REPO:-Pummelchen/TinyTitan}"
-PRODUCTS=(TinyTitanServer TinyTitanCLI TinyTitanMac TinyTitanDecodeService TinyTitanRepack TinyTitanBench)
+PRODUCTS=(TinyTitanServer TinyTitanCLI TinyTitanRepack TinyTitanBench)
 
 die() { echo "error: $*" >&2; exit 1; }
 step() { printf '\n== %s\n' "$*"; }
@@ -72,6 +72,19 @@ if [ -n "${TINYTITAN_RELEASE_SKIP_GOLDENS:-}" ] && [ -z "${TINYTITAN_RELEASE_SKI
   die "TINYTITAN_RELEASE_SKIP_GOLDENS=${TINYTITAN_RELEASE_SKIP_GOLDENS} without TINYTITAN_RELEASE_SKIP_GOLDENS_REASON; a skipped baseline must record why"
 fi
 echo "  tag $TAG at $(git rev-parse --short HEAD), tree clean, no existing Release"
+
+# Identity is single-sourced: `ServerVersion.current` is the one version literal
+# in the tree, and it is what the running server prints in its ready banner. A
+# tag that disagrees with it would publish binaries that name a different
+# version than the Release does, so refuse before anything expensive starts.
+# Preparing a release is bumping that one literal -- docs/release-process.md
+# step 1 -- and committing it with the tag.
+SERVER_VERSION="$(sed -n 's/.*static let current = "\([^"]*\)".*/\1/p' \
+  "$ROOT/sources/TinyTitanServer/Core/ServerVersion.swift")"
+[ -n "$SERVER_VERSION" ] \
+  || die "could not read ServerVersion.current from sources/TinyTitanServer/Core/ServerVersion.swift"
+[ "$SERVER_VERSION" = "$VERSION" ] \
+  || die "tag $TAG is version $VERSION but ServerVersion.current is $SERVER_VERSION; bump that literal (docs/release-process.md step 1) and commit it before tagging"
 
 rm -rf "$STAGE_ROOT"
 mkdir -p "$STAGE_ROOT"
@@ -260,7 +273,7 @@ done
 # executables the runtime cannot load its kernels. Fail closed rather than
 # shipping an archive that dies on the first model load. Test bundles are
 # excluded: they hold fixtures the tests read, and 5.5's archive carried the six
-# that the six executables actually need.
+# that the executables of the day needed.
 [ -d "$BIN/TinyTitan_TinyTitan.bundle" ] \
   || die "no TinyTitan_TinyTitan.bundle in $BIN: the Metal shader library would not ship"
 find "$BIN" -maxdepth 1 -name '*.bundle' ! -name '*Tests.bundle' -exec cp -R {} "$STAGE/" \;
@@ -277,8 +290,6 @@ Requires macOS 26+. Apple Silicon only; there is no x86_64 build.
 Contents
   TinyTitanServer          OpenAI-compatible local server (binds 127.0.0.1 only)
   TinyTitanCLI             one-shot prompt CLI
-  TinyTitanMac             Mac app
-  TinyTitanDecodeService   out-of-process decode service used by the Mac app
   TinyTitanRepack          model installer / repacker
   TinyTitanBench           benchmark driver
   *.bundle             Metal shader library and other runtime resources — keep

@@ -31,15 +31,21 @@ What needs a reason is *optimization*: do not start performance work, change
 runtime defaults, or alter numerics unless the user asked. Report results as
 measurements, not as ceilings, and treat an unexplained slowdown as a finding.
 
+**Scope: an LLM engine and its local server, and nothing else.** The supported way
+to use a model is the loopback OpenAI-compatible server with a client the user
+already has — Zed, Codex, Claude Code, DeepSeek Harness, `curl`. There is
+deliberately no desktop, GUI or bundled app: a second front end is a second
+surface to build, keep in step with every engine feature, and support, and it was
+removed for exactly that reason. Do not add one back, and do not take on work that
+only a GUI needs.
+
 ## Layout and commands
 
 `sources/` holds one directory per SwiftPM target. `sources/TinyTitan/` is the
 runtime; `sources/TinyTitanFormat/` plus `sources/TinyTitanKernelsC/` are its
-format types and C kernels. `sources/TinyTitanRepack/`, `sources/TinyTitanCLI/`,
-`sources/TinyTitanServer/` and `sources/TinyTitanApp/` hold the installer, CLI,
-loopback server and Mac app; the app's `sources/TinyTitanDecodeService/` and
-`sources/TinyTitanDecodeProtocol/` are the out-of-process decode helper and its IPC
-contract. `sources/TinyTitanMemory/` and `sources/ContinuityCore/` are persistent
+format types and C kernels. `sources/TinyTitanRepack/`, `sources/TinyTitanCLI/` and
+`sources/TinyTitanServer/` hold the installer, CLI and loopback server.
+`sources/TinyTitanMemory/` and `sources/ContinuityCore/` are persistent
 agent memory, `sources/TinyTitanMemoryTool/` inspects it, and
 `sources/TinyTitanBench/` plus `sources/TinyTitanValidation/` are the benchmark
 driver and the validation/reference target. An executable target keeps its
@@ -57,7 +63,6 @@ means both, whether or not the change touched the wiki.
 
 ```bash
 swift build -c release
-.build/release/TinyTitanMac
 swift run -c release TinyTitanCLI \
   --model models/qwen3.5_4B_4Bit \
   --prompt "The capital of France is" \
@@ -91,7 +96,7 @@ swift run -c release TinyTitanRepack --verify-install --input-gturbo models/qwen
 Never hand-edit the receipt to match the new path: the path binding is what detects
 a moved or swapped directory, so editing it forges the attestation instead of
 re-establishing it. Adding a model is the other runbook, `docs/adding-a-model.md`:
-it lists the nine places a new checkpoint has to be wired — the last being its ANE
+it lists the eight places a new checkpoint has to be wired — the last being its ANE
 prefill sidecar — the disk each width needs, the verification bar before it may be
 called supported, and how to re-issue install receipts after the checkout moves.
 
@@ -99,12 +104,12 @@ called supported, and how to re-issue install receipts after the checkout moves.
 
 Before a model run, require macOS 26+, Swift 6.4+, enough disk, acceptable
 `memory_pressure -Q`, a completed selected `.gturbo` installation, and no process
-from `pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'`.
+from `pgrep -fl 'TinyTitanServer|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm'`.
 If a check fails, inform the user and stop; do not terminate apps or delete or
 reinstall the model.
 
 Run package tests serially (`swift test --no-parallel`), passing extra arguments
-like `--filter` through. Run only one app, CLI, or model-using test at a time.
+like `--filter` through. Run only one CLI or model-using test at a time.
 
 **Ad-hoc model runs use the 4B or 9B, not the 2B, unless the task says
 otherwise.** That means any run that exercises a code path against a live model —
@@ -195,21 +200,6 @@ Keep the server on `127.0.0.1`; it has no remote authentication or TLS, so do no
 proxy, tunnel, or expose it. A tool call from the local model never bypasses the
 client's normal permission policy. Keep the execution session alive while the
 server is needed, and stop only a server you launched.
-
-## App controls
-
-The Mac app sends prompts through Qwen's ChatML format. It exposes context length,
-temperature, Top-K, Top-P, expert-cache slots, prefill, and RDADVISE. Temperature
-defaults to `0.6` for the Qwen 3.5/3.6 families, and `1.0` for
-Qwen3.8-Flash-Next and for KAT-Coder-V2.5-Dev (whose own model card sets it, not
-its Qwen 3.6 base); Top-K `20`, Top-P `0.95`, and presence penalty `0.0` (the only
-currently supported presence-penalty value) are shared by all of them. Responses
-can use the context space left after formatting the prompt, and FP16 is the runtime
-KV format. The HUD shows generation rate, token count, and decode-service memory;
-Last run also shows time to first token and I/O. Build the app with its sibling
-`TinyTitanDecodeService`; it never loads a second in-process model. See
-[README](README.md) and
-[Runtime controls](https://github.com/Pummelchen/TinyTitan/wiki/Runtime-Controls).
 
 ## Releases and handover
 

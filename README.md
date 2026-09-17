@@ -88,8 +88,9 @@ pipeline sees only the answer. Nothing installed yet? Start with
 [Getting Started](https://github.com/Pummelchen/TinyTitan/wiki/Getting-Started).
 
 - **Easiest install:** one command checks the Mac, builds TinyTitan, optionally
-  downloads a model, and installs a double-clickable Mac app in
-  `~/Applications`. Safe to re-run; it updates instead of cloning twice.
+  downloads a model, and leaves a `tinytitan` command that starts the server —
+  then offers to start it, so you finish with a base URL to point a client at.
+  Safe to re-run; it updates instead of cloning twice.
   ```bash
   curl -fsSL https://raw.githubusercontent.com/Pummelchen/TinyTitan/main/tools/install_tinytitan.sh | bash
   ```
@@ -145,8 +146,8 @@ tools/server_launcher.sh --client zed --model qwen38 --bits 4 --ram 8
   installed models (and `plugins/dsh-tinytitan` keeps current inside the harness,
   adding a compaction backend that does not think) — see
   [Connect a client](https://github.com/Pummelchen/TinyTitan/wiki/OpenAI-Compatible-Server#connect-a-client).
-- **Mac app and tools:** TinyTitan also provides a native Mac app, direct CLI
-  generation, streaming responses, and client-authorized function-tool calls.
+- **CLI and tools:** TinyTitan also provides direct CLI generation, streaming
+  responses, and client-authorized function-tool calls.
 
 
 ### Core Benefits
@@ -215,8 +216,8 @@ tools/server_launcher.sh --client zed --model qwen38 --bits 4 --ram 8
 ## Credits
 
 TinyTitan is a focused fork of
-[drumih/turbo-fieldfare](https://github.com/drumih/turbo-fieldfare), which
-provides the bounded-memory runtime, installer, CLI, Mac app, and local server.
+[drumih/turbo-fieldfare](https://github.com/drumih/turbo-fieldfare), whose
+bounded-memory runtime, installer, CLI and local server this project builds on.
 The Qwen 3.6 integration was created by
 [NeelM0906](https://github.com/NeelM0906) in
 [upstream PR #29](https://github.com/drumih/turbo-fieldfare/pull/29). Concise

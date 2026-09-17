@@ -44,10 +44,6 @@ directory is the name of the target:
   (the `@main`/top-level entry) and a `Core/` library part that the tests
   import. `Package.swift` declares them as two targets each, with
   `exclude: ["Command"]` on the library half.
-- **`TinyTitanApp`, `TinyTitanDecodeService`, `TinyTitanDecodeProtocol`** — the Mac app,
-  the out-of-process decode helper it drives, and the IPC contract between
-  them. The app splits `Core/` (testable, no AppKit) from `Mac/` (the views)
-  and `MacPresentation/`.
 - **`TinyTitanFormat`, `TinyTitanMemory`, `ContinuityCore`** — the `.gturbo` format
   types, the memory layer, and the session/continuity engine. Each is a
   standalone library with its own README where its contract needs prose.
@@ -61,8 +57,7 @@ were violated by exactly one file each and both violations were fixed in the
 1. **`main.swift` means top-level code.** A file with top-level statements is
    named `main.swift` (`TinyTitanCLI/Command`, `TinyTitanServer/Command`,
    `TinyTitanRepack/Command`, `TinyTitanMemoryTool`). A file whose entry point is
-   `@main` is named after its type (`TinyTitanApp/Mac/App/TinyTitanMacApp.swift`,
-   `TinyTitanDecodeService/Entry.swift`, `TinyTitanBench/TinyTitanBench.swift`,
+   `@main` is named after its type (`TinyTitanBench/TinyTitanBench.swift`,
    `ContinuityDemo/ContinuityDemo.swift`). `@main` in a `main.swift` happens to
    compile while the target is a single file and stops compiling the moment a
    second file joins the target — which is how `TinyTitanBench` was caught.
@@ -118,7 +113,7 @@ Files still above 600 lines are, in order: `ServerInference.swift` (1,664),
 `RealForwardRunner+Decode.swift` (1,572), `RealForwardRunner+Prefill.swift`
 (1,524), `PreadExpertStreamer.swift` (1,391, one class),
 `RealForwardRunner.swift` (1,357), `RemoteStreamingRepacker.swift` (1,234),
-`AppModel.swift` (1,053), `Model.swift` (1,024; the test files below this line
+`Model.swift` (1,024; the test files below this line
 are sized by case count, not by design). Each is one cohesive type or one phase
 of a pipeline; the next structural gain there is a *design* change (a type doing
 two jobs), not a move, and none is currently doing two jobs.

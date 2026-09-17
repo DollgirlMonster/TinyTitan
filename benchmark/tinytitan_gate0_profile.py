@@ -172,7 +172,7 @@ def preflight(max_gpu_percent: int) -> None:
     the tok/s number explains that on its own, so the guard is here rather
     than in a reviewer's head.
     """
-    pattern = ("TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|"
+    pattern = ("TinyTitanServer|TinyTitanCLI|"
                "TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm")
     found = subprocess.run(["pgrep", "-fl", pattern],
                            capture_output=True, text=True)

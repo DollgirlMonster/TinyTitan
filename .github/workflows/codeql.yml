@@ -2,8 +2,8 @@
 #
 # Why this file exists instead of GitHub's default setup: default setup must
 # autobuild, and autobuild runs a bare `swift build`, which builds every product
-# in Package.swift — the libraries plus TinyTitanMac, TinyTitanServer, TinyTitanCLI,
-# TinyTitanDecodeService, TinyTitanBench and more. That run exceeded 14 minutes without
+# in Package.swift — the libraries plus TinyTitanServer, TinyTitanCLI,
+# TinyTitanBench and more. That run exceeded 14 minutes without
 # finishing and had previously failed, which is why Swift was dropped from the
 # default-setup language list and the repository showed "Code scanning
 # configuration error".
@@ -88,7 +88,7 @@ jobs:
           swift build --target TinyTitan --arch arm64 --scratch-path "$SCRATCH"
           swift build --target ContinuityCore --arch arm64 --scratch-path "$SCRATCH"
           swift build --target TinyTitanRepackCore --arch arm64 --scratch-path "$SCRATCH"
-          swift build --target TinyTitanDecodeProtocol --arch arm64 --scratch-path "$SCRATCH"
+          swift build --target TinyTitanServerCore --arch arm64 --scratch-path "$SCRATCH"
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

@@ -202,11 +202,13 @@ cherry-picks or patches go to the parent**, and every change stays inside this
 repository.
 
 - **Identity** `vX.Y.Z`. The only version literal in the tree is
-  `CFBundleVersion` / `CFBundleShortVersionString` in `tools/install_tinytitan.sh`;
-  the wiki `Changelog.md` carries the announcement and the README carries none.
-- **Artifacts** `tinytitan-X.Y-macos-arm64.tar.gz` + `.sha256`, containing **six
-  executables** — `TinyTitanServer`, `TinyTitanCLI`, `TinyTitanMac`,
-  `TinyTitanDecodeService`, `TinyTitanRepack`, `TinyTitanBench` — plus the
+  `ServerVersion.current` in `sources/TinyTitanServer/Core/ServerVersion.swift`,
+  which the server prints in its ready banner; `tools/release.sh` refuses a tag
+  that disagrees with it. The wiki `Changelog.md` carries the announcement and
+  the README carries none.
+- **Artifacts** `tinytitan-X.Y-macos-arm64.tar.gz` + `.sha256`, containing **four
+  executables** — `TinyTitanServer`, `TinyTitanCLI`,
+  `TinyTitanRepack`, `TinyTitanBench` — plus the
   `.bundle` resources, licence and notices.
 - **Gates** `tools/lint.sh` (five gates: force-cast, func-length, sendable,
   converter, arch-path); `swift test --no-parallel`; **every installed model with

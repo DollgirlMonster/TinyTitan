@@ -1,16 +1,18 @@
 # Connecting your apps (the local server)
 
-This is where TinyTitan stops being a chatbot window and becomes *infrastructure*:
-your model, answering your existing tools, on your machine.
+This is where TinyTitan stops being a question you type and becomes
+*infrastructure*: your model, answering your existing tools, on your machine.
 
 The idea is small. TinyTitan serves a **local** web address that speaks the same
 language as OpenAI's and Anthropic's APIs. Any app that can talk to those can
 talk to your Mac instead — and then it is your model doing the work, with no
 account, no bill, and nothing leaving the machine.
 
-If you are not a programmer, you can skip this article and stay happy with the
-Mac app. But if you have ever thought "I wish this assistant ran on my own
-computer," this is the article.
+If you are not a programmer, the launcher does everything on this page for you:
+pick a client when it asks, and it writes that app's settings and opens it. This
+article is the explanation behind that question — what a client is, and what the
+server says to it. And if you have ever thought "I wish this assistant ran on my
+own computer," that is exactly what this is.
 
 ## What the server actually speaks
 

@@ -127,7 +127,7 @@ fi
 # "a model process is already running" sent the operator looking for the wrong
 # thing when it was another project's tests. Do not narrow the pattern to fix
 # that: reporting the matches is what lets a human judge.
-if busy=$(pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm' 2>/dev/null); then
+if busy=$(pgrep -fl 'TinyTitanServer|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm' 2>/dev/null); then
   echo "refusing to start: these processes match the model-process guard" >&2
   echo "$busy" | sed 's/^/  /' >&2
   echo "stop them yourself, or re-run when they are gone. This script never terminates a process it did not start." >&2

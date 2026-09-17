@@ -1494,6 +1494,14 @@ esac
 # 12) Hand over to the client
 # ============================================================
 
+# The model is loaded and the served id is real. State what was built and where
+# to point a client before anything takes over the terminal: for a server-only
+# run this banner IS the handover, and it is the one place the base URL, the
+# served model id and the port are printed together. It was reachable only
+# through --dry-run, so the default `server` path — which is what the installer
+# hands off to — started a server and never told the user its address.
+print_setup
+
 # A server-only run stays in the foreground so Ctrl-C stops the model.
 if [[ "$CLIENT" == "server" ]]; then
   wait "$server_pid"

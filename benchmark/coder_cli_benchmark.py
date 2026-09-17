@@ -84,7 +84,7 @@ MTP_PATHS = {
     "ornith": ROOT / "models/ornith-1.5_35B_A3B_MTP_4Bit",
 }
 PROCESS_PATTERN = (
-    "TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI|TinyTitanPackageTests|"
+    "TinyTitanServer|TinyTitanCLI|TinyTitanPackageTests|"
     "swiftpm-testing-helper|mlx_lm|mlx-lm"
 )
 DEFAULT_TEMPERATURE = 0.6

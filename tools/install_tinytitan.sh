@@ -6,17 +6,15 @@
 #   curl -fsSL https://raw.githubusercontent.com/Pummelchen/TinyTitan/main/tools/install_tinytitan.sh | bash
 #   tools/install_tinytitan.sh                      # from a clone, installs that clone
 #
-# It checks the Mac, gets the source, builds it, optionally downloads a model,
-# and wraps the Mac app into a real double-clickable TinyTitan.app in
-# ~/Applications. The app is ad-hoc signed (codesign -s -), which needs no
-# Apple Developer account; it is not notarized, which is why it is built on
-# your machine rather than downloaded.
+# It checks the Mac, gets the source, builds the server, optionally downloads a
+# model, and installs a `tinytitan` command that starts it. The aim is a working
+# **TinyTitan server**: at the end it offers to start one and stays in the
+# foreground as it runs, so you finish with a base URL a client can be pointed at.
 #
 # Nothing here is destructive. It never deletes a model, never removes a
 # directory, and never touches anything outside its own folders:
 #   ~/TinyTitan                 the checkout (a clone started by this script)
-#   ~/Applications/TinyTitan.app the app bundle
-#   ~/.local/bin/tinytitan      a command-line launcher
+#   ~/.local/bin/tinytitan      the command that starts the server
 # Re-running it is safe: it updates an existing checkout instead of cloning
 # a second time.
 #
@@ -25,7 +23,6 @@
 #   --model NAME     model to install; see tools/install_models.sh --help
 #                    (default: ornith15-8bit)
 #   --no-model       build only; download no model
-#   --no-app         do not create the .app bundle
 #   --dir PATH       where to clone when there is no checkout (default ~/TinyTitan)
 #   --help, -h       this text
 set -euo pipefail
@@ -33,7 +30,6 @@ set -euo pipefail
 REPO_URL="https://github.com/Pummelchen/TinyTitan.git"
 DEFAULT_MODEL="ornith15-8bit"
 DEFAULT_DIR="$HOME/TinyTitan"
-APP_NAME="TinyTitan"
 
 say()  { printf '\033[1m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
@@ -62,14 +58,12 @@ ask() {
 # --- flags -----------------------------------------------------------------
 MODEL="$DEFAULT_MODEL"
 INSTALL_MODEL=1
-MAKE_APP=1
 TARGET_DIR="$DEFAULT_DIR"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --yes|-y)    ASSUME_YES=1 ;;
     --model)     MODEL="${2:?--model needs a name}"; shift ;;
     --no-model)  INSTALL_MODEL=0 ;;
-    --no-app)    MAKE_APP=0 ;;
     --dir)       TARGET_DIR="${2:?--dir needs a path}"; shift ;;
     --help|-h)   sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d'; exit 0 ;;
     *)           die "unknown option: $1 (try --help)" ;;
@@ -107,8 +101,9 @@ else
   ok "About ${free_gb} GB free"
 fi
 
-if [[ "$(pgrep -fl 'TinyTitanServer|TinyTitanMac|TinyTitanDecodeService|TinyTitanCLI' 2>/dev/null | wc -l | tr -d ' ')" != "0" ]]; then
-  warn "An TinyTitan process is already running. Quit it before using TinyTitan."
+if [[ "$(pgrep -fl 'TinyTitanServer|TinyTitanCLI' 2>/dev/null | wc -l | tr -d ' ')" != "0" ]]; then
+  warn "A TinyTitan process is already running. Stop it before starting a server,"
+  warn "since one model runs at a time on this Mac."
 fi
 
 # --- 2) the source ----------------------------------------------------------
@@ -207,10 +202,15 @@ elif installed_any; then
   echo "     Install another any time:  tools/install_models.sh $MODEL"
 else
   echo "  No model is installed yet. TinyTitan needs one to run."
-  echo "  The recommended starting model is Ornith 1.5 35B-A3B at 8-bit,"
-  echo "  about 37 GB installed. The 4-bit version is about 20 GB and faster"
-  echo "  to download if that is a lot."
-  if ask "Download the 37 GB model now?" yes; then
+  if [[ "$MODEL" == "$DEFAULT_MODEL" ]]; then
+    echo "  The recommended starting model is Ornith 1.5 35B-A3B at 8-bit,"
+    echo "  about 37 GB installed. The 4-bit version is about 20 GB and faster"
+    echo "  to download if that is a lot:  tools/install_models.sh ornith15"
+  else
+    echo "  This run was asked for '$MODEL'. The download is measured in tens of"
+    echo "  gigabytes; tools/install_models.sh --help lists every target."
+  fi
+  if ask "Download $MODEL now?" yes; then
     if ! tools/install_models.sh "$MODEL"; then
       warn "The model download did not finish."
       echo "     Re-run this installer to continue, or start it directly:"
@@ -224,127 +224,57 @@ else
   fi
 fi
 
-# --- 6) the app -------------------------------------------------------------
-say "6/6  Installing the Mac app"
+# --- 6) a server you can start ----------------------------------------------
+say "6/6  Your server"
 
-if (( ! MAKE_APP )); then
-  ok "Skipped (--no-app)"
-else
-  BIN_DIR="$REPO_ROOT/.build/release"
-  APP_PATH="$HOME/Applications/$APP_NAME.app"
-
-  if [[ ! -x "$BIN_DIR/TinyTitanMac" ]]; then
-    warn "TinyTitanMac was not built; skipping the app bundle."
-  else
-    rm -rf "$APP_PATH"
-    mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
-
-    # The app finds its model by walking up to the checkout, so the bundle
-    # carries a launcher that says which checkout this bundle belongs to.
-    # Without it, an app in ~/Applications would look in Application Support.
-    cat > "$APP_PATH/Contents/MacOS/$APP_NAME" <<LAUNCHER
-#!/bin/sh
-# Installed by tools/install_tinytitan.sh — runs TinyTitan from its checkout so the
-# app finds the model it was installed with.
-TINYTITAN_ROOT="$REPO_ROOT"
-BIN="\$TINYTITAN_ROOT/.build/release/TinyTitanMac"
-if [ ! -x "\$BIN" ]; then
-  printf 'TinyTitan is not built at %s.\\nRe-run the installer:\\n  %s/tools/install_tinytitan.sh\\n' "\$TINYTITAN_ROOT" "\$TINYTITAN_ROOT"
-  read -r _ || true
-  exit 1
-fi
-export TURBO_FIELDFARE_MODEL="\${TURBO_FIELDFARE_MODEL:-ornith15-8bit}"
-cd "\$TINYTITAN_ROOT" || exit 1
-exec "\$BIN" "\$@"
-LAUNCHER
-    chmod +x "$APP_PATH/Contents/MacOS/$APP_NAME"
-
-    # SwiftPM writes resources to sibling *.bundle directories; Bundle.module
-    # finds them beside the executable or in Contents/Resources.
-    shopt -s nullglob
-    for bundle in "$BIN_DIR"/TinyTitan_*.bundle; do
-      cp -R "$bundle" "$APP_PATH/Contents/Resources/"
-    done
-    shopt -u nullglob
-
-    # Turn the shipped PNG into an .icns so the Dock shows a real icon.
-    icon_png=""
-    for candidate in "$BIN_DIR"/TinyTitan_TinyTitanMac.bundle/tinytitan-app-icon.png \
-                     "$REPO_ROOT"/sources/TinyTitanApp/Mac/Resources/tinytitan-app-icon.png; do
-      [[ -f "$candidate" ]] && { icon_png="$candidate"; break; }
-    done
-    if [[ -n "$icon_png" ]] && command -v sips >/dev/null 2>&1 \
-       && command -v iconutil >/dev/null 2>&1; then
-      iconset="$(mktemp -d)/icon.iconset"
-      mkdir -p "$iconset"
-      for size in 16 32 128 256 512; do
-        sips -z $size $size "$icon_png" --out "$iconset/icon_${size}x${size}.png" >/dev/null 2>&1 || true
-        sips -z $((size * 2)) $((size * 2)) "$icon_png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null 2>&1 || true
-      done
-      iconutil -c icns "$iconset" -o "$APP_PATH/Contents/Resources/$APP_NAME.icns" >/dev/null 2>&1 || true
-      rm -rf "$iconset"
-    fi
-
-    cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleName</key><string>TinyTitan</string>
-  <key>CFBundleDisplayName</key><string>TinyTitan</string>
-  <key>CFBundleIdentifier</key><string>local.tinytitan.app</string>
-  <key>CFBundleVersion</key><string>5.6</string>
-  <key>CFBundleShortVersionString</key><string>5.6</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleExecutable</key><string>TinyTitan</string>
-  <key>CFBundleIconFile</key><string>TinyTitan</string>
-  <key>LSMinimumSystemVersion</key><string>26.0</string>
-  <key>NSHighResolutionCapable</key><true/>
-  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
-</dict>
-</plist>
-PLIST
-
-    # Ad-hoc signature: enough for macOS to run a locally built bundle, and it
-    # needs no Apple Developer account. Failure is not fatal.
-    if command -v codesign >/dev/null 2>&1; then
-      codesign --force --deep --sign - "$APP_PATH" >/dev/null 2>&1 \
-        && ok "App signed (ad-hoc, local)" \
-        || warn "Could not sign the app; it should still run from your machine."
-    fi
-
-    ok "App installed at $APP_PATH"
-    echo "     Open it from Applications, or:  open \"$APP_PATH\""
-  fi
-
-  # A PATH launcher for the terminal-minded, and for the app when it is not
-  # wanted. It only stops a server that this launcher started.
-  mkdir -p "$HOME/.local/bin"
-  cat > "$HOME/.local/bin/tinytitan" <<RUNNER
+# A command for the terminal-minded: it starts the server from this checkout,
+# and only ever stops a server that launcher started.
+mkdir -p "$HOME/.local/bin"
+cat > "$HOME/.local/bin/tinytitan" <<RUNNER
 #!/bin/sh
 # Installed by tools/install_tinytitan.sh. Starts the TinyTitan server from its checkout.
 exec "$REPO_ROOT/tools/server_launcher.sh" "\$@"
 RUNNER
-  chmod +x "$HOME/.local/bin/tinytitan"
-  ok "Command-line launcher: ~/.local/bin/tinytitan"
-  case ":$PATH:" in
-    *":$HOME/.local/bin:"*) ;;
-    *) echo "     Add it to your PATH to use the 'tinytitan' command:"
-       echo "       echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc" ;;
-  esac
+chmod +x "$HOME/.local/bin/tinytitan"
+ok "Start it with: ~/.local/bin/tinytitan"
+
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) echo "     Add it to your PATH to use the 'tinytitan' command anywhere:"
+     echo "       echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc" ;;
+esac
+
+if ! installed_any; then
+  echo
+  warn "No model is installed yet, so a server would have nothing to load."
+  echo "     Install one, then start the server:"
+  echo "       $REPO_ROOT/tools/install_models.sh $MODEL"
+  echo "       ~/.local/bin/tinytitan"
 fi
 
 # --- done -------------------------------------------------------------------
 echo
+# Hand over to the launcher whenever a person is there to watch: the launcher
+# prints the base URL and the client settings, and the health check it does
+# first is the proof that what was just built actually serves. An unattended
+# install prints the command instead, so a pipe never blocks on a server.
+if installed_any && (( ASSUME_YES == 0 )) && [[ -t 0 && -t 1 ]]; then
+  if ask "Start the TinyTitan server now?" yes; then
+    say "Starting the server. Leave this window open; Ctrl-C stops it."
+    echo
+    exec "$REPO_ROOT/tools/server_launcher.sh" --client server
+  fi
+fi
+
 say "Done."
 echo
-echo "  Start TinyTitan either way:"
-echo "    • open the TinyTitan app in Applications"
-echo "    • or, in a terminal:  ~/.local/bin/tinytitan"
+echo "  Start the TinyTitan server:"
+echo "    ~/.local/bin/tinytitan"
+echo "    (or: $REPO_ROOT/tools/server_launcher.sh)"
 echo
-echo "  Then point a client at the base URL the launcher prints (default"
-echo "  http://127.0.0.1:8080/v1, any API key; --port changes the port)."
-echo "  Keep the window open while you use it; TinyTitan runs one model at a time."
+echo "  It prints the base URL to point a client at - by default"
+echo "  http://127.0.0.1:8080/v1 with any API key; --port changes the port."
+echo "  Keep the window open while you use it; one model runs at a time."
 echo
 echo "  New to this? Start here:"
 echo "    https://github.com/Pummelchen/TinyTitan/blob/main/docs/site/01-what-is-tinytitan.md"

@@ -239,31 +239,27 @@ test("a missing settings file is refused with a clear error", () => {
   assert.throws(() => writeRouteSettings({ block: "x:\n" }), /no DSH settings file/);
 });
 
-test("findServerBinary follows explicit, env, PATH, app bundle, then the checkout", () => {
-  const home = "/home/test";
-  const app = join(home, "Applications", "TinyTitan.app", "Contents", "MacOS", "TinyTitanServer");
+test("findServerBinary follows explicit, env, PATH, then the checkout", () => {
   const onPath = join("/env", "bin", "TinyTitanServer");
   const explicit = "/explicit/TinyTitanServer";
   const repoArm = join("/repo", ".build", "arm64-apple-macosx", "release", "TinyTitanServer");
   const repoRelease = join("/repo", ".build", "release", "TinyTitanServer");
-  const files = new Set([explicit, onPath, app, repoArm, repoRelease]);
+  const files = new Set([explicit, onPath, repoArm, repoRelease]);
   const isExecutable = (path) => files.has(path);
   const env = { TINYTITAN_SERVER: onPath, PATH: "/env/bin" };
 
-  assert.equal(findServerBinary({ explicit, env, repoRoot: "/repo", home, isExecutable }), explicit);
+  assert.equal(findServerBinary({ explicit, env, repoRoot: "/repo", isExecutable }), explicit);
   assert.equal(
-    findServerBinary({ explicit: "/nope", env, repoRoot: "/repo", home, isExecutable }), onPath);
-  assert.equal(findServerBinary({ env, repoRoot: "/repo", home, isExecutable }), onPath);
-  // The installed app is the user-visible copy, so it beats the checkout build.
+    findServerBinary({ explicit: "/nope", env, repoRoot: "/repo", isExecutable }), onPath);
+  assert.equal(findServerBinary({ env, repoRoot: "/repo", isExecutable }), onPath);
+  // Nothing on PATH: the checkout's own build is the fallback.
   assert.equal(
-    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo", home, isExecutable }), app);
+    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo", isExecutable }), repoArm);
   assert.equal(
-    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo", home: "/none", isExecutable }), repoArm);
-  assert.equal(
-    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo", home: "/none",
+    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo",
                        isExecutable: (path) => path === repoRelease }), repoRelease);
   assert.equal(
-    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo", home: "/none",
+    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo",
                        isExecutable: () => false }), null);
   assert.equal(findServerBinary({ env: {}, isExecutable: () => false }), null);
 });
@@ -274,7 +270,7 @@ test("findServerBinary finds a real executable on PATH with the default probe", 
   writeFileSync(binary, "#!/bin/sh\nexit 0\n");
   chmodSync(binary, 0o755);
   assert.equal(
-    findServerBinary({ env: { PATH: directory }, repoRoot: "/none", home: "/none" }), binary);
+    findServerBinary({ env: { PATH: directory }, repoRoot: "/none" }), binary);
 });
 
 test("findModelsDir follows explicit, env, then the checkout", () => {
@@ -309,7 +305,7 @@ test("generateRoute discovers the binary, parses stdout, and writes the block", 
   };
   const result = generateRoute({
     serverBinary: binary, modelsDir, settingsPath, port: 8080, provider: "tinytitan",
-    run, env: { PATH: "" }, home: "/none", log: () => {},
+    run, env: { PATH: "" }, log: () => {},
   });
   assert.equal(result.status, "written-self-contained");
   assert.equal(result.detail, "written");
@@ -322,7 +318,7 @@ test("generateRoute discovers the binary, parses stdout, and writes the block", 
 
   // A second run over its own output is a no-op with no new backup.
   const again = generateRoute({
-    serverBinary: binary, modelsDir, settingsPath, run, env: { PATH: "" }, home: "/none",
+    serverBinary: binary, modelsDir, settingsPath, run, env: { PATH: "" },
     log: () => {},
   });
   assert.equal(again.status, "written-self-contained");

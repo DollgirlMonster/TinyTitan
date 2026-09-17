@@ -75,8 +75,7 @@ out, and `TINYTITAN_PORT` / `TINYTITAN_REPO` / `TINYTITAN_SERVER` /
 | `dshHome` | `$DSH_HOME` or `~/.dsh` | settings and presets |
 
 The built-in generator looks for the server at `serverBinary`, then
-`TINYTITAN_SERVER`, then `TinyTitanServer` on `PATH`, then
-`~/Applications/TinyTitan.app/Contents/MacOS/TinyTitanServer`, then the checkout's
+`TINYTITAN_SERVER`, then `TinyTitanServer` on `PATH`, then the checkout's
 release build; it looks for models at `modelsDir`, then `TINYTITAN_MODELS_DIR`,
 then `<repoRoot>/models`. It refuses to write when the settings file does not
 exist, and it makes no backup when the refresh would not change a byte.

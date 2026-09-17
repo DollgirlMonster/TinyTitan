@@ -42,16 +42,22 @@ covered properly in [Why TinyTitan can run models that "don't fit"](09-why-tinyt
 
 Three ways in, depending on who you are:
 
-- **A Mac app** with a normal window — type, read, adjust a few settings with
-  actual controls. Nothing to code. This is the right door for most people.
-- **A chat in the Terminal** for a quick single question, if you like that
-  sort of thing.
-- **A local server** that your existing apps can talk to. This is the one
-  programmers get excited about: point a coding assistant at your Mac and it
-  uses *your* model, locally. See
+- **A local server, with a client you already use** — the main door. Point an
+  app that speaks the OpenAI or Anthropic API at your Mac and it does its work
+  with *your* model, locally. The launcher can write that app's settings and
+  open it for you. See
   [Connecting your apps](06-connecting-your-apps.md).
+- **One question, one command** — a single prompt answered by the CLI, with no
+  server running at all. Good for a quick look, or for scripting.
+- **`curl`** — the smallest client there is: one line you paste, and the reply
+  prints. The quickest way to prove the server is up.
 
 All three use the same engine and the same installed model.
+
+TinyTitan itself has no window. The program is a local server, and the window
+belongs to whatever app you point at it. Starting that server is a short step in
+the Terminal, and
+[Getting TinyTitan running](02-getting-tinytitan-running.md) is that step.
 
 ## What makes it different
 

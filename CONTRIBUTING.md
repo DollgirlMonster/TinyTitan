@@ -116,7 +116,7 @@ What the script enforces, and why each check is there:
   and `gh release create` fails with a misleading "tag has not been pushed"
   error. 3.6 was nearly published against the wrong repo because of this.
 
-The archive ships the six executables plus the `.bundle` resources carrying the
+The archive ships the four executables plus the `.bundle` resources carrying the
 Metal shader library — the runtime cannot load its kernels without them beside
 the executables — along with `LICENSE` and `THIRD_PARTY_NOTICES.md`. It contains
 no model weights.
