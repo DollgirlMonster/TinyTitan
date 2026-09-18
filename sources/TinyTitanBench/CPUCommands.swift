@@ -299,6 +299,90 @@ enum DenseModelError: Error, CustomStringConvertible {
     }
 
 
+    /// Held-out text through the CPU forward pass, as mean negative
+    /// log-likelihood and perplexity.
+    ///
+    /// The twenty-prompt A/B (`benchmark/quant_quality_ab.py`) is a floor: a
+    /// short answerable prompt is a coarse instrument and a small perplexity
+    /// difference sits below it. This is the sharper one. `step` returns the
+    /// logits over the whole vocabulary for every position, so scoring a fixed
+    /// text needs no sampling and no generation — one pass per install over
+    /// the *same* tokens, and the difference between two quantizations of one
+    /// model becomes a paired number rather than a pass/fail.
+    ///
+    ///     TinyTitanBench cpu35ppl <snapshot> <text-file> [maxTokens] [nll-out]
+    ///
+    /// `nll-out`, when given, is one negative log-likelihood per scored token,
+    /// so a caller can compare two installs position by position instead of
+    /// comparing two means.
+    static func runCPUQwen35Perplexity(snapshot path: String,
+                                       text: URL,
+                                       maximumTokens: Int,
+                                       nllOutput: URL?) throws {
+        let directory = URL(fileURLWithPath: path)
+        let snapshot = try Self.loadDenseSnapshot(path)
+        let requested = ProcessInfo.processInfo.environment["TINYTITAN_CPU35_THREADS"]
+            .flatMap(Int.init)
+        let model = try CPUQwen35(snapshot: snapshot, threads: requested)
+        guard let tokenizer = try loadTokenizer(directory) else {
+            FileHandle.standardError.write(Data("no tokenizer in \(path)\n".utf8))
+            exit(2)
+        }
+        let body = try String(contentsOf: text, encoding: .utf8)
+        var ids = tokenizer.encode(body, addBOS: false).map(Int.init)
+        if ids.count > maximumTokens { ids = Array(ids.prefix(maximumTokens)) }
+        guard ids.count >= 2 else {
+            FileHandle.standardError.write(Data("text is too short to score\n".utf8))
+            exit(2)
+        }
+
+        model.reset()
+        var nlls: [Double] = []
+        nlls.reserveCapacity(ids.count - 1)
+        let started = ContinuousClock.now
+        var previous = ids[0]
+        for index in 1..<ids.count {
+            let logits = try model.step(token: previous)
+            nlls.append(Self.negativeLogLikelihood(logits, target: ids[index]))
+            previous = ids[index]
+        }
+        let elapsed = started.duration(to: .now)
+        let seconds = Double(elapsed.components.seconds)
+            + Double(elapsed.components.attoseconds) / 1e18
+
+        let mean = nlls.reduce(0, +) / Double(nlls.count)
+        // A token hash, so two runs can be shown to have scored the same text
+        // rather than merely the same file name.
+        var tokenHash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for id in ids {
+            tokenHash = (tokenHash ^ UInt64(UInt32(truncatingIfNeeded: id)))
+                &* 0x0000_0100_0000_01b3
+        }
+        print(String(format: "%@: %d tokens scored, threads %d, token hash %016llx",
+                     path as NSString, nlls.count, model.threads, tokenHash))
+        print(String(format: "mean nll %.6f  perplexity %.6f  seconds %.1f  (%.1f tok/s)",
+                     mean, exp(mean), seconds, Double(nlls.count) / seconds))
+        if let nllOutput {
+            let lines = nlls.map { String(format: "%.6f", $0) }.joined(separator: "\n")
+            try (lines + "\n").write(to: nllOutput, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// `-log softmax(logits)[target]`, computed with the max subtracted so a
+    /// logit above ~88 does not overflow `exp`. Returns infinity for a target
+    /// outside the vocabulary, which cannot happen for a token the same
+    /// tokenizer produced but is not worth a crash if it ever does.
+    static func negativeLogLikelihood(_ logits: [Float], target: Int) -> Double {
+        guard logits.indices.contains(target) else { return .infinity }
+        var peak = -Float.infinity
+        for value in logits where value > peak { peak = value }
+        guard peak.isFinite else { return .infinity }
+        var total = 0.0
+        for value in logits { total += Double(expf(value - peak)) }
+        return Double(peak) + log(total) - Double(logits[target])
+    }
+
+
     /// The CPU side-engine's commands. Returns whether one ran, so `main`
     /// can dispatch them before it creates a Metal context.
     static func runCPUCommand(_ name: String, iterations: Int) throws -> Bool {
@@ -344,6 +428,23 @@ enum DenseModelError: Error, CustomStringConvertible {
             try runCPUQwen35Batch(snapshot: snapshot,
                                   input: URL(fileURLWithPath: CommandLine.arguments[3]),
                                   output: URL(fileURLWithPath: CommandLine.arguments[4]))
+        case "cpu35ppl":
+            // Held-out text through the CPU forward pass: mean NLL and
+            // perplexity, the sharper instrument the twenty-prompt A/B was
+            // missing (TT-025).
+            guard CommandLine.arguments.count > 3 else {
+                print("usage: TinyTitanBench cpu35ppl <snapshot> <text-file> "
+                      + "[maxTokens] [nll-out]")
+                return true
+            }
+            let snapshot = CommandLine.arguments[2]
+            let text = URL(fileURLWithPath: CommandLine.arguments[3])
+            let maximum = CommandLine.arguments.count > 4
+                ? Int(CommandLine.arguments[4]) ?? 1_024 : 1_024
+            let nll = CommandLine.arguments.count > 5
+                ? URL(fileURLWithPath: CommandLine.arguments[5]) : nil
+            try runCPUQwen35Perplexity(snapshot: snapshot, text: text,
+                                       maximumTokens: maximum, nllOutput: nll)
         case let other where other.hasPrefix("cpu"):
             runCPUGEMV(iterations: iterations)
         default:
