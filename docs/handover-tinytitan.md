@@ -114,7 +114,7 @@ traps that one named still bite and are folded in below.
    gate reddens unrelated pushes. Repeat the instrumented suite under load (or with
    `TSAN_OPTIONS=halt_on_error=0` to collect every report) until it reproduces, then
    decide between a fix, a documented suppression, and a narrowed scope. Do not make
-   CI green by deleting the job. See tracker section 1.
+   CI green by deleting the job. See **TT-001** in the wiki Project Tracker.
 2. **Publishing `plugins/dsh-tinytitan`** — still a decision, not code. The code
    half is closed: the route refresh no longer needs a checkout
    (`src/generate.js` runs the discovered `TinyTitanServer --catalog` and its output
@@ -132,7 +132,7 @@ traps that one named still bite and are folded in below.
    path trades the TTFT win for a pageable cache.
 4. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
    the GPU, a higher expert slot budget, the n-gram gather a token ahead), and the
-   hardware blockers in tracker section 2 (validation on M1/M2/M4/M5/M6, ANE across
+   hardware blockers **TT-021** to **TT-023** (validation on M1/M2/M4/M5/M6, ANE across
    generations, long-context parity past the exactness window).
 
 ## Traps worth carrying forward
@@ -142,7 +142,8 @@ traps that one named still bite and are folded in below.
   `https://api.deepseek.com/v1` is the chat-completions root, and every request then
   goes to a path DeepSeek does not serve. All four fleet nodes were failing every
   turn this way until 2026-09-18. The generated route (`tools/dsh_route.sh`) does
-  not make this mistake; config typed by hand does. Full entry in tracker section 4.
+  not make this mistake; config typed by hand does. Full entry under *Traps that
+  have already cost time* in the wiki's Engineering Notes.
 - **A version gate must be visible, not merely correct.** The harness collects a
   plugin's log records and prints them **only when the boot itself fails**, so a
   refusal reported through the host logger is invisible on a healthy boot. Both
