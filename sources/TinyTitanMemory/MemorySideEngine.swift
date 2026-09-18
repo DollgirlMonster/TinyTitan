@@ -38,10 +38,10 @@ public enum MemorySupersession: Sendable, Equatable {
 /// - **Only the tasks a caller actually asks appear here.** Contradiction
 ///   works from the smallest model up; durability, duplication and
 ///   supersession from the 4B; the reply check from the 9B. Retrieval is
-///   measured and deliberately absent: it is worth 4 of 4 recall@1 against the
-///   token ranking on the fair cases, but every caller that would use it is a
-///   request the person is waiting on, and a judgement costs 15 s
-///   (`docs/side-engine-tasks.md`). Add the method with the caller.
+///   measured and now has its caller: it is worth 4 of 4 recall@1 against the
+///   token ranking on the fair cases, but a judgement is 15 s, so the only
+///   caller is `MemoryRetrievalHinter` — a background pass in the idle window,
+///   never a request (`docs/side-engine-tasks.md`).
 public protocol MemorySideEngine: Sendable {
     /// T2: is this fact worth keeping after the session ends? False means the
     /// store should not hold it: a line of the story, a remark about the
@@ -79,6 +79,15 @@ public protocol MemorySideEngine: Sendable {
     /// `nil` and then act on the answer.
     func supersedes(_ stored: MemoryFact, _ new: MemoryFact,
                     rule: String?) async -> MemorySupersession?
+
+    /// T7: could this stored fact answer this question? True means the fact
+    /// contains the answer, or part of it.
+    ///
+    /// The caller is `MemoryRetrievalHinter`, which asks only while no client
+    /// is generating and stores the answer as a ranking hint for a later
+    /// search. A request path must not await this: one judgement is 15.2 s on
+    /// the 4B (`docs/side-engine-tasks.md`).
+    func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool?
 
     /// Release the engine. The memory service calls this on shutdown, because
     /// the engine is a second resident model and should not wait for process

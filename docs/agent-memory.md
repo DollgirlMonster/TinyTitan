@@ -171,10 +171,15 @@ found by key and not by a model call — is not written either; a new key whose
 content an existing key already carries is not stored; and a new key that cannot
 both be true with an existing one is logged as a possible conflict and otherwise
 left alone, advisory because disagreement is not supersession. Retrieval is
-accurate — on an authored recall set it takes recall@1 from 1 of 4 to 4 of 4
-against the token match — but it has no caller that can afford it: every
-question-shaped caller is a request the person is waiting on, and a judgement is
-15 seconds on the 4B. It is deliberately not on the port until one exists.
+accurate — on an authored recall set it takes recall@1 from 3 of 4 to 4 of 4
+against the token match, after the ranking took an inverse-document-frequency
+weight — and it now has the only caller it can afford. `MemoryRetrievalHinter`
+is a background pass, not a request: a search answers from the token ranking at
+once and registers its question, and one task asks T7 only while the server is
+idle, recording each YES as a ranking hint for the next search of that
+question. It covers at most 64 facts a question, keeps hints for 16 questions,
+and will not promote a fact whose value changed since the answer was given. A
+judgement never gates a turn.
 
 ### The guard
 

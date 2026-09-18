@@ -119,7 +119,9 @@ public enum MemoryTools {
                                scope: MemoryScope,
                                session: MemorySession,
                                limits: MemoryLimits,
-                               guarding: Bool = false) async -> MemoryToolResult {
+                               guarding: Bool = false,
+                               retrievalHint: MemoryRetrievalHint = .none,
+                               onSearch: (@Sendable (MemoryQuery) -> Void)? = nil) async -> MemoryToolResult {
         do {
             switch name {
             case "memory_get":
@@ -193,7 +195,15 @@ public enum MemoryTools {
                     tags: arguments["tags"]?.stringArrayValue ?? [],
                     minimumImportance: arguments["min_importance"]?.doubleValue,
                     limit: arguments["limit"]?.intValue ?? 10)
-                let records = try await store.search(query, in: scope)
+                // Registered, not awaited: the search answers from the ranking
+                // it already has, and the background pass leaves a hint for a
+                // later one. `onSearch` is nil unless a side-engine is wired.
+                onSearch?(query)
+                let ranked = try await store.search(query, in: scope)
+                let records = retrievalHint.isEmpty
+                    ? ranked
+                    : await retrievalHint.applied(to: ranked, query: query,
+                                                  store: store, scope: scope)
                 return .ok(["results": .records(records)])
 
             default:

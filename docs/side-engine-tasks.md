@@ -234,6 +234,11 @@ and is worse at durability. The 2B decides contradiction and nothing else of
 these six. The sentence-rendered facts that earlier fixed T5 for the 2B are not
 needed at the 4B, where the shipped `key = value` form already scores 100%.
 
+**The policy that follows, settled 2026-09-19.** The 2B is not used as a
+side-engine. The 4B 4-bit is the default and the verification instrument; the
+9B is optional and chosen on quality benchmark results — it buys the reply check
+and gives up durability — never for size on its own.
+
 Runs made 2026-09-18 with the release `TinyTitanBench` built from `036f98c`;
 60 jobs, 7,276 tokens except where a draft changed the case count: 2B 386.2 s
 (18.8 tok/s), 4B 1,131.3 s (6.4), 4B v2 1,168.3 s (6.6), 9B 2,244.1 s (3.2),
@@ -279,12 +284,13 @@ probe cases, 448 tokens, 58.0 s on the 4B.
 
 ## Does retrieval rank better than the token match?
 
-T7 had no caller, so the question a caller would ask first is what the ranking
-is worth. `benchmark/side_engine_recall.py` compares it against the token
-ranking `MemoryRanking` uses — a term in the key scores 3, in the value 1, and a
-fact sharing no term is not returned at all — over authored questions that avoid
-the target's words, name the attribute rather than the holder, or carry the
-answer in the value:
+T7's only caller is the background hinter, so the question a caller would ask
+first is what the ranking is worth. `benchmark/side_engine_recall.py` compares
+it against the token ranking `MemoryRanking` uses — a term in the key scores 3,
+in the value 2 (both scaled by inverse document frequency), and a fact sharing
+no term is not returned at all — over authored questions that avoid the
+target's words, name the attribute rather than the holder, or carry the answer
+in the value:
 
 ```bash
 python3.13 benchmark/side_engine_recall.py --prepare /tmp/recall.jsonl
@@ -353,19 +359,20 @@ Wired:
   the log names both keys. A new key that cannot both be true with an existing
   one is logged as a possible conflict and otherwise left alone: advisory by
   design, because disagreement is not supersession.
+- **T7 retrieval**, through the background hinter (`MemoryRetrievalHinter`),
+  never a request. A search answers from the token ranking immediately and
+  registers its question; one background task walks the scope's facts while the
+  server is idle — the coordinator's `generating` signal read as `isIdle` — and
+  records each YES as a ranking hint keyed by the fact plus a fingerprint of the
+  value it judged. A later search for the same question puts the hinted facts
+  first, including a fact the token ranking never returned at all, which is the
+  semantic miss no weighting reaches. Nothing awaits a judgement, which is what
+  keeps 15.2 s off the request path. The sweep covers at most 64 facts a
+  question, keeps hints for at most 16 questions, and a value that changed
+  cannot be promoted on an answer about the old one. `MemoryRetrievalTests`
+  pins promotion, ordering, staleness, the query filters and the idle gate; the
+  real model's ranking is the measurement above.
 
 Not wired:
 
-- **T7 retrieval**, for now. It is accurate — 100% on the main benchmark's
-  pairs — and on an authored recall set it ranks better than the token ranking
-  the memory tools use: **recall@1 4 of 4 against 1 of 4, recall@3 4 of 4
-  against 3 of 4**, the same at the 4B and the 9B
-  (`benchmark/side_engine_recall.py`). What it has no answer for is the price:
-  every question-shaped caller is a request the person is waiting on, and a
-  judgement is 15.2 s on the 4B. So the port method was removed rather than left
-  as an API with no caller, and the judgement plus this measurement stay for
-  whoever builds one. Two of the six authored questions are excluded from the
-  total because their labels do not hold — "the lighthouse keeper's son" does
-  not say what Marcus does for a living — and the script prints them as
-  uncounted rather than dropping them silently.
 - **T6 reply check** becomes available when the engine is a 9B.

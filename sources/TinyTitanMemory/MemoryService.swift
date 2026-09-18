@@ -22,6 +22,10 @@ public actor MemoryService {
     /// callers' no-decision fallback the ordinary path rather than a special
     /// case.
     private let sideEngine: (any MemorySideEngine)?
+    /// The background T7 pass and the ranking hints it leaves. Nil exactly
+    /// when no side-engine is wired, so the deterministic search path is the
+    /// only path a deployment without an engine ever takes.
+    private let retrievalHinter: MemoryRetrievalHinter?
     /// How many questions one consolidation may put to the side-engine, in
     /// total.
     ///
@@ -75,6 +79,7 @@ public actor MemoryService {
                 durableStore: (any MemoryStore)? = nil,
                 journal: (any SessionJournal)? = nil,
                 sideEngine: (any MemorySideEngine)? = nil,
+                isIdle: (@Sendable () -> Bool)? = nil,
                 log: @escaping @Sendable (MemoryLogEvent) -> Void = { _ in }) {
         self.configuration = configuration
         self.localStore = InMemoryStore(limits: configuration.limits)
@@ -83,6 +88,12 @@ public actor MemoryService {
         self.injectedStore = durableStore
         self.injectedJournal = journal
         self.sideEngine = sideEngine
+        // A caller with no idle signal — a benchmark, a test — reads as
+        // always idle, which is what makes the pass finish deterministically
+        // off the server.
+        self.retrievalHinter = sideEngine.map {
+            MemoryRetrievalHinter(engine: $0, isIdle: isIdle ?? { true }, log: log)
+        }
     }
 
     /// The engine, store and journal for a scope, built on first use.
@@ -380,6 +391,9 @@ public actor MemoryService {
     /// Leaving it to deallocation would make the moment another server can
     /// take over depend on when ARC happens to release an actor.
     public func shutDown() async {
+        // The background sweep goes first: it drives the same engine, and a
+        // judgement must not be in flight while the weights are released.
+        await retrievalHinter?.shutdown()
         for workspace in workspaces.values {
             await workspace.engine?.shutDown()
         }
@@ -505,13 +519,17 @@ public actor MemoryService {
                         in context: MemorySessionContext) async -> MemoryToolResult {
         guard configuration.isEnabled else { return .failure("memory is disabled") }
         let store = await activeStore(for: context.scope)
+        let (hint, onSearch) = await retrievalContext(name: name, arguments: arguments,
+                                                      store: store, scope: context.scope)
         let result = await MemoryTools.execute(name: name,
                                                arguments: arguments,
                                                store: store,
                                                scope: context.scope,
                                                session: context.session,
                                                limits: configuration.limits,
-                                               guarding: configuration.guardsUserFacts)
+                                               guarding: configuration.guardsUserFacts,
+                                               retrievalHint: hint,
+                                               onSearch: onSearch)
         // Checked whatever the outcome: a call whose own write landed can
         // still have had a session event refused.
         let journalLost = await journalFailed(in: context.scope)
@@ -533,7 +551,9 @@ public actor MemoryService {
                                                      scope: context.scope,
                                                      session: context.session,
                                                      limits: configuration.limits,
-                                                     guarding: configuration.guardsUserFacts)
+                                                     guarding: configuration.guardsUserFacts,
+                                                     retrievalHint: hint,
+                                                     onSearch: onSearch)
                 }
             }
         } else {
@@ -551,6 +571,41 @@ public actor MemoryService {
     /// generation.
     public func endSession(_ context: MemorySessionContext) async {
         log(.sessionEnded(session: context.session.id, scope: context.scope))
+    }
+
+    /// The ranking hint this call may read, and the closure that schedules the
+    /// background pass the next search will read from.
+    ///
+    /// The schedule closure is fire-and-forget on purpose: it hands the
+    /// question to the hinter's own task and returns, so a search never waits
+    /// on a judgement. Both are empty unless this really is a text search and
+    /// a side-engine is wired, which is what leaves the deterministic path
+    /// byte-for-byte what it was.
+    private func retrievalContext(name: String,
+                                  arguments: [String: MemoryToolValue],
+                                  store: any MemoryStore,
+                                  scope: MemoryScope)
+        async -> (MemoryRetrievalHint, (@Sendable (MemoryQuery) -> Void)?) {
+        guard name == "memory_search", let hinter = retrievalHinter,
+              let text = arguments["query"]?.stringValue,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return (.none, nil)
+        }
+        let hint = await hinter.hint(question: text, in: scope)
+        let schedule: @Sendable (MemoryQuery) -> Void = { query in
+            guard let asked = query.text,
+                  !asked.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return
+            }
+            Task { await hinter.register(question: asked, in: scope, store: store) }
+        }
+        return (hint, schedule)
+    }
+
+    /// Awaits the background T7 sweep, so a test can make a hint observable.
+    /// Nothing on the request path calls this.
+    func waitForRetrievalHints() async {
+        await retrievalHinter?.waitForBackgroundWork()
     }
 
     /// Facts already in a scope, most important first, so a consolidation
@@ -930,6 +985,10 @@ public enum MemoryLogEvent: Sendable, Equatable {
     case contradictionsFound(session: String, count: Int)
     /// A consolidation wrote a fact about the person to the shared workspace.
     case sharedFactWritten(key: String)
+    /// One background T7 sweep finished. Neither the question nor a value is
+    /// logged — a question is the person's words and memory holds anything the
+    /// model wrote — only how much work was done.
+    case retrievalHints(judged: Int, answered: Int)
     /// Project files whose session log was expired by retention; facts kept.
     case expired(files: [String])
 
@@ -960,6 +1019,9 @@ public enum MemoryLogEvent: Sendable, Equatable {
             return "memory guard kept the user's fact, marked disputed: \(key)"
         case .sharedFactWritten(let key):
             return "memory shared fact written for every project: \(key)"
+        case .retrievalHints(let judged, let answered):
+            return "memory retrieval hints: judged \(judged) fact(s), "
+                + "\(answered) could answer"
         case .unchangedSkipped(let session, let count):
             return "memory session=\(session) consolidation skipped \(count) unchanged fact(s)"
         case .nearDuplicateStopped(let key, let kept):

@@ -376,6 +376,10 @@ private final class StubSideEngine: MemorySideEngine, @unchecked Sendable {
         lock.withLock { contradictionAsked += 1 }
         return contradictionAnswer
     }
+
+    /// T7 is not wired to a write, and these tests never search. The
+    /// background caller has its own tests in `MemoryRetrievalTests`.
+    func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool? { nil }
 }
 
 /// Collects the service's log events.

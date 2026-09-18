@@ -30,6 +30,12 @@ struct SideEngineMemoryAdapter: MemorySideEngine, Sendable {
                                    bKey: new.key, bValue: new.value))
     }
 
+    /// T7. The caller is the background hinter, which owns the idle gate and
+    /// the budget; the adapter only translates the question and the fact.
+    func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool? {
+        await yesNo(.retrieval(question: question, key: fact.key, value: fact.value))
+    }
+
     /// The rule is data the caller found; without one the engine's answer is a
     /// guess about whether the change was allowed, so a `nil` rule answers
     /// `nil` rather than pretending.

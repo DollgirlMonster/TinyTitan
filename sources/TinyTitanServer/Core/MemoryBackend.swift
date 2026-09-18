@@ -523,8 +523,10 @@ public enum ServerMemoryFactory {
     ///     environment, and an engine that is off changes nothing.
     ///   - isClientGenerating: read before every token the side-engine
     ///     produces, so it takes one thread while a person is waiting and the
-    ///     performance cores in the gaps. Nil leaves the width alone, which is
-    ///     what a test or a benchmark wants.
+    ///     performance cores in the gaps. The background retrieval pass gates
+    ///     on the same read — `isIdle` is its inverse — so T7 runs only in a
+    ///     window where nobody is waiting. Nil leaves the width alone and the
+    ///     pass ungated, which is what a test or a benchmark wants.
     public static func wrap(_ backend: any ServerInferenceBackend,
                             configuration: MemoryConfiguration = .fromEnvironment(),
                             modelsDirectory: String? = nil,
@@ -538,9 +540,19 @@ public enum ServerMemoryFactory {
         // weights are not read until the first judgement.
         let sideEngine = ServerSideEngineFactory.make(modelsDirectory: modelsDirectory,
                                                       isClientGenerating: isClientGenerating)
+        // Spelled out rather than mapped: nesting the closure inside
+        // `MemoryService(...)`, or even inside an optional `map`, made the
+        // type checker crash rather than infer.
+        let isIdle: (@Sendable () -> Bool)?
+        if let isClientGenerating {
+            isIdle = { !isClientGenerating() }
+        } else {
+            isIdle = nil
+        }
         let service = MemoryService(
             configuration: configuration,
-            sideEngine: sideEngine.map { SideEngineMemoryAdapter(engine: $0) }) { event in
+            sideEngine: sideEngine.map { SideEngineMemoryAdapter(engine: $0) },
+            isIdle: isIdle) { event in
             ServerLog.memory(event.message)
         }
         ServerLog.memory(configuration.summary)

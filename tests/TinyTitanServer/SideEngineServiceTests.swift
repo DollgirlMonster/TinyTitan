@@ -93,6 +93,20 @@ import TinyTitanMemory
         #expect(answer == nil)
     }
 
+    /// T7 through the adapter: the two legal answers map, and only those. The
+    /// caller that consumes it is `MemoryRetrievalHinter`, never a write.
+    @Test func retrievalAnswersMapThroughAsYesAndNo() async {
+        let yes = SideEngineMemoryAdapter(engine: SideEngine { FakeSideEngineModel(answer: "YES") })
+        let no = SideEngineMemoryAdapter(engine: SideEngine { FakeSideEngineModel(answer: "NO") })
+        let unknown = SideEngineMemoryAdapter(
+            engine: SideEngine { FakeSideEngineModel(answer: "perhaps") })
+        let fact = MemoryFact(key: "rules/ferry", value: "runs only on Sundays")
+
+        #expect(await yes.couldAnswer("How often does the boat cross?", fact) == true)
+        #expect(await no.couldAnswer("How often does the boat cross?", fact) == false)
+        #expect(await unknown.couldAnswer("How often does the boat cross?", fact) == nil)
+    }
+
     @Test func aModelThatWillNotLoadIsNoDecision() async {
         let engine = SideEngine { throw SideEngineError.missingTokenizer("/nowhere") }
         let adapter = SideEngineMemoryAdapter(engine: engine)
