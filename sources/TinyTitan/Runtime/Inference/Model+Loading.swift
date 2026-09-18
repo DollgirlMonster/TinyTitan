@@ -437,7 +437,8 @@ extension Model {
 
     }
 
-    /// One kernel per role is built, so a role has to be uniform.
+    /// One kernel per role is built, so a role has to be uniform — and an
+    /// override the runtime cannot honour is refused by name.
     ///
     /// The runner asks a role for its width once and builds a single GEMV for
     /// it (`Model.qoProjectionWeightBits`, `kvProjectionWeightBits`,
@@ -445,9 +446,29 @@ extension Model {
     /// `k_proj` at 4 bits on one layer and 8 on the next would have half its
     /// layers read at the wrong width -- the silent-wrongness failure this
     /// whole path exists to avoid -- so the install is refused by name instead.
-    private static func validateRoleUniformity(overrides: [String: Int],
-                                               family: ModelFamily) throws {
+    ///
+    /// The GDN `a`/`b` pair is the one projection the per-tensor path does not
+    /// reach. Its neighbours (`in_proj_qkv`, `in_proj_z`, `out_proj`, and every
+    /// attention projection) resolve the tensor's own slot; `gdnA`/`gdnB`
+    /// validate against the attention slot because the kernel that reads them
+    /// takes a *bf16-or-slot* flag rather than a width. A quantized override on
+    /// the pair is therefore not applied, and the install fails the size check
+    /// with "in_proj_a.weight size N does not match expected M", which reads
+    /// like corruption rather than a limit. Only a 16-bit override is honoured,
+    /// and a quantized one is named here instead.
+    static func validateRoleUniformity(overrides: [String: Int],
+                                       family: ModelFamily) throws {
         guard !overrides.isEmpty else { return }
+        for (stem, bits) in overrides.sorted(by: { $0.key < $1.key })
+        where stem.hasSuffix(".linear_attn.in_proj_a")
+            || stem.hasSuffix(".linear_attn.in_proj_b") {
+            guard bits == 16 else {
+                throw ModelError.unsupportedArchitecture(
+                    detail: "\(family.rawValue) declares \(stem) at \(bits) bits; the GDN "
+                        + "a/b kernel reads that pair at the attention slot's width or as "
+                        + "bf16, so a quantized override there is not honoured")
+            }
+        }
         // The runtime's roles, not one suffix per tensor: q/o share a
         // dispatcher, as do k/v, the three FFN projections and the three GDN
         // ones.

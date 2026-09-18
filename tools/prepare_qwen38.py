@@ -310,13 +310,22 @@ def promoted_to_bf16(name: str, width: int) -> bool:
 def quant_bits(name: str, width: int = BITS_4) -> int | None:
     """Bits for a tensor, or None to copy it through unquantised.
 
-    This mirrors the runtime's *slot* model, and it has to. `Model` derives a
-    tensor's expected size from `manifest.quant.<slot>.weightBits` and picks one
-    GEMV pipeline per slot -- `attentionWeightBits == 4 ? int4 : affine` -- so
-    every tensor in a slot shares one width. A per-tensor override in
-    config.json is honoured by the repacker, which packs the tensor at that
-    width, and then rejected by the runtime, which sizes it at the slot's:
-    "in_proj_a.weight size 122880 does not match expected 61440".
+    This mirrors the runtime's slot model *plus its per-tensor overrides*. `Model`
+    derives a tensor's expected size from `manifest.quant.<slot>.weightBits` and
+    builds one GEMV per *role*, so a role shares one width — but a tensor whose
+    width differs from its slot carries an override keyed by stem, which the
+    repacker writes (`GTurboJSON.quantObject`), the format validates
+    (`GTurboManifestV1`), and the runtime resolves per tensor
+    (`ManifestQuant.slot(forTensorNamed:overrides:fallback:)`). The dense
+    Qwen 3.5 installs are built exactly that way: `mlp.*` at 4 bits against an
+    8-bit slot, full-attention `k_proj`/`v_proj` at 8 against a 4-bit one.
+
+    One pair is the exception, and it is the pair this converter promotes: the
+    GDN `a`/`b` projections. The fused QKV+Z+A+B kernel takes a *bf16-or-slot*
+    flag rather than a width and its quantized branch is int4, so the runtime
+    refuses a quantized override for them by name
+    (`Model.validateRoleUniformity`). A 16-bit override is honoured, which is
+    the only width asked for here.
 
     The slots, matching what a working install carries:
 
@@ -330,10 +339,9 @@ def quant_bits(name: str, width: int = BITS_4) -> int | None:
     own slot. The measurement in tools/precision_probe.py says the QSA indexer,
     the hyper-connection write gate and the GDN gating projections deserve the
     same treatment -- the indexer picks the same keys 0.0% of the time at 4
-    bits against 49.5% at 8, for about 10 MB. They cannot have it until the
-    runtime can size those tensors independently, which means either new slots
-    for them or per-tensor widths in the resident index. Recorded in
-    docs/ngram-table-sharing-plan.md rather than silently dropped.
+    bits against 49.5% at 8, for about 10 MB. The mechanism to give them their
+    own width now exists (per-tensor overrides); what is missing is the decision
+    to promote them, and the QSA indexer at 4 bits was measured and rejected.
     """
     if not name.endswith(".weight"):
         return None
