@@ -228,14 +228,17 @@ export function apply(ctx, config = {}) {
   );
   log(
     `dsh-lan-manager: API mounted at ${resolved.basePath} ` +
-      `(token ${resolved.token ? "required" : "not set"})` +
-      (lanFacing.length > 0
-        ? ` — reachable at ${lanFacing.map((a) => `${a.address}:${webServer.port ?? "?"}${resolved.basePath}`).join(", ")}`
-        : ""),
+      `(token ${resolved.token ? "required" : "not set"})`,
   );
+  // The reachable address is reported from the harness's own bind rather than
+  // from this host's interfaces: the webserver plugin accepts only 127.0.0.1 or
+  // 0.0.0.0, and refuses 0.0.0.0 for safety, so naming an interface here would
+  // advertise an address nothing is listening on. Verified 2026-09-18 — a
+  // specific address fails the webserver's schema and the profile does not load.
   log(
-    `dsh-lan-manager: the web server must bind 0.0.0.0 for LAN access; ` +
-      `loopback-only binds are reachable from this machine alone`,
+    `dsh-lan-manager: this API answers on loopback only, so a caller on another ` +
+      `machine cannot reach it` +
+      (lanFacing.length > 0 ? ` (this host: ${lanFacing.map((a) => a.address).join(", ")})` : ""),
   );
 
   state.mounted = true;

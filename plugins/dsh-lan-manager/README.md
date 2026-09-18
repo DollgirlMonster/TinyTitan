@@ -5,9 +5,9 @@ question *"what is running on that Mac, and can I drive it from here?"* for a
 cluster of harness instances, without a GUI and without a third-party gateway.
 
 ```bash
-curl http://192.168.18.27:3080/dsh-lan/workspaces
-curl -X POST http://192.168.18.27:3080/dsh-lan/prompt-all \
-     -H 'content-type: application/json' \
+curl -H "x-dsh-token: $DSH_LAN_KEY" http://127.0.0.1:3080/dsh-lan/workspaces
+curl -X POST http://127.0.0.1:3080/dsh-lan/prompt-all \
+     -H "x-dsh-token: $DSH_LAN_KEY" -H 'content-type: application/json' \
      -d '{"prompt":"report your current goal"}'
 ```
 
@@ -29,8 +29,9 @@ curl -X POST http://192.168.18.27:3080/dsh-lan/prompt-all \
 
 **The group.** Every instance shares one **group key** (a string, default
 `tinytitan-lan`, changeable) and discovers the others without being told where
-they are — **every online tailnet peer whatever OS or continent it runs on**,
-Bonjour (`_dsh-lan._tcp`) on the local network, configured `peers`, and optionally
+they are — **online tailnet peers that have an IPv4 address**, whatever continent
+they are on (mobile platforms and IPv6-only peers are skipped), Bonjour
+(`_dsh-lan._tcp`) on the local network, configured `peers`, and optionally
 a local-subnet sweep — on a timer (60 s default). Note that Bonjour does not cross
 a tailnet, and a peer behind an ACL that blocks the port stays invisible: the mesh
 gossip is what carries discovery from one member to the rest. Each member keeps
@@ -45,9 +46,11 @@ external manager — `ttlanmanager`, the **TinyTitan DSH LAN Manager**, in this
 repository's `sources/` — which reads the group from any one member's
 `/inventory` and then talks to the member that owns the thing being acted on.
 
-**"Active" means what the web page shows.** A workspace is active when the
-registry lists it *and* it owns at least one non-archived session; a session is
-visible when its workspace accounts for it and it is not in the registry-global
+**"Active" means what the web page shows.** Active workspaces are derived from the
+session projection: a workspace is listed when at least one non-archived session
+lives in it, and registry metadata is layered on where the registry knows it — so a
+workspace the registry never saw is still listed, with `registered: false` and a
+null `id`. A session is visible when it is not in the registry-global
 `archivedSessionIds` set. Archived sessions keep their slot and their history —
 archiving hides a row, it does not delete anything.
 
@@ -79,17 +82,35 @@ layers, checked in this order:
 
 ### Reaching it from another machine
 
-`dsh web` binds loopback by default; the fence cannot help if nothing is listening
-on the network interface. To serve the LAN, bind the harness web server to `0.0.0.0`
-and allow the authority you will browse:
+**It cannot, on the pinned harness.** The API is registered on the harness's own
+web server, so it answers only where that server listens — and
+`@deepseek-ai/dsh-host-webserver` accepts just two bind addresses:
 
-```bash
-dsh --profile web --host 0.0.0.0 --trusted-host 192.168.18.27:3080
+```
+$.host expected "127.0.0.1" | "0.0.0.0" but got "192.168.18.73" (at host)
 ```
 
-This is a deliberate exposure — the harness web server itself carries no TLS and no
-authentication of its own, which is exactly why this plugin fences by source address
-in front of its own routes. Do not port-forward it to the public internet.
+`127.0.0.1` is the default and reaches this machine alone. `0.0.0.0`, which would
+put the API on the network, is refused by the harness before it binds:
+
+```
+error: --host 0.0.0.0 is intentionally not supported yet for safety:
+it would expose remote code execution to the network; use 127.0.0.1 instead
+```
+
+A specific interface does not work either: the webserver plugin's schema rejects
+it and the profile fails to load. So the source fence, the group key and the
+fleet-wide prompt are all built and idle until upstream allows one of them — a
+third ask alongside the two in `docs/dsh-upstream-asks.md`.
+
+Call this API from the machine running the harness:
+
+```bash
+curl -H "x-dsh-token: $DSH_LAN_KEY" http://127.0.0.1:3080/dsh-lan/health
+```
+
+The fence and the key still do their jobs on that path — they are what keep the
+routes from being reachable by anything the harness is later bound to expose.
 
 ## Supported harness version
 
@@ -204,7 +225,8 @@ know:
 ```bash
 for host in 192.168.18.27 192.168.18.25 192.168.18.29 192.168.18.26; do
   printf '%s: ' "$host"
-  curl -fsS --max-time 5 "http://$host:3080/dsh-lan/workspaces" \
+  curl -fsS --max-time 5 -H "x-dsh-token: $DSH_LAN_TOKEN" \
+    "http://$host:3080/dsh-lan/workspaces" \
     | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["workspaces"]), "workspaces", sum(w["sessionCount"] for w in d["workspaces"]), "sessions")' \
     || echo unreachable
 done
@@ -228,8 +250,8 @@ done
 | `groupKey` / `token` | `DSH_LAN_KEY`, `DSH_LAN_TOKEN` | `tinytitan-lan` | Group tag **and** the secret every request presents |
 | `peers` | `DSH_LAN_PEERS` | `[]` | Seed addresses (`host` or `host:port`) to try even when discovery finds nothing |
 | `discoveryIntervalSeconds` | `DSH_LAN_DISCOVERY_SECONDS` | `60` | How often the group is refreshed (minimum 5) |
-| `discoverTailscale` | — | `true` | Enumerate every online tailnet peer — macOS, Linux, Windows — from the Tailscale CLI |
-| `discoverBonjour` | — | `true` | Browse/advertise `_dsh-lan._tcp` through macOS `dns-sd` |
+| `discoverTailscale` | — | `true` | Enumerate online tailnet peers that have an IPv4 address — macOS, Linux, Windows — from the Tailscale CLI |
+| `discoverBonjour` | — | `true` | Browse `_dsh-lan._tcp` through macOS `dns-sd` — discovery only; the plugin registers no Bonjour service |
 | `discoverSubnet` | — | `false` | Sweep each local `/24` on the peer port — the only source that touches hosts which never opted in |
 | `peerPort` | — | `3080` | The port other members answer on |
 | `probeTimeoutMs` | `DSH_LAN_PROBE_TIMEOUT` | `3000` | How long a peer probe waits — three seconds because a member may be on another continent |
@@ -266,7 +288,7 @@ literal shape and reports which path it took in `/health`.
 ## Tests
 
 ```bash
-npm test        # node --test 'test/*.test.js' — 78 cases
+npm test        # node --test 'test/*.test.js' — 91 cases
 ```
 
 `test/net.test.js` is the important one: it pins every allowed range and, more to
