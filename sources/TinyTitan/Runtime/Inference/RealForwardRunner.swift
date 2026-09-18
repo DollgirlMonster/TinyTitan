@@ -547,7 +547,11 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         var affineByWidth: [Int: AffineQuantGEMV] = [:]
         for width in Set([model.attentionWeightBits, model.qoProjectionWeightBits,
                           model.kvProjectionWeightBits,
-                          model.gdnProjectionWeightBits]).sorted() where width != 4 {
+                          model.gdnProjectionWeightBits,
+                          // The three families that read the attention slot
+                          // until a per-tensor override promotes them.
+                          model.hyperConnectionWeightBits, model.pleKeyWeightBits,
+                          model.qsaIndexerWeightBits]).sorted() where width != 4 {
             affineByWidth[width] = try AffineQuantGEMV(context: context, weightBits: width)
         }
         self.affineByWidth = affineByWidth
@@ -638,7 +642,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
                                   streams: cfg.hyperConnections.count,
                                   lowRank: cfg.hyperConnections.lowRank,
                                   maxRows: gateRows,
-                                  weightBits: model.attentionWeightBits)
+                                  weightBits: model.hyperConnectionWeightBits)
             : nil
         self.qsaIndexer = cfg.sparseIndexer.enabled
             ? try QSAIndexer(context: context,
@@ -646,7 +650,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
                              budget: Self.qsaBudget(cfg.sparseIndexer),
                              ropeTheta: Float(cfg.fullRopeTheta),
                              capacity: maxContext,
-                             weightBits: model.attentionWeightBits)
+                             weightBits: model.qsaIndexerWeightBits)
             : nil
         if cfg.ple.enabled {
             let constants = try PLEConstants.load(
@@ -676,7 +680,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
                 // The dilation is the n-gram size, not a constant of its own.
                 dilation: cfg.ple.ngramSize,
                 maxRows: gateRows,
-                weightBits: model.attentionWeightBits)
+                weightBits: model.pleKeyWeightBits)
         } else {
             self.pleHash = nil
             self.ngramTable = nil

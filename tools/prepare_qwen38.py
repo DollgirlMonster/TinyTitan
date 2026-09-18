@@ -337,11 +337,18 @@ def quant_bits(name: str, width: int = BITS_4) -> int | None:
 
     This is why the router already sits at 8 bits in a 4-bit build: it has its
     own slot. The measurement in tools/precision_probe.py says the QSA indexer,
-    the hyper-connection write gate and the GDN gating projections deserve the
-    same treatment -- the indexer picks the same keys 0.0% of the time at 4
-    bits against 49.5% at 8, for about 10 MB. The mechanism to give them their
-    own width now exists (per-tensor overrides); what is missing is the decision
-    to promote them, and the QSA indexer at 4 bits was measured and rejected.
+    the hyper-connection write gate and the PLE key projection deserve more
+    precision -- the indexer picks the same keys 0.0% of the time at 4 bits
+    against 49.5% at 8, for about 10 MB. Taking the whole attention slot to 8
+    bits instead is measured and *works*, but it is 61% of the active parameters
+    and +2.10 GB resident (Engineering Notes, "8-bit attention slot"); these
+    tensors are ~10 MB. A per-tensor override is how they get the precision
+    cheaply, and the runtime resolves one for all three families --
+    `Model.hyperConnectionWeightBits`, `pleKeyWeightBits`,
+    `qsaIndexerWeightBits`, uniform across the family because one kernel serves
+    every layer. What this converter does not yet do is ask for it, and the
+    8-bit indexer was measured and rejected on its own (2.4 points on marginal
+    keys), so the promotion is a decision per tensor rather than a switch.
     """
     if not name.endswith(".weight"):
         return None

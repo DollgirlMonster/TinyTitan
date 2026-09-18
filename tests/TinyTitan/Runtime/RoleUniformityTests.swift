@@ -56,4 +56,37 @@ import Testing
     @Test func anEmptyOverrideMapIsFine() throws {
         try Model.validateRoleUniformity(overrides: [:], family: .qwen36)
     }
+
+    @Test func theThreeSlotReadingFamiliesHaveRoles() throws {
+        // Hyper-connection gates, the PLE key projection and the sparse
+        // indexer's keys read the attention slot until a manifest overrides
+        // them; each is one kernel instance for the whole model, so a uniform
+        // override across the family is what makes promoting the ~10 MB
+        // possible without taking the whole attention block to 8 bits.
+        try Model.validateRoleUniformity(
+            overrides: ["\(layer).attn_hyper_connection.block_inject_weight": 8,
+                        "\(layer).mlp_hyper_connection.block_inject_weight": 8,
+                        "\(layer).ple.key_proj": 8,
+                        "\(layer).self_attn.indexer.index_q_proj": 8,
+                        "\(layer).self_attn.indexer.index_k_proj": 8],
+            family: .qwen38flash)
+    }
+
+    @Test func aHyperGateThatDiffersBetweenSublayersIsRefused() {
+        #expect(throws: ModelError.self) {
+            try Model.validateRoleUniformity(
+                overrides: ["\(layer).attn_hyper_connection.block_inject_weight": 8,
+                            "\(layer).mlp_hyper_connection.block_inject_weight": 4],
+                family: .qwen38flash)
+        }
+    }
+
+    @Test func anIndexerWhoseKeysDisagreeIsRefused() {
+        #expect(throws: ModelError.self) {
+            try Model.validateRoleUniformity(
+                overrides: ["\(layer).self_attn.indexer.index_q_proj": 8,
+                            "\(layer).self_attn.indexer.index_k_proj": 4],
+                family: .qwen38flash)
+        }
+    }
 }

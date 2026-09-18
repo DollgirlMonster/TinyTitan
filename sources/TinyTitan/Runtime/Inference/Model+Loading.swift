@@ -478,6 +478,15 @@ extension Model {
             ("ffn", [".mlp.gate_proj", ".mlp.up_proj", ".mlp.down_proj"]),
             ("gdn", [".linear_attn.in_proj_qkv", ".linear_attn.in_proj_z",
                      ".linear_attn.out_proj"]),
+            // The three families whose weights read the attention slot until a
+            // manifest overrides them. Each is one kernel instance for the
+            // whole model, so a manifest that promoted one layer's gate and not
+            // the next would read half of them at the wrong width.
+            ("hyperGate", [".attn_hyper_connection.block_inject_weight",
+                           ".mlp_hyper_connection.block_inject_weight"]),
+            ("pleKey", [".ple.key_proj"]),
+            ("qsaIndexer", [".self_attn.indexer.index_q_proj",
+                            ".self_attn.indexer.index_k_proj"]),
             ("head", [".lm_head"]),
         ]
         for role in roles {
@@ -539,7 +548,8 @@ extension Model {
         // [query; gate] q_proj, and gated-DeltaNet layers carry the
         // linear_attn bundle. The Qwen checkpoints keep no auxiliary
         // sandwich/scale tensors.
-        try validateFamilyQuantSupport(config: config, quant: quant)
+        try validateFamilyQuantSupport(config: config, quant: quant,
+                                       overrides: overrides)
         try validateRoleUniformity(overrides: overrides, family: config.family)
         try validateLayerTensors(checks: checks, config: config, quant: quant,
                                  overrides: overrides)
@@ -555,26 +565,38 @@ extension Model {
     /// Refuse a width no kernel on the path can execute.
     ///
     /// `HyperConnection`, `PLEBlock` and `QSAIndexer` read weights whose width
-    /// comes from the attention slot. They took a `DequantInt4GEMV`
-    /// unconditionally until `SlotGEMV` gave them both paths, and an 8-bit
-    /// install then read half the bytes of every gate as nibbles -- no error,
-    /// no noise, just a model that answered " Paris" and degenerated.
+    /// is the attention slot's unless the manifest overrides the tensor. They
+    /// took a `DequantInt4GEMV` unconditionally until `SlotGEMV` gave them both
+    /// paths, and an 8-bit install then read half the bytes of every gate as
+    /// nibbles -- no error, no noise, just a model that answered " Paris" and
+    /// degenerated.
     ///
-    /// They now dispatch on the slot, so 4 and 8 are both executable and only
-    /// a width neither GEMV implements is refused. Kept as a guard rather than
-    /// deleted: the failure it catches is silent, and the next width added to
-    /// the format will reach these kernels before anyone remembers they exist.
+    /// They now dispatch on the resolved width, so 4 and 8 are both executable
+    /// and only a width neither GEMV implements is refused. The check is on
+    /// every one of them rather than on the slot, because a per-tensor override
+    /// is exactly how those ~10 MB are promoted without taking the whole
+    /// attention block -- 61% of the active parameters -- to 8 bits.
     static func validateFamilyQuantSupport(
         config: ArchConfig,
-        quant: ManifestQuant
+        quant: ManifestQuant,
+        overrides: [String: Int] = [:]
     ) throws {
         guard config.hyperConnections.enabled else { return }
-        guard [4, 8].contains(quant.attention.weightBits) else {
-            throw ModelError.unsupportedArchitecture(
-                detail: "\(config.family) runs its hyper-connection, PLE and "
-                    + "QSA-indexer projections through SlotGEMV, which "
-                    + "implements 4- and 8-bit; this install declares "
-                    + "\(quant.attention.weightBits)-bit.")
+        /// One suffix per kernel that reads through `SlotGEMV`.
+        let families: [(name: String, suffix: String)] = [
+            ("hyper-connection", ".hyper_connection.block_inject_weight"),
+            ("PLE", ".ple.key_proj"),
+            ("QSA-indexer", ".self_attn.indexer.index_q_proj"),
+        ]
+        for family in families {
+            let declared = overrides.first { $0.key.hasSuffix(family.suffix) }?.value
+                ?? quant.attention.weightBits
+            guard [4, 8].contains(declared) else {
+                throw ModelError.unsupportedArchitecture(
+                    detail: "\(config.family) runs its \(family.name) projections "
+                        + "through SlotGEMV, which implements 4- and 8-bit; this "
+                        + "install declares \(declared)-bit.")
+            }
         }
     }
 

@@ -138,6 +138,33 @@ public struct Model {
     public var gdnProjectionWeightBits: Int {
         roleWeightBits(roleSuffix: ".linear_attn.in_proj_qkv", fallback: attentionWeightBits)
     }
+
+    /// The width the hyper-connection write gates are stored at.
+    ///
+    /// These are the tensors a per-tensor width exists for. They read the
+    /// attention slot until a manifest overrides them, and promoting the whole
+    /// slot instead is the measured-but-expensive route: the attention block is
+    /// 61% of the active parameters, so taking it from 4 to 8 bits costs
+    /// +2.10 GB resident against the ~10 MB `tools/precision_probe.py` says
+    /// actually needs the precision. One kernel instance serves every layer, so
+    /// the gates have to be uniform and `validateRoleUniformity` refuses a
+    /// manifest that declares otherwise.
+    public var hyperConnectionWeightBits: Int {
+        roleWeightBits(roleSuffix: ".hyper_connection.block_inject_weight",
+                       fallback: attentionWeightBits)
+    }
+
+    /// The width the PLE key projection is stored at, resolved the same way.
+    public var pleKeyWeightBits: Int {
+        roleWeightBits(roleSuffix: ".ple.key_proj", fallback: attentionWeightBits)
+    }
+
+    /// The width the sparse indexer's key projections are stored at.
+    public var qsaIndexerWeightBits: Int {
+        roleWeightBits(roleSuffix: ".self_attn.indexer.index_q_proj",
+                       fallback: attentionWeightBits)
+    }
+
     public var routedExpertWeightBits: Int { manifest.quant?.routedExpert.weightBits ?? 4 }
     /// The manifest's recorded digest of `model_weights.bin`. The manifest is
     /// itself bound by the install receipt, so this is a trustworthy identity
