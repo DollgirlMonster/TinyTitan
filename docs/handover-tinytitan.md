@@ -1,13 +1,14 @@
-# Handover: after release 5.7, the engine and its loopback server
+# Handover: after release 5.8, the engine and its loopback server
 
 **Paste this into the next session:**
 
 > Continue the TinyTitan work in this checkout. Read `AGENTS.md`, then
-> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.7 is cut and
-> published** (`v5.7` → `44e1ae9`; `tinytitan-5.7-macos-arm64.tar.gz`, 15,303,284
-> bytes, 2026-09-17) and **`main` sits ten commits past it**; the release notes are
-> `docs/release-notes-v5.7.md`. The product is the engine plus its loopback server
-> — the Mac app is gone — and `tools/install_tinytitan.sh` now downloads a built
+> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.8 is cut and
+> published** (`v5.8` → `4fc0726`; `tinytitan-5.8-macos-arm64.tar.gz`, 15,436,730
+> bytes, sha256 `e96e4635d1c5dea879f92b6b39179a89e9c0e667a0844fd837878f66c1d7d35e`,
+> 2026-09-19) and **`main` sits one commit past it** — this brief; the release notes
+> are `docs/release-notes-v5.8.md`. The product is the engine plus its loopback
+> server — the Mac app is gone — and `tools/install_tinytitan.sh` downloads a built
 > release instead of compiling one. The twelve installs under `models/` have
 > receipts **valid for this folder**, because a rename invalidates them; re-issue
 > with `--verify-install` if the folder moves again. **Verification uses only the
@@ -15,7 +16,7 @@
 > a model to make a gate pass, and never fetch one of the installs the operator
 > deleted. Report measurements, not assurances.
 
-This is the only current brief; the 5.5 handover it replaces is superseded. The
+This is the only current brief; the 5.7 handover it replaces is superseded. The
 traps that one named still bite and are folded in below.
 
 > **The product shape changed: the GUI is gone.** The Mac app, the out-of-process
@@ -62,74 +63,51 @@ traps that one named still bite and are folded in below.
 | --- | --- |
 | Repository | `Pummelchen/TinyTitan` (renamed 2026-09-14; the old URL redirects) |
 | Checkout folder | `~/Downloads/TinyTitan` — **renamed from `~/Downloads/NVMAI`**, which invalidated every receipt and `.build`'s debug half |
-| `main` | `ab98829`, level with `origin/main`; the release tag is `v5.7` at `44e1ae9`, so **ten commits sit past it** |
-| Release | **5.7 published** 2026-09-17 — `tinytitan-5.7-macos-arm64.tar.gz`, 15,303,284 bytes, checksum beside it |
-| Models | **12 installs, 488 GB**; every receipt re-checked on 2026-09-18 as bound to this path, so all load |
-| Goldens stored | 16 (ten MoE + six dense); **11 checked here** (agentworld-4bit, qwen35-{2b,4b,9b}-{4,8}, qwen36-{4,8}, qwen38-125b-{4,8}); the five with no install — katcoder-{4,8}, ornith-{4,8}, agentworld-8bit — are reported *not checked* |
-| `.build` | release rebuilt after the rename; a clean scratch release build is part of the 5.7 dry run |
-| Wiki | `.qwen/wiki`, remote `TinyTitan.wiki.git`, level with `origin/master` at `3c0d5fc` |
+| `main` | `4fc0726`, level with `origin/main`; `v5.8` points at it and this brief is the one commit past it |
+| Release | **5.8 published** 2026-09-19 — `tinytitan-5.8-macos-arm64.tar.gz`, 15,436,730 bytes, sha256 `e96e4635…` with its `.sha256` beside it |
+| Models | **12 installs, 488 GB**; every receipt bound to this path, so all load |
+| Goldens stored | 16; **11 checked** here (qwen38-125b-4bit, agentworld-{4,8}, qwen36-{4,8}, qwen35-{2b,4b,9b}-{4,8}); the five with no install — `ornith-{4,8}`, `qwen38-8`, `katcoder-{4,8}` — are reported *not checked* and named in the notes |
+| `.build` | release rebuilt for 5.8; a clean scratch release build is part of each dry run |
+| Wiki | `.qwen/wiki`, remote `TinyTitan.wiki.git`, level with `origin/master` |
 | DeepSeek Harness | pinned `0.1.6-alpha.2` and **enforced**; both plugins refuse any other version; the global harness runs the gate, the private one is refreshed but idle until its next start |
-| CI | the last completed `main` run (`da5dcba`) is **green on both jobs, including `thread-sanitizer`**; runs after it were cancelled by concurrency or still in flight, not failed |
+| CI | every `main` push runs both jobs including `thread-sanitizer`; the 5.8 push is the run to watch (`gh run list`) |
 
-## What has landed since the 5.5 handover
+## What has landed
 
-1. **5.6** (`2a06c1c`) — the three reported bugs, and an ANE answer of "no". The
-   app could not change models ([#9](https://github.com/Pummelchen/TinyTitan/issues/9));
-   the model installer looked for its binary at a SwiftPM target-triple path
-   ([#8](https://github.com/Pummelchen/TinyTitan/issues/8)); and the ANE exporter
-   wrote a sidecar the Neural Engine had refused and then ran the whole prefill on
-   the CPU. Also raised the build floor to Swift 6.4, gave the server per-session KV
-   and GDN state, and turned the wiki into a user guide with a Cookbook. Dry-run
-   gates: five lint gates clean (2,108 functions), **1,566 tests in 237 suites**,
-   nine goldens byte-identical.
-2. **5.7** (`44e1ae9`) — one command installs a built engine, and the app is gone.
-   `tools/install_tinytitan.sh` downloads the published arm64 executables, verifies
-   the checksum, unpacks them under `~/.tinytitan` and asks one question — which
-   model — so a Mac with no Xcode, Homebrew, Python or Node can go from nothing to a
-   served model; `--version TAG` pins a release and `--from-source` keeps the
-   build path. Every script now runs on `/bin/bash` **3.2.57**, which the launcher
-   did not even parse under before this release. Dry-run gates: six lint gates clean
-   (1,877 functions, 18 scripts), **1,361 tests in 204 suites**, nine goldens
-   byte-identical, and speeds recorded against the 5.6 baseline after a kernel-wide
-   low first pass forced a quiet re-measure.
-3. **The ten commits past the tag** — `plugins/dsh-lan-manager`, a LAN-scoped
-   control plane for a DSH fleet (four commits); the DSH harness pinned to
-   `0.1.6-alpha.2` with **both plugins refusing to run on any other version**
-   (`da5dcba`, `a0ad069`, `ab98829`), which is also what put the plugin suites into
-   CI; a README pass and a badge refresh; and a post-tag 5.7 prep commit carrying
-   the dry run's verification record and the committed speed record.
-4. **Since this brief was written** — the `thread-sanitizer` gate is decided: one
-   top-frame suppression for a reproduced Swift-concurrency false positive, with
-   `tools/tsan-storm.sh` kept as the reproduction (TT-001). `TINYTITAN_KEEP_WIRED` is
-   a tri-state, so `=0` pages the expert cache out even on a 35B row that wires it
-   (TT-008), and the LAN manager reads a session's history with no live agent
-   (TT-030). The [Project
-   Tracker](https://github.com/Pummelchen/TinyTitan/wiki/Project-Tracker) remains the
-   authority on what is still open.
+- **5.8** (`4fc0726`) — the memory side-engine (a 4B on the CPU decides
+  durability, duplication, contradiction and supersession, six questions a
+  consolidation), the rule that holds a write back, IDF retrieval plus the
+  background T7 caller, shared n-gram tables, per-tensor bit widths in the
+  resident index, the DSH LAN manager, and one pinned harness release. Record:
+  `docs/release-notes-v5.8.md`. Gates: six lint gates clean (2,035 functions, 19
+  scripts), **1,482 tests in 222 suites**, 11 goldens byte-identical, a
+  warning-free scratch build, and speeds inside the 10% gate against 5.7.
+- **5.7** (`44e1ae9`) — one command installs a built engine, the app is gone, and
+  every script runs on `/bin/bash` 3.2.57. `docs/release-notes-v5.7.md`.
+- **5.6** (`2a06c1c`) — the three reported bugs and an ANE answer of "no".
+  `docs/release-notes-v5.6.md`.
 
 ## What is open
 
-1. **Publishing `plugins/dsh-tinytitan`** — still a decision, not code. The code
-   half is closed: the route refresh no longer needs a checkout
-   (`src/generate.js` runs the discovered `TinyTitanServer --catalog` and its output
-   is pinned byte-for-byte to `tools/dsh_route.sh --print`). **The catalogue PR is
-   still closed** — [#5094](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5094)
-   was closed 2026-09-15 with no comment and no entry in the catalogue — so the
-   choice is resubmit, npm, or a git host; ask why it closed before repeating it.
-   `docs/dsh-plugin-publication.md` carries the research and the ready-to-copy
-   entry; it was **resubmitted 2026-09-18 as
-   [#5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396)**
-   (both CI checks green and mergeable) and now waits on a maintainer with write
-   access — this account cannot merge it. The licence is MIT on purpose.
-   `docs/dsh-upstream-asks.md` posted all three asks on 2026-09-18; #7109 and
-   #7110 have verified replies (the doc carries the corrections, including the
-   one that made our first patch wrong) and #7111 is unanswered.
-2. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
-   the GPU, a higher expert slot budget, the n-gram gather a token ahead). The
-   hardware blockers **TT-021** to **TT-023** were closed on 2026-09-19 — no other
-   machines for chip validation or ANE across generations, and no disk for the
-   ~360 GB bf16 reference long-context parity needs — so the M1–M6 claim stays a
-   design intent and Qwen 3.8 long-context stays verified only at a lowered budget.
+The [Project Tracker](https://github.com/Pummelchen/TinyTitan/wiki/Project-Tracker)
+is the authority, and it holds one table with no Open row. Two items are Blocked
+on other people:
+
+1. **TT-018 — publishing `plugins/dsh-tinytitan`.** The catalogue PR
+   [#5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396) is
+   open, CLEAN and mergeable and waits on a maintainer with write access; npm
+   publishing is the operator's account. The `Pummelchen/awesome-dsh-plugin` fork
+   is only that PR's head: **delete it once #5396 is merged or closed.**
+2. **TT-020 — reaching the LAN manager from another machine.**
+   `docs/dsh-upstream-asks.md` posted three asks; #7109 and #7110 have verified
+   replies and our suggested patches were corrected there, but **#7111** — a
+   non-loopback bind — is unanswered, so the plugin works and nothing can reach it
+   remotely yet.
+3. **Carried forward, not tracked as tasks:** the Qwen 3.8 port items — QSA
+   indexer selections to the GPU, a higher expert slot budget, the n-gram gather a
+   token ahead. TT-021–TT-023 were closed on 2026-09-19 (no other machines; no disk
+   for the ~360 GB bf16 reference), so the M1–M6 claim stays a design intent and
+   Qwen 3.8 long-context stays verified only at a lowered budget.
 
 ## Traps worth carrying forward
 
@@ -158,8 +136,9 @@ traps that one named still bite and are folded in below.
   numbers must be in the notes, so the sequence is: commit prep → tag → dry run →
   fill in `### Verification` → commit → `git tag -f` → `git push --force origin
   vX.Y` → `--publish`. `--publish` re-runs every gate and rebuilds the archive,
-  so **the published digest and size are never the dry run's** (5.5: 26,093,424
-  bytes dry, 26,094,346 published) — that is what the placeholders are for.
+  so **the published digest and size are never the dry run's** (5.8: 15,436,743
+  bytes dry, 15,436,730 published; 5.5: 26,093,424 dry, 26,094,346 published) —
+  that is what the placeholders are for.
 - **A `file:` plugin install is a copy.** After editing
   `plugins/dsh-tinytitan/`, re-install it
   (`dsh plugin --profile web remove dsh-tinytitan`, then `add
