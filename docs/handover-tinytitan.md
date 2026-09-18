@@ -120,9 +120,11 @@ traps that one named still bite and are folded in below.
    entry. The licence is MIT on purpose. The two upstream asks in
    `docs/dsh-upstream-asks.md` are still unposted.
 2. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
-   the GPU, a higher expert slot budget, the n-gram gather a token ahead), and the
-   hardware blockers **TT-021** to **TT-023** (validation on M1/M2/M4/M5/M6, ANE across
-   generations, long-context parity past the exactness window).
+   the GPU, a higher expert slot budget, the n-gram gather a token ahead). The
+   hardware blockers **TT-021** to **TT-023** were closed on 2026-09-19 — no other
+   machines for chip validation or ANE across generations, and no disk for the
+   ~360 GB bf16 reference long-context parity needs — so the M1–M6 claim stays a
+   design intent and Qwen 3.8 long-context stays verified only at a lowered budget.
 
 ## Traps worth carrying forward
 
