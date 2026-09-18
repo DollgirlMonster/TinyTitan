@@ -225,7 +225,7 @@ The project's bar, in this order:
   `Runtime-Controls` (thinking levels, and the temperature line if this
   checkpoint differs from its base's), `Project-Tracker` (what was checked,
   what landed, what is pending, and any deviation from the model's own
-  recommendations), `Roadmap` (status on the entry that asked for it).
+  recommendations).
 - Deviations are stated, not hidden: presence penalty, extra template kwargs,
   an unverified tool-call dialect, an inherited profile value.
 
