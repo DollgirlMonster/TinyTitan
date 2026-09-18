@@ -55,9 +55,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLUGIN_DIR="$REPO_ROOT/plugins/dsh-tinytitan"
 
-# Pinned on purpose; see the header. 0.1.5-rc.2 is the version the plugin was
-# written and tested against.
-DSH_VERSION="${TINYTITAN_DSH_VERSION:-0.1.5-rc.2}"
+# Pinned on purpose; see the header. 0.1.6-alpha.2 is the version the plugin was
+# tested against — verified live, not assumed: `tools/dsh_local.sh ensure`
+# completes against it, the plugin mounts on its web server, and `/dsh-lan/*`
+# answers (with `dsh-llm:createUserMessage`, so prompts use upstream's own
+# factory rather than the fallback).
+#
+# It is an **alpha**, and npm knows that: `latest` and `next` both still point at
+# 0.1.5-rc.2, and this one sits under the `alpha` tag. The pin is exact, so that
+# costs nothing here — but nothing gets it by accident either, which is the
+# point of pinning.
+DSH_VERSION="${TINYTITAN_DSH_VERSION:-0.1.6-alpha.2}"
 # The notice version the pinned harness gates its first-run modal on. Held here
 # next to the pin it belongs to: they move together.
 WELCOME_NOTICE_VERSION="2026-08-13.1"

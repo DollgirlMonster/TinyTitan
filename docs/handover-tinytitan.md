@@ -31,7 +31,7 @@ whose traps still bite and are folded in below.
 > ready banner, and is checked against the release tag by `tools/release.sh`.
 
 > **The replacement window is DeepSeek Harness, installed not built.**
-> `tools/dsh_local.sh` installs a **pinned** `@deepseek-ai/dsh` (`0.1.5-rc.2`)
+> `tools/dsh_local.sh` installs a **pinned** `@deepseek-ai/dsh` (`0.1.6-alpha.2`,
 > into `~/.tinytitan/dsh`, with our `plugins/dsh-tinytitan` bundle from this
 > checkout, and the launcher's `--web` starts the server and opens it in the
 > browser. Two things are load-bearing. **Isolation:** our copy uses its own
