@@ -104,7 +104,7 @@ function fakeAgents(live = ["s-a1", "s-a2", "s-b1"]) {
 }
 
 /** Build a ctx wired to the fixture store and fakes. */
-function fakeCtx({ store, registry, agents = fakeAgents(), archived = ["s-hidden"] }) {
+function fakeCtx({ store, registry, agents = fakeAgents(), sessions, archived = ["s-hidden"] }) {
   const archivedSet = new Set(archived);
   const reg = registry ?? fakeRegistry(archivedSet);
   const ctx = {
@@ -114,6 +114,7 @@ function fakeCtx({ store, registry, agents = fakeAgents(), archived = ["s-hidden
     get(name) {
       if (name === "workspaceRegistry") return reg;
       if (name === "agents") return agents;
+      if (name === "sessions") return sessions;
       return undefined;
     },
   };
@@ -692,7 +693,82 @@ test("POST /workspaces registers a folder, and refuses startSession honestly", a
     assert.equal(missing.status, 400, "a path is required");
 
     const notWired = await call(handler, { method: "POST", url: "/dsh-lan/workspaces", body: { path: "/Users/me/New", startSession: true } });
-    assert.equal(notWired.status, 501);
-    assert.match(notWired.body.message, /session service/);
+    assert.equal(notWired.status, 501, "no session controller in this context");
+    assert.equal(notWired.body.error, "session-controller-unavailable");
+    assert.match(notWired.body.message, /session controller/);
+  } finally { store.cleanup(); }
+});
+
+/** A `sessions` fake that records what the plugin delegated. */
+function fakeSessions(reply) {
+  const calls = [];
+  return {
+    calls,
+    async create(request) {
+      calls.push(request);
+      if (reply instanceof Error) throw reply;
+      return reply ?? { sessionId: "session-new", agentPreset: "standard" };
+    },
+  };
+}
+
+test("POST /sessions delegates to the harness session controller", async () => {
+  const sessions = fakeSessions();
+  const { handler, store } = await setup({ sessions });
+  try {
+    const res = await call(handler, {
+      method: "POST", url: "/dsh-lan/sessions",
+      body: { workspaceId: "ws-1", agentPreset: "qwen38" },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.sessionId, "session-new");
+    assert.equal(res.body.agentPreset, "standard");
+    assert.deepEqual(sessions.calls, [{ workspaceId: "ws-1", agentPreset: "qwen38" }]);
+  } finally { store.cleanup(); }
+});
+
+test("POST /sessions takes a path instead of an id, and needs one of them", async () => {
+  const sessions = fakeSessions();
+  const { handler, store } = await setup({ sessions });
+  try {
+    const byPath = await call(handler, { method: "POST", url: "/dsh-lan/sessions", body: { path: "/Users/me/Repo" } });
+    assert.equal(byPath.status, 200);
+    assert.deepEqual(sessions.calls, [{ cwd: "/Users/me/Repo" }], "a path is handed to the controller as cwd");
+
+    const neither = await call(handler, { method: "POST", url: "/dsh-lan/sessions", body: {} });
+    assert.equal(neither.status, 400);
+    assert.equal(neither.body.error, "bad-request");
+    assert.equal(sessions.calls.length, 1, "nothing was delegated for a request with no target");
+  } finally { store.cleanup(); }
+});
+
+test("POST /sessions keeps the controller's own failure code and status", async () => {
+  const failure = Object.assign(new Error('workspace "ws-x" not found'), { code: "workspace/not-found" });
+  const sessions = fakeSessions(failure);
+  const { handler, store } = await setup({ sessions });
+  try {
+    const res = await call(handler, { method: "POST", url: "/dsh-lan/sessions", body: { workspaceId: "ws-x" } });
+    assert.equal(res.status, 404, "a missing workspace is not the caller's bad request");
+    assert.equal(res.body.error, "workspace/not-found");
+  } finally { store.cleanup(); }
+});
+
+test("POST /workspaces with startSession returns the workspace and its session", async () => {
+  const sessions = fakeSessions({ sessionId: "session-on-ws", agentPreset: "qwen38" });
+  const registry = {
+    list: () => [],
+    get: () => undefined,
+    create: async (path, title) => ({ id: "ws-new", path, title: title ?? "New" }),
+  };
+  const { handler, store } = await setup({ sessions, registry });
+  try {
+    const res = await call(handler, {
+      method: "POST", url: "/dsh-lan/workspaces",
+      body: { path: "/Users/me/New", startSession: true },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.workspaceId, "ws-new");
+    assert.deepEqual(res.body.session, { sessionId: "session-on-ws", agentPreset: "qwen38" });
+    assert.deepEqual(sessions.calls, [{ workspaceId: "ws-new" }], "started on the workspace just created");
   } finally { store.cleanup(); }
 });

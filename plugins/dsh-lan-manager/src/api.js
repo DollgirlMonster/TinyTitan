@@ -31,6 +31,7 @@ import { readFileSync, readdirSync } from "node:fs";
 export const Failure = Object.freeze({
   NO_REGISTRY: "workspace-registry-unavailable",
   NO_AGENTS: "agent-service-unavailable",
+  NO_SESSIONS: "session-controller-unavailable",
   NO_MESSAGE_FACTORY: "user-message-factory-unavailable",
   NOT_FOUND: "not-found",
   BAD_REQUEST: "bad-request",
@@ -668,6 +669,55 @@ export async function deleteWorkspace(ctx, workspaceId, options = {}) {
     archivedSessionIds: archived,
     archiveFailures,
   };
+}
+
+/**
+ * Start a live agent on a new session, through the harness's own session controller.
+ *
+ * This is deliberately a **delegation**, not a reimplementation. Starting a session
+ * is not one call: the controller composes the agent's world from the preset,
+ * resolves the default model, creates the working directory, mints the session id,
+ * ensures the session/agent pair, and attaches it to the workspace. Rebuilding that
+ * here would be a second implementation of the harness's own logic, drifting from
+ * it at every release — so the plugin asks the service that already does it.
+ *
+ * The 501 is kept for the profile that composes no session controller (a headless
+ * or SDK-only runtime): answering "created" for something that was not created is
+ * the one thing worse than saying no.
+ *
+ * @param ctx - harness context.
+ * @param selector - `{ workspaceId }` or `{ path | cwd }`, plus optional `agentPreset`.
+ * @returns `{ sessionId, agentPreset }`.
+ */
+export async function startSession(ctx, selector = {}) {
+  const service = ctx?.get?.("sessions");
+  if (!service || typeof service.create !== "function") {
+    throw new ApiError(
+      Failure.NO_SESSIONS,
+      "this profile does not compose the harness session controller, so a session cannot be started from here",
+      501,
+    );
+  }
+  const request = {};
+  if (selector.workspaceId !== undefined) request.workspaceId = String(selector.workspaceId);
+  else if (selector.path !== undefined) request.cwd = String(selector.path);
+  else if (selector.cwd !== undefined) request.cwd = String(selector.cwd);
+  else throw new ApiError(Failure.BAD_REQUEST, "workspaceId or path is required", 400);
+  if (selector.agentPreset !== undefined) request.agentPreset = String(selector.agentPreset);
+
+  try {
+    const created = await service.create(request);
+    return {
+      sessionId: String(created?.sessionId ?? ""),
+      agentPreset: created?.agentPreset ?? null,
+    };
+  } catch (error) {
+    // The controller's own code is kept, so a caller can tell "no such workspace"
+    // from "the preset is wrong" without parsing prose.
+    const code = typeof error?.code === "string" ? error.code : "session-create-failed";
+    const status = code.includes("not-found") ? 404 : 400;
+    throw new ApiError(code, error instanceof Error ? error.message : String(error), status);
+  }
 }
 
 /**

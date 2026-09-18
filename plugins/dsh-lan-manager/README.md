@@ -23,6 +23,7 @@ curl -X POST http://127.0.0.1:3080/dsh-lan/prompt-all \
 | 4 | Delete a workspace (archiving its sessions first) | `POST /dsh-lan/workspaces/:id/delete` |
 | 5 | Archive a session | `POST /dsh-lan/sessions/:id/archive` |
 | 6 | Register an existing folder as a workspace | `POST /dsh-lan/workspaces` |
+| 6a | Start a session on a workspace, through the harness's own session controller | `POST /dsh-lan/sessions` |
 | 7 | The group: who else is running, and what they hold | `GET /dsh-lan/peers` · `GET /dsh-lan/peers/:id` |
 | 8 | One aggregate for a manager: this Mac **and** every member | `GET /dsh-lan/inventory` |
 | — | Liveness and the caller's fence verdict | `GET /dsh-lan/health` |
@@ -214,6 +215,28 @@ The history is the harness's own derivation from the **live agent's session** �
 the same seam `POST /prompt` uses — so a session with no live agent is a `404`
 with that explanation rather than an empty conversation, which would read as "this
 session said nothing".
+
+### `POST /dsh-lan/sessions`
+
+Start a live session on an existing workspace:
+
+```json
+{ "workspaceId": "ws-1" }
+```
+
+`path` (or `cwd`) works instead of `workspaceId`, and `agentPreset` names a preset.
+The reply is `{ "sessionId": "session-…", "agentPreset": "standard" }`.
+
+Starting is **delegated to the harness's session controller**, not reimplemented:
+that one call composes the agent's world from the preset, resolves the default
+model, creates the working directory, mints the id and attaches the session to the
+workspace — rebuilding it here would be a second copy of harness logic, drifting at
+every release. A profile that composes no session controller (headless, SDK-only)
+replies `501` and says so, because answering `ok` for a session that was not created
+is worse than refusing.
+
+`POST /dsh-lan/workspaces` also accepts `"startSession": true`: it creates the
+workspace and then starts a session on it, returning it as `session`.
 
 ### `POST /dsh-lan/prompt`
 

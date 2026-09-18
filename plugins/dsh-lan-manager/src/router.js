@@ -32,6 +32,7 @@ import {
   promptAllActive,
   promptSession,
   readSessionMessages,
+  startSession,
 } from "./api.js";
 import { checkAddress, peerAddress } from "./net.js";
 
@@ -282,6 +283,7 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
           "GET  /inventory",
           "POST /prompt",
           "POST /prompt-all",
+          "POST /sessions",
           "POST /workspaces",
           "POST /sessions/:id/archive",
           "POST /workspaces/:id/delete",
@@ -343,20 +345,30 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
     return { body: { ok: true, peer: found } };
   }
 
-  // Register an existing folder as a workspace. `startSession` is refused rather
-  // than ignored: creating a live session needs the harness's session service,
-  // and answering `ok` to something that did not happen is worse than saying so.
+  // Register an existing folder as a workspace, optionally starting a session on
+  // it. Starting is delegated to the harness's own session controller, so the
+  // plugin does not reimplement agent composition (TT-028).
   if (method === "POST" && route === "/workspaces") {
     const body = await readJsonBody(req, maxBodyBytes);
-    if (body.startSession === true) {
-      throw new ApiError(
-        "not-implemented",
-        "startSession is not wired yet: the plugin can register the folder, but starting a live session still needs the harness session service",
-        501,
-      );
-    }
     const receipt = await createWorkspace(ctx, { path: body.path, title: body.title });
-    return { body: { ok: true, ...receipt } };
+    // Starting needs the workspace to exist, so it is a second step. If it fails,
+    // the typed error propagates and the workspace half is still there — which the
+    // message says rather than implying nothing happened.
+    const session = body.startSession === true
+      ? await startSession(ctx, { workspaceId: receipt.workspaceId, agentPreset: body.agentPreset })
+      : null;
+    return { body: { ok: true, ...receipt, ...(session === null ? {} : { session }) } };
+  }
+
+  if (method === "POST" && route === "/sessions") {
+    const body = await readJsonBody(req, maxBodyBytes);
+    const session = await startSession(ctx, {
+      workspaceId: body.workspaceId,
+      path: body.path,
+      cwd: body.cwd,
+      agentPreset: body.agentPreset,
+    });
+    return { body: { ok: true, ...session } };
   }
 
   if (method === "GET" && route === "/workspaces") {
