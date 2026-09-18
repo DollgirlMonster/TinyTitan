@@ -20,6 +20,13 @@ What is new in each release lives in the
 
 <br>
 
+✨ Full DeepSeek Harness Support with Plugins: <br>
+TinyTitan now is a first class member of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) - including a Qwen 3.8 plugin with specific optimizations for TinyTitan.
+Awesome: You can also manage dsh workspaces and sessions which are distributed over many Mac's in your LAN/Tailscale network using our dsh plugin "dsh-lan-manager" and the manager cli. 
+
+
+<br>
+
 ✨ New Research Project: <br>
 [TinyTitan Datacenter](https://github.com/Pummelchen/TinyTitan_Datacenter) - Run large MOE LLM models on a distributed cluster of Mac Mini/Studio's
 while keeping them on SSD/NVMe for near linear scale of decode tok/s.
