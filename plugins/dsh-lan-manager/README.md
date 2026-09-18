@@ -19,6 +19,7 @@ curl -X POST http://127.0.0.1:3080/dsh-lan/prompt-all \
 | 2 | List the visible sessions of a workspace | `GET /dsh-lan/workspaces/:id/sessions` · `GET /dsh-lan/sessions` |
 | 3 | Prompt one session | `POST /dsh-lan/prompt` |
 | 3a | Prompt **every** active session | `POST /dsh-lan/prompt-all` |
+| 3b | Read a session's messages back — the answers, not just the questions | `GET /dsh-lan/sessions/:id/messages` |
 | 4 | Delete a workspace (archiving its sessions first) | `POST /dsh-lan/workspaces/:id/delete` |
 | 5 | Archive a session | `POST /dsh-lan/sessions/:id/archive` |
 | 6 | Register an existing folder as a workspace | `POST /dsh-lan/workspaces` |
@@ -173,6 +174,37 @@ archived inside that workspace. Pass `?includeEmpty=true`-equivalent config
 
 Every visible session across every active workspace, de-duplicated, each tagged
 with its workspace.
+
+### `GET /dsh-lan/sessions/:id/messages`
+
+The session's message history, which is what makes a fleet audit an audit:
+`prompt-all` delivers the question, and this collects the answers.
+
+```json
+{
+  "ok": true,
+  "sessionId": "s-a1",
+  "total": 42,
+  "returned": 40,
+  "truncated": true,
+  "messages": [
+    { "id": "m-40", "role": "assistant", "text": "all green", "textTruncated": false,
+      "reasoningChars": 1180, "otherBlocks": 2 }
+  ]
+}
+```
+
+`?limit=N` caps how many of the **newest** messages come back (default 40, hard
+ceiling 200), because an audit wants the end of the conversation. Per message:
+`text` is the concatenated text blocks, capped so one dumped tool result cannot
+dominate a reply; `reasoningChars` reports a thinking block's size without
+inlining it, since reasoning is not the answer; and `otherBlocks` counts blocks the
+plugin does not render, so nothing is dropped silently.
+
+The history is the harness's own derivation from the **live agent's session** —
+the same seam `POST /prompt` uses — so a session with no live agent is a `404`
+with that explanation rather than an empty conversation, which would read as "this
+session said nothing".
 
 ### `POST /dsh-lan/prompt`
 

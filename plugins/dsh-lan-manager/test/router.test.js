@@ -594,6 +594,77 @@ test("GET /peers/:id resolves a member, and 404s an unknown one", async () => {
   } finally { store.cleanup(); }
 });
 
+/** An `agents` fake whose live agent exposes a session with a derived history. */
+function fakeSessionAgents(messages) {
+  return {
+    get: (id) => ({ id, session: { deriveMessages: () => messages }, followup: () => {} }),
+  };
+}
+
+test("GET /sessions/:id/messages returns the derived history", async () => {
+  const history = [
+    { id: "m1", role: "user", content: [{ type: "text", text: "what is your status?" }] },
+    {
+      id: "m2",
+      role: "assistant",
+      content: [
+        { type: "thinking", text: "weighing it up" },
+        { type: "text", text: "all good" },
+        { type: "tool-call", name: "read_file" },
+      ],
+    },
+  ];
+  const { handler, store } = await setup({ agents: fakeSessionAgents(history) });
+  try {
+    const res = await call(handler, { method: "GET", url: "/dsh-lan/sessions/s-1/messages" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.messages.map((m) => m.role), ["user", "assistant"]);
+    assert.equal(res.body.messages[0].text, "what is your status?");
+    assert.equal(res.body.messages[1].text, "all good", "the answer is the text blocks");
+    assert.equal(res.body.messages[1].reasoningChars, "weighing it up".length, "reasoning is measured, not inlined");
+    assert.equal(res.body.messages[1].otherBlocks, 1, "an unrecognised block is counted, never dropped silently");
+    assert.deepEqual(
+      { total: res.body.total, returned: res.body.returned, truncated: res.body.truncated },
+      { total: 2, returned: 2, truncated: false },
+    );
+  } finally { store.cleanup(); }
+});
+
+test("GET /sessions/:id/messages keeps the newest, and says it truncated", async () => {
+  const history = Array.from({ length: 5 }, (_, i) => ({
+    id: `m${i}`, role: "user", content: [{ type: "text", text: `t${i}` }],
+  }));
+  const { handler, store } = await setup({ agents: fakeSessionAgents(history) });
+  try {
+    const res = await call(handler, { method: "GET", url: "/dsh-lan/sessions/s-1/messages?limit=2" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.messages.map((m) => m.text), ["t3", "t4"], "an audit wants the end of the conversation");
+    assert.deepEqual(
+      { total: res.body.total, returned: res.body.returned, truncated: res.body.truncated },
+      { total: 5, returned: 2, truncated: true },
+    );
+  } finally { store.cleanup(); }
+});
+
+test("GET /sessions/:id/messages says there is no live agent rather than reporting nothing", async () => {
+  const { handler, store } = await setup({ agents: { get: () => undefined } });
+  try {
+    const res = await call(handler, { method: "GET", url: "/dsh-lan/sessions/gone/messages" });
+    assert.equal(res.status, 404);
+    assert.match(String(res.body.message), /no live agent/);
+    assert.equal(res.body.error, "not-found");
+  } finally { store.cleanup(); }
+});
+
+test("GET /sessions/:id/messages reports an agent that cannot derive history", async () => {
+  const { handler, store } = await setup({ agents: { get: (id) => ({ id }) } });
+  try {
+    const res = await call(handler, { method: "GET", url: "/dsh-lan/sessions/s-1/messages" });
+    assert.equal(res.status, 503);
+    assert.equal(res.body.error, "agent-service-unavailable");
+  } finally { store.cleanup(); }
+});
+
 test("POST /workspaces registers a folder, and refuses startSession honestly", async () => {
   const store = makeStore();
   try {

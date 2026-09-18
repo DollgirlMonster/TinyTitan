@@ -432,10 +432,116 @@ export function listWorkspaceSessions(ctx, selector) {
 }
 
 /**
- * Every visible session across every active workspace, de-duplicated.
- * @param ctx - harness context.
- * @returns `{ sessions: [{sessionId, workspaceId, workspacePath, title}] }`.
+ * How much history a read returns by default, and the ceiling.
+ *
+ * A fleet audit wants the answer, so the newest messages are the ones kept. The
+ * ceiling exists because a manager fanning out over a fleet is one HTTP response
+ * per member, and a long session is megabytes.
  */
+export const DEFAULT_MESSAGE_LIMIT = 40;
+export const MAX_MESSAGE_LIMIT = 200;
+
+/** Per-message character cap, so one dumped tool result cannot dominate a reply. */
+export const MAX_MESSAGE_CHARS = 4000;
+
+/**
+ * Render one derived message's content into something a manager can read.
+ *
+ * The block vocabulary belongs to the harness and grows between releases, so a
+ * block this function does not recognise is *counted* rather than dropped: a
+ * reader can see that something was there. Nothing here throws on an unexpected
+ * shape, because a session that recorded an unfamiliar block is still a session.
+ *
+ * @param content - a message's `content`, as a string or a block array.
+ * @returns `{ text, reasoning, otherBlocks }`.
+ */
+function renderMessageContent(content) {
+  const text = [];
+  const reasoning = [];
+  let otherBlocks = 0;
+  const blocks = Array.isArray(content)
+    ? content
+    : (typeof content === "string" ? [{ type: "text", text: content }] : []);
+  for (const block of blocks) {
+    if (typeof block === "string") { text.push(block); continue; }
+    if (!block || typeof block !== "object") continue;
+    const type = String(block.type ?? "");
+    const body = typeof block.text === "string" ? block.text
+      : (typeof block.content === "string" ? block.content : "");
+    if (type === "text" && body !== "") text.push(body);
+    else if ((type === "thinking" || type === "reasoning") && body !== "") reasoning.push(body);
+    else otherBlocks += 1;
+  }
+  return {
+    text: text.join("\n").trim(),
+    reasoningChars: reasoning.join("\n").trim().length,
+    otherBlocks,
+  };
+}
+
+/** A positive whole limit, clamped. Anything unparseable takes the default. */
+function messageLimit(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_MESSAGE_LIMIT;
+  return Math.min(Math.floor(parsed), MAX_MESSAGE_LIMIT);
+}
+
+/**
+ * Read the message history of a session, as far as the harness will derive it.
+ *
+ * The history comes from the **live agent's own session**, through the same
+ * `agents` seam `promptSession` uses, and `deriveMessages()` is the harness's own
+ * projection — so this plugin still holds no opinion about session format. That
+ * also sets the limit: a session with no live agent has no derived history to
+ * read, and says so rather than reporting an empty conversation, which would read
+ * as "this session said nothing".
+ *
+ * @param ctx - harness context.
+ * @param sessionId - target session.
+ * @param options - `{ limit?: number }`.
+ * @returns `{ sessionId, total, returned, truncated, messages }`.
+ */
+export function readSessionMessages(ctx, sessionId, options = {}) {
+  const service = agents(ctx);
+  const agent = service.get(sessionId);
+  if (!agent) {
+    throw new ApiError(
+      Failure.NOT_FOUND,
+      `session ${sessionId} has no live agent, so its history cannot be read (open it in the UI, then retry)`,
+      404,
+    );
+  }
+  const session = agent.session;
+  if (!session || typeof session.deriveMessages !== "function") {
+    throw new ApiError(Failure.NO_AGENTS, "the agent for this session does not expose its history", 503);
+  }
+
+  const derived = session.deriveMessages() ?? [];
+  const limit = messageLimit(options.limit);
+  const kept = derived.slice(-limit);
+  const messages = kept.map((message) => {
+    const rendered = renderMessageContent(message?.content);
+    const cut = rendered.text.length > MAX_MESSAGE_CHARS;
+    return {
+      id: message?.id ?? null,
+      role: String(message?.role ?? "unknown"),
+      text: cut ? rendered.text.slice(0, MAX_MESSAGE_CHARS) : rendered.text,
+      textTruncated: cut,
+      // Reasoning is not the answer an audit came for, so only its size is reported.
+      reasoningChars: rendered.reasoningChars,
+      otherBlocks: rendered.otherBlocks,
+    };
+  });
+
+  return {
+    sessionId,
+    total: derived.length,
+    returned: messages.length,
+    truncated: derived.length > messages.length,
+    messages,
+  };
+}
+
 /**
  * Enqueue a prompt on one session.
  *

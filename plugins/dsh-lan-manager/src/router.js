@@ -31,6 +31,7 @@ import {
   listWorkspaceSessions,
   promptAllActive,
   promptSession,
+  readSessionMessages,
 } from "./api.js";
 import { checkAddress, peerAddress } from "./net.js";
 
@@ -274,6 +275,7 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
           "GET  /health",
           "GET  /workspaces",
           "GET  /sessions",
+          "GET  /sessions/:id/messages",
           "GET  /workspaces/:id/sessions",
           "GET  /peers",
           "GET  /peers/:id",
@@ -365,6 +367,16 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
   if (method === "GET" && route === "/sessions") {
     const result = listAllActiveSessions(ctx);
     return { body: { ok: true, ...result } };
+  }
+
+  // Reading the history back is what makes a fleet audit an audit: `prompt-all`
+  // delivers the question, and this collects the answers. `?limit=` caps how many
+  // of the newest messages come back.
+  const sessionMessages = /^\/sessions\/([^/]+)\/messages$/.exec(route);
+  if (method === "GET" && sessionMessages) {
+    const sessionId = decodeURIComponent(sessionMessages[1]);
+    const limit = new URL(String(req.url ?? "/"), "http://placeholder").searchParams.get("limit");
+    return { body: { ok: true, ...readSessionMessages(ctx, sessionId, { limit }) } };
   }
 
   // The tail may be a registry id or a path (a page-visible workspace that was
