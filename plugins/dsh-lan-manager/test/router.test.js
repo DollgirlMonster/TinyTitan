@@ -104,7 +104,7 @@ function fakeAgents(live = ["s-a1", "s-a2", "s-b1"]) {
 }
 
 /** Build a ctx wired to the fixture store and fakes. */
-function fakeCtx({ store, registry, agents = fakeAgents(), sessionController, archived = ["s-hidden"] }) {
+function fakeCtx({ store, registry, agents = fakeAgents(), sessionController, sessions, sessionQuery, archived = ["s-hidden"] }) {
   const archivedSet = new Set(archived);
   const reg = registry ?? fakeRegistry(archivedSet);
   const serviceReads = [];
@@ -121,6 +121,8 @@ function fakeCtx({ store, registry, agents = fakeAgents(), sessionController, ar
       if (name === "workspaceRegistry") return reg;
       if (name === "agents") return agents;
       if (name === "sessionController") return sessionController;
+      if (name === "sessions") return sessions;
+      if (name === "sessionQuery") return sessionQuery;
       return undefined;
     },
   };
@@ -694,13 +696,67 @@ test("GET /sessions/:id/messages keeps the newest, and says it truncated", async
   } finally { store.cleanup(); }
 });
 
-test("GET /sessions/:id/messages says there is no live agent rather than reporting nothing", async () => {
-  const { handler, store } = await setup({ agents: { get: () => undefined } });
+/**
+ * A cold-read pair: `sessionQuery.readSession` returns one loaded log, and
+ * `sessions.prepare` records what the plugin handed it and returns a detached
+ * session deriving the given messages.
+ */
+function fakeColdReader(messages, loaded = { session: { id: "s-cold" }, inheritedEventCount: 0, events: [] }) {
+  const prepared = [];
+  return {
+    prepared,
+    sessionQuery: { readSession: async () => loaded },
+    sessions: {
+      prepare(id, options) {
+        prepared.push({ id, options });
+        return { id, deriveMessages: () => messages };
+      },
+    },
+  };
+}
+
+test("GET /sessions/:id/messages reads a cold session the store still holds", async () => {
+  // TT-030: no live agent — the history comes from storage instead, through the
+  // harness's own cold reader and the same deriveMessages() the live path uses.
+  const loaded = { session: { id: "s-cold" }, inheritedEventCount: 0, events: [{ type: "user/message", seq: 0 }] };
+  const cold = fakeColdReader(
+    [{ id: "m1", role: "assistant", content: [{ type: "text", text: "from storage" }] }],
+    loaded,
+  );
+  const { handler, store } = await setup({ agents: { get: () => undefined }, ...cold });
+  try {
+    const res = await call(handler, { method: "GET", url: "/dsh-lan/sessions/s-cold/messages" });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.messages[0].text, "from storage");
+    assert.deepEqual(cold.prepared, [{
+      id: "s-cold",
+      options: { seed: loaded.events, meta: loaded.session, inheritedEventCount: 0, eventState: "detached" },
+    }], "the validated log is handed back as a detached session");
+  } finally { store.cleanup(); }
+});
+
+test("GET /sessions/:id/messages is a 404 when storage does not know the session", async () => {
+  const missing = Object.assign(new Error('session "gone" not found'), { code: "SESSION_QUERY_SESSION_NOT_FOUND" });
+  const { handler, store } = await setup({
+    agents: { get: () => undefined },
+    sessionQuery: { readSession: async () => { throw missing; } },
+    sessions: { prepare: () => { throw new Error("must not prepare a session that does not exist"); } },
+  });
   try {
     const res = await call(handler, { method: "GET", url: "/dsh-lan/sessions/gone/messages" });
     assert.equal(res.status, 404);
-    assert.match(String(res.body.message), /no live agent/);
+    assert.match(String(res.body.message), /no session gone/);
     assert.equal(res.body.error, "not-found");
+  } finally { store.cleanup(); }
+});
+
+test("GET /sessions/:id/messages says so when the profile composes no cold reader", async () => {
+  const { handler, store } = await setup({ agents: { get: () => undefined } });
+  try {
+    const res = await call(handler, { method: "GET", url: "/dsh-lan/sessions/s-1/messages" });
+    assert.equal(res.status, 503);
+    assert.equal(res.body.error, "agent-service-unavailable");
+    assert.match(String(res.body.message), /cold session reader/);
   } finally { store.cleanup(); }
 });
 

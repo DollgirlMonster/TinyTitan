@@ -490,36 +490,91 @@ function messageLimit(value) {
 }
 
 /**
+ * Derive one session's messages from the harness's own persistence, without an agent.
+ *
+ * `agent.session.deriveMessages()` is the harness's derivation, but it needs a live
+ * agent, so an idle or archived session could not be read at all (TT-030). The cold
+ * path asks the harness's cold-read service — `sessionQuery.readSession()`, which
+ * loads and replay-validates the stored log — and hands that validated pair back to
+ * the `sessions` service's `prepare()` with `eventState: "detached"`, the same call
+ * `sessionQuery` makes internally to build its own observation. The result is a
+ * detached, unentered Session whose `deriveMessages()` is the same derivation the
+ * live path uses, so surface markers and compaction rules stay the harness's and no
+ * frame parser is hand-rolled here.
+ *
+ * @param ctx - harness context.
+ * @param sessionId - target session.
+ * @returns the derived message array.
+ */
+async function derivedMessagesFromStore(ctx, sessionId) {
+  const query = ctx?.get?.("sessionQuery");
+  const store = ctx?.get?.("sessions");
+  if (typeof query?.readSession !== "function" || typeof store?.prepare !== "function") {
+    throw new ApiError(
+      Failure.NO_AGENTS,
+      "this profile composes no cold session reader, so a session with no live agent cannot be read",
+      503,
+    );
+  }
+  let loaded;
+  try {
+    loaded = await query.readSession(sessionId);
+  } catch (error) {
+    const code = typeof error?.code === "string" ? error.code : "";
+    if (code === "SESSION_QUERY_SESSION_NOT_FOUND") {
+      throw new ApiError(Failure.NOT_FOUND, `no session ${sessionId}`, 404);
+    }
+    throw new ApiError(
+      Failure.NO_AGENTS,
+      `session ${sessionId} could not be read from storage: ${error instanceof Error ? error.message : String(error)}`,
+      503,
+    );
+  }
+  const { session: header, inheritedEventCount, events } = loaded ?? {};
+  let detached;
+  try {
+    detached = store.prepare(header.id, {
+      seed: events,
+      meta: header,
+      inheritedEventCount,
+      eventState: "detached",
+    });
+  } catch (error) {
+    throw new ApiError(
+      Failure.NO_AGENTS,
+      `session ${sessionId} could not be prepared for reading: ${error instanceof Error ? error.message : String(error)}`,
+      503,
+    );
+  }
+  return detached.deriveMessages() ?? [];
+}
+
+/**
  * Read the message history of a session, as far as the harness will derive it.
  *
- * The history comes from the **live agent's own session**, through the same
- * `agents` seam `promptSession` uses, and `deriveMessages()` is the harness's own
- * projection — so this plugin still holds no opinion about session format. That
- * also sets the limit: a session with no live agent has no derived history to
- * read, and says so rather than reporting an empty conversation, which would read
- * as "this session said nothing".
+ * The history is the harness's own derivation, so this plugin holds no opinion about
+ * session format. A **live** agent is preferred and cheap — its session is already in
+ * memory — and with none the stored log is read instead, so an idle or archived
+ * session still answers (TT-030). A session that exists in neither is a `404` rather
+ * than an empty conversation, which would read as "this session said nothing".
  *
  * @param ctx - harness context.
  * @param sessionId - target session.
  * @param options - `{ limit?: number }`.
  * @returns `{ sessionId, total, returned, truncated, messages }`.
  */
-export function readSessionMessages(ctx, sessionId, options = {}) {
-  const service = agents(ctx);
-  const agent = service.get(sessionId);
-  if (!agent) {
-    throw new ApiError(
-      Failure.NOT_FOUND,
-      `session ${sessionId} has no live agent, so its history cannot be read (open it in the UI, then retry)`,
-      404,
-    );
+export async function readSessionMessages(ctx, sessionId, options = {}) {
+  const agent = agents(ctx).get(sessionId);
+  let derived;
+  if (agent) {
+    const session = agent.session;
+    if (!session || typeof session.deriveMessages !== "function") {
+      throw new ApiError(Failure.NO_AGENTS, "the agent for this session does not expose its history", 503);
+    }
+    derived = session.deriveMessages() ?? [];
+  } else {
+    derived = await derivedMessagesFromStore(ctx, sessionId);
   }
-  const session = agent.session;
-  if (!session || typeof session.deriveMessages !== "function") {
-    throw new ApiError(Failure.NO_AGENTS, "the agent for this session does not expose its history", 503);
-  }
-
-  const derived = session.deriveMessages() ?? [];
   const limit = messageLimit(options.limit);
   const kept = derived.slice(-limit);
   const messages = kept.map((message) => {

@@ -388,7 +388,7 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
   if (method === "GET" && sessionMessages) {
     const sessionId = decodeURIComponent(sessionMessages[1]);
     const limit = new URL(String(req.url ?? "/"), "http://placeholder").searchParams.get("limit");
-    return { body: { ok: true, ...readSessionMessages(ctx, sessionId, { limit }) } };
+    return { body: { ok: true, ...(await readSessionMessages(ctx, sessionId, { limit })) } };
   }
 
   // The tail may be a registry id or a path (a page-visible workspace that was

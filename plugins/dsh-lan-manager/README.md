@@ -211,10 +211,14 @@ dominate a reply; `reasoningChars` reports a thinking block's size without
 inlining it, since reasoning is not the answer; and `otherBlocks` counts blocks the
 plugin does not render, so nothing is dropped silently.
 
-The history is the harness's own derivation from the **live agent's session** —
-the same seam `POST /prompt` uses — so a session with no live agent is a `404`
-with that explanation rather than an empty conversation, which would read as "this
-session said nothing".
+The history is the harness's own derivation — `deriveMessages()`, the same
+projection `POST /prompt` feeds — so the plugin holds no opinion about session
+format. A **live** agent is preferred because its session is already in memory;
+with none, the stored log is read through the harness's cold-read service
+(`sessionQuery.readSession`) and handed back to `sessions.prepare()` as a
+**detached** session, which is the same call that service makes internally. An idle
+or archived session therefore still answers. A session that exists in neither is a
+`404`, not an empty conversation, which would read as "this session said nothing".
 
 ### `POST /dsh-lan/sessions`
 
@@ -341,7 +345,7 @@ done
 |---|---|
 | `src/index.js` | `apply()` — config, route registration, disposal, banner |
 | `src/router.js` | the three guards, routing, JSON bodies and responses |
-| `src/api.js` | the operations against `workspaceRegistry` / `agents` / `sessionController` |
+| `src/api.js` | the operations against `workspaceRegistry` / `agents` / `sessionController` / `sessionQuery`+`sessions` |
 | `src/net.js` | the address fence (pure, no I/O) |
 | `src/discovery.js` | Tailscale, Bonjour, seeds and subnet candidates (best-effort, never throws) |
 | `src/peers.js` | the peer table: validate, probe, gossip, expire, on a timer |
@@ -356,7 +360,7 @@ literal shape and reports which path it took in `/health`.
 ## Tests
 
 ```bash
-npm test        # node --test 'test/*.test.js' — 105 cases
+npm test        # node --test 'test/*.test.js' — 107 cases
 ```
 
 `test/net.test.js` is the important one: it pins every allowed range and, more to
