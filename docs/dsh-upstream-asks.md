@@ -1,9 +1,18 @@
-# Two asks for DeepSeek Harness, from running it against a local TinyTitan server
+# Three asks for DeepSeek Harness, from running it against a local TinyTitan server
 
-Date: 2026-09-14. Verified against the installed `@deepseek-ai/dsh` **0.1.5-rc.2**
-and `@earendil-works/pi-ai` 0.85.1. Upstream (`deepseek-ai/deepseek-harness`) has
-**issues disabled and discussions enabled**, so these are written to be posted as
-two discussions; the patches are small enough to apply locally meanwhile.
+Date: 2026-09-14; **posted 2026-09-18**. Re-verified before posting against the
+installed `@deepseek-ai/dsh` **0.1.6-alpha.2** and `@earendil-works/pi-ai` 0.85.1,
+and the line numbers below are those versions' (the first draft was written
+against 0.1.5-rc.2). Upstream (`deepseek-ai/deepseek-harness`) has **issues
+disabled and discussions enabled**, so all three are Discussions in *Ideas*:
+
+| # | Ask | Discussion |
+| --- | --- | --- |
+| 1 | Honor `purpose` when an auxiliary call names no reasoning level | [#7109](https://github.com/deepseek-ai/deepseek-harness/discussions/7109) |
+| 2 | Map pi-ai's reasoning usage into `reasoningTokens` | [#7110](https://github.com/deepseek-ai/deepseek-harness/discussions/7110) |
+| 3 | Allow `dsh web --host` to bind a specific LAN interface | [#7111](https://github.com/deepseek-ai/deepseek-harness/discussions/7111) |
+
+The patches are small enough to apply locally meanwhile.
 
 Both are about the *seam*, not about any one provider: they change what every
 route gets, and both already hold on the first-party DeepSeek adapter.
@@ -16,13 +25,13 @@ route gets, and both already hold on the first-party DeepSeek adapter.
 `purpose`, and they name no `reasoningEffort`:
 
 - `@deepseek-ai/dsh-compaction-basic` — `summarizeWithLlm`
-  (`lib/index.js:292-302`) streams with `purpose: "compaction"` and no
+  (`lib/index.js:299`) streams with `purpose: "compaction"` and no
   `reasoningEffort`;
-- `@deepseek-ai/dsh-session-title-llm` (`lib/index.js:209-217`) streams with
+- `@deepseek-ai/dsh-session-title-llm` (`lib/index.js:216`) streams with
   `purpose: "session-title"` and no `reasoningEffort`.
 
 `@deepseek-ai/dsh-llm` then fills the gap from the *route*:
-`resolveCallWithInfo` (`lib/index.js:2117-2128`) takes
+`resolveCallWithInfo` (`lib/index.js:2136-2147`) takes
 `const effective = requested ?? reasoning.defaultEffort`. So on any route whose
 profile default level is a thinking level, compaction and session titles think.
 
@@ -40,7 +49,7 @@ profile default level is a thinking level, compaction and session titles think.
   `@deepseek-ai/dsh-llm-deepseek`'s `resolveThinking`
   (`lib/index.js:32`) returns `{ thinking: "disabled" }` for
   `purpose === "session-title"`, and the compaction call carries
-  `x-deepseek-harness-compact: 1` (`lib/index.js:1667`) for the server to act on.
+  `x-deepseek-harness-compact: 1` (`lib/index.js:1276`) for the server to act on.
   A pi-ai-backed route has no equivalent, so the same harness behaves two ways
   depending on which adapter serves the model.
 
@@ -80,7 +89,7 @@ that mounts a compaction backend forcing `off` for those calls; the route's own
 reasoning: rawUsage.completion_tokens_details?.reasoning_tokens || 0,
 ```
 
-`@deepseek-ai/dsh-llm-pi-ai`'s `mapUsage` (`lib/index.js:1357-1365`) then maps
+`@deepseek-ai/dsh-llm-pi-ai`'s `mapUsage` (`lib/index.js:1403-1410`) then maps
 `input`, `output`, `totalTokens`, `cacheRead` and `cacheWrite` — and drops
 `reasoning`:
 
@@ -119,10 +128,46 @@ the cache fields do.
 
 ---
 
+## 3. Allow `dsh web --host` to bind a specific LAN interface
+
+**What happens now.** The webserver schema takes two literals and no others:
+`host: z.union([z.const("127.0.0.1"), z.const("0.0.0.0")]).required()`
+(`@deepseek-ai/dsh-host-webserver` `lib/index.js:141`). The Web app then refuses
+the all-interfaces one at startup (`@deepseek-ai/dsh-web-app` `lib/startup.js:40`):
+*"error: --host 0.0.0.0 is intentionally not supported yet for safety: it would
+expose remote code execution to the network; use 127.0.0.1 instead"*.
+
+**Consequence.** Nothing built on the Web UI — a LAN manager for a small fleet of
+harness instances, say — can be reached from another machine, and a specific
+interface cannot be named at all.
+
+**The fence it would need is already there.** `resolveLanTrust`
+(`lib/index.js:83`) computes the machine's non-internal IPv4 addresses, folds
+them into `trustedHosts` for the `/api` browser-trust fence, and the ready banner
+announces a LAN candidate (`lib/index.js:199`) — every bit of it gated on
+`bindHost === "0.0.0.0"`, which startup rejects, so on the CLI path it is
+unreachable. A non-wildcard bind would also need the bound address added to the
+fence: that function returns an empty `lanAddresses` for anything but the
+wildcard.
+
+**Suggested shape.** Accept an explicit interface literal — `--host 192.168.1.5`
+— and keep rejecting the wildcard, or gate the wildcard behind an explicit
+opt-in. One address exposes the listener only on the subnet that address is on.
+If remote code execution is the concern, an opt-in that also requires a token or
+an allowlist is the safer form than a silent wildcard bind.
+
+**Acceptance.** The bound literal serves and is printed in the ready banner;
+another machine on the same subnet can load it; and the `/api` fence still
+rejects a Host header that is neither the bound address nor an explicit
+`--trusted-host`.
+
+---
+
 ## Applying these locally
 
-Both are small enough to carry as a patch against the installed package while
-upstream decides — but an upgrade replaces `node_modules`, so re-apply after one.
-The first is already worked around by `plugins/dsh-tinytitan` for compaction; the
-second cannot be worked around from outside the adapter, which is why it is the
-more valuable of the two.
+The first two are small enough to carry as a patch against the installed package
+while upstream decides — but an upgrade replaces `node_modules`, so re-apply
+after one. The first is already worked around by `plugins/dsh-tinytitan` for
+compaction; the second cannot be worked around from outside the adapter, which is
+why it is the more valuable of the two. The third is a schema change in two
+packages, so it is upstream or a fork rather than a patch.

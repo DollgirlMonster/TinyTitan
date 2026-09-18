@@ -92,12 +92,12 @@ bundle, and `create-dshx` scaffolds a plugin project.
 | `package.json` declares `dsh.bundle.patch` | **yes** (`./cordis.patch.yml`) |
 | `cordis.patch.yml` beside `package.json` | **yes** |
 | Lives in a subpackage the catalogue's CI looks at (`plugins/`) | **yes** |
-| Real, working code | **yes** — 34 `node --test` tests, 0 skipped |
+| Real, working code | **yes** — 66 `node --test` cases, 65 pass, 1 skipped (a shell byte-equality check that needs a built server) |
 | Repository ≥ 1 day old | **yes** (created 2026-08-02) |
 | `repository` field pointing at the listed repo | **yes**, with `directory: plugins/dsh-tinytitan` |
 | `dsh-plugin` npm keyword | **yes** (added 2026-09-14, with `deepseek`) |
 | `dsh-plugin` **GitHub topic on the repo** | **yes** — set 2026-09-14 (it was the only topic the repository had) |
-| Submitted to the catalogue | **yes** — [PR #5094](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5094), one file, +6/−0, mergeable |
+| Submitted to the catalogue | **yes** — [PR #5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396), one file, opened 2026-09-18 after #5094 was closed with no comment |
 | Description, accurate, no superlatives | not written yet — §4 has a draft |
 | Licence | **MIT, deliberately** — see the plugin README; the repository is Apache-2.0 and this package is an independent work that talks to the server over its HTTP API |
 | npm name `dsh-tinytitan` | **unclaimed** (registry returns 404) |
@@ -133,10 +133,13 @@ generated preset.
    correct. **Not done — it is the operator's account.**
 2. ~~**Add the `dsh-plugin` topic**~~ — **done 2026-09-14** on
    `Pummelchen/TinyTitan`.
-3. ~~**Open the one-file PR**~~ — **done 2026-09-14**:
-   [PR #5094](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5094),
-   one file, +6/−0. Reviewed by that project's CI and a maintainer; nothing here
-   can hurry the merge.
+3. **Open the one-file PR** — first submitted 2026-09-14 as
+   [PR #5094](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5094);
+   that PR was closed 2026-09-15 with no comment, and the fork behind it is gone.
+   Re-submitted 2026-09-18 as
+   [PR #5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396),
+   from `Pummelchen/awesome-dsh-plugin` on branch `add-tinytitan-plugin`, level
+   with the catalogue's `main`. One file, +6/−0; nothing here can hurry a merge.
 4. **Optionally add `screenshots.json`** to `plugins/dsh-tinytitan/` (1–8 images
    already in this repository) so the storefront shows the plugin rather than
    scraping the README.
@@ -175,9 +178,11 @@ fewer than `readEntries()` is that, not a dropped entry.
 - **The catalogue PR** was a public contribution to a third-party repository,
   attributed to the account that opened it; it is opened and now belongs to that
   project's review.
-- The two asks in [`dsh-upstream-asks.md`](dsh-upstream-asks.md) are upstream
-  *Discussions* (issues are disabled there), and are separate from listing. Still
-  unposted.
+- The three asks in [`dsh-upstream-asks.md`](dsh-upstream-asks.md) are upstream
+  *Discussions* (issues are disabled there), and are separate from listing.
+  Posted 2026-09-18: [#7109](https://github.com/deepseek-ai/deepseek-harness/discussions/7109),
+  [#7110](https://github.com/deepseek-ai/deepseek-harness/discussions/7110),
+  [#7111](https://github.com/deepseek-ai/deepseek-harness/discussions/7111).
 
 ## Sources
 
