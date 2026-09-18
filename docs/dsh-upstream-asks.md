@@ -122,6 +122,39 @@ routes this checkout emits (`tools/dsh_route.sh` and `generate.js` always list
 capability query above is the hardening if this override is ever pointed at a
 foreign route.
 
+**Where the guard lives — answered by the reply, 2026-09-19.** Asked whether the
+capability check belongs inside `resolveCallWithInfo` or in the layer that selects
+the level, the reply recommends the **selection layer**, for four checkable
+reasons:
+
+1. `purpose` is not on the resolver's input. `resolveCallWithInfo(config, info)`
+   takes `LlmCallConfig`, a six-field scalar bag (`provider`, `model`,
+   `reasoningEffort`, `temperature`, `maxTokens`, `stop`); `purpose` lives on
+   `GenerateOptions`. Verified on our installed `0.1.6-alpha.2`: `purpose` appears
+   in `dsh-llm` only in `lib/types/types.d.ts`, never in `lib/index.js`.
+2. The resolver has three call sites, so a guard there fires for every call and
+   must itself answer "is this auxiliary" — the input it does not have.
+3. The layer already normalizes: `resolveCallWithInfo` writes the effective level
+   back into the returned config (`if (requested !== effective) resolvedConfig =
+   { ...defaulted, reasoningEffort: effective }`), so choosing the level is
+   already its habit.
+4. Its only failure vocabulary is `UNSUPPORTED_REASONING_EFFORT`, whose
+   consumption is fatal — a terminal `finish` with zero content. A policy
+   decision expressed there becomes a new silent no-op in the configurations the
+   guard exists to protect.
+
+If a capability check does live in the resolver, the refinement is that it must
+**normalize rather than reject**: a level the route cannot express is dropped to
+the route's default (or to no level), never routed into the terminal error. Then
+the two homes compose — the selection layer names only levels the route lists,
+and the resolver never becomes the enforcement point for a policy decision.
+
+The deciding test the reply offers: the rule must be expressible **without
+widening `LlmCallConfig`**, and the selection home wins that outright. That leaves
+one acknowledged gap — a caller that names a level explicitly is not covered by
+the selection home — which is the resolver's job as a *capability* rule, not the
+policy's.
+
 ---
 
 ## 2. Map pi-ai's reasoning usage into `reasoningTokens`
