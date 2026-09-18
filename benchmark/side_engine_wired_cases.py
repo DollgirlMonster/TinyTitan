@@ -12,7 +12,8 @@ narrower question, and it is the only one that reaches the engine:
   works.
 - **T3 contradiction**: a new key whose value cannot both be true with an
   existing one. The answer is advisory only: disagreement is not supersession,
-  and T4, which would tell them apart, is not ready at any measured size.
+  and T4, which would tell them apart, needs the stored rule supplied and has no
+  source for it in the memory path yet.
 
     python3.13 benchmark/side_engine_wired_cases.py --prepare jobs.jsonl
     .build/release/TinyTitanBench cpu35batch <install> jobs.jsonl done.jsonl

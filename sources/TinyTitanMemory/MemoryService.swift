@@ -616,8 +616,8 @@ public actor MemoryService {
             // key that says nothing new is stopped, and a new key that cannot
             // both be true with an existing one is recorded. The contradiction
             // is advisory — disagreement is not supersession, and T4, which
-            // would tell them apart, is one-sided at every measured size — so
-            // it changes no write.
+            // would tell them apart, needs the stored rule and has no source
+            // yet — so it changes no write.
             if let sideEngine, questionsLeft > 0 {
                 var pool = candidates
                 if isShared {

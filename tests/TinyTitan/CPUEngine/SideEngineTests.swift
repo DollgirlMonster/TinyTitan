@@ -55,6 +55,18 @@ import Testing
             == .supersession)
     }
 
+    @Test func aRuleIsOnlyShownWhenTheCallerHasOne() {
+        let without = SideEngineJudgement.supersession(key: "state/inn",
+                                                       earlier: "standing", now: "burned")
+        #expect(without.userPrompt.hasPrefix("EARLIER:"))
+        #expect(!without.userPrompt.contains("RULE:"))
+
+        let with = SideEngineJudgement.supersession(key: "characters/marcus/eyes",
+                                                    earlier: "grey", now: "hazel",
+                                                    rule: "eye colour is fixed.")
+        #expect(with.userPrompt.hasPrefix("RULE: eye colour is fixed.\nEARLIER:"))
+    }
+
     @Test func anErrorSaysWhatItRead() {
         let answer = SideEngineError.unparsableAnswer(task: .durability, completion: "Dunno")
         #expect(answer.description.contains("T2"))
@@ -81,8 +93,11 @@ import Testing
                         bKey: "characters/marcus/eyes", bValue: "hazel"),
          "A: characters/marcus/eyes = grey\nB: characters/marcus/eyes = hazel\n"
             + "Do A and B disagree?"),
-        (.supersession(key: "state/inn", earlier: "standing", now: "burned to the ground"),
-         "EARLIER: state/inn = standing\nNOW: state/inn = burned to the ground\nWhich is it?"),
+        (.supersession(key: "characters/marcus/eyes", earlier: "grey", now: "hazel",
+                       rule: "eye colour is fixed and must never change."),
+         "RULE: eye colour is fixed and must never change.\n"
+            + "EARLIER: characters/marcus/eyes = grey\nNOW: characters/marcus/eyes = hazel\n"
+            + "Which is it?"),
         (.duplication(aKey: "setting/town", aValue: "Ashgrove",
                       bKey: "setting/place", bValue: "Ashgrove"),
          "A: setting/town = Ashgrove\nB: setting/place = Ashgrove\nSame fact?"),

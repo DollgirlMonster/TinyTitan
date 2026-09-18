@@ -153,11 +153,12 @@ load, or a completion the parser refuses all read as "no decision", and the
 deterministic behaviour stands exactly as it did before the engine existed.
 
 **Which model, and which questions, is measured rather than assumed.** Over the
-60 cases `benchmark/side_engine_tasks.py` can build here, the shipped prompts
-decide contradiction, duplication and retrieval from the 4B up, and the reply
-check from the 9B; durability and supersession are one-sided at every size and
-are deliberately not offered. That is why the default is the 4B and why the 2B
-is not used — `docs/side-engine-tasks.md` carries the matrix.
+cases `benchmark/side_engine_tasks.py` can build here: contradiction is good
+from the smallest model up; duplication and retrieval need a 4B; durability
+needs a 4B and is *worse* on a 9B; the reply check needs a 9B; and supersession
+needs the stored rule supplied with the question, where both installs are exact.
+That is why the default is the 4B, not the 2B and not the 9B —
+`docs/side-engine-tasks.md` carries the matrix.
 
 **And it is budgeted like the model call it is.** A judgement re-reads a prompt
 and generates: measured at 15.2 s on the 4B and 29.8 s on the 9B. One

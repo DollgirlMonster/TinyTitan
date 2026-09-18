@@ -26,10 +26,11 @@ public struct MemoryFact: Sendable, Equatable {
 ///   before the engine existed. A shut-down engine, a completion the parser
 ///   refused, a timeout — each falls back to the deterministic behaviour
 ///   instead of blocking a write.
-/// - **Only the tasks that were measured good on both halves appear here.**
-///   The shipped prompts decide contradiction, duplication and retrieval from
-///   the 4B up, and the reply check from the 9B; durability and supersession
-///   are one-sided at every size and deliberately have no method
+/// - **Only the tasks a caller actually asks appear here.** Contradiction
+///   works from the smallest model up, duplication and retrieval from the 4B,
+///   the reply check from the 9B. Durability is decided at the 4B and
+///   supersession at either size once the stored rule is supplied, but neither
+///   has a caller yet, so neither has a method; add one with its caller
 ///   (`docs/side-engine-tasks.md`).
 public protocol MemorySideEngine: Sendable {
     /// T5: do these two facts say the same thing? True means a reader learns

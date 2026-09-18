@@ -184,8 +184,8 @@ keeps its 92% from 2026-09-11.
 
 **The 2B is not the instrument.** A first pass on it said T5 was one-sided and
 T7 nearly so, and both of those are wrong about the task — a 4B decides them.
-So the shipped (v1) prompts were run at all three sizes, and the second draft
-(v2) on the 4B:
+So the shipped prompts were run at all three sizes, the second draft (v2) on the
+4B, and a third draft (v3) — now the shipped T2 and T4 — on the 4B and the 9B:
 
 ```bash
 python3.13 benchmark/side_engine_tasks.py --prepare /tmp/jobs.jsonl
@@ -197,35 +197,47 @@ Half A is the answer that says yes to the question (UPDATE for T4); half B is
 the one that says no (CONFLICT for T4). A task is ready only when both halves
 are good.
 
-| task | 2B v1 | 4B v1 | 4B v2 | 9B v1 |
-| --- | --- | --- | --- | --- |
-| T2 durability | 55% (10/10, 1/10) | 45% (9/10, 0/10) | 70% (10/10, 4/10) | 50% (10/10, 0/10) |
-| T3 contradiction | 100% (5/5, 5/5) | 100% (5/5, 5/5) | 100% (5/5, 5/5) | 100% (5/5, 5/5) |
-| T4 supersession | 50% (3/3, 0/3) | 50% (3/3, 0/3) | 67% (1/3, 3/3) | 50% (3/3, 0/3) |
-| T5 duplication | 50% (0/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) |
-| T6 reply check | 62% (0/3, 5/5) | 62% (0/3, 5/5) | 75% (1/3, 5/5) | 100% (3/3, 5/5) |
-| T7 retrieval | 88% (3/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) |
+| task | 2B v1 | 4B v1 | 4B v2 | 9B v1 | 4B v3 | 9B v3 |
+| --- | --- | --- | --- | --- | --- | --- |
+| T2 durability | 55% (10/10, 1/10) | 45% (9/10, 0/10) | 70% (10/10, 4/10) | 50% (10/10, 0/10) | **95% (10/10, 9/10)** | 65% (10/10, 3/10) |
+| T3 contradiction | 100% (5/5, 5/5) | 100% (5/5, 5/5) | 100% (5/5, 5/5) | 100% (5/5, 5/5) | — | — |
+| T4 supersession | 50% (3/3, 0/3) | 50% (3/3, 0/3) | 67% (1/3, 3/3) | 50% (3/3, 0/3) | **100% (3/3, 3/3)** | **100% (3/3, 3/3)** |
+| T5 duplication | 50% (0/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) | — | — |
+| T6 reply check | 62% (0/3, 5/5) | 62% (0/3, 5/5) | 75% (1/3, 5/5) | 100% (3/3, 5/5) | — | — |
+| T7 retrieval | 88% (3/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) | — | — |
 
 Read down the columns. T3 is good at every size. T5 and T7 go from one-sided on
 the 2B to perfect on the 4B and stay there. T6 needs the 9B: the 2B and the 4B
-catch 0 of its 3 contradicting replies, the 9B all three. T2 and T4 are
-one-sided at every size with the shipped prompts, which is a prompt problem
-rather than a capacity one — and the second draft moves both without settling
-either: T2's negative half goes from 0 of 10 to 4 of 10, and T4's added rule
-line takes CONFLICT from 0 of 3 to 3 of 3 while UPDATE falls from 3 of 3 to 1 of
-3, trading one one-sided answer for the other. (The 2B's own v2 run — T2 60%,
-T4 17%, T5 100% — is in the history of `03d79f7`.)
+catch 0 of its 3 contradicting replies, the 9B all three. T2 and T4 were
+one-sided under the first two drafts, and the **third draft is what ships for
+both**:
 
-**So the model is part of the result.** The 4B is the floor that decides
-contradiction, duplication and retrieval; the 9B adds the reply check; the 2B
-decides contradiction and nothing else of these five. Durability and
-supersession are not ready on any of the three and must not be wired to a
-caller. The sentence-rendered facts that earlier fixed T5 for the 2B are not
+**T2 is a 4B task, and the bigger model is worse at it.** The v3 prompt replaces
+the vague negatives with the shape of the failure — "story text, narration,
+chapter content, a summary of what was written, … a fact that would only make
+sense to someone who read this session is NO" — and the 4B goes from 45% to 95%,
+keeping 9 of the 10 lines of the novel it wrote out of the store. The 9B moves
+the other way, 65%, keeping 7 of 10. Durability is not a capacity problem here,
+and the default install is the one that decides it.
+
+**T4 was never answerable from the two statements.** An eye colour changing is a
+conflict only because a rule says it never may, and neither earlier draft showed
+that rule, so CONFLICT was 0 of 3 at every size. Given the rule, both installs
+are perfect — 3 of 3 on each half — and `SideEngineJudgement.supersession` now
+carries a `rule:` the caller fills from the store. What the memory path has no
+source for yet is that rule: the port has no supersession method and nothing
+finds a matching stored rule, so T4 is ready but unwired.
+
+**So the model is part of the result.** The 4B is the floor: contradiction,
+duplication, retrieval, and — with v3 — durability. The 9B adds the reply check
+and is worse at durability. The 2B decides contradiction and nothing else of
+these six. The sentence-rendered facts that earlier fixed T5 for the 2B are not
 needed at the 4B, where the shipped `key = value` form already scores 100%.
 
 Runs made 2026-09-18 with the release `TinyTitanBench` built from `036f98c`;
-60 jobs, 7,276 tokens: 2B 386.2 s (18.8 tok/s), 4B 1,131.3 s (6.4), 4B v2
-1,168.3 s (6.6), 9B 2,244.1 s (3.2).
+60 jobs, 7,276 tokens except where a draft changed the case count: 2B 386.2 s
+(18.8 tok/s), 4B 1,131.3 s (6.4), 4B v2 1,168.3 s (6.6), 9B 2,244.1 s (3.2),
+4B v3 26 cases in 688.4 s (7.1), 9B v3 the same cases in 1,268.8 s (3.8).
 
 ## The case the wiring uses is not the case the matrix measured
 
@@ -295,11 +307,18 @@ Wired:
   an existing key in the same leading segment already carries is not stored, and
   the log names both keys. A new key that cannot both be true with an existing
   one is logged as a possible conflict and otherwise left alone: advisory by
-  design, because disagreement is not supersession and T4, which would tell them
-  apart, is one-sided at every measured size.
+  design, because disagreement is not supersession.
 
 Not wired:
 
+- **T2 durability.** It is ready at the 4B (95%), which is the default install,
+  but no caller asks it yet: the port has no durability method. The natural
+  caller is consolidation — drop what a later session does not need before it is
+  stored — and the judgement is one question per fact against the same budget.
+- **T4 supersession.** It is ready at both installs once the rule is supplied,
+  and nothing supplies one: the port has no supersession method and no path
+  looks up a stored rule for the key. That lookup is its own small retrieval
+  problem, and until it exists the conflict half is a guess.
 - **T7 retrieval.** It is ready — 100% at the 4B on the benchmark's cases — but
   its only caller would be `memory_search`, a tool call the client's turn waits
   on. At ~15 s a judgement that is up to a minute added to an interactive turn,

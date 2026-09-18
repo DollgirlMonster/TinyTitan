@@ -49,11 +49,15 @@ SYSTEMS = {
            "wrote it or clearly implied it. NO means it does not appear in "
            "what they wrote, however true it might be. " + ONE_WORD),
     "T2": ("You decide whether one fact is worth keeping after this session "
-           "ends. Answer with exactly one word: YES or NO. YES for decisions "
-           "and the reasons behind them, fixed attributes, rules, "
-           "constraints, and current state. NO for conversation, reasoning, "
-           "code, anything a later session can work out for itself, and "
-           "anything true only right now. " + ONE_WORD),
+           "ends. Answer with exactly one word: YES or NO. YES only for a "
+           "standing fact a later session needs: a decision and its reason, a "
+           "fixed attribute, a rule, a constraint, a preference, or the state "
+           "of the work right now. NO for anything that reports what happened "
+           "in this session instead of stating how things are: story text, "
+           "narration, chapter content, a summary of what was written, a "
+           "remark about the writing, a plan to write, an offer, or an "
+           "acknowledgement. A fact that would only make sense to someone who "
+           "read this session is NO. " + ONE_WORD),
     "T3": ("You decide whether two statements disagree. Answer with exactly "
            "one word: YES or NO. YES means both cannot be true at once. NO "
            "means they can both be true, including when they are about "
@@ -61,9 +65,14 @@ SYSTEMS = {
            "Different wording for the same thing is NO. " + ONE_WORD),
     "T4": ("Something has changed about one fact. You decide which kind of "
            "change it is. Answer with exactly one word: UPDATE or CONFLICT. "
-           "UPDATE means the world moved on and the newer one is the current "
-           "state. CONFLICT means the two disagree about the same moment and "
-           "one of them is wrong. " + ONE_WORD),
+           "UPDATE: the earlier value was true before and the newer one is "
+           "true now, so both can be true in turn -- the world moved on. "
+           "CONFLICT: a rule says this value never changes, or the two are "
+           "about the same moment, so both cannot be true and one is wrong. A "
+           "change of state -- a place burned, a person found, a service "
+           "stopped -- is UPDATE. A change to something a rule fixes -- an "
+           "eye colour under a rule that it never changes -- is CONFLICT. "
+           + ONE_WORD),
     "T5": ("You decide whether two facts say the same thing. Answer with "
            "exactly one word: YES or NO. YES means a reader learns nothing "
            "from the second that the first did not already tell them. NO "
@@ -100,6 +109,11 @@ EVENTS = {
     "state/tomas": ("missing", "found alive in the lighthouse"),
     "state/ferry": ("running", "stopped running for good"),
 }
+
+# The rule that makes an eye-colour change a CONFLICT rather than an UPDATE.
+# Supplied with the T4 cases because no model can know it from the two
+# statements, and a caller must supply the same kind of rule from the store.
+RULE = "RULE: eye colour is fixed and must never change."
 
 
 # Two T1 labels the grounding check gets wrong. It counts a clause as the
@@ -197,12 +211,15 @@ def cases() -> list[dict]:
 
     # T4: the plot events really are updates -- the person said the inn
     # burned. An eye colour changing is a conflict, because the bible says it
-    # never does.
+    # never does -- and that is not knowable from the two statements alone, so
+    # the rule the store holds is supplied with them, as a caller must
+    # (`SideEngineJudgement.supersession`'s `rule`). Without it the CONFLICT
+    # half is unanswerable and the model is guessing.
     for key, (before, after) in EVENTS.items():
-        jobs.append(job("T4", f"EARLIER: {key} = {before}\nNOW: {key} = {after}\n"
-                             f"Which is it?", "UPDATE", key))
+        jobs.append(job("T4", f"{RULE}\nEARLIER: {key} = {before}\n"
+                             f"NOW: {key} = {after}\nWhich is it?", "UPDATE", key))
     for key in list(BIBLE)[:3]:
-        jobs.append(job("T4", f"EARLIER: {key} = {BIBLE[key]}\n"
+        jobs.append(job("T4", f"{RULE}\nEARLIER: {key} = {BIBLE[key]}\n"
                              f"NOW: {key} = hazel\nWhich is it?", "CONFLICT", key))
 
     # T5: the same fact reworded against two different facts.
@@ -309,10 +326,6 @@ SYSTEMS_V2 = {
            "however differently it is worded. NO means the second adds "
            "something, or is about something else. " + ONE_WORD),
 }
-# T4's CONFLICT cases rest on this rule, and v1 never showed it: an eye
-# colour changing is only wrong if you know it may not. The person's own
-# words, from the bible.
-RULE = "RULE: eye colour is fixed and must never change."
 
 
 def sentence(key: str, value: str) -> str:
@@ -348,7 +361,7 @@ def v2_cases() -> list[dict]:
     jobs = []
     for case in cases():
         prompt = as_sentences(case["prompt"])
-        if case["task"] == "T4":
+        if case["task"] == "T4" and not prompt.startswith("RULE:"):
             prompt = f"{RULE}\n{prompt}"
         jobs.append(dict(case, prompt=prompt, system=SYSTEMS_V2[case["task"]],
                          variant="v2"))

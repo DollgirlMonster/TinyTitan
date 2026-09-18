@@ -14,11 +14,11 @@ import Foundation
 ///
 /// **Which model, and for which tasks.** The engine is model-agnostic — any
 /// dense Qwen3.5 snapshot fits — but the tasks are not decided equally at every
-/// size. Measured over the same 60 cases (`docs/side-engine-tasks.md`):
-/// contradiction is good from the smallest up, duplication and retrieval need
-/// a 4B, the reply check needs a 9B, and durability and supersession are
-/// one-sided at all three sizes and must not be wired to a caller. The 2B is
-/// not the verification instrument.
+/// size. Measured over the same cases (`docs/side-engine-tasks.md`):
+/// contradiction is good from the smallest up; duplication and retrieval need a
+/// 4B; durability needs a 4B and is *worse* on the 9B; the reply check needs a
+/// 9B; and supersession needs the stored rule supplied with the question, where
+/// both a 4B and a 9B are exact. The 2B is not the verification instrument.
 public enum SideEngineTask: String, Sendable, CaseIterable {
     case clauseAttribution = "T1"
     case durability = "T2"
@@ -72,7 +72,13 @@ public enum SideEngineJudgement: Sendable, Equatable {
     case clauseAttribution(personWrote: String, address: String, clause: String)
     case durability(key: String, value: String)
     case contradiction(aKey: String, aValue: String, bKey: String, bValue: String)
-    case supersession(key: String, earlier: String, now: String)
+    /// The rule is data, not part of the question: an eye colour changing is
+    /// only a conflict if something already says it never may, and no model can
+    /// know that from the two statements. A caller with a stored rule supplies
+    /// it, and the prompt shows it as a `RULE:` line; without one the CONFLICT
+    /// half is a guess.
+    case supersession(key: String, earlier: String, now: String,
+                      rule: String? = nil)
     case duplication(aKey: String, aValue: String, bKey: String, bValue: String)
     case replyCheck(key: String, value: String, reply: String)
     case retrieval(question: String, key: String, value: String)
@@ -103,11 +109,15 @@ public enum SideEngineJudgement: Sendable, Equatable {
                 + "what they wrote, however true it might be. " + Self.oneWord
         case .durability:
             return "You decide whether one fact is worth keeping after this session "
-                + "ends. Answer with exactly one word: YES or NO. YES for decisions "
-                + "and the reasons behind them, fixed attributes, rules, "
-                + "constraints, and current state. NO for conversation, reasoning, "
-                + "code, anything a later session can work out for itself, and "
-                + "anything true only right now. " + Self.oneWord
+                + "ends. Answer with exactly one word: YES or NO. YES only for a "
+                + "standing fact a later session needs: a decision and its reason, a "
+                + "fixed attribute, a rule, a constraint, a preference, or the state "
+                + "of the work right now. NO for anything that reports what happened "
+                + "in this session instead of stating how things are: story text, "
+                + "narration, chapter content, a summary of what was written, a "
+                + "remark about the writing, a plan to write, an offer, or an "
+                + "acknowledgement. A fact that would only make sense to someone who "
+                + "read this session is NO. " + Self.oneWord
         case .contradiction:
             return "You decide whether two statements disagree. Answer with exactly "
                 + "one word: YES or NO. YES means both cannot be true at once. NO "
@@ -117,9 +127,14 @@ public enum SideEngineJudgement: Sendable, Equatable {
         case .supersession:
             return "Something has changed about one fact. You decide which kind of "
                 + "change it is. Answer with exactly one word: UPDATE or CONFLICT. "
-                + "UPDATE means the world moved on and the newer one is the current "
-                + "state. CONFLICT means the two disagree about the same moment and "
-                + "one of them is wrong. " + Self.oneWord
+                + "UPDATE: the earlier value was true before and the newer one is "
+                + "true now, so both can be true in turn -- the world moved on. "
+                + "CONFLICT: a rule says this value never changes, or the two are "
+                + "about the same moment, so both cannot be true and one is wrong. A "
+                + "change of state -- a place burned, a person found, a service "
+                + "stopped -- is UPDATE. A change to something a rule fixes -- an "
+                + "eye colour under a rule that it never changes -- is CONFLICT. "
+                + Self.oneWord
         case .duplication:
             return "You decide whether two facts say the same thing. Answer with "
                 + "exactly one word: YES or NO. YES means a reader learns nothing "
@@ -153,8 +168,9 @@ public enum SideEngineJudgement: Sendable, Equatable {
         case let .contradiction(aKey, aValue, bKey, bValue):
             return "A: \(aKey) = \(aValue)\nB: \(bKey) = \(bValue)\n"
                 + "Do A and B disagree?"
-        case let .supersession(key, earlier, now):
-            return "EARLIER: \(key) = \(earlier)\nNOW: \(key) = \(now)\n"
+        case let .supersession(key, earlier, now, rule):
+            let prefix = rule.map { "RULE: \($0)\n" } ?? ""
+            return prefix + "EARLIER: \(key) = \(earlier)\nNOW: \(key) = \(now)\n"
                 + "Which is it?"
         case let .duplication(aKey, aValue, bKey, bValue):
             return "A: \(aKey) = \(aValue)\nB: \(bKey) = \(bValue)\nSame fact?"
