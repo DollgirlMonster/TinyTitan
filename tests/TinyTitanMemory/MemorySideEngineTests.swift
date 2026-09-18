@@ -376,8 +376,6 @@ private final class StubSideEngine: MemorySideEngine, @unchecked Sendable {
         lock.withLock { contradictionAsked += 1 }
         return contradictionAnswer
     }
-
-    func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool? { nil }
 }
 
 /// Collects the service's log events.

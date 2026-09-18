@@ -171,8 +171,10 @@ found by key and not by a model call — is not written either; a new key whose
 content an existing key already carries is not stored; and a new key that cannot
 both be true with an existing one is logged as a possible conflict and otherwise
 left alone, advisory because disagreement is not supersession. Retrieval is
-ready but has no caller that can afford it yet; `memory_search` is a tool call
-the client's turn waits on, which is the wrong place for a 15-second question.
+accurate — on an authored recall set it takes recall@1 from 1 of 4 to 4 of 4
+against the token match — but it has no caller that can afford it: every
+question-shaped caller is a request the person is waiting on, and a judgement is
+15 seconds on the 4B. It is deliberately not on the port until one exists.
 
 ### The guard
 

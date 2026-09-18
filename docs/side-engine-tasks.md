@@ -277,6 +277,38 @@ difference, and the release-only end-to-end test
 (`theRealInstallAnswersThroughTheFactoryAndTheAdapter`) is what found it. Four
 probe cases, 448 tokens, 58.0 s on the 4B.
 
+## Does retrieval rank better than the token match?
+
+T7 had no caller, so the question a caller would ask first is what the ranking
+is worth. `benchmark/side_engine_recall.py` compares it against the token
+ranking `MemoryRanking` uses — a term in the key scores 3, in the value 1, and a
+fact sharing no term is not returned at all — over authored questions that avoid
+the target's words, name the attribute rather than the holder, or carry the
+answer in the value:
+
+```bash
+python3.13 benchmark/side_engine_recall.py --prepare /tmp/recall.jsonl
+.build/release/TinyTitanBench cpu35batch models/qwen3.5_4B_4Bit /tmp/recall.jsonl /tmp/done.jsonl
+python3.13 benchmark/side_engine_recall.py --score /tmp/done.jsonl
+```
+
+| ranking | 4B recall@1 | 4B recall@3 | 9B recall@1 | 9B recall@3 |
+| --- | --- | --- | --- | --- |
+| token match | 1/4 | 3/4 | 1/4 | 3/4 |
+| side-engine | **4/4** | **4/4** | **4/4** | **4/4** |
+
+The gain is real and the two installs agree on it. It is also the cheapest kind
+of result to fake — an engine that always answers YES scores 1 of 4 — so the
+script was checked against a perfect answer set (6 of 6 before two labels were
+withdrawn), an always-YES set and an always-NO set, and only the perfect one
+scores 6 of 6. Two of the six questions are printed but not counted, because
+after reading the answers it was clear their labels did not hold: "the
+lighthouse keeper's son" says whose son Marcus is, not what he does for a
+living, and removing them from the file would have been the dishonest fix.
+
+Runs made 2026-09-18: 60 judgements, 6,768 tokens, 4B 950.1 s (7.1 tok/s), 9B
+1,758.4 s (3.8).
+
 ## Where it is wired
 
 The port is `MemorySideEngine`
@@ -324,10 +356,16 @@ Wired:
 
 Not wired:
 
-- **T7 retrieval.** It is ready — 100% at the 4B on the benchmark's cases — but
-  its only caller would be `memory_search`, a tool call the client's turn waits
-  on. At ~15 s a judgement that is up to a minute added to an interactive turn,
-  the opposite of the side-engine's design (concurrent, one thread, 3% to the
-  generation it overlaps). It stays on the port for a caller that can afford it:
-  an offline recall experiment, or a background pre-rank.
+- **T7 retrieval**, for now. It is accurate — 100% on the main benchmark's
+  pairs — and on an authored recall set it ranks better than the token ranking
+  the memory tools use: **recall@1 4 of 4 against 1 of 4, recall@3 4 of 4
+  against 3 of 4**, the same at the 4B and the 9B
+  (`benchmark/side_engine_recall.py`). What it has no answer for is the price:
+  every question-shaped caller is a request the person is waiting on, and a
+  judgement is 15.2 s on the 4B. So the port method was removed rather than left
+  as an API with no caller, and the judgement plus this measurement stay for
+  whoever builds one. Two of the six authored questions are excluded from the
+  total because their labels do not hold — "the lighthouse keeper's son" does
+  not say what Marcus does for a living — and the script prints them as
+  uncounted rather than dropping them silently.
 - **T6 reply check** becomes available when the engine is a 9B.

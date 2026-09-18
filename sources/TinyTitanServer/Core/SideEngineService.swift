@@ -47,10 +47,6 @@ struct SideEngineMemoryAdapter: MemorySideEngine, Sendable {
         }
     }
 
-    func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool? {
-        await yesNo(.retrieval(question: question, key: fact.key, value: fact.value))
-    }
-
     func shutdown() async {
         await engine.shutdown()
     }

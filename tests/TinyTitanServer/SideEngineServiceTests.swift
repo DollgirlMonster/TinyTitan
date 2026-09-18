@@ -96,8 +96,9 @@ import TinyTitanMemory
     @Test func aModelThatWillNotLoadIsNoDecision() async {
         let engine = SideEngine { throw SideEngineError.missingTokenizer("/nowhere") }
         let adapter = SideEngineMemoryAdapter(engine: engine)
-        let answer = await adapter.couldAnswer("When does the ferry run?",
-                                               MemoryFact(key: "rules/ferry", value: "Sundays"))
+        let answer = await adapter.duplicates(
+            MemoryFact(key: "rules/ferry", value: "runs only on Sundays"),
+            MemoryFact(key: "rules/ferry_schedule", value: "only Sundays"))
         #expect(answer == nil)
     }
 
