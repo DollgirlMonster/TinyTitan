@@ -450,6 +450,7 @@ final class ANEPrefillAttention: @unchecked Sendable {
             // handover itself.
             let loaded = try await pending.task.value.model
             residentModel = (layer, history, loaded)
+            traceResident(layer: layer, history: history)
             return loaded
         }
         // A preload for a different layer is now useless; await and discard it
@@ -466,7 +467,18 @@ final class ANEPrefillAttention: @unchecked Sendable {
         let loaded = try MLModel(contentsOf: compiled,
                                  configuration: configuration)
         residentModel = (layer, history, loaded)
+        traceResident(layer: layer, history: history)
         return loaded
+    }
+
+    /// `TINYTITAN_ANE_MEMORY_TRACE=1`: the footprint with one E5RT arena
+    /// resident, so it can be compared with the decode-start line and with a
+    /// GPU-prefilled run — the arena's size is that difference.
+    private func traceResident(layer: Int, history: Int) {
+        guard ProcessInfo.processInfo.environment["TINYTITAN_ANE_MEMORY_TRACE"] == "1" else { return }
+        FileHandle.standardError.write(Data(String(format:
+            "[ane-mem] resident layer=%d history=%d footprint=%.1f MiB\n",
+            layer, history, ProcessMemory.physFootprintMiB()).utf8))
     }
 
     /// The on-disk compiled model for `layer`, compiling it from the package
@@ -521,9 +533,17 @@ final class ANEPrefillAttention: @unchecked Sendable {
     /// construction, so `shadowTokens` resets with them and a later chunk
     /// correctly falls back rather than attending to a freed history.
     func releaseModels() {
+        // `TINYTITAN_ANE_MEMORY_TRACE=1`: what dropping the Core ML model does to
+        // the process footprint, which is the TT-004 question — an E5RT arena
+        // that is *not* returned keeps costing residency and bandwidth through
+        // decode. Measured before the drop, after it, and after our own scratch
+        // buffers are freed, so the model's share is separable from the masks'.
+        let trace = ProcessInfo.processInfo.environment["TINYTITAN_ANE_MEMORY_TRACE"] == "1"
+        let before = trace ? ProcessMemory.physFootprintMiB() : 0
         residentModel = nil
         preloaded?.task.cancel()
         preloaded = nil
+        let afterModel = trace ? ProcessMemory.physFootprintMiB() : 0
         // Release the borrowing MLMultiArrays before the storage they point
         // at: they are built with `deallocator: nil`, so this dictionary owns
         // the memory.
@@ -540,6 +560,13 @@ final class ANEPrefillAttention: @unchecked Sendable {
         shadowK.removeAll()
         shadowV.removeAll()
         shadowTokens = 0
+        if trace {
+            FileHandle.standardError.write(Data(String(format:
+                "[ane-mem] release before=%.1f afterModelDrop=%.1f afterScratchFree=%.1f MiB "
+                + "(model held %.1f, scratch %.1f)\n",
+                before, afterModel, ProcessMemory.physFootprintMiB(),
+                before - afterModel, afterModel - ProcessMemory.physFootprintMiB()).utf8))
+        }
     }
 
     /// Starts loading `layer`'s model for `history` in the background, if it

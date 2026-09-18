@@ -240,6 +240,14 @@ public func runRawCompletion(producer: any LogitProducer,
 
     let decodeStart = Date()
     let prefillSeconds = decodeStart.timeIntervalSince(prefillStart)
+    if ProcessInfo.processInfo.environment["TINYTITAN_ANE_MEMORY_TRACE"] == "1" {
+        // The other end of the TT-004 question: whatever the ANE's E5RT arena
+        // was, is it still resident once decode begins? Compare this line
+        // between an ANE-prefilled run and a GPU-prefilled one.
+        FileHandle.standardError.write(Data(String(format:
+            "[ane-mem] decode-start footprint=%.1f MiB prompt=%d tok\n",
+            ProcessMemory.physFootprintMiB(), promptIds.count).utf8))
+    }
     // The scratch sampler persists across generations; its incremental
     // repetition-penalty history is per-generation (R25).
     scratch.sampler.resetPenaltyHistory()
@@ -377,6 +385,14 @@ private func runStreamingMTPCompletion(
         }
     let decodeStart = Date()
     let prefillSeconds = decodeStart.timeIntervalSince(prefillStart)
+    if ProcessInfo.processInfo.environment["TINYTITAN_ANE_MEMORY_TRACE"] == "1" {
+        // The other end of the TT-004 question: whatever the ANE's E5RT arena
+        // was, is it still resident once decode begins? Compare this line
+        // between an ANE-prefilled run and a GPU-prefilled one.
+        FileHandle.standardError.write(Data(String(format:
+            "[ane-mem] decode-start footprint=%.1f MiB prompt=%d tok\n",
+            ProcessMemory.physFootprintMiB(), promptIds.count).utf8))
+    }
 
     var detok = GFDetokenizer(tokenizer: tokenizer)
     var stopMatcher = StreamingStopMatcher(stops: config.stopStrings)
