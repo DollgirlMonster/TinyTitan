@@ -1,5 +1,35 @@
 import Foundation
 
+/// The one reader of `TINYTITAN_KEEP_WIRED`, the switch that keeps the
+/// routed-expert slot cache wired through prefill.
+///
+/// The variable is a **tri-state**, not a flag: `1` forces the cache wired, `0`
+/// forces it pageable, and anything else (or unset) leaves the profile row's
+/// measured choice alone. It has to work in both directions, because the 35B rows
+/// set `keepWired` for the measured decode win and on a 24 GB Mac that is a 12 GiB
+/// cache which can then not be paged out (measured 14.72 GB RSS, 11% system memory
+/// free, CoreAudio glitching while a model is loaded). Three readers used to test
+/// `== "1"` independently, so `0` could not express that; everything that needs the
+/// decision now resolves through ``resolve(environment:row:)``, applied once in
+/// ``ModelProfile/resolve(modelID:family:weightBits:environment:)`` and then carried
+/// on the profile.
+public enum ExpertCacheWiring {
+    /// What `TINYTITAN_KEEP_WIRED` says, or nil when it names no override.
+    public static func override(environment env: [String: String]) -> Bool? {
+        switch env["TINYTITAN_KEEP_WIRED"] {
+        case "1": return true
+        case "0": return false
+        default: return nil
+        }
+    }
+
+    /// The wiring one run uses: the environment override if it names one, else
+    /// the row's own measured value.
+    public static func resolve(environment env: [String: String], row: Bool) -> Bool {
+        override(environment: env) ?? row
+    }
+}
+
 /// One tuning profile per (model, routed-expert width): everything the
 /// runtime chooses for a model that is not architecture -- the expert-cache
 /// budget, the prefetch depth, the prefill chunk, the sampling defaults and
@@ -58,7 +88,9 @@ public struct ModelProfile: Sendable, Equatable {
     /// unpinning it at prefill start and re-wiring it on the first decode
     /// token. Measured on Qwen3.8 4-bit: the re-wire faults a swapped-out
     /// 12 GiB cache back in, 1.6-4.7 s per request; holding it is a wash on
-    /// decode throughput and prefill time. TINYTITAN_KEEP_WIRED=1 forces it on.
+    /// decode throughput and prefill time. The row carries the measured default
+    /// and `TINYTITAN_KEEP_WIRED` overrides it **both ways** — `=0` forces the
+    /// cache pageable even here (``ExpertCacheWiring``).
     public var keepExpertCacheWired: Bool
 
     /// The shipped entries. Measured values, each on its own install.
@@ -197,7 +229,9 @@ public struct ModelProfile: Sendable, Equatable {
         if let v = env["TINYTITAN_ATTN_SIMD_PARTIAL"] { profile.attentionSimdPartial = v != "0" }
         if let v = env["TINYTITAN_HC_FUSED"] { profile.hcFused = v == "1" }
         if let v = env["TINYTITAN_QSA_GPU_SELECT"] { profile.qsaGPUSelect = v == "1" || v == "verify" }
-        if env["TINYTITAN_KEEP_WIRED"] == "1" { profile.keepExpertCacheWired = true }
+        if let override = ExpertCacheWiring.override(environment: env) {
+            profile.keepExpertCacheWired = override
+        }
         if let v = env["TINYTITAN_EARLY_HITS"] { profile.earlyExpertHits = v == "1" }
         if let v = env["TINYTITAN_PREDICTIVE_PREFETCH"] {
             profile.prefetchDepth = v == "1" ? max(1, profile.prefetchDepth) : 0

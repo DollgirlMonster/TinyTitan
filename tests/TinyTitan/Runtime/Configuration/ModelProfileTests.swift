@@ -104,6 +104,36 @@ import Testing
         #expect(early.earlyExpertHits)
     }
 
+    @Test func keepWiredTriStateReadsOnlyZeroAndOne() {
+        #expect(ExpertCacheWiring.override(environment: [:]) == nil, "unset names no override")
+        #expect(ExpertCacheWiring.override(environment: ["TINYTITAN_KEEP_WIRED": "1"]) == true)
+        #expect(ExpertCacheWiring.override(environment: ["TINYTITAN_KEEP_WIRED": "0"]) == false)
+        #expect(ExpertCacheWiring.override(environment: ["TINYTITAN_KEEP_WIRED": "true"]) == nil,
+                "only 0 and 1 name an override; anything else falls back to the row")
+        #expect(ExpertCacheWiring.override(environment: ["TINYTITAN_KEEP_WIRED": ""]) == nil)
+    }
+
+    @Test func keepWiredOverrideWorksInBothDirections() {
+        // Every table row that streams experts wires the cache, so before this
+        // `TINYTITAN_KEEP_WIRED=0` was a no-op and the 12 GiB cache could not be
+        // paged out on a 24 GB Mac (TT-008).
+        let rowWires = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash,
+                                            weightBits: 4, environment: [:])
+        #expect(rowWires.keepExpertCacheWired, "the row wires it by default")
+        let forcedOff = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash,
+                                             weightBits: 4, environment: ["TINYTITAN_KEEP_WIRED": "0"])
+        #expect(!forcedOff.keepExpertCacheWired, "0 must beat a row that wires it")
+        let forcedOn = ModelProfile.resolve(modelID: "qwen3.5-4b", family: .qwen35Dense,
+                                            weightBits: 4, environment: ["TINYTITAN_KEEP_WIRED": "1"])
+        #expect(forcedOn.keepExpertCacheWired, "1 must beat a row that does not")
+        let rowLeavesItOff = ModelProfile.resolve(modelID: "qwen3.5-4b", family: .qwen35Dense,
+                                                  weightBits: 4, environment: [:])
+        #expect(!rowLeavesItOff.keepExpertCacheWired)
+        let unrecognised = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash,
+                                                weightBits: 4, environment: ["TINYTITAN_KEEP_WIRED": "yes"])
+        #expect(unrecognised.keepExpertCacheWired, "an unrecognised value is not an override")
+    }
+
     @Test func summaryNamesTheKeyAndEveryKnob() {
         let p = ModelProfile.resolve(modelID: "qwen-agentworld", family: .qwen36, weightBits: 8, environment: [:])
         for needle in ["model=qwen-agentworld", "bits=8", "tabled", "budget=", "prefetch=1",

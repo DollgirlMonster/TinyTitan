@@ -66,11 +66,14 @@ extension RealForwardRunner {
     /// earlier, and because removing it would silently change that path's
     /// behaviour. It is not load-bearing today.
     ///
-    /// Skipped entirely under TINYTITAN_KEEP_WIRED: pinning at allocation and
-    /// then releasing here is self-defeating, and cost me one wrong
-    /// conclusion already.
+    /// Skipped when the profile keeps the cache wired — its row, or
+    /// `TINYTITAN_KEEP_WIRED=1` overriding a row that does not: pinning at
+    /// allocation and then releasing here is self-defeating, and cost me one
+    /// wrong conclusion already. With the override at `0` this call is what makes
+    /// the cache pageable through prefill, which is the trade the tri-state exists
+    /// to offer (TT-008).
     private func releasePrefillCacheWiring() {
-        if !Self.keepExpertCacheWired && !profile.keepExpertCacheWired {
+        if !profile.keepExpertCacheWired {
             model.setExpertCachePinned(false)
         }
     }

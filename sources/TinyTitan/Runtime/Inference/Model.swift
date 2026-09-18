@@ -165,13 +165,10 @@ public struct Model {
 
     /// unchecked-invariant: every access goes through `streamersQueue`, the
     /// serial queue on the owning Model. The box exists so Model can stay a
-    /// struct while still mutating per-layer streamer state.
-    /// Mirrors `RealForwardRunner.keepExpertCacheWired` (TINYTITAN_KEEP_WIRED=1).
-    static let keepExpertCacheWired = ProcessInfo.processInfo.environment["TINYTITAN_KEEP_WIRED"] == "1"
-
-    /// unchecked-invariant: every member, including the wiring flags and
-    /// the pin diagnostics added in 5.0.3, is read and written only inside
-    /// `streamersQueue.sync` / `.async` blocks; the queue is the lock.
+    /// struct while still mutating per-layer streamer state. Every member,
+    /// including the wiring flags and the pin diagnostics added in 5.0.3, is
+    /// read and written only inside `streamersQueue.sync` / `.async` blocks;
+    /// the queue is the lock.
     final class StreamersBox: @unchecked Sendable {
         /// Overrides the configured slot count for layers opened while set.
         var concentratedSlotCount: Int?
@@ -180,8 +177,8 @@ public struct Model {
         /// True once every opened streamer's slots are wired (see
         /// `setExpertCachePinned`); cleared by any unpin or partial wire.
         var pinnedComplete = false
-        /// Wire each layer as it opens (profile `keepExpertCacheWired` or
-        /// TINYTITAN_KEEP_WIRED=1).
+        /// Wire each layer as it opens (`profile.keepExpertCacheWired`, which
+        /// already folds in `TINYTITAN_KEEP_WIRED`; see `ExpertCacheWiring`).
         var keepWired = false
         /// Cache layout for layers opened from now on; nil takes the
         /// environment's value (see `ModelProfile.earlyExpertHits`).
@@ -816,11 +813,13 @@ public struct Model {
             metalStagingPool: metalStagingPool,
             metalIOService: metalIOService)
         // A newly opened layer is not wired yet; the next pin walks again.
-        // With TINYTITAN_KEEP_WIRED=1 it is wired here, so a cache that is never
-        // unpinned is never swapped out and the first decode token does not
-        // pay to fault it back (measured 1.6-4.7 s per request on Qwen3.8).
+        // When this run holds the cache wired (`profile.keepExpertCacheWired`,
+        // set through `setKeepExpertCacheWired`) it is wired here, so a cache
+        // that is never unpinned is never swapped out and the first decode
+        // token does not pay to fault it back (measured 1.6-4.7 s per request
+        // on Qwen3.8).
         streamersBox.pinnedComplete = false
-        if Self.keepExpertCacheWired || streamersBox.keepWired {
+        if streamersBox.keepWired {
             streamersBox.streamers[L]?.setSlotsPinned(true)
         }
     }

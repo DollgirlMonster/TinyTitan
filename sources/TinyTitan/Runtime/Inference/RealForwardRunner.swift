@@ -901,7 +901,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
                                                  count: cfg.numLayers)
         self.onesPerExpertScale = try bf16OnesBuffer(count: cfg.numExperts,
                                                      label: "per_expert_scale.ones")
-        if Self.keepExpertCacheWired || profile.keepExpertCacheWired {
+        if profile.keepExpertCacheWired {
             model.setKeepExpertCacheWired(true)
             model.setExpertCachePinned(true)
         }
@@ -980,7 +980,9 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     }
 
     /// Keep the routed-expert slot cache wired across prefill as well as
-    /// decode (`TINYTITAN_KEEP_WIRED=1`).
+    /// decode. The decision is `profile.keepExpertCacheWired` — the row, with
+    /// `TINYTITAN_KEEP_WIRED` overriding both ways (``ExpertCacheWiring``) — so
+    /// this file holds no second copy of the environment read.
     ///
     /// Decode reads the same expert bytes either way -- measured identical,
     /// 9.18 against 9.16 GiB at the same 70.5% hit rate -- but with ANE
@@ -988,8 +990,6 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     /// reads, far longer awaits, which points at the read *destinations*
     /// faulting rather than at the reads themselves. Holding the cache wired
     /// through prefill is the direct test of that.
-    static let keepExpertCacheWired =
-        ProcessInfo.processInfo.environment["TINYTITAN_KEEP_WIRED"] == "1"
 
     public func reset() {
         kv?.reset()

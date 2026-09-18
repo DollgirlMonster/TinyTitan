@@ -98,6 +98,11 @@ traps that one named still bite and are folded in below.
    (`da5dcba`, `a0ad069`, `ab98829`), which is also what put the plugin suites into
    CI; a README pass and a badge refresh; and a post-tag 5.7 prep commit carrying
    the dry run's verification record and the committed speed record.
+4. **Since this brief was written** — `TINYTITAN_KEEP_WIRED` is a tri-state, so `=0`
+   pages the expert cache out even on a 35B row that wires it (TT-008), and the LAN
+   manager reads a session's history with no live agent (TT-030). The [Project
+   Tracker](https://github.com/Pummelchen/TinyTitan/wiki/Project-Tracker) remains the
+   authority on what is still open.
 
 ## What is open
 
@@ -125,12 +130,7 @@ traps that one named still bite and are folded in below.
    `docs/dsh-plugin-publication.md` carries the research and the ready-to-copy
    entry. The licence is MIT on purpose. The two upstream asks in
    `docs/dsh-upstream-asks.md` are still unposted.
-3. **The expert cache cannot be unwired on the models that wire it.**
-   `TINYTITAN_KEEP_WIRED` can only turn it *on*, and the Qwen3.8/35B profile rows
-   already set it, so on a 24 GB Mac the 12 GiB cache cannot be paged out
-   (measured: 14.72 GB RSS, 11% system memory free). A `TINYTITAN_KEEP_WIRED=0`
-   path trades the TTFT win for a pageable cache.
-4. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
+3. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
    the GPU, a higher expert slot budget, the n-gram gather a token ahead), and the
    hardware blockers **TT-021** to **TT-023** (validation on M1/M2/M4/M5/M6, ANE across
    generations, long-context parity past the exactness window).
