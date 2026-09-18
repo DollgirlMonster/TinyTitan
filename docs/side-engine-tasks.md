@@ -307,6 +307,14 @@ Wired:
   only about model-derived facts — the person's own statements are not the
   engine's to discard — and a `false` ends the check for that fact, so no
   comparison is paid for a fact that is going anyway.
+- **T4 supersession**, on a changed value the store already holds, once a rule
+  is found for it. A rule is filed under `rules/<attribute>` — `rules/eyes`
+  fixes `characters/marcus/eyes` — and `MemoryRuleLookup` is a key match rather
+  than a model call, so the lookup is free and only an exactly-named rule can
+  hold a write back. `.conflict` stops the change: the old value stays and the
+  key is logged, never the rule or either value. `.update` changes nothing. The
+  question is asked only about a model-derived fact, so the person can always
+  overrule a rule.
 - **T5 duplication** and **T3 contradiction**, in consolidation, for facts in
   the session's own scope and in the shared workspace. A new key whose content
   an existing key in the same leading segment already carries is not stored, and
@@ -316,10 +324,6 @@ Wired:
 
 Not wired:
 
-- **T4 supersession.** It is ready at both installs once the rule is supplied,
-  and nothing supplies one: the port has no supersession method and no path
-  looks up a stored rule for the key. That lookup is its own small retrieval
-  problem, and until it exists the conflict half is a guess.
 - **T7 retrieval.** It is ready — 100% at the 4B on the benchmark's cases — but
   its only caller would be `memory_search`, a tool call the client's turn waits
   on. At ~15 s a judgement that is up to a minute added to an interactive turn,

@@ -101,6 +101,28 @@ import TinyTitanMemory
         #expect(answer == nil)
     }
 
+    @Test func aConflictAndAnUpdateMapThrough() async {
+        let engine = SideEngine { FakeSideEngineModel(answer: "CONFLICT") }
+        let adapter = SideEngineMemoryAdapter(engine: engine)
+        let answer = await adapter.supersedes(MemoryFact(key: "characters/marcus/eyes",
+                                                         value: "grey"),
+                                              MemoryFact(key: "characters/marcus/eyes",
+                                                         value: "hazel"),
+                                              rule: "eye colour is fixed.")
+        #expect(answer == .conflict)
+    }
+
+    @Test func withoutARuleThereIsNoSupersessionAnswer() async {
+        let engine = SideEngine { FakeSideEngineModel(answer: "CONFLICT") }
+        let adapter = SideEngineMemoryAdapter(engine: engine)
+        let answer = await adapter.supersedes(MemoryFact(key: "characters/marcus/eyes",
+                                                         value: "grey"),
+                                              MemoryFact(key: "characters/marcus/eyes",
+                                                         value: "hazel"),
+                                              rule: nil)
+        #expect(answer == nil)
+    }
+
     @Test func shutdownReleasesTheWeightsAndStopsAnswering() async {
         let engine = SideEngine { FakeSideEngineModel(answer: "NO") }
         let adapter = SideEngineMemoryAdapter(engine: engine)
@@ -169,6 +191,20 @@ import TinyTitanMemory
         let standing = await adapter.isDurable(
             MemoryFact(key: "characters/marcus/eyes", value: "grey"))
         #expect(standing == true)
+
+        // T4 with and without the rule it needs. The conflict is the
+        // benchmark's own case, and the update is a state change.
+        let conflict = await adapter.supersedes(
+            MemoryFact(key: "characters/marcus/eyes", value: "grey"),
+            MemoryFact(key: "characters/marcus/eyes", value: "hazel"),
+            rule: "eye colour is fixed and must never change.")
+        #expect(conflict == .conflict)
+
+        let update = await adapter.supersedes(
+            MemoryFact(key: "state/inn", value: "standing"),
+            MemoryFact(key: "state/inn", value: "burned to the ground"),
+            rule: "eye colour is fixed and must never change.")
+        #expect(update == .update)
 
         await adapter.shutdown()
     }

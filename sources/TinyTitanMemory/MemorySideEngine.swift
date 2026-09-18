@@ -15,6 +15,15 @@ public struct MemoryFact: Sendable, Equatable {
     }
 }
 
+/// What kind of change two versions of one fact are.
+public enum MemorySupersession: Sendable, Equatable {
+    /// The world moved on: both values can be true, one after the other.
+    case update
+    /// A rule fixes this value, or the two are about the same moment, so both
+    /// cannot be true and one is wrong.
+    case conflict
+}
+
 /// The judgements a resident side-engine is asked, in memory's own terms.
 ///
 /// The engine itself lives in the runtime target, which this one cannot import
@@ -27,11 +36,9 @@ public struct MemoryFact: Sendable, Equatable {
 ///   refused, a timeout — each falls back to the deterministic behaviour
 ///   instead of blocking a write.
 /// - **Only the tasks a caller actually asks appear here.** Contradiction
-///   works from the smallest model up, duplication and retrieval from the 4B,
-///   the reply check from the 9B. Durability is decided at the 4B and
-///   supersession at either size once the stored rule is supplied, but neither
-///   has a caller yet, so neither has a method; add one with its caller
-///   (`docs/side-engine-tasks.md`).
+///   works from the smallest model up; durability, duplication and retrieval
+///   from the 4B; the reply check from the 9B; supersession at either size once
+///   the stored rule is supplied (`docs/side-engine-tasks.md`).
 public protocol MemorySideEngine: Sendable {
     /// T2: is this fact worth keeping after the session ends? False means the
     /// store should not hold it: a line of the story, a remark about the
@@ -55,10 +62,20 @@ public protocol MemorySideEngine: Sendable {
     /// T3: do these two statements disagree? `stored` first, for the same
     /// reason.
     ///
-    /// Advisory. Disagreement is not supersession — telling a state that moved
-    /// on from one that is wrong is T4, which no measured size decides — so a
-    /// caller must not refuse a write on this answer alone.
+    /// Advisory. Disagreement is not supersession — a state that legitimately
+    /// moved on also "disagrees" — so a caller must not refuse a write on this
+    /// answer alone.
     func contradicts(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool?
+
+    /// T4: which kind of change is this? `stored` first, as above.
+    ///
+    /// `rule` is the stored rule that fixes this value, found by the caller —
+    /// see `MemoryRuleLookup`. Without one the answer is meaningless for a
+    /// value a rule fixes (an eye colour changing is only a conflict if
+    /// something says it never may), so a caller with no rule must not pass
+    /// `nil` and then act on the answer.
+    func supersedes(_ stored: MemoryFact, _ new: MemoryFact,
+                    rule: String?) async -> MemorySupersession?
 
     /// T7: could this fact answer this question?
     func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool?

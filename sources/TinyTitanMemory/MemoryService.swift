@@ -575,6 +575,7 @@ public actor MemoryService {
         var duplicates = 0
         var conflicts = 0
         var dropped = 0
+        var ruleConflicts = 0
         // Read once, and only when an engine is wired: the deterministic path
         // pays nothing for the check it cannot make.
         let candidates: [MemoryRecord]
@@ -609,47 +610,52 @@ public actor MemoryService {
             // restates unchanged facts: every eye colour in a novel got a v2
             // and a v3 with the identical value. A write that changes nothing
             // is version churn and completion tokens for no fact.
-            if let current = try? await destination.get(record.key, in: scope),
-               Self.fold(current.value) == Self.fold(record.value) {
+            let current = try? await destination.get(record.key, in: scope)
+            if let current, Self.fold(current.value) == Self.fold(record.value) {
                 unchanged += 1
                 continue
             }
-            // T5 and T3, over one budget for the whole consolidation: a new
-            // key that says nothing new is stopped, and a new key that cannot
-            // both be true with an existing one is recorded. The contradiction
-            // is advisory — disagreement is not supersession, and T4, which
-            // would tell them apart, needs the stored rule and has no source
-            // yet — so it changes no write.
-            if let sideEngine, questionsLeft > 0 {
-                var pool = candidates
-                if isShared {
-                    if sharedCandidates == nil {
-                        sharedCandidates = (try? await destination.search(
-                            MemoryQuery(limit: 400), in: scope)) ?? []
-                    }
-                    pool = sharedCandidates ?? []
+            // Read once per scope, and only with an engine wired: the
+            // deterministic path pays nothing for a check it cannot make.
+            var pool = candidates
+            if isShared, sideEngine != nil {
+                if sharedCandidates == nil {
+                    sharedCandidates = (try? await destination.search(
+                        MemoryQuery(limit: 400), in: scope)) ?? []
                 }
-                let verdict = await inspect(record, among: pool, using: sideEngine,
-                                            budget: min(questionsLeft,
-                                                        Self.maximumQuestionsPerFact),
-                                            checkingDurability: !record.isUserAsserted)
-                questionsLeft -= verdict.asked
-                if verdict.durable == false {
-                    // T2, and only for a fact the model derived: the person's
-                    // own statements are not the engine's to discard.
+                pool = sharedCandidates ?? []
+            }
+            // T2, T4, T5 and T3 over one budget for the whole consolidation.
+            // Durability comes first, then the rule that fixes a value the
+            // same key already holds, then the comparison against other keys.
+            // The contradiction is advisory; the rule conflict is not, because
+            // a rule says the new value cannot be right.
+            if let sideEngine, questionsLeft > 0 {
+                let outcome = await inspectForWrite(
+                    record, current: current, pool: pool, using: sideEngine,
+                    budget: min(questionsLeft, Self.maximumQuestionsPerFact))
+                questionsLeft -= outcome.asked
+                switch outcome.inspection {
+                case .dropped:
                     log(.notDurableStopped(key: record.key.rawValue))
                     dropped += 1
                     continue
-                }
-                if let kept = verdict.duplicate {
+                case .ruleConflict:
+                    // The stored rule fixes this value and the rule wins: the
+                    // old value stays and the change is not written.
+                    log(.ruleConflictStopped(key: record.key.rawValue))
+                    ruleConflicts += 1
+                    continue
+                case .duplicate(let kept):
                     log(.nearDuplicateStopped(key: record.key.rawValue, kept: kept))
                     duplicates += 1
                     continue
-                }
-                if let conflictsWith = verdict.conflict {
+                case .conflict(let conflictsWith):
                     log(.contradictionFound(key: record.key.rawValue,
                                             conflictsWith: conflictsWith))
                     conflicts += 1
+                case .none:
+                    break
                 }
             }
             switch await write(record, to: destination, scope: scope,
@@ -671,18 +677,25 @@ public actor MemoryService {
                 break
             }
         }
-        if unchanged > 0 { log(.unchangedSkipped(session: context.session.id, count: unchanged)) }
-        if duplicates > 0 {
-            log(.nearDuplicatesStopped(session: context.session.id, count: duplicates))
-        }
-        if dropped > 0 {
-            log(.notDurablesStopped(session: context.session.id, count: dropped))
-        }
-        if conflicts > 0 {
-            log(.contradictionsFound(session: context.session.id, count: conflicts))
-        }
-        log(.consolidated(session: context.session.id, records: written))
+        logConsolidationSummary(session: context.session.id, written: written,
+                                unchanged: unchanged, duplicates: duplicates,
+                                dropped: dropped, ruleConflicts: ruleConflicts,
+                                conflicts: conflicts)
         return written
+    }
+
+    /// One line per counter that fired, then the total.
+    private func logConsolidationSummary(session: String, written: Int, unchanged: Int,
+                                         duplicates: Int, dropped: Int,
+                                         ruleConflicts: Int, conflicts: Int) {
+        if unchanged > 0 { log(.unchangedSkipped(session: session, count: unchanged)) }
+        if duplicates > 0 { log(.nearDuplicatesStopped(session: session, count: duplicates)) }
+        if dropped > 0 { log(.notDurablesStopped(session: session, count: dropped)) }
+        if ruleConflicts > 0 {
+            log(.ruleConflictsStopped(session: session, count: ruleConflicts))
+        }
+        if conflicts > 0 { log(.contradictionsFound(session: session, count: conflicts)) }
+        log(.consolidated(session: session, records: written))
     }
 
     /// Where one record ended up, so the caller keeps the counting and the
@@ -732,35 +745,50 @@ public actor MemoryService {
     struct SideEngineVerdict {
         /// `false` means the fact is not worth keeping; `nil` is no answer.
         let durable: Bool?
+        /// `.conflict` means a stored rule fixes this value; `nil` is no
+        /// answer, and `.update` leaves the write alone.
+        let supersession: MemorySupersession?
         let duplicate: String?
         let conflict: String?
         let asked: Int
     }
 
-    /// T2, T5 and T3 over one new fact, stopping as soon as the budget is gone.
+    /// T2, T4, T5 and T3 over one new fact, stopping as soon as the budget is
+    /// gone.
     ///
-    /// Durability comes first and ends the whole check when the answer is no —
-    /// a fact that is not worth keeping needs no comparison. Candidates are
+    /// Durability comes first and ends the check when the answer is no — a fact
+    /// that is not worth keeping needs no comparison. The rule check needs both
+    /// the stored value (`current`) and a rule the caller found. Candidates are
     /// facts in the same leading segment with a different key; the duplicate is
     /// looked for before the contradiction, and finding one ends the search
     /// because there is nothing to add about a fact already stored.
-    /// `checkingDurability` is false for a fact the person asserted, which is
-    /// not the engine's to discard.
+    ///
+    /// `isModelDerived` is false for a fact the person asserted, which is not
+    /// the engine's to discard or to hold back behind a rule.
     private func inspect(_ record: MemoryRecord,
+                         current: MemoryRecord?,
+                         rule: String?,
                          among candidates: [MemoryRecord],
                          using engine: any MemorySideEngine,
                          budget: Int,
-                         checkingDurability: Bool) async -> SideEngineVerdict {
+                         isModelDerived: Bool) async -> SideEngineVerdict {
         let fact = MemoryFact(key: record.key.rawValue, value: record.value)
         var asked = 0
         var durable: Bool?
-        if checkingDurability, budget > 0 {
+        if isModelDerived, budget > 0 {
             asked += 1
             durable = await engine.isDurable(fact)
             if durable == false {
-                return SideEngineVerdict(durable: durable, duplicate: nil,
-                                         conflict: nil, asked: asked)
+                return SideEngineVerdict(durable: durable, supersession: nil,
+                                         duplicate: nil, conflict: nil, asked: asked)
             }
+        }
+        var supersession: MemorySupersession?
+        if isModelDerived, let current, let rule, asked < budget {
+            asked += 1
+            supersession = await engine.supersedes(
+                MemoryFact(key: current.key.rawValue, value: current.value),
+                fact, rule: rule)
         }
         var conflict: String?
         for candidate in candidates {
@@ -773,7 +801,7 @@ public actor MemoryService {
             // Stored first: the prompts answer YES in that order and NO
             // reversed, so the order is part of the contract.
             if await engine.duplicates(existing, fact) == true {
-                return SideEngineVerdict(durable: durable,
+                return SideEngineVerdict(durable: durable, supersession: supersession,
                                          duplicate: candidate.key.rawValue,
                                          conflict: nil, asked: asked)
             }
@@ -783,8 +811,43 @@ public actor MemoryService {
                 conflict = candidate.key.rawValue
             }
         }
-        return SideEngineVerdict(durable: durable, duplicate: nil,
-                                 conflict: conflict, asked: asked)
+        return SideEngineVerdict(durable: durable, supersession: supersession,
+                                 duplicate: nil, conflict: conflict, asked: asked)
+    }
+
+    /// What the engine's answers mean for this write.
+    private enum Inspection {
+        case none
+        case dropped
+        case ruleConflict
+        case duplicate(String)
+        case conflict(String)
+    }
+
+    /// Runs the questions and reduces them to one outcome, so the write path
+    /// reads as one decision rather than four.
+    private func inspectForWrite(_ record: MemoryRecord,
+                                 current: MemoryRecord?,
+                                 pool: [MemoryRecord],
+                                 using engine: any MemorySideEngine,
+                                 budget: Int) async -> (inspection: Inspection, asked: Int) {
+        let rule = MemoryRuleLookup.rule(for: record.key, among: pool)
+        let verdict = await inspect(record, current: current, rule: rule, among: pool,
+                                    using: engine, budget: budget,
+                                    isModelDerived: !record.isUserAsserted)
+        let inspection: Inspection
+        if verdict.durable == false {
+            inspection = .dropped
+        } else if verdict.supersession == .conflict {
+            inspection = .ruleConflict
+        } else if let kept = verdict.duplicate {
+            inspection = .duplicate(kept)
+        } else if let conflictsWith = verdict.conflict {
+            inspection = .conflict(conflictsWith)
+        } else {
+            inspection = .none
+        }
+        return (inspection, verdict.asked)
     }
 
     static func fold(_ value: String) -> String {
@@ -845,6 +908,12 @@ public enum MemoryLogEvent: Sendable, Equatable {
     /// How many facts the side-engine's durability check dropped from one
     /// consolidation.
     case notDurablesStopped(session: String, count: Int)
+    /// A change to a value a stored rule fixes. The old value stays and the
+    /// change is not written; only the key is logged, never the rule or either
+    /// value.
+    case ruleConflictStopped(key: String)
+    /// How many rule conflicts stopped one consolidation's writes.
+    case ruleConflictsStopped(session: String, count: Int)
     /// A new key whose content an existing key already carried. The store
     /// keeps one address instead of two, and both keys are named — never a
     /// value.
@@ -900,6 +969,11 @@ public enum MemoryLogEvent: Sendable, Equatable {
         case .notDurablesStopped(let session, let count):
             return "memory session=\(session) consolidation dropped \(count) fact(s) not "
                 + "worth keeping"
+        case .ruleConflictStopped(let key):
+            return "memory rule conflict, change not stored: \(key)"
+        case .ruleConflictsStopped(let session, let count):
+            return "memory session=\(session) consolidation stopped \(count) change(s) a "
+                + "rule fixes"
         case .nearDuplicatesStopped(let session, let count):
             return "memory session=\(session) consolidation stopped \(count) near-duplicate(s)"
         case .contradictionFound(let key, let conflictsWith):

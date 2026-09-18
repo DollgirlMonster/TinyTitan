@@ -137,6 +137,109 @@ import Testing
         #expect(log.messages().contains { $0.contains("recorded 1 possible conflict") })
     }
 
+    @Test func aRuleIsFoundByTheAttributesLastSegment() throws {
+        let eyes = try MemoryKey(validating: "characters/marcus/eyes")
+        #expect(MemoryRuleLookup.ruleKey(for: eyes)?.rawValue == "rules/eyes")
+        let facts = [try fact("rules/eyes", "eye colour is fixed and must never change.")]
+        #expect(MemoryRuleLookup.rule(for: eyes, among: facts)
+            == "eye colour is fixed and must never change.")
+    }
+
+    @Test func aSingleSegmentKeyHasNoRule() throws {
+        let key = try MemoryKey(validating: "decisions")
+        #expect(MemoryRuleLookup.ruleKey(for: key) == nil)
+        #expect(MemoryRuleLookup.rule(for: key, among: [try fact("rules/decisions", "x")]) == nil)
+    }
+
+    @Test func anotherAttributesRuleDoesNotMatch() throws {
+        let eyes = try MemoryKey(validating: "characters/marcus/eyes")
+        let facts = [try fact("rules/eyes_colour", "fixed")]
+        #expect(MemoryRuleLookup.rule(for: eyes, among: facts) == nil)
+    }
+
+    @Test func aStoredRuleStopsAChangeItFixes() async throws {
+        let store = InMemoryStore()
+        let engine = StubSideEngine(duplicates: false, contradicts: false,
+                                    supersedes: .conflict)
+        let log = LogCollector()
+        let service = MemoryService(configuration: configuration(),
+                                    durableStore: store,
+                                    sideEngine: engine,
+                                    log: { log.append($0) })
+        let context = try #require(await service.beginSession(id: "s-rule"))
+        try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
+        try await store.set(try fact("rules/eyes", "eye colour is fixed and must never change."),
+                            in: context.scope)
+
+        let written = await service.storeConsolidation(
+            [try fact("characters/marcus/eyes", "hazel")], in: context)
+
+        #expect(written == 0)
+        let stored = try await store.get(try MemoryKey(validating: "characters/marcus/eyes"),
+                                         in: context.scope)
+        #expect(stored?.value == "grey")
+        #expect(engine.supersessionQuestions == 1)
+        #expect(log.messages().contains { $0.contains("rule conflict") })
+        #expect(log.messages().contains { $0.contains("stopped 1 change") })
+    }
+
+    @Test func withoutARuleAChangedValueIsStillStored() async throws {
+        let store = InMemoryStore()
+        // `.conflict` is what the engine would say, but it is never asked: no
+        // rule is filed for this attribute.
+        let engine = StubSideEngine(duplicates: false, contradicts: false,
+                                    supersedes: .conflict)
+        let service = MemoryService(configuration: configuration(),
+                                    durableStore: store,
+                                    sideEngine: engine)
+        let context = try #require(await service.beginSession(id: "s-no-rule"))
+        try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
+
+        let written = await service.storeConsolidation(
+            [try fact("characters/marcus/eyes", "hazel")], in: context)
+
+        #expect(written == 1)
+        #expect(engine.supersessionQuestions == 0)
+    }
+
+    @Test func anUpdateUnderARuleIsStored() async throws {
+        let store = InMemoryStore()
+        let engine = StubSideEngine(duplicates: false, contradicts: false,
+                                    supersedes: .update)
+        let service = MemoryService(configuration: configuration(),
+                                    durableStore: store,
+                                    sideEngine: engine)
+        let context = try #require(await service.beginSession(id: "s-update"))
+        try await store.set(try fact("state/inn", "standing"), in: context.scope)
+        try await store.set(try fact("rules/inn", "the inn may burn."), in: context.scope)
+
+        let written = await service.storeConsolidation(
+            [try fact("state/inn", "burned to the ground")], in: context)
+
+        #expect(written == 1)
+        #expect(engine.supersessionQuestions == 1)
+    }
+
+    @Test func aPersonsOwnChangeIsNotHeldByARule() async throws {
+        let store = InMemoryStore()
+        let engine = StubSideEngine(duplicates: false, contradicts: false,
+                                    supersedes: .conflict)
+        let service = MemoryService(configuration: configuration(),
+                                    durableStore: store,
+                                    sideEngine: engine)
+        let context = try #require(await service.beginSession(id: "s-person-rule"))
+        try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
+        try await store.set(try fact("rules/eyes", "eye colour is fixed and must never change."),
+                            in: context.scope)
+
+        var asserted = try fact("characters/marcus/eyes", "hazel")
+        asserted.isUserAsserted = true
+        let written = await service.storeConsolidation([asserted], in: context)
+
+        #expect(written == 1)
+        #expect(engine.supersessionQuestions == 0)
+    }
+
     @Test func aGlobalFactIsCheckedAgainstTheSharedWorkspace() async throws {
         let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: true)
@@ -199,8 +302,7 @@ import Testing
         #expect(engine.durabilityQuestions == 0)
     }
 
-    @Test func theQuestionBudgetSpansTheWholeConsolidation() async throws {
-        let store = InMemoryStore()
+    @Test func theQuestionBudgetSpansTheWholeConsolidation() async throws {        let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: false, contradicts: false)
         let service = MemoryService(configuration: configuration(),
                                     durableStore: store,
@@ -229,28 +331,40 @@ private final class StubSideEngine: MemorySideEngine, @unchecked Sendable {
     private let duplicateAnswer: Bool?
     private let contradictionAnswer: Bool?
     private let durabilityAnswer: Bool?
+    private let supersessionAnswer: MemorySupersession?
     private var asked: [(MemoryFact, MemoryFact)] = []
     private var contradictionAsked = 0
     private var durabilityAsked = 0
+    private var supersessionAsked = 0
 
     init(duplicates duplicateAnswer: Bool?,
          contradicts contradictionAnswer: Bool? = nil,
-         durable durabilityAnswer: Bool? = nil) {
+         durable durabilityAnswer: Bool? = nil,
+         supersedes supersessionAnswer: MemorySupersession? = nil) {
         self.duplicateAnswer = duplicateAnswer
         self.contradictionAnswer = contradictionAnswer
         self.durabilityAnswer = durabilityAnswer
+        self.supersessionAnswer = supersessionAnswer
     }
 
     var pairs: [(MemoryFact, MemoryFact)] { lock.withLock { asked } }
     var durabilityQuestions: Int { lock.withLock { durabilityAsked } }
+    var supersessionQuestions: Int { lock.withLock { supersessionAsked } }
     /// Every question of any kind: the budget counts them all.
     var questions: Int {
-        lock.withLock { asked.count + contradictionAsked + durabilityAsked }
+        lock.withLock { asked.count + contradictionAsked + durabilityAsked + supersessionAsked }
     }
 
     func isDurable(_ fact: MemoryFact) async -> Bool? {
         lock.withLock { durabilityAsked += 1 }
         return durabilityAnswer
+    }
+
+    /// Mirrors the adapter: no rule, no answer.
+    func supersedes(_ stored: MemoryFact, _ new: MemoryFact,
+                    rule: String?) async -> MemorySupersession? {
+        lock.withLock { supersessionAsked += 1 }
+        return rule == nil ? nil : supersessionAnswer
     }
 
     func duplicates(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? {

@@ -30,6 +30,23 @@ struct SideEngineMemoryAdapter: MemorySideEngine, Sendable {
                                    bKey: new.key, bValue: new.value))
     }
 
+    /// The rule is data the caller found; without one the engine's answer is a
+    /// guess about whether the change was allowed, so a `nil` rule answers
+    /// `nil` rather than pretending.
+    func supersedes(_ stored: MemoryFact, _ new: MemoryFact,
+                    rule: String?) async -> MemorySupersession? {
+        guard let rule else { return nil }
+        guard let answer = try? await engine.judge(
+            .supersession(key: stored.key, earlier: stored.value,
+                          now: new.value, rule: rule)) else { return nil }
+        switch answer {
+        case .update: return .update
+        case .conflict: return .conflict
+        // Neither is a kind of change.
+        case .yes, .no: return nil
+        }
+    }
+
     func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool? {
         await yesNo(.retrieval(question: question, key: fact.key, value: fact.value))
     }

@@ -163,14 +163,16 @@ That is why the default is the 4B, not the 2B and not the 9B —
 **And it is budgeted like the model call it is.** A judgement re-reads a prompt
 and generates: measured at 15.2 s on the 4B and 29.8 s on the 9B. One
 consolidation is therefore allowed six questions in total and three to any one
-fact. Inside that budget run durability, duplication and contradiction, over the
-session's own scope and the shared workspace: a fact the engine judges not worth
-keeping is not stored (never one the person asserted), a new key whose content
-an existing key already carries is not stored, and a new key that cannot both be
-true with an existing one is logged as a possible conflict and otherwise left
-alone — advisory, because disagreement is not supersession. Retrieval is ready
-but has no caller that can afford it yet; `memory_search` is a tool call the
-client's turn waits on, which is the wrong place for a 15-second question.
+fact. Inside that budget run durability, supersession, duplication and
+contradiction, over the session's own scope and the shared workspace: a fact the
+engine judges not worth keeping is not stored (never one the person asserted); a
+change to a value a stored rule fixes — a rule is filed as `rules/<attribute>`,
+found by key and not by a model call — is not written either; a new key whose
+content an existing key already carries is not stored; and a new key that cannot
+both be true with an existing one is logged as a possible conflict and otherwise
+left alone, advisory because disagreement is not supersession. Retrieval is
+ready but has no caller that can afford it yet; `memory_search` is a tool call
+the client's turn waits on, which is the wrong place for a 15-second question.
 
 ### The guard
 
