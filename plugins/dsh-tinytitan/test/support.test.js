@@ -39,9 +39,12 @@ const DSH_PEERS = [
 /** A version we positively read as *not* the supported one. */
 const OTHER_VERSIONS = ["0.1.5-rc.2", "0.1.6-alpha.1", "0.1.6-alpha.3", "0.1.6-rc.1", "0.1.6", "0.0.0-development"];
 
-/** Run `apply` under `version`, with every side effect off, capturing the log. */
+/** Run `apply` under `version`, with every side effect off, capturing both sinks. */
 function applyAs(version, config = {}) {
   const lines = [];
+  const stderr = [];
+  const realError = console.error;
+  console.error = (message) => stderr.push(String(message));
   const previous = process.env.DSH_VERSION;
   if (version === undefined) delete process.env.DSH_VERSION;
   else process.env.DSH_VERSION = version;
@@ -53,8 +56,9 @@ function applyAs(version, config = {}) {
       log: (message) => lines.push(String(message)),
       ...config,
     });
-    return { lines, result };
+    return { lines, result, stderr };
   } finally {
+    console.error = realError;
     if (previous === undefined) delete process.env.DSH_VERSION;
     else process.env.DSH_VERSION = previous;
   }
@@ -113,6 +117,42 @@ test("an unsupported harness is refused without throwing", () => {
     const { lines, result } = applyAs(version);
     assert.equal(lines.length, 1, `${String(version)} must produce exactly one line`);
     assert.equal(result?.refused, true);
+  }
+});
+
+test("a refusal reaches stderr and the host error channel, never info", () => {
+  // Verified against a real harness in a throwaway home, and against
+  // `dsh-app-boot`: its startup exporter is registered with
+  // `levels: { default: 2 }` and its `startupLogs` are printed only when the boot
+  // itself fails. So on a healthy boot *nothing* a plugin logs is printed — an
+  // `info` refusal would leave the plugin silently absent, and even the host
+  // error channel alone is not enough.
+  const infos = [];
+  const errors = [];
+  const stderr = [];
+  const realError = console.error;
+  console.error = (m) => stderr.push(String(m));
+  const ctx = { logger: { info: (m) => infos.push(String(m)), error: (m) => errors.push(String(m)) } };
+  const previous = process.env.DSH_VERSION;
+  process.env.DSH_VERSION = "0.1.6";
+  try {
+    apply(ctx, { registerRoute: false, writeCompactionPreset: false, watchModels: false });
+  } finally {
+    console.error = realError;
+    if (previous === undefined) delete process.env.DSH_VERSION;
+    else process.env.DSH_VERSION = previous;
+  }
+  assert.equal(stderr.length, 1, "stderr is the channel a healthy boot does not swallow");
+  assert.equal(errors.length, 1, "the host logger still gets the record");
+  assert.equal(infos.length, 0, "a refusal must not go where the harness filters it out");
+  assert.match(stderr[0], /not supported/);
+});
+
+test("the refusal is on stderr for every rejected version", () => {
+  for (const version of [...OTHER_VERSIONS, undefined]) {
+    const { stderr } = applyAs(version);
+    assert.equal(stderr.length, 1, `${String(version)} must be reported once on stderr`);
+    assert.match(stderr[0], /not supported|could not be read/);
   }
 });
 

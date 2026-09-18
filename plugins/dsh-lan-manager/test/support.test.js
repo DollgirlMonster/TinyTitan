@@ -22,8 +22,14 @@ const OTHER_VERSIONS = ["0.1.5-rc.2", "0.1.6-alpha.1", "0.1.6-alpha.3", "0.1.6-r
 /** Run `apply` under `version` with a context that reports logging and defends services. */
 function applyAs(version, { ctx = {}, config = {} } = {}) {
   const lines = [];
+  const stderr = [];
+  const realError = console.error;
+  console.error = (message) => stderr.push(String(message));
   const context = {
-    logger: { info: (message) => lines.push(String(message)) },
+    logger: {
+      info: (message) => lines.push(String(message)),
+      error: (message) => lines.push(String(message)),
+    },
     get: () => { throw new Error("services must not be touched when refused"); },
     ...ctx,
   };
@@ -31,8 +37,9 @@ function applyAs(version, { ctx = {}, config = {} } = {}) {
   if (version === undefined) delete process.env.DSH_VERSION;
   else process.env.DSH_VERSION = version;
   try {
-    return { lines, result: apply(context, config) };
+    return { lines, result: apply(context, config), stderr };
   } finally {
+    console.error = realError;
     if (previous === undefined) delete process.env.DSH_VERSION;
     else process.env.DSH_VERSION = previous;
   }
@@ -81,6 +88,36 @@ test("an unsupported harness is refused without throwing or touching the context
     assert.equal(result?.refused, true);
     assert.equal(result?.mounted, false);
   }
+});
+
+test("a refusal reaches stderr and the host error channel, never info", () => {
+  // Verified against a real harness in a throwaway home, and against
+  // `dsh-app-boot`: its startup exporter is registered with
+  // `levels: { default: 2 }` and its `startupLogs` are printed only when the boot
+  // itself fails. On a healthy boot nothing a plugin logs is printed, so stderr is
+  // the only channel that carries the refusal.
+  const infos = [];
+  const errors = [];
+  const stderr = [];
+  const realError = console.error;
+  console.error = (m) => stderr.push(String(m));
+  const ctx = {
+    logger: { info: (m) => infos.push(String(m)), error: (m) => errors.push(String(m)) },
+    get: () => { throw new Error("services must not be touched when refused"); },
+  };
+  const previous = process.env.DSH_VERSION;
+  process.env.DSH_VERSION = "0.1.6";
+  try {
+    apply(ctx, {});
+  } finally {
+    console.error = realError;
+    if (previous === undefined) delete process.env.DSH_VERSION;
+    else process.env.DSH_VERSION = previous;
+  }
+  assert.equal(stderr.length, 1, "stderr is the channel a healthy boot does not swallow");
+  assert.equal(errors.length, 1, "the host logger still gets the record");
+  assert.equal(infos.length, 0, "a refusal must not go where the harness filters it out");
+  assert.match(stderr[0], /not supported/);
 });
 
 test("the refusal is reported even with host logging turned off", () => {

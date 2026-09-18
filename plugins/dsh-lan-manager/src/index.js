@@ -122,9 +122,14 @@ export function apply(ctx, config = {}) {
   const harness = dshVersion();
   const decision = supportDecision(harness);
   if (!decision.run) {
-    // Reported even when `logToHost` is off: a refusal is not routine chatter.
-    if (typeof ctx?.logger?.info === "function") ctx.logger.info(decision.refusal);
-    else console.log(decision.refusal);
+    // `console.error` is the sink that survives a healthy boot — the harness
+    // collects plugin log records for its startup diagnostic but prints them only
+    // when boot fails, and its exporter takes level >= 2, so a host-logger `info`
+    // is dropped before anything sees it. The host logger gets the record too, but
+    // it cannot be the only place this is said. Not subject to `logToHost`, which
+    // governs routine chatter.
+    if (typeof ctx?.logger?.error === "function") ctx.logger.error(decision.refusal);
+    console.error(decision.refusal);
     return { mounted: false, refused: true, version: harness };
   }
   const resolved = resolveConfig(config);

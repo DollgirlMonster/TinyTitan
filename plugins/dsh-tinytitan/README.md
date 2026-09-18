@@ -41,12 +41,18 @@ The pin lives in three places that cannot import each other — `package.json`'s
 they disagree.
 
 On any other release — older, newer, or a build from `main` — the plugin **refuses
-to run**. It logs one line naming both versions and does nothing else: no route, no
-preset, no watcher, and no writes into your harness home. It never throws, so DSH
-boots normally, every other plugin loads, and removing this plugin leaves nothing
-to undo. A version that cannot be read at all is refused the same way, because a
-plugin that writes into the harness home has no business proceeding on a harness
-it cannot identify.
+to run**. It writes one line to **stderr** naming both versions and does nothing
+else: no route, no preset, no watcher, and no writes into your harness home. It
+never throws, so DSH boots normally, every other plugin loads, and removing this
+plugin leaves nothing to undo. A version that cannot be read at all is refused the
+same way, because a plugin that writes into the harness home has no business
+proceeding on a harness it cannot identify.
+
+stderr is not a style choice. The harness collects a plugin's log records and
+prints them **only when the boot itself fails**, and its startup exporter takes
+level ≥ 2, so a refusal logged through the host logger is invisible on a healthy
+boot — which would be indistinguishable from a plugin that silently stopped
+working. Found by booting a throwaway harness, not by reading.
 
 ## Install
 

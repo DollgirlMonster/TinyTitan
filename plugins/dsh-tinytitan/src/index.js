@@ -79,6 +79,30 @@ export {
  * @param ctx - the harness context (used only for logging; nothing is injected).
  * @param config - the row config; see {@link resolveConfig}.
  */
+/**
+ * Report a refusal where an operator will actually see it.
+ *
+ * `console.error` is the load-bearing sink, and that is a finding rather than a
+ * preference: the harness collects plugin log records into its startup log and
+ * prints them **only when the boot itself fails**, and its startup exporter is
+ * registered with `levels: { default: 2 }`, so a host-logger `info` record never
+ * reaches anything at all. A healthy boot therefore prints none of them — and a
+ * refusal nobody can read is indistinguishable from a plugin that silently
+ * stopped working, which is the failure this gate exists to prevent.
+ *
+ * The other two sinks keep the record in the deployment's own log when it has
+ * one; an explicit `config.log` wins for tests and for operators who wired one.
+ *
+ * @param ctx - the harness context.
+ * @param config - the raw row config.
+ * @param message - the refusal line.
+ */
+function refuse(ctx, config, message) {
+  if (typeof config.log === "function") config.log(message);
+  if (typeof ctx?.logger?.error === "function") ctx.logger.error(message);
+  console.error(message);
+}
+
 export function apply(ctx, config = {}) {
   // The gate runs first, and before `resolveConfig`, so a harness this plugin
   // does not support cannot reach a single write. A refusal is a return rather
@@ -86,16 +110,16 @@ export function apply(ctx, config = {}) {
   // removing this one must leave nothing to undo.
   const harness = dshVersion();
   const decision = supportDecision(harness);
+  if (!decision.run) {
+    refuse(ctx, config, decision.refusal);
+    return { refused: true, version: harness };
+  }
   const log = typeof config.log === "function"
     ? config.log
     : (message) => {
       if (typeof ctx?.logger?.info === "function") ctx.logger.info(message);
       else console.log(message);
     };
-  if (!decision.run) {
-    log(decision.refusal);
-    return { refused: true, version: harness };
-  }
   const resolved = resolveConfig(config);
   // A read-only home, a missing checkout or a failed write must not take the
   // profile down: the harness still works, only this convenience does not.

@@ -100,11 +100,16 @@ has not been verified against is not something to guess at. It is the same relea
 `dsh-tinytitan` supports and the one `tools/dsh_local.sh` installs, and
 `test/support.test.js` asserts the constants cannot drift apart.
 
-On any other release it **refuses to run**: one log line naming both versions, and
+On any other release it **refuses to run**: one line naming both versions, and
 nothing else — no route registered, no discovery started. It never throws, so DSH
 boots normally, every other plugin loads, and removing this plugin leaves nothing
-to undo. A version that cannot be read at all is refused the same way. The refusal
-is reported even with `logToHost` off, because it is not routine chatter.
+to undo. A version that cannot be read at all is refused the same way.
+
+The refusal goes to **stderr**, and that is not a style choice: the harness collects
+a plugin's log records and prints them **only when the boot itself fails**, and its
+startup exporter takes level ≥ 2, so a host-logger line is invisible on a healthy
+boot. The refusal is therefore not subject to `logToHost` either — it is not
+routine chatter. Found by booting a throwaway harness, not by reading.
 
 ## Install
 
