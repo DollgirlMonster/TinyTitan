@@ -62,7 +62,9 @@ top-level or `@main` entry in `Command/`; `plugins/dsh-tinytitan/` is the DeepSe
 Harness bundle (route writer + quiet compaction). `docs/repository-layout.md` has
 the conventions, `tests/` mirrors `sources/` path for path and never loads a model,
 and user and engineering documentation lives in the
-[GitHub Wiki](https://github.com/Pummelchen/TinyTitan/wiki).
+[GitHub Wiki](https://github.com/Pummelchen/TinyTitan/wiki). Open work is tracked
+in **one** table; the standard, and the reusable prompt for other projects, is
+`docs/task-table-standard.md`.
 
 The wiki is a **separate repository** (`TinyTitan.wiki.git`, branch `master`,
 usually cloned at the gitignored `.qwen/wiki`), and it is the project's user
