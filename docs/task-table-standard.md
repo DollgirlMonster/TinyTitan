@@ -21,6 +21,9 @@ HARD RULES
    changelog/notes and the closing commit; the open row links to it.
 4. Every row has a next step. If you cannot name one, the task is not understood
    or not actionable yet — split it, block it, or park it.
+5. The tracker page is the table and one line pointing at this standard. Do not
+   repeat the type/status/size legends on it; they are defined here once, so
+   there is nothing on the page to drift.
 
 COLUMNS, in this order
 | ID | Task | Type | Area | Size | Status | Owner | Next step |
