@@ -79,11 +79,13 @@ export class ApiError extends Error {
  * Build the user-message factory, tolerating an older harness that does not
  * export `createUserMessage` from `dsh-llm`.
  *
- * The primary path is upstream's own factory — it stamps the source and id the
- * agent loop expects. The fallback mirrors the shape the SDK server builds
- * (`{ role: 'user', content, source: { kind: 'user' } }`) so the plugin still
- * works, and reports which path was taken so a mismatch is visible rather than
- * silent.
+ * The primary path is upstream's own factory. It mints the id the agent loop
+ * expects, but it deliberately does **not** infer a `source`: `createUserMessage`
+ * takes a *complete* user message, and the loop reads `message.source.kind`, so
+ * the caller supplies `{ kind: 'user' }` — omitting it delivers a message whose
+ * turn dies with `Cannot read properties of undefined (reading 'kind')`, with no
+ * model call and no visible error at the route. The fallback mirrors the same
+ * complete shape so both paths behave identically.
  *
  * @param load - injectable dynamic importer, for tests.
  * @returns `{ create, strategy }`.
@@ -98,11 +100,11 @@ export async function resolveMessageFactory(load = (specifier) => import(specifi
     // Not resolvable from this profile; fall through to the literal shape.
   }
   let counter = 0;
-  const create = ({ content }) => ({
+  const create = ({ content, source }) => ({
     id: `lan-manager-${Date.now()}-${++counter}`,
     role: "user",
     content,
-    source: { kind: "user" },
+    source: source ?? { kind: "user" },
   });
   return { create, strategy: "inline-user-message" };
 }
@@ -547,16 +549,16 @@ export function readSessionMessages(ctx, sessionId, options = {}) {
  * Enqueue a prompt on one session.
  *
  * `followup` is the same entry point the SDK server uses for a queued user
- * message, so a prompt sent here is a normal turn, not a side channel.
+ * message, and it always wakes the agent — so the receipt reports `wakeup: true`
+ * as a fact about what happened, not as an echo of an option nothing reads.
  *
  * @param ctx - harness context.
  * @param sessionId - target session.
  * @param prompt - string or content blocks.
  * @param factory - a resolved message factory.
- * @param options - `{ wakeup?: boolean }`.
  * @returns a delivery receipt.
  */
-export function promptSession(ctx, sessionId, prompt, factory, options = {}) {
+export function promptSession(ctx, sessionId, prompt, factory) {
   const service = agents(ctx);
   const agent = service.get(sessionId);
   if (!agent) {
@@ -569,13 +571,13 @@ export function promptSession(ctx, sessionId, prompt, factory, options = {}) {
   if (typeof agent.followup !== "function") {
     throw new ApiError(Failure.NO_AGENTS, "agent does not accept follow-up input", 503);
   }
-  const message = factory.create({ content: toContent(prompt) });
+  const message = factory.create({ content: toContent(prompt), source: { kind: "user" } });
   agent.followup(message);
   return {
     sessionId,
     delivered: true,
     messageId: message?.id ?? null,
-    wakeup: options.wakeup !== false,
+    wakeup: true,
   };
 }
 
@@ -589,7 +591,7 @@ export function promptSession(ctx, sessionId, prompt, factory, options = {}) {
  * @param ctx - harness context.
  * @param prompt - string or content blocks.
  * @param factory - a resolved message factory.
- * @param options - `{ sessionIds?: string[], limit?: number, wakeup?: boolean }`.
+ * @param options - `{ sessionIds?: string[], limit?: number }`.
  * @returns `{ delivered, failed, total }`.
  */
 export function promptAllActive(ctx, prompt, factory, options = {}) {
@@ -605,7 +607,7 @@ export function promptAllActive(ctx, prompt, factory, options = {}) {
   const failed = [];
   for (const session of capped) {
     try {
-      delivered.push(promptSession(ctx, session.sessionId, prompt, factory, options));
+      delivered.push(promptSession(ctx, session.sessionId, prompt, factory));
     } catch (error) {
       failed.push({
         sessionId: session.sessionId,
@@ -681,6 +683,14 @@ export async function deleteWorkspace(ctx, workspaceId, options = {}) {
  * here would be a second implementation of the harness's own logic, drifting from
  * it at every release — so the plugin asks the service that already does it.
  *
+ * The service is `sessionController` (`@deepseek-ai/dsh-api-session-controller`,
+ * `super(ctx, "sessionController", …)`) and **not** `sessions`: that name is the
+ * raw `@deepseek-ai/dsh-session` store, whose `create(id, options)` mints a bare
+ * session and takes an id first — calling it with a request object throws
+ * `session header id "[object Object]" does not match session id "[object Object]"`
+ * and produces no agent. Found by driving the route against a real harness, which
+ * is the one thing the unit test's fake could not see.
+ *
  * The 501 is kept for the profile that composes no session controller (a headless
  * or SDK-only runtime): answering "created" for something that was not created is
  * the one thing worse than saying no.
@@ -690,7 +700,7 @@ export async function deleteWorkspace(ctx, workspaceId, options = {}) {
  * @returns `{ sessionId, agentPreset }`.
  */
 export async function startSession(ctx, selector = {}) {
-  const service = ctx?.get?.("sessions");
+  const service = ctx?.get?.("sessionController");
   if (!service || typeof service.create !== "function") {
     throw new ApiError(
       Failure.NO_SESSIONS,

@@ -104,17 +104,23 @@ function fakeAgents(live = ["s-a1", "s-a2", "s-b1"]) {
 }
 
 /** Build a ctx wired to the fixture store and fakes. */
-function fakeCtx({ store, registry, agents = fakeAgents(), sessions, archived = ["s-hidden"] }) {
+function fakeCtx({ store, registry, agents = fakeAgents(), sessionController, archived = ["s-hidden"] }) {
   const archivedSet = new Set(archived);
   const reg = registry ?? fakeRegistry(archivedSet);
+  const serviceReads = [];
   const ctx = {
     _registry: reg,
     _agents: agents,
     _archived: archivedSet,
+    // Recorded because the service **name** is load-bearing: `sessions` is the raw
+    // session store, and asking it to create a session is the defect TT-014 found
+    // against a real harness. The name is pinned by a test below.
+    _serviceReads: serviceReads,
     get(name) {
+      serviceReads.push(name);
       if (name === "workspaceRegistry") return reg;
       if (name === "agents") return agents;
-      if (name === "sessions") return sessions;
+      if (name === "sessionController") return sessionController;
       return undefined;
     },
   };
@@ -163,7 +169,11 @@ async function setup(overrides = {}) {
   const store = overrides.store ?? makeStore();
   const ctx = fakeCtx({ store, ...overrides });
   const config = resolveConfig(overrides.config ?? {}, {});
-  const factory = await resolveMessageFactory(async () => { throw new Error("no dsh-llm here"); });
+  // `overrides.llm` stands in for the `@deepseek-ai/dsh-llm` module, so the
+  // primary factory path — the one a real profile takes — is exercised too.
+  const factory = await resolveMessageFactory(
+    overrides.llm ? async () => overrides.llm : async () => { throw new Error("no dsh-llm here"); },
+  );
   const handler = createHandler({
     ctx,
     config,
@@ -325,7 +335,44 @@ test("prompting a session enqueues a follow-up", async () => {
     const sent = ctx._agents.delivered[0].message;
     assert.equal(sent.role, "user");
     assert.equal(sent.content[0].text, "run the tests");
+    assert.equal(sent.source.kind, "user", "the agent loop reads source.kind");
   } finally { store.cleanup(); }
+});
+
+test("a prompt carries the user source on both factory paths", async () => {
+  // Upstream's `createUserMessage` mints the id but does **not** invent a source,
+  // so the caller supplies one. A prompt delivered without it dies as
+  // `Cannot read properties of undefined (reading 'kind')` before any model call —
+  // found by driving the route against a real harness, not by a unit test.
+  const seen = [];
+  const llm = {
+    createUserMessage: (input) => {
+      seen.push(input);
+      return { id: "m-1", ...input };
+    },
+  };
+  const primary = await setup({ llm });
+  try {
+    assert.equal(primary.factory.strategy, "dsh-llm:createUserMessage");
+    const res = await call(primary.handler, {
+      method: "POST", url: "/dsh-lan/prompt",
+      body: { sessionId: "s-a1", prompt: "run the tests" },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(seen[0].source, { kind: "user" });
+    assert.deepEqual(seen[0].content, [{ type: "text", text: "run the tests" }]);
+  } finally { primary.store.cleanup(); }
+
+  const fallback = await setup();
+  try {
+    assert.equal(fallback.factory.strategy, "inline-user-message");
+    const res = await call(fallback.handler, {
+      method: "POST", url: "/dsh-lan/prompt",
+      body: { sessionId: "s-a1", prompt: "hi" },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(fallback.ctx._agents.delivered[0].message.source.kind, "user");
+  } finally { fallback.store.cleanup(); }
 });
 
 test("prompting a session with no live agent is a 404, and nothing is delivered", async () => {
@@ -713,8 +760,8 @@ function fakeSessions(reply) {
 }
 
 test("POST /sessions delegates to the harness session controller", async () => {
-  const sessions = fakeSessions();
-  const { handler, store } = await setup({ sessions });
+  const sessionController = fakeSessions();
+  const { handler, store, ctx } = await setup({ sessionController });
   try {
     const res = await call(handler, {
       method: "POST", url: "/dsh-lan/sessions",
@@ -723,29 +770,31 @@ test("POST /sessions delegates to the harness session controller", async () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.sessionId, "session-new");
     assert.equal(res.body.agentPreset, "standard");
-    assert.deepEqual(sessions.calls, [{ workspaceId: "ws-1", agentPreset: "qwen38" }]);
+    assert.deepEqual(sessionController.calls, [{ workspaceId: "ws-1", agentPreset: "qwen38" }]);
+    assert.ok(ctx._serviceReads.includes("sessionController"), "the controller service was asked for");
+    assert.ok(!ctx._serviceReads.includes("sessions"), "and never the raw session store of the same name");
   } finally { store.cleanup(); }
 });
 
 test("POST /sessions takes a path instead of an id, and needs one of them", async () => {
-  const sessions = fakeSessions();
-  const { handler, store } = await setup({ sessions });
+  const sessionController = fakeSessions();
+  const { handler, store } = await setup({ sessionController });
   try {
     const byPath = await call(handler, { method: "POST", url: "/dsh-lan/sessions", body: { path: "/Users/me/Repo" } });
     assert.equal(byPath.status, 200);
-    assert.deepEqual(sessions.calls, [{ cwd: "/Users/me/Repo" }], "a path is handed to the controller as cwd");
+    assert.deepEqual(sessionController.calls, [{ cwd: "/Users/me/Repo" }], "a path is handed to the controller as cwd");
 
     const neither = await call(handler, { method: "POST", url: "/dsh-lan/sessions", body: {} });
     assert.equal(neither.status, 400);
     assert.equal(neither.body.error, "bad-request");
-    assert.equal(sessions.calls.length, 1, "nothing was delegated for a request with no target");
+    assert.equal(sessionController.calls.length, 1, "nothing was delegated for a request with no target");
   } finally { store.cleanup(); }
 });
 
 test("POST /sessions keeps the controller's own failure code and status", async () => {
   const failure = Object.assign(new Error('workspace "ws-x" not found'), { code: "workspace/not-found" });
-  const sessions = fakeSessions(failure);
-  const { handler, store } = await setup({ sessions });
+  const sessionController = fakeSessions(failure);
+  const { handler, store } = await setup({ sessionController });
   try {
     const res = await call(handler, { method: "POST", url: "/dsh-lan/sessions", body: { workspaceId: "ws-x" } });
     assert.equal(res.status, 404, "a missing workspace is not the caller's bad request");
@@ -754,13 +803,13 @@ test("POST /sessions keeps the controller's own failure code and status", async 
 });
 
 test("POST /workspaces with startSession returns the workspace and its session", async () => {
-  const sessions = fakeSessions({ sessionId: "session-on-ws", agentPreset: "qwen38" });
+  const sessionController = fakeSessions({ sessionId: "session-on-ws", agentPreset: "qwen38" });
   const registry = {
     list: () => [],
     get: () => undefined,
     create: async (path, title) => ({ id: "ws-new", path, title: title ?? "New" }),
   };
-  const { handler, store } = await setup({ sessions, registry });
+  const { handler, store } = await setup({ sessionController, registry });
   try {
     const res = await call(handler, {
       method: "POST", url: "/dsh-lan/workspaces",
@@ -769,6 +818,6 @@ test("POST /workspaces with startSession returns the workspace and its session",
     assert.equal(res.status, 200);
     assert.equal(res.body.workspaceId, "ws-new");
     assert.deepEqual(res.body.session, { sessionId: "session-on-ws", agentPreset: "qwen38" });
-    assert.deepEqual(sessions.calls, [{ workspaceId: "ws-new" }], "started on the workspace just created");
+    assert.deepEqual(sessionController.calls, [{ workspaceId: "ws-new" }], "started on the workspace just created");
   } finally { store.cleanup(); }
 });

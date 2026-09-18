@@ -404,7 +404,7 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
     const sessionId = body.sessionId ?? body.session;
     if (!sessionId) throw new ApiError("bad-request", "sessionId is required", 400);
     if (body.prompt === undefined) throw new ApiError("bad-request", "prompt is required", 400);
-    const receipt = promptSession(ctx, String(sessionId), body.prompt, messageFactory, body);
+    const receipt = promptSession(ctx, String(sessionId), body.prompt, messageFactory);
     return { body: { ok: true, ...receipt } };
   }
 

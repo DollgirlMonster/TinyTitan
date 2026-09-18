@@ -227,13 +227,15 @@ Start a live session on an existing workspace:
 `path` (or `cwd`) works instead of `workspaceId`, and `agentPreset` names a preset.
 The reply is `{ "sessionId": "session-…", "agentPreset": "standard" }`.
 
-Starting is **delegated to the harness's session controller**, not reimplemented:
-that one call composes the agent's world from the preset, resolves the default
-model, creates the working directory, mints the id and attaches the session to the
-workspace — rebuilding it here would be a second copy of harness logic, drifting at
-every release. A profile that composes no session controller (headless, SDK-only)
-replies `501` and says so, because answering `ok` for a session that was not created
-is worse than refusing.
+Starting is **delegated to the harness's session controller** — the service named
+`sessionController`, *not* `sessions` (that is the raw `dsh-session` store, whose
+`create(id, options)` mints a bare session and rejects this request shape) — and not
+reimplemented: that one call composes the agent's world from the preset, resolves the
+default model, creates the working directory, mints the id and attaches the session
+to the workspace — rebuilding it here would be a second copy of harness logic,
+drifting at every release. A profile that composes no session controller (headless,
+SDK-only) replies `501` and says so, because answering `ok` for a session that was
+not created is worse than refusing.
 
 `POST /dsh-lan/workspaces` also accepts `"startSession": true`: it creates the
 workspace and then starts a session on it, returning it as `session`.
@@ -248,7 +250,10 @@ workspace and then starts a session on it, returning it as `session`.
 **live agent** — one the UI has open or is currently running — otherwise the call is
 a `404`, because there is nothing to enqueue onto. Delivery uses the same
 `followup` entry point the SDK server uses, so a prompt sent here is an ordinary
-turn, not a side channel.
+turn, not a side channel; `followup` always wakes the agent, so the receipt reports
+`wakeup: true` as a fact. The message is a complete user message — content **and**
+`source: { kind: "user" }` — because upstream's `createUserMessage` mints the id but
+does not invent a source, and the agent loop reads `source.kind`.
 
 ### `POST /dsh-lan/prompt-all`
 
@@ -336,7 +341,7 @@ done
 |---|---|
 | `src/index.js` | `apply()` — config, route registration, disposal, banner |
 | `src/router.js` | the three guards, routing, JSON bodies and responses |
-| `src/api.js` | the operations against `workspaceRegistry` / `agents` |
+| `src/api.js` | the operations against `workspaceRegistry` / `agents` / `sessionController` |
 | `src/net.js` | the address fence (pure, no I/O) |
 | `src/discovery.js` | Tailscale, Bonjour, seeds and subnet candidates (best-effort, never throws) |
 | `src/peers.js` | the peer table: validate, probe, gossip, expire, on a timer |
@@ -351,7 +356,7 @@ literal shape and reports which path it took in `/health`.
 ## Tests
 
 ```bash
-npm test        # node --test 'test/*.test.js' — 91 cases
+npm test        # node --test 'test/*.test.js' — 105 cases
 ```
 
 `test/net.test.js` is the important one: it pins every allowed range and, more to
