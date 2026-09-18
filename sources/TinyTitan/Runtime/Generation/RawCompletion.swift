@@ -475,6 +475,34 @@ private func sampleOnce(scratch: RawCompletionScratch, context: MetalContext,
                                outToken: scratch.outToken)
     cb.commit(); cb.waitUntilCompleted()
     timing?.recordKernelGPU(role: "sample", cb)
+    if ProcessInfo.processInfo.environment["TINYTITAN_LOGIT_TRACE"] == "1" {
+        // The top-2 of this step's raw head output, for engine-agreement work
+        // (TT-002): greedy argmax alone hides *how close* the decision was, and
+        // a 4-bit install can lose a near-tie on one engine and not the other.
+        // The head writes the logits buffer on any path that is not the fused
+        // greedy one, which is what the servers build; a fused-head CLI run
+        // would print a stale row, so the callers that need this pass
+        // `forceLogitsHead`. Costs one linear scan of the vocabulary.
+        let vocab = scratch.sampler.vocab
+        let row = scratch.logits.contents().bindMemory(to: Float16.self, capacity: vocab)
+        var first = -Float.greatestFiniteMagnitude
+        var second = first
+        var firstID = 0
+        var secondID = 0
+        for index in 0..<vocab {
+            let value = Float(row[index])
+            if value > first {
+                second = first; secondID = firstID
+                first = value; firstID = index
+            } else if value > second {
+                second = value; secondID = index
+            }
+        }
+        let chosen = Int(scratch.outToken.contents().load(as: UInt32.self))
+        FileHandle.standardError.write(Data(String(
+            format: "[logit] pos=%d chosen=%d top1=%d:%.4f top2=%d:%.4f margin=%.4f\n",
+            position, chosen, firstID, first, secondID, second, first - second).utf8))
+    }
     // Read after completion, while the row max is still the one this dispatch
     // wrote. A row with no finite logit leaves the sampler's in-range fallback
     // in `outToken`; returning it would report a broken model as a valid token,

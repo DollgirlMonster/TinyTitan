@@ -51,6 +51,7 @@ public struct CPUSampler: Sendable {
         guard !isGreedy else {
             var best = 0
             for index in logits.indices where logits[index] > logits[best] { best = index }
+            trace(logits, chosen: best)
             return best
         }
         // Top-k first, because it bounds the sort; top-p then trims what is
@@ -86,8 +87,36 @@ public struct CPUSampler: Sendable {
         var running: Float = 0
         for position in 0..<cutoff {
             running += weights[position]
-            if running >= target { return order[position] }
+            if running >= target {
+                trace(logits, chosen: order[position])
+                return order[position]
+            }
         }
+        trace(logits, chosen: order[0])
         return order[0]
+    }
+
+    /// `TINYTITAN_LOGIT_TRACE=1`: the top-2 of this step's logits, for
+    /// engine-agreement work (TT-002). The GPU path prints the same line from
+    /// `sampleOnce`; a greedy argmax alone hides how close the decision was.
+    /// Lines arrive in generation order, so the Nth is generated token N.
+    private func trace(_ logits: [Float], chosen: Int) {
+        guard ProcessInfo.processInfo.environment["TINYTITAN_LOGIT_TRACE"] == "1" else { return }
+        var first = -Float.greatestFiniteMagnitude
+        var second = first
+        var firstID = 0
+        var secondID = 0
+        for index in logits.indices {
+            let value = logits[index]
+            if value > first {
+                second = first; secondID = firstID
+                first = value; firstID = index
+            } else if value > second {
+                second = value; secondID = index
+            }
+        }
+        FileHandle.standardError.write(Data(String(
+            format: "[logit] chosen=%d top1=%d:%.4f top2=%d:%.4f margin=%.4f\n",
+            chosen, firstID, first, secondID, second, first - second).utf8))
     }
 }
