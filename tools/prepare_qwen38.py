@@ -665,6 +665,41 @@ def plan(index: dict, width: int = BITS_4) -> None:
           else "\nplan validates against the checkpoint's own headers")
 
 
+# The PLE constants a table is addressed by. The file is a hash table: its
+# contents are meaningless under different multipliers, offsets or vocabulary
+# sizes, and none of that is recoverable from the file itself, so a build may
+# only reuse a table whose constants match its own.
+REUSE_CONSTANT_KEYS = ("layer_multipliers", "ngram_heads_offsets",
+                       "ngram_heads_vocab_sizes", "ngram_size",
+                       "heads_per_ngram", "ple_head_dim")
+
+
+def reusable_table_path(reuse: Path, constants: dict) -> Path:
+    """The table to hardlink for `--reuse-ngram-table`, or SystemExit.
+
+    `reuse` is an install directory (whose `ple_constants.json` is checked
+    against this build's) or the table file itself. Exits rather than returning
+    None on a bad one: silently falling back to fetching 128 shards and writing
+    102 GB is the wrong default for a flag whose whole purpose is to save them,
+    and a table read under the wrong constants produces garbage ids rather than
+    an error.
+    """
+    if reuse.is_dir():
+        sibling = reuse / "ple_constants.json"
+        if sibling.exists():
+            have = json.loads(sibling.read_text())
+            for key in REUSE_CONSTANT_KEYS:
+                if have.get(key) != constants.get(key):
+                    raise SystemExit(
+                        f"--reuse-ngram-table: {key} differs between "
+                        f"{sibling} and this build; the table is addressed "
+                        "by those constants and would be read wrongly")
+        reuse = reuse / "ngram_table.bin"
+    if not reuse.exists():
+        raise SystemExit(f"--reuse-ngram-table: no such file: {reuse}")
+    return reuse
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--plan", action="store_true")
@@ -725,27 +760,8 @@ def main() -> int:
     shards = sorted(set(wm.values()))
     writer = OutputWriter(args.output)
 
-    reuse = args.reuse_ngram_table
-    if reuse is not None:
-        if reuse.is_dir():
-            sibling = reuse / "ple_constants.json"
-            if sibling.exists():
-                # The table is a hash table: its contents are meaningless
-                # under different multipliers, offsets or vocabulary sizes,
-                # and none of that is recoverable from the file itself. Refuse
-                # rather than link a table this build cannot address.
-                have = json.loads(sibling.read_text())
-                for key in ("layer_multipliers", "ngram_heads_offsets",
-                            "ngram_heads_vocab_sizes", "ngram_size",
-                            "heads_per_ngram", "ple_head_dim"):
-                    if have.get(key) != constants.get(key):
-                        raise SystemExit(
-                            f"--reuse-ngram-table: {key} differs between "
-                            f"{sibling} and this build; the table is addressed "
-                            "by those constants and would be read wrongly")
-            reuse = reuse / "ngram_table.bin"
-        if not reuse.exists():
-            raise SystemExit(f"--reuse-ngram-table: no such file: {reuse}")
+    reuse = (None if args.reuse_ngram_table is None
+             else reusable_table_path(args.reuse_ngram_table, constants))
 
     ngram = NgramTable(args.output, padded, constants["ple_head_dim"], reuse)
 
