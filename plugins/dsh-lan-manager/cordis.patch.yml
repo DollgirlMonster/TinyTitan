@@ -1,7 +1,9 @@
 # Bundle patch: mounts this plugin's own row at the profile root, which is what
 # runs its apply() and registers the management route on the harness web server.
 #
-# Every field is optional; these are the defaults written out.
+# Every field is optional. Only fields with no environment fallback are written out
+# here — a value in this file beats the fallback, so the two that have one
+# (`basePath`, `discoveryIntervalSeconds`) are shown commented instead.
 #
 # The **group key** is one string with two jobs: members carrying it are one
 # fleet, and it is the door key every request presents. It ships with a public
@@ -19,11 +21,16 @@
       name: dsh-lan-manager
       config:
         # Route prefix. The API answers at <basePath>/health, <basePath>/workspaces, …
-        basePath: /dsh-lan
+        # Commented rather than written: a value here would beat the documented
+        # DSH_LAN_BASE_PATH fallback, so the environment could never set it. The
+        # code's default is the same string.
+        # basePath: /dsh-lan
         # Discovery runs itself: Tailscale peers, Bonjour (_dsh-lan._tcp), and any
         # addresses seeded with `peers`. `discoverSubnet` is the only source that
         # touches hosts which never opted in, so it is off by default.
-        discoveryIntervalSeconds: 60
+        # Commented for the same reason: DSH_LAN_DISCOVERY_SECONDS is the documented
+        # fallback for this one, and 60 is the code's default.
+        # discoveryIntervalSeconds: 60
         discoverTailscale: true
         discoverBonjour: true
         discoverSubnet: false
