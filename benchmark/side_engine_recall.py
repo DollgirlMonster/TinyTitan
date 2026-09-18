@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
 import re
 from pathlib import Path
 
@@ -70,26 +71,34 @@ def terms_of(text: str) -> list[str]:
     return [t for t in re.split(r"[^0-9a-z]+", text.lower()) if len(t) > 2]
 
 
-def deterministic_score(question: str, key: str, value: str) -> float:
-    """The term scoring in `MemoryRanking.textScore`, tags aside."""
-    score = 0.0
-    for term in terms_of(question):
-        if term in key.lower():
-            score += 3
-        if term in value.lower():
-            score += 1
-    return score
-
-
 def deterministic_rank(question: str) -> list[str]:
-    """What `memory_search` would return, best first.
+    """What `memory_search` returns, best first.
 
-    A fact sharing no term scores 0 and is not returned at all, which is the
-    behaviour being measured.
+    Mirrors `MemoryRanking.rank` and its `textScore`, inverse document
+    frequency included: a term in the key scores 3 and in the value 2, both
+    scaled by `log(documents / occurrences) + 1` over these candidates. A fact
+    sharing no term scores 0 and is not returned at all. Tags are matched by the
+    Swift scorer but not modelled here: the book's facts carry none.
     """
-    scored = [(deterministic_score(question, key, value), key)
-              for key, value in BIBLE.items()]
-    scored = [pair for pair in scored if pair[0] > 0]
+    terms = terms_of(question)
+    haystacks = {key: (key + " " + value).lower() for key, value in BIBLE.items()}
+    frequency = {term: sum(1 for text in haystacks.values() if term in text)
+                 for term in terms}
+    documents = max(1, len(BIBLE))
+    scored = []
+    for key, value in BIBLE.items():
+        score = 0.0
+        for term in terms:
+            seen = frequency[term]
+            if seen == 0:
+                continue
+            weight = math.log(documents / seen) + 1
+            if term in key.lower():
+                score += 3 * weight
+            if term in value.lower():
+                score += 2 * weight
+        if score > 0:
+            scored.append((score, key))
     scored.sort(key=lambda pair: -pair[0])
     return [key for _, key in scored]
 
@@ -160,6 +169,24 @@ def score(path: Path) -> int:
     return 0
 
 
+def shares_stem(question: str, key: str, value: str) -> bool:
+    """Does any question term share a four-character stem with the fact?
+
+    A crude but sufficient line between a *lexical* miss — the answer's word is
+    there in another form, `rain` against `rains` — and a *semantic* one, where
+    nothing in the question resembles the fact at all (`boat` against `ferry`).
+    Only the first kind is reachable by stemming or a bigger term list.
+    """
+    words = [w for w in re.split(r"[^0-9a-z]+", (key + " " + value).lower()) if w]
+    for term in terms_of(question):
+        if len(term) < 4:
+            continue
+        for word in words:
+            if len(word) >= 4 and term[:4] == word[:4]:
+                return True
+    return False
+
+
 def baseline() -> int:
     """What the token ranking scores with no model at all.
 
@@ -181,6 +208,20 @@ def baseline() -> int:
               f"recall@3 {hits[3]}/{len(cases)}")
     print("\nmechanical = the question uses the key's own words; paraphrased = it "
           "does not.")
+    print("\nparaphrased, question by question — is the miss even lexical?")
+    reachable = 0
+    for question, target in paraphrased:
+        rank = deterministic_rank(question)
+        lexical = shares_stem(question, target, BIBLE[target])
+        reachable += lexical
+        print(f"  {'hit ' if target in rank[:1] else 'MISS'} "
+              f"lexical={'yes' if lexical else 'no ':3s} top3={rank[:3]}")
+        print(f"       {question}  ->  {target}")
+    misses = sum(1 for question, target in paraphrased
+                 if target not in deterministic_rank(question)[:1])
+    print(f"\n{misses} of {len(paraphrased)} missed at rank 1; "
+          f"{reachable} of them share a stem with the fact, so at most those are "
+          "reachable by stemming or a longer term list.")
     return 0
 
 

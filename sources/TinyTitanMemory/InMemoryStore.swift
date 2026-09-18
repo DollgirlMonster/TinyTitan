@@ -223,8 +223,22 @@ public enum MemoryRanking {
         if terms.isEmpty {
             ranked = candidates.sorted { scoreWithoutText($0) > scoreWithoutText($1) }
         } else {
+            // How many candidates carry each term, so `textScore` can weight a
+            // rare one above a common one. Read off the store rather than
+            // hardcoded: "town" naming one fact and appearing in another's
+            // value is what put the town above the rain rule.
+            let haystacks = candidates.map { ($0, Self.haystack($0)) }
+            var documentFrequency: [String: Int] = [:]
+            for term in terms {
+                documentFrequency[term] = haystacks.reduce(0) {
+                    $0 + ($1.1.contains(term) ? 1 : 0)
+                }
+            }
+            let documents = Double(max(1, candidates.count))
             let scored = candidates.compactMap { record -> (MemoryRecord, Double)? in
-                let score = textScore(record, terms: terms)
+                let score = textScore(record, terms: terms,
+                                      documentFrequency: documentFrequency,
+                                      documents: documents)
                 return score > 0 ? (record, score) : nil
             }
             ranked = scored
@@ -241,18 +255,45 @@ public enum MemoryRanking {
         (record.importance ?? 0) * 1000 + record.updatedAt.timeIntervalSince1970 / 1_000_000_000
     }
 
+    /// Everything a term is matched against, lowered once.
+    ///
+    /// Tags are in here because they are matched in `textScore`: leaving them
+    /// out made a tag-only query score zero for every candidate, which drops
+    /// the fact entirely rather than ranking it.
+    private static func haystack(_ record: MemoryRecord) -> String {
+        (record.key.rawValue + " " + record.value + " "
+            + record.tags.joined(separator: " ")).lowercased()
+    }
+
     /// A term in the key counts for more than one in the body: the model
     /// names a memory for what it is about, so "decisions/sync" matching
     /// "sync" is a stronger signal than the word appearing in a sentence.
-    private static func textScore(_ record: MemoryRecord, terms: [String]) -> Double {
+    ///
+    /// Both are scaled by the term's inverse document frequency over the
+    /// candidates, and a value match is worth two rather than one. Measured on
+    /// the authored recall set (`benchmark/side_engine_recall.py
+    /// --baseline`), that is what lifts paraphrase recall@1 from 1 of 4 to 3 of
+    /// 4 while the ten questions phrased in the store's own words stay at 10 of
+    /// 10. Without it a question naming a *common* word won: "does it ever rain
+    /// in this town?" matched `setting/town`'s key for 3 and the rain rule's
+    /// value for 1, so the town won.
+    ///
+    /// Smoothed (`+ 1`) so a term present in every candidate still counts, which
+    /// keeps the key's three-to-one ordering intact among common terms.
+    private static func textScore(_ record: MemoryRecord, terms: [String],
+                                  documentFrequency: [String: Int],
+                                  documents: Double) -> Double {
         let key = record.key.rawValue.lowercased()
         let value = record.value.lowercased()
         let tags = record.tags.map { $0.lowercased() }
         var score = 0.0
         for term in terms {
-            if key.contains(term) { score += 3 }
-            if tags.contains(where: { $0.contains(term) }) { score += 2 }
-            if value.contains(term) { score += 1 }
+            let frequency = documentFrequency[term] ?? 0
+            guard frequency > 0 else { continue }
+            let weight = log(documents / Double(frequency)) + 1
+            if key.contains(term) { score += 3 * weight }
+            if tags.contains(where: { $0.contains(term) }) { score += 2 * weight }
+            if value.contains(term) { score += 2 * weight }
         }
         guard score > 0 else { return 0 }
         return score + (record.importance ?? 0)
