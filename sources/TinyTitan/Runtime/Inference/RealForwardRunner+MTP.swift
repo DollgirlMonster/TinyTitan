@@ -79,10 +79,21 @@ extension RealForwardRunner {
     /// 5.18x at width 13 and 11.25x at width 42. Width 2 is the closest this
     /// model ever gets to break-even, and it still misses.
     ///
-    /// So the lever is acceptance, not the verify path: p must exceed ~0.585
-    /// merely to break even. Faster projections cannot help -- the attention
-    /// side already amortizes across both rows via `useTwoRowProjection`, and
-    /// the expert side is bounded by the union above, not by matmul shape.
+    /// So the lever is the verify **path**, not acceptance. **Measured on this
+    /// install 2026-09-18** (256 greedy tokens, 86.9% acceptance, 1.869 emitted
+    /// per pass, `benchmark/tinytitan_mtp_phases.py`): a pass costs **2.238x** a
+    /// scalar token, and the union is not where it goes — `verify_routed_pair`
+    /// measured **1.45x** the scalar routed GPU time, at or under the 1.585x
+    /// model. The verify backbone alone is **1.946x** a 214.5 ms token, and its
+    /// kernels account for ~217 ms of that: the union at the model's price plus
+    /// a non-expert prefill path at **1.6-1.7x** where the model assumes 1.0x,
+    /// because two rows run through the 32-token prefill kernels rather than the
+    /// decode ones. The remaining **~200 ms/pass (0.93x a token)** is host and
+    /// commit time — a fresh `MTLArgumentBuffer` and command buffer per tile, the
+    /// cache plan, and the sequential fetch awaits nothing overlaps at width 2.
+    /// `TINYTITAN_MTP_VERIFY=pair` recovers only 3-5% of that. Acceptance must
+    /// still exceed ~0.585 merely to break even; reaching 92.6% did not help,
+    /// which is what refutes the older "lever is acceptance" reading.
     /// Parsed once: the schedule cannot change mid-process, and
     /// ProcessInfo.environment is a dictionary copy per call.
     static let mtpVerifyScheduleResult =

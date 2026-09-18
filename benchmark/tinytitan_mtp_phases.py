@@ -67,20 +67,21 @@ PHASES_RE = re.compile(
 VERIFY_ARM = "pair"  # TINYTITAN_MTP_VERIFY for the mtp-on arm
 
 
-def launch(quant: str, mtp: bool, log_name: str) -> subprocess.Popen:
+def launch(target: pathlib.Path, sidecar: pathlib.Path, mtp: bool,
+           log_name: str, ram_budget: str) -> subprocess.Popen:
     binary = ROOT / ".build/release/TinyTitanServer"
     cmd = [str(binary),
            "--port", str(PORT),
-           "--model", str(MTP_MODELS[quant]),
+           "--model", str(target),
            "--max-context", str(DEFAULT_CONTEXT_TOKENS),
            "--rope-scaling", "none",
            "--prompt-cache-mode", "off",
            "--prompt-cache-memory-mib", "0",
-           "--ram-budget", "8G",
+           "--ram-budget", ram_budget,
            "--kv-bits", str(DEFAULT_KV_BITS),
            "--thinking", "off"]
     if mtp:
-        cmd += ["--mtp-model", str(SIDECAR), "--mtp-memory-mib", "384"]
+        cmd += ["--mtp-model", str(sidecar), "--mtp-memory-mib", "384"]
     env = server_environment()
     env["TINYTITAN_RUNNER_STATS"] = "1"
     env["TINYTITAN_KERNEL_STATS"] = "1"
@@ -118,17 +119,18 @@ def generate() -> dict | None:
     }
 
 
-def one_run(quant: str, mtp: bool, tag: str) -> dict:
+def one_run(target: pathlib.Path, sidecar: pathlib.Path, mtp: bool, tag: str,
+            ram_budget: str) -> dict:
     arm = "on" if mtp else "off"
-    log_name = f"mtpphases_{quant}_{arm}_{tag}.log"
-    launch(quant, mtp, log_name)
+    log_name = f"mtpphases_{target.name}_{arm}_{tag}.log"
+    launch(target, sidecar, mtp, log_name, ram_budget)
     if not g0.wait_ready(PORT):
         g0._terminate_all()
-        raise SystemExit(f"[{quant}/{arm}] server not healthy")
+        raise SystemExit(f"[{target.name}/{arm}] server not healthy")
     result = generate()
     g0._terminate_all()
     if result is None:
-        raise SystemExit(f"[{quant}/{arm}] request failed")
+        raise SystemExit(f"[{target.name}/{arm}] request failed")
     row: dict = {"arm": arm, **result}
     with open(benchmark_log_path(log_name)) as handle:
         text = handle.read()
@@ -160,15 +162,38 @@ def one_run(quant: str, mtp: bool, tag: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--quant", choices=sorted(MTP_MODELS), default="8bit")
+    parser.add_argument("--quant", choices=sorted(MTP_MODELS), default="8bit",
+                        help="the Ornith pair by default; --target overrides it")
+    parser.add_argument("--target", default=None,
+                        help="target model directory, for a pair whose quant is "
+                             "not in MTP_MODELS (e.g. the Qwen3.8 4-bit install)")
+    parser.add_argument("--sidecar", default=None,
+                        help="MTP sidecar directory to pair with --target")
+    parser.add_argument("--ram-budget", default="8G",
+                        help="--ram-budget for the server; the Qwen3.8 row wants 12G")
+    parser.add_argument("--warmups", type=int, default=1,
+                        help="discarded runs per arm (the old default was 1)")
     parser.add_argument("--verify-arm", choices=("pair", "tile"), default="pair",
                         help="TINYTITAN_MTP_VERIFY for the mtp-on arm")
     parser.add_argument("--pairs", type=int, default=1,
-                        help="off/on/on/off blocks after the two warmups")
+                        help="off/on/on/off blocks after the warmups")
     parser.add_argument("--allow-busy-gpu", action="store_true")
     args = parser.parse_args()
     global VERIFY_ARM
     VERIFY_ARM = args.verify_arm
+
+    if args.target:
+        target = (ROOT / args.target).resolve()
+        sidecar = (ROOT / args.sidecar).resolve() if args.sidecar else SIDECAR
+        label = target.name
+    else:
+        target = MTP_MODELS[args.quant]
+        sidecar = SIDECAR
+        label = args.quant
+    if not (target / "verified-install.json").exists():
+        raise SystemExit(f"not an installed target: {target}")
+    if not (sidecar / "manifest.json").exists():
+        raise SystemExit(f"no MTP sidecar at {sidecar}")
 
     signal.signal(signal.SIGINT, g0._on_signal)
     signal.signal(signal.SIGTERM, g0._on_signal)
@@ -176,18 +201,19 @@ def main() -> int:
 
     rows: list[dict] = []
     try:
-        for mtp in (False, True):
-            print(f"[{args.quant}] warmup mtp={'on' if mtp else 'off'}",
-                  flush=True)
-            one_run(args.quant, mtp, "warmup")
+        for _ in range(args.warmups):
+            for mtp in (False, True):
+                print(f"[{label}] warmup mtp={'on' if mtp else 'off'}", flush=True)
+                one_run(target, sidecar, mtp, "warmup", args.ram_budget)
         for block in range(args.pairs):
             for mtp in (False, True, True, False):
-                row = one_run(args.quant, mtp, f"b{block}_{len(rows)}")
+                row = one_run(target, sidecar, mtp, f"b{block}_{len(rows)}",
+                              args.ram_budget)
                 rows.append(row)
                 extra = (f"acc {row.get('acceptance', 0):.1f}% "
                          f"passes {row.get('passes', 0)}"
                          if row["arm"] == "on" else "")
-                print(f"[{args.quant}] mtp={row['arm']:<3} "
+                print(f"[{label}] mtp={row['arm']:<3} "
                       f"{row.get('decode_tok_s', 0):7.3f} tok/s  "
                       f"sha {row['sha256']}  {extra}", flush=True)
     finally:
@@ -198,7 +224,7 @@ def main() -> int:
     med = lambda sel, k: statistics.median([r[k] for r in sel if k in r])
 
     print("\n" + "=" * 70)
-    print(f"MTP PHASE ATTRIBUTION — {args.quant}, greedy, cache off, "
+    print(f"MTP PHASE ATTRIBUTION — {label}, greedy, cache off, "
           f"verify={args.verify_arm}")
     print("=" * 70)
     off_rate = med(off, "decode_tok_s")
@@ -241,7 +267,7 @@ def main() -> int:
           f"{'YES' if identical else 'NO'} "
           f"(off {off_digests}, on {on_digests})")
 
-    out = ROOT / (f".build/benchmark-results/mtp-phases-{args.quant}"
+    out = ROOT / (f".build/benchmark-results/mtp-phases-{label}"
                   f"-{args.verify_arm}.json")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w") as handle:
