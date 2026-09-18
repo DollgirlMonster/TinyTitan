@@ -24,7 +24,6 @@ curl -X POST http://127.0.0.1:3080/dsh-lan/prompt-all \
 | 6 | Register an existing folder as a workspace | `POST /dsh-lan/workspaces` |
 | 7 | The group: who else is running, and what they hold | `GET /dsh-lan/peers` · `GET /dsh-lan/peers/:id` |
 | 8 | One aggregate for a manager: this Mac **and** every member | `GET /dsh-lan/inventory` |
-| 9 | Take a peer's address list and share ours (mesh) | `POST /dsh-lan/gossip` |
 | — | Liveness and the caller's fence verdict | `GET /dsh-lan/health` |
 
 **The group.** Every instance shares one **group key** (a string, default

@@ -535,18 +535,12 @@ test("a missing workspaceRegistry still serves the session-derived list", async 
   } finally { store.cleanup(); }
 });
 
-/** A PeerTable stand-in: the router only ever reads these four things. */
-function fakePeers({ peers = [], kept = 0 } = {}) {
-  const state = { merged: [] };
+/** A PeerTable stand-in: the router only ever reads these three things. */
+function fakePeers({ peers = [] } = {}) {
   return {
-    state,
     lastRefresh: 1234,
     list: () => peers,
     get: (selector) => peers.find((p) => p.id === selector || p.address === selector || p.name === selector),
-    mergeGossip: (entries, options) => {
-      state.merged.push({ entries, from: options?.from });
-      return kept;
-    },
   };
 }
 
@@ -597,21 +591,6 @@ test("GET /peers/:id resolves a member, and 404s an unknown one", async () => {
     assert.equal((await call(handler, { url: "/dsh-lan/peers/192.168.18.25" })).status, 200);
     assert.equal((await call(handler, { url: "/dsh-lan/peers/192.168.18.25:3080" })).status, 200);
     assert.equal((await call(handler, { url: "/dsh-lan/peers/nobody" })).status, 404);
-  } finally { store.cleanup(); }
-});
-
-test("POST /gossip hands the addresses to the table and reports what was kept", async () => {
-  const peers = fakePeers({ kept: 2 });
-  const { handler, store } = await setup({ peers });
-  try {
-    const res = await call(handler, {
-      method: "POST", url: "/dsh-lan/gossip",
-      body: { peers: [{ address: "192.168.18.25", port: 3080 }, { address: "192.168.18.26", port: 3080 }] },
-    });
-    assert.equal(res.status, 200);
-    assert.deepEqual({ offered: res.body.offered, kept: res.body.kept }, { offered: 2, kept: 2 });
-    assert.equal(peers.state.merged.length, 1, "the table did the validating, not the route");
-    assert.equal(peers.state.merged[0].from, "127.0.0.1", "the source address is recorded for the log");
   } finally { store.cleanup(); }
 });
 

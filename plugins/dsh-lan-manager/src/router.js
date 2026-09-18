@@ -278,7 +278,6 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
           "GET  /peers",
           "GET  /peers/:id",
           "GET  /inventory",
-          "POST /gossip",
           "POST /prompt",
           "POST /prompt-all",
           "POST /workspaces",
@@ -340,16 +339,6 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
     const found = peers?.get(decodeURIComponent(onePeer[1]));
     if (!found) throw new ApiError("not-found", `no peer ${decodeURIComponent(onePeer[1])}`, 404);
     return { body: { ok: true, peer: found } };
-  }
-
-  // A member pushes addresses it knows. They are candidates only — validated by
-  // the table before anything is dialled — so a poisoned list cannot turn into a
-  // connection, and this stays a hint exchange rather than remote control.
-  if (method === "POST" && route === "/gossip") {
-    const body = await readJsonBody(req, maxBodyBytes);
-    const entries = Array.isArray(body.peers) ? body.peers : [];
-    const kept = peers?.mergeGossip(entries, { from: source.address }) ?? 0;
-    return { body: { ok: true, offered: entries.length, kept, group: config.groupKey ?? null } };
   }
 
   // Register an existing folder as a workspace. `startSession` is refused rather
