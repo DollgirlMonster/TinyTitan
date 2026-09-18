@@ -227,6 +227,28 @@ Runs made 2026-09-18 with the release `TinyTitanBench` built from `036f98c`;
 60 jobs, 7,276 tokens: 2B 386.2 s (18.8 tok/s), 4B 1,131.3 s (6.4), 4B v2
 1,168.3 s (6.6), 9B 2,244.1 s (3.2).
 
+## The case the wiring uses is not the case the matrix measured
+
+The T5 rows above pair the **same key** with the same value. In the memory path
+a same-key pair never reaches the engine — the deterministic fold-equality
+check skips it first — so those rows say nothing about whether the wiring
+works. What the wiring asks is a **new key** that says what an existing one
+already said, and a new key whose value cannot both be true with an existing
+one. That is measured separately, over 8 duplication and 4 contradiction pairs
+built from the book's own facts, by
+`benchmark/side_engine_wired_cases.py`:
+
+| model | T5 (new key, same fact) | T3 (new key, disagreeing) |
+| --- | --- | --- |
+| 4B | 7/8 | 4/4 |
+| 9B | 8/8 | 4/4 |
+
+The 4B's one miss is `rules/ferry = runs only on Sundays` against
+`rules/ferry_schedule = only Sundays`, which it kept as a second key — the safe
+direction for suppression, since a missed duplicate leaves a redundant address
+while a false positive would drop a fact. Runs made 2026-09-18: 4B, 12 prompts,
+1,399 tokens in 183.1 s (7.6 tok/s); 9B the same cases in 359.7 s (3.9).
+
 ## Where it is wired
 
 The port is `MemorySideEngine`
