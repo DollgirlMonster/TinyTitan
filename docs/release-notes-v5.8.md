@@ -146,8 +146,12 @@ now runs both plugin suites, which nothing did before.
 The README's benchmark table was **not** re-measured for this release; its rows
 are quoted as they stand. Measured on this commit for this release:
 
-- the engine's internal speeds against the 5.7 record
-  (`benchmark/internal-speeds/v5.8.json`), with no metric past the 10% gate;
+- the engine's own speeds against the 5.7 record
+  (`benchmark/internal-speeds/v5.8.json`): QKV GEMV **78.6 GB/s** (+4.4%),
+  routed MoE **44.2 GB/s** (+4.0%), GDN in-projection **77.4 GB/s** (0.0%), CPU
+  int8 GEMV **49.2 GB/s** (+1.7%), prefill **25.9 tok/s** (0.0%), decode
+  **26.7 tok/s** (+5.2%), first token **0.27 s**, ANE prefill **49.3 tok/s**
+  (−2.6%). No metric is past the 10% gate and the response hash did not change;
 - the side-engine's wired judgements, 15.2 s each on the 4B;
 - the held-out perplexity A/B, 1,023 paired token positions per install, about
   three minutes per install on the CPU.
@@ -156,13 +160,15 @@ are quoted as they stand. Measured on this commit for this release:
 
 Measured on this commit by the release dry run:
 
-- six lint gates clean;
-- the serial package suite, all passing;
-- every installed golden baseline byte-identical through
-  `tools/golden-baseline.sh --check`;
+- six lint gates clean, **2,035 functions** scanned, the shell gate over 19
+  scripts on bash 3.2.57;
+- **1,482 tests in 222 suites**, all passing;
+- **11 golden baselines byte-identical**: the 125B at 4-bit, AgentWorld 4- and
+  8-bit, qwen36 4- and 8-bit, and the dense 2B/4B/9B at both widths;
 - a clean scratch release build with the compiler-warning scan clean, and the
   archive staged and packaged from that tree;
-- the engine's speeds recorded against the 5.7 baseline and committed.
+- the engine's speeds recorded against the 5.7 baseline and committed
+  (`benchmark/internal-speeds/v5.8.json`), every metric inside the gate.
 
 **Five golden targets are not checked**, because their install is not under
 `models/` and nothing may be fetched to change that: `ornith-8`, `ornith-4`,
