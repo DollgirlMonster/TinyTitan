@@ -40,6 +40,15 @@ each other so one found Mac is enough to find the rest. Every gossiped address i
 validated against the same LAN/Tailscale allowlist the request fence uses before
 anything is dialled, and a member must answer with our group key to be listed.
 
+**Bonjour is browse-only, and on the pinned harness it is idle.** Nothing in this
+project registers `_dsh-lan._tcp`, and registering it would be a *false beacon*
+today: Bonjour advertises this host's **LAN** address, where nothing is listening,
+because the harness refuses to bind anything but loopback (see *Reaching it from
+another machine*). A peer that is discovered and then cannot be probed is worse than
+no peer, so the browser stays — it is correct, and it will find a third-party
+advertiser — and registration waits for a reachable bind. The plugin says so in the
+log at every mount.
+
 **The mesh knows; a manager acts.** A plugin never sends a prompt to another
 instance and never modifies one. Prompting and mutating is the job of the
 external manager — `ttlanmanager`, the **TinyTitan DSH LAN Manager**, in this
@@ -282,7 +291,7 @@ done
 | `peers` | `DSH_LAN_PEERS` | `[]` | Seed addresses (`host` or `host:port`) to try even when discovery finds nothing |
 | `discoveryIntervalSeconds` | `DSH_LAN_DISCOVERY_SECONDS` | `60` | How often the group is refreshed (minimum 5) |
 | `discoverTailscale` | — | `true` | Enumerate online tailnet peers that have an IPv4 address — macOS, Linux, Windows — from the Tailscale CLI |
-| `discoverBonjour` | — | `true` | Browse `_dsh-lan._tcp` through macOS `dns-sd` — discovery only; the plugin registers no Bonjour service |
+| `discoverBonjour` | — | `true` | Browse `_dsh-lan._tcp` through macOS `dns-sd` — browse only, and idle until something registers the service; the plugin registers none, on purpose |
 | `discoverSubnet` | — | `false` | Sweep each local `/24` on the peer port — the only source that touches hosts which never opted in |
 | `peerPort` | — | `3080` | The port other members answer on |
 | `probeTimeoutMs` | `DSH_LAN_PROBE_TIMEOUT` | `3000` | How long a peer probe waits — three seconds because a member may be on another continent |

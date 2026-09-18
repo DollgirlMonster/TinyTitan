@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { apply, DEFAULT_BASE_PATH } from "../src/index.js";
+import { apply, bonjourIdleNotice, DEFAULT_BASE_PATH } from "../src/index.js";
 import { SUPPORTED_DSH_VERSION } from "../src/versions.js";
 
 /** A context with a web server, capturing what the plugin does to it. */
@@ -88,6 +88,12 @@ test("apply() mounts one prefix route, announces it, and disposes it", async () 
       lines.some((line) => line.includes("loopback only")),
       `expected the loopback notice, got: ${lines.join(" | ")}`,
     );
+    // Discovery is off in this test, so the Bonjour notice must stay quiet too.
+    assert.equal(
+      lines.some((line) => line.includes("Bonjour is browsing")),
+      false,
+      "the Bonjour notice belongs to the source being on",
+    );
 
     // The handler is usable: a public source is refused by the address fence, with
     // a JSON body — which is what proves `createHandler` was wired in and that the
@@ -117,6 +123,17 @@ test("apply() mounts one prefix route, announces it, and disposes it", async () 
     state.effectCleanup();
     assert.ok(lines.includes("route disposed"), "disposal must dispose the route");
   });
+});
+
+test("the Bonjour notice fires when the source is on, and not when it is off", () => {
+  const notice = bonjourIdleNotice({ discoverBonjour: true });
+  assert.match(String(notice), /Bonjour is browsing _dsh-lan\._tcp/);
+  assert.match(String(notice), /nothing registers it/);
+  assert.match(String(notice), /reachable address/, "it says why registration waits");
+  assert.equal(bonjourIdleNotice({ discoverBonjour: false }), null);
+  // The config default is on (`raw.discoverBonjour !== false`), so an absent
+  // config is not "off".
+  assert.notEqual(bonjourIdleNotice(undefined), null);
 });
 
 test("apply() reports an unmounted profile without throwing, and does not mount", async () => {

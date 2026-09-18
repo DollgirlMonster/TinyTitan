@@ -28,6 +28,7 @@ import { hostname } from "node:os";
 
 import { resolveConfig, localAddresses, DEFAULT_BASE_PATH } from "./config.js";
 import { resolveMessageFactory } from "./api.js";
+import { BONJOUR_SERVICE } from "./discovery.js";
 import { dshVersion, pluginVersion, supportDecision } from "./versions.js";
 import { PeerTable } from "./peers.js";
 import { createHandler } from "./router.js";
@@ -240,9 +241,35 @@ export function apply(ctx, config = {}) {
       `machine cannot reach it` +
       (lanFacing.length > 0 ? ` (this host: ${lanFacing.map((a) => a.address).join(", ")})` : ""),
   );
+  const bonjour = bonjourIdleNotice(resolved);
+  if (bonjour !== null) log(bonjour);
 
   state.mounted = true;
   return { mounted: true, config: resolved, factoryPromise, dispose };
+}
+
+/**
+ * The notice that Bonjour is browsing a service nothing registers, or `null` when
+ * the source is switched off.
+ *
+ * Browse-only is worth saying out loud rather than leaving as a silent no-op, and
+ * registering the service would be *worse* than saying nothing: Bonjour advertises
+ * this host's LAN address, where nothing is listening, because the harness refuses
+ * to bind anything but loopback (TT-020). A peer that is discovered and then cannot
+ * be probed costs more than an empty browse, so the browser stays — it is correct,
+ * and it finds a third-party advertiser — and registration waits on a reachable
+ * bind (TT-029).
+ *
+ * A pure function on purpose: the caller logs it, and a test can check both
+ * branches without spawning `dns-sd`.
+ *
+ * @param config - the resolved plugin config.
+ * @returns one line, or `null` when Bonjour is off.
+ */
+export function bonjourIdleNotice(config) {
+  if (config?.discoverBonjour === false) return null;
+  return `dsh-lan-manager: Bonjour is browsing ${BONJOUR_SERVICE} and nothing registers ` +
+    "it, so the LAN source will find nothing until the harness can serve a reachable address";
 }
 
 /**

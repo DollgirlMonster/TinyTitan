@@ -23,7 +23,7 @@
 import { execFile } from "node:child_process";
 import { networkInterfaces } from "node:os";
 
-/** The Bonjour service this plugin advertises and browses. */
+/** The Bonjour service this plugin browses. Nothing here registers it — see TT-029. */
 export const BONJOUR_SERVICE = "_dsh-lan._tcp";
 
 /** Where the Tailscale CLI lives when it is not on `PATH`. */
