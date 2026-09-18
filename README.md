@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img width="1254" height="1254" alt="TinyTitan" src="https://github.com/user-attachments/assets/b18d7469-d546-4e74-83fa-1fc6d768d7f4" />
+  <img width="1254" height="1254" alt="1" src="https://github.com/user-attachments/assets/2a990de5-af24-48cd-b673-e875755741cc" />
 </p>
 
 # TinyTitan
