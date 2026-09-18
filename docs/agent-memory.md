@@ -157,11 +157,18 @@ deterministic behaviour stands exactly as it did before the engine existed.
 decide contradiction, duplication and retrieval from the 4B up, and the reply
 check from the 9B; durability and supersession are one-sided at every size and
 are deliberately not offered. That is why the default is the 4B and why the 2B
-is not used — `docs/side-engine-tasks.md` carries the matrix. What is wired so
-far is near-duplicate suppression in consolidation, for facts in the session's
-own scope: a fact whose key is new but whose content an existing key in the
-same leading segment already carries is not stored, and the log names both
-keys. The shared-workspace path does not consult it yet.
+is not used — `docs/side-engine-tasks.md` carries the matrix.
+
+**And it is budgeted like the model call it is.** A judgement re-reads a prompt
+and generates: measured at 15.2 s on the 4B and 29.8 s on the 9B. One
+consolidation is therefore allowed four questions in total and two to any one
+fact. Inside that budget run duplication and contradiction, over the session's
+own scope and the shared workspace: a new key whose content an existing key
+already carries is not stored, and a new key that cannot both be true with an
+existing one is logged as a possible conflict and otherwise left alone —
+advisory, because disagreement is not supersession. Retrieval is ready but has
+no caller that can afford it yet; `memory_search` is a tool call the client's
+turn waits on, which is the wrong place for a 15-second question.
 
 ### The guard
 

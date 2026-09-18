@@ -37,8 +37,10 @@ import Testing
 
         #expect(written == 0)
         #expect(engine.pairs.count == 1)
-        #expect(engine.pairs.first?.0.key == "characters/marcus/eye_colour")
-        #expect(engine.pairs.first?.1.key == "characters/marcus/eyes")
+        // Stored first, incoming second: the order the prompts were measured
+        // in, and the one the 4B answers YES to.
+        #expect(engine.pairs.first?.0.key == "characters/marcus/eyes")
+        #expect(engine.pairs.first?.1.key == "characters/marcus/eye_colour")
         let stored = try await store.get(try MemoryKey(validating: "characters/marcus/eye_colour"),
                                          in: context.scope)
         #expect(stored == nil)
@@ -110,47 +112,100 @@ import Testing
         #expect(engine.pairs.isEmpty)
     }
 
-    @Test func theComparisonCountIsBounded() async throws {
+    @Test func aContradictionIsRecordedAndTheWriteStillStands() async throws {
         let store = InMemoryStore()
-        let engine = StubSideEngine(duplicates: false)
+        let engine = StubSideEngine(duplicates: false, contradicts: true)
+        let log = LogCollector()
+        let service = MemoryService(configuration: configuration(),
+                                    durableStore: store,
+                                    sideEngine: engine,
+                                    log: { log.append($0) })
+        let context = try #require(await service.beginSession(id: "s-conflict"))
+        try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
+
+        let written = await service.storeConsolidation(
+            [try fact("characters/marcus/eye_colour", "hazel")], in: context)
+
+        // Advisory only: disagreement is not supersession, and T4, which would
+        // tell them apart, is not ready. The fact is stored and the conflict
+        // is logged.
+        #expect(written == 1)
+        let stored = try await store.get(try MemoryKey(validating: "characters/marcus/eye_colour"),
+                                         in: context.scope)
+        #expect(stored?.value == "hazel")
+        #expect(log.messages().contains { $0.contains("possible conflict") })
+        #expect(log.messages().contains { $0.contains("recorded 1 possible conflict") })
+    }
+
+    @Test func aGlobalFactIsCheckedAgainstTheSharedWorkspace() async throws {
+        let store = InMemoryStore()
+        let engine = StubSideEngine(duplicates: true)
         let service = MemoryService(configuration: configuration(),
                                     durableStore: store,
                                     sideEngine: engine)
-        let context = try #require(await service.beginSession(id: "s-bounded"))
+        let context = try #require(await service.beginSession(id: "s-global"))
+        let shared = try #require(await service.configuration.sharedScope)
+        try await store.set(try fact("language/replies", "in German"), in: shared)
+
+        var global = try fact("language/response_language", "German")
+        global.isGlobal = true
+        let written = await service.storeConsolidation([global], in: context)
+
+        #expect(written == 0)
+        #expect(engine.pairs.first?.0.key == "language/replies")
+        #expect(engine.pairs.first?.1.key == "language/response_language")
+    }
+
+    @Test func theQuestionBudgetSpansTheWholeConsolidation() async throws {
+        let store = InMemoryStore()
+        let engine = StubSideEngine(duplicates: false, contradicts: false)
+        let service = MemoryService(configuration: configuration(),
+                                    durableStore: store,
+                                    sideEngine: engine)
+        let context = try #require(await service.beginSession(id: "s-budget"))
         for index in 0..<20 {
             try await store.set(try fact("characters/p\(index)", "value \(index)"),
                                 in: context.scope)
         }
+        let records = try (0..<5).map { try fact("characters/new_\($0)", "other \($0)") }
 
-        let written = await service.storeConsolidation(
-            [try fact("characters/new_fact", "something else")], in: context)
+        let written = await service.storeConsolidation(records, in: context)
 
-        #expect(written == 1)
-        #expect(engine.pairs.count == MemoryService.maximumDuplicateCandidates)
+        // Five facts and twenty candidates: the cost is capped by the budget
+        // for the consolidation, not by the candidate count.
+        #expect(written == 5)
+        #expect(engine.questions <= MemoryService.maximumSideEngineQuestions)
     }
 }
 
-/// Answers every duplication question the same way, and records what it was
-/// asked.
+/// Answers every question the same way, and counts what it was asked.
 ///
-/// unchecked-invariant: `asked` is only ever touched under `lock`.
+/// unchecked-invariant: the counters are only ever touched under `lock`.
 private final class StubSideEngine: MemorySideEngine, @unchecked Sendable {
     private let lock = NSLock()
-    private let answer: Bool?
+    private let duplicateAnswer: Bool?
+    private let contradictionAnswer: Bool?
     private var asked: [(MemoryFact, MemoryFact)] = []
+    private var contradictionAsked = 0
 
-    init(duplicates answer: Bool?) {
-        self.answer = answer
+    init(duplicates duplicateAnswer: Bool?, contradicts contradictionAnswer: Bool? = nil) {
+        self.duplicateAnswer = duplicateAnswer
+        self.contradictionAnswer = contradictionAnswer
     }
 
     var pairs: [(MemoryFact, MemoryFact)] { lock.withLock { asked } }
+    /// Every question of either kind: the budget counts both.
+    var questions: Int { lock.withLock { asked.count + contradictionAsked } }
 
-    func duplicates(_ a: MemoryFact, _ b: MemoryFact) async -> Bool? {
-        lock.withLock { asked.append((a, b)) }
-        return answer
+    func duplicates(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? {
+        lock.withLock { asked.append((stored, new)) }
+        return duplicateAnswer
     }
 
-    func contradicts(_ a: MemoryFact, _ b: MemoryFact) async -> Bool? { nil }
+    func contradicts(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? {
+        lock.withLock { contradictionAsked += 1 }
+        return contradictionAnswer
+    }
 
     func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool? { nil }
 }

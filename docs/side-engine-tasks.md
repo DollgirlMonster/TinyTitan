@@ -249,6 +249,22 @@ direction for suppression, since a missed duplicate leaves a redundant address
 while a false positive would drop a fact. Runs made 2026-09-18: 4B, 12 prompts,
 1,399 tokens in 183.1 s (7.6 tok/s); 9B the same cases in 359.7 s (3.9).
 
+**And the order of the two facts is part of the prompt.** These cases put the
+fact already in the store in `A` and the incoming one in `B`, and on the 4B the
+same pair answers YES only in that order:
+
+| pair | order | answer |
+| --- | --- | --- |
+| `characters/marcus/eyes = grey` vs `…/eye_colour = grey` | stored first | YES |
+| the same pair | incoming first | **NO** |
+
+So the port's `duplicates(_ stored:, _ new:)` fixes the order and the server
+adapter maps `stored` to `A`. The first version of the wiring passed them the
+other way round and would have stopped nothing: the stubs cannot see the
+difference, and the release-only end-to-end test
+(`theRealInstallAnswersThroughTheFactoryAndTheAdapter`) is what found it. Four
+probe cases, 448 tokens, 58.0 s on the 4B.
+
 ## Where it is wired
 
 The port is `MemorySideEngine`
@@ -263,17 +279,31 @@ The model is `TINYTITAN_SIDE_ENGINE` — an install name under
 load on the first judgement, and the width comes from the server's
 `ServerCoordinator.generating` signal.
 
-Wired so far:
+**Every question is a generation, so the number of them is budgeted.** Timed
+over the wired cases, one judgement costs **15.2 s on the 4B** and **29.8 s on
+the 9B** (12 cases in 183.1 s and 359.7 s, less the ~1.2 s load; a separate
+2-case run on the 4B measured 31.5 s, which fits). A candidate loop per fact
+would therefore cost minutes, so one consolidation may put
+`MemoryService.maximumSideEngineQuestions` (4) questions in total and at most
+`maximumQuestionsPerFact` (2) to any one fact — about a minute on the 4B, in the
+pause consolidation already runs in.
 
-- **T5 duplication**, in consolidation's write path, for facts in the session's
-  own scope: a fact whose key is new but whose content an existing key in the
-  same leading segment already carries is not stored, and the log names both
-  keys (`memory near-duplicate stopped: <new> is already <kept>`). Candidates
-  are capped at `MemoryService.maximumDuplicateCandidates`, because one
-  comparison is one model call. The shared-workspace path does not consult it
-  yet.
+Wired:
 
-Still to wire: **T7 retrieval**, ranking a scope's facts for a question, and
-**T3 contradiction**, which can only be advisory — disagreement is not
-supersession, and T4, which would tell the two apart, is not ready at any
-measured size. The reply check (T6) becomes available when the engine is a 9B.
+- **T5 duplication** and **T3 contradiction**, in consolidation, for facts in
+  the session's own scope and in the shared workspace. A new key whose content
+  an existing key in the same leading segment already carries is not stored, and
+  the log names both keys. A new key that cannot both be true with an existing
+  one is logged as a possible conflict and otherwise left alone: advisory by
+  design, because disagreement is not supersession and T4, which would tell them
+  apart, is one-sided at every measured size.
+
+Not wired:
+
+- **T7 retrieval.** It is ready — 100% at the 4B on the benchmark's cases — but
+  its only caller would be `memory_search`, a tool call the client's turn waits
+  on. At ~15 s a judgement that is up to a minute added to an interactive turn,
+  the opposite of the side-engine's design (concurrent, one thread, 3% to the
+  generation it overlaps). It stays on the port for a caller that can afford it:
+  an offline recall experiment, or a background pre-rank.
+- **T6 reply check** becomes available when the engine is a 9B.

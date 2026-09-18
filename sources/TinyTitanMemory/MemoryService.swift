@@ -22,10 +22,19 @@ public actor MemoryService {
     /// callers' no-decision fallback the ordinary path rather than a special
     /// case.
     private let sideEngine: (any MemorySideEngine)?
-    /// The most candidates one duplication check may ask about. One
-    /// comparison is one model call, and the engine is here to catch the
-    /// near-duplicate a key match cannot, not to search the store.
-    static let maximumDuplicateCandidates = 8
+    /// How many questions one consolidation may put to the side-engine, in
+    /// total.
+    ///
+    /// A judgement is a full generation on a CPU model, not a lookup:
+    /// measured over the wired cases, 15.3 s per case on the 4B and 30.0 s on
+    /// the 9B (`docs/side-engine-tasks.md`). A per-fact candidate loop would
+    /// therefore cost minutes, so the loop is bounded by a budget for the
+    /// whole consolidation instead. Four questions is about a minute on the
+    /// 4B, which is the pause consolidation already runs in.
+    static let maximumSideEngineQuestions = 4
+    /// And how many of them one fact may use, so the first fact cannot spend
+    /// the whole budget.
+    static let maximumQuestionsPerFact = 2
     /// One engine, one journal file and one workspace lock per scope.
     ///
     /// Not one engine for the whole service: a request that names another
@@ -563,6 +572,7 @@ public actor MemoryService {
         var held = 0
         var unchanged = 0
         var duplicates = 0
+        var conflicts = 0
         // Read once, and only when an engine is wired: the deterministic path
         // pays nothing for the check it cannot make.
         let candidates: [MemoryRecord]
@@ -572,124 +582,179 @@ public actor MemoryService {
         } else {
             candidates = []
         }
+        // The shared workspace's facts, read the first time one is needed.
+        var sharedCandidates: [MemoryRecord]?
+        var questionsLeft = Self.maximumSideEngineQuestions
         for record in records {
             // A fact about the person rather than the project goes to the
-            // shared workspace, where every project's bootstrap reads it.
+            // shared workspace, where every project's bootstrap reads it. Its
+            // conventions and preferences are the most user-asserted category
+            // in the store, so the guard reaches there too.
+            let scope: MemoryScope
+            let destination: any MemoryStore
+            let isShared: Bool
             if record.isGlobal, let sharedScope = configuration.sharedScope,
                context.scope != sharedScope {
-                let sharedStore = await activeStore(for: sharedScope)
-                if let current = try? await sharedStore.get(record.key, in: sharedScope),
-                   Self.fold(current.value) == Self.fold(record.value) {
-                    unchanged += 1
-                    continue
-                }
-                var stamped = record
-                stamped.sourceSession = context.session.id
-                do {
-                    // The person's own conventions and preferences live here.
-                    // They are the most user-asserted category in the store,
-                    // so the guard has to reach them too.
-                    switch try await sharedStore.set(stamped, in: sharedScope,
-                                                     guarding: configuration.guardsUserFacts) {
-                    case .stored, .reverted:
-                        written += 1
-                        log(.sharedFactWritten(key: stamped.key.rawValue))
-                    case .heldByGuard:
-                        log(.guardHeld(key: stamped.key.rawValue))
-                        held += 1
-                    }
-                } catch {
-                    log(.toolFailed(tool: "consolidation", detail: "\(error)"))
-                }
-                continue
+                scope = sharedScope
+                destination = await activeStore(for: sharedScope)
+                isShared = true
+            } else {
+                scope = context.scope
+                destination = store
+                isShared = false
             }
             // The extraction is told to write only what changed and still
             // restates unchanged facts: every eye colour in a novel got a v2
             // and a v3 with the identical value. A write that changes nothing
             // is version churn and completion tokens for no fact.
-            if let current = try? await store.get(record.key, in: context.scope),
+            if let current = try? await destination.get(record.key, in: scope),
                Self.fold(current.value) == Self.fold(record.value) {
                 unchanged += 1
                 continue
             }
-            // T5: a key the deterministic match could not pair with an
-            // existing one, but that says nothing new. Stopping here is what
-            // keeps one fact from acquiring two addresses, which is how a
-            // bootstrap ends up holding a contradiction against itself.
-            if let sideEngine,
-               let kept = await duplicateKey(of: record, among: candidates,
-                                             using: sideEngine) {
-                log(.nearDuplicateStopped(key: record.key.rawValue, kept: kept))
-                duplicates += 1
-                continue
-            }
-            var stamped = record
-            stamped.sourceSession = context.session.id
-            do {
-                if let continuity = store as? ContinuityStore {
-                    // The durable store also flags reversions, which the
-                    // protocol method deliberately does not: that heuristic
-                    // belongs to consolidation, not to every writer.
-                    switch try await continuity.set(
-                        stamped, in: context.scope,
-                        guarding: configuration.guardsUserFacts,
-                        flaggingReversions: true) {
-                    case .stored:
-                        written += 1
-                    case .reverted:
-                        log(.reversionFlagged(key: stamped.key.rawValue))
-                        written += 1
-                    case .heldByGuard:
-                        // Not written: the person said otherwise and the model
-                        // did not. The address is disputed, so the next
-                        // session is shown both rather than one of them. The
-                        // value that was kept stays out of the log, which
-                        // never carries a memory's contents.
-                        log(.guardHeld(key: stamped.key.rawValue))
-                        held += 1
+            // T5 and T3, over one budget for the whole consolidation: a new
+            // key that says nothing new is stopped, and a new key that cannot
+            // both be true with an existing one is recorded. The contradiction
+            // is advisory — disagreement is not supersession, and T4, which
+            // would tell them apart, is one-sided at every measured size — so
+            // it changes no write.
+            if let sideEngine, questionsLeft > 0 {
+                var pool = candidates
+                if isShared {
+                    if sharedCandidates == nil {
+                        sharedCandidates = (try? await destination.search(
+                            MemoryQuery(limit: 400), in: scope)) ?? []
                     }
-                } else {
-                    // Degraded to process-local storage: there is no
-                    // provenance to enforce precedence with, and the
-                    // protocol says so rather than pretending.
-                    _ = try await store.set(stamped, in: context.scope,
-                                            guarding: configuration.guardsUserFacts)
-                    written += 1
+                    pool = sharedCandidates ?? []
                 }
-            } catch {
-                log(.toolFailed(tool: "consolidation", detail: "\(error)"))
+                let verdict = await inspect(record, among: pool, using: sideEngine,
+                                            budget: min(questionsLeft,
+                                                        Self.maximumQuestionsPerFact))
+                questionsLeft -= verdict.asked
+                if let kept = verdict.duplicate {
+                    log(.nearDuplicateStopped(key: record.key.rawValue, kept: kept))
+                    duplicates += 1
+                    continue
+                }
+                if let conflictsWith = verdict.conflict {
+                    log(.contradictionFound(key: record.key.rawValue,
+                                            conflictsWith: conflictsWith))
+                    conflicts += 1
+                }
+            }
+            switch await write(record, to: destination, scope: scope,
+                               session: context.session.id,
+                               flaggingReversions: !isShared) {
+            case .stored:
+                written += 1
+                if isShared { log(.sharedFactWritten(key: record.key.rawValue)) }
+            case .reverted:
+                written += 1
+                log(.reversionFlagged(key: record.key.rawValue))
+            case .held:
+                // Not written: the person said otherwise and the model did
+                // not. The address is disputed, so the next session is shown
+                // both rather than one of them. No value is logged, ever.
+                log(.guardHeld(key: record.key.rawValue))
+                held += 1
+            case .failed:
+                break
             }
         }
         if unchanged > 0 { log(.unchangedSkipped(session: context.session.id, count: unchanged)) }
         if duplicates > 0 {
             log(.nearDuplicatesStopped(session: context.session.id, count: duplicates))
         }
+        if conflicts > 0 {
+            log(.contradictionsFound(session: context.session.id, count: conflicts))
+        }
         log(.consolidated(session: context.session.id, records: written))
         return written
     }
 
-    /// T5: the existing key a new fact duplicates, if there is one.
+    /// Where one record ended up, so the caller keeps the counting and the
+    /// logging in one place instead of at each destination.
+    enum WriteOutcome {
+        case stored
+        case reverted
+        case held
+        case failed
+    }
+
+    /// One fact into one store.
     ///
-    /// Candidates are the facts in the same leading segment, capped; one
-    /// comparison is one model call. `nil` — no engine answer, or none of the
-    /// candidates judged a duplicate — leaves the write exactly as it was.
-    private func duplicateKey(of record: MemoryRecord,
-                              among candidates: [MemoryRecord],
-                              using engine: any MemorySideEngine) async -> String? {
+    /// `flaggingReversions` is the consolidation heuristic, not the protocol's
+    /// rule: it is on for the project's own store and off for the shared
+    /// workspace and for every deliberate tool call.
+    private func write(_ record: MemoryRecord,
+                       to store: any MemoryStore,
+                       scope: MemoryScope,
+                       session: String,
+                       flaggingReversions: Bool) async -> WriteOutcome {
+        var stamped = record
+        stamped.sourceSession = session
+        do {
+            if let continuity = store as? ContinuityStore {
+                switch try await continuity.set(stamped, in: scope,
+                                                guarding: configuration.guardsUserFacts,
+                                                flaggingReversions: flaggingReversions) {
+                case .stored: return .stored
+                case .reverted: return .reverted
+                case .heldByGuard: return .held
+                }
+            }
+            // Degraded to process-local storage: there is no provenance to
+            // enforce precedence with, and the protocol says so rather than
+            // pretending.
+            _ = try await store.set(stamped, in: scope,
+                                    guarding: configuration.guardsUserFacts)
+            return .stored
+        } catch {
+            log(.toolFailed(tool: "consolidation", detail: "\(error)"))
+            return .failed
+        }
+    }
+
+    /// What the side-engine said about one new fact, and what it cost.
+    struct SideEngineVerdict {
+        let duplicate: String?
+        let conflict: String?
+        let asked: Int
+    }
+
+    /// T5 and T3 over one new fact, stopping as soon as the budget is gone.
+    ///
+    /// Candidates are facts in the same leading segment with a different key.
+    /// The duplicate is looked for first and ends the search when found — there
+    /// is nothing to add about a fact already stored. A contradiction is
+    /// carried back but never acted on here.
+    private func inspect(_ record: MemoryRecord,
+                         among candidates: [MemoryRecord],
+                         using engine: any MemorySideEngine,
+                         budget: Int) async -> SideEngineVerdict {
         let fact = MemoryFact(key: record.key.rawValue, value: record.value)
-        var checked = 0
+        var asked = 0
+        var conflict: String?
         for candidate in candidates {
             guard candidate.key != record.key,
                   candidate.key.category == record.key.category else { continue }
-            guard checked < Self.maximumDuplicateCandidates else { break }
-            checked += 1
+            guard asked < budget else { break }
             let existing = MemoryFact(key: candidate.key.rawValue,
                                       value: candidate.value)
-            if await engine.duplicates(fact, existing) == true {
-                return candidate.key.rawValue
+            asked += 1
+            // Stored first: the prompts answer YES in that order and NO
+            // reversed, so the order is part of the contract.
+            if await engine.duplicates(existing, fact) == true {
+                return SideEngineVerdict(duplicate: candidate.key.rawValue,
+                                         conflict: nil, asked: asked)
+            }
+            guard asked < budget else { break }
+            asked += 1
+            if conflict == nil, await engine.contradicts(existing, fact) == true {
+                conflict = candidate.key.rawValue
             }
         }
-        return nil
+        return SideEngineVerdict(duplicate: nil, conflict: conflict, asked: asked)
     }
 
     static func fold(_ value: String) -> String {
@@ -751,6 +816,13 @@ public enum MemoryLogEvent: Sendable, Equatable {
     /// How many facts the side-engine's near-duplicate check stopped in one
     /// consolidation.
     case nearDuplicatesStopped(session: String, count: Int)
+    /// A new key the side-engine judged unable to be true at the same time as
+    /// an existing one. Advisory: the write is not changed, because
+    /// disagreement is not supersession and T4, which would tell them apart,
+    /// is not ready.
+    case contradictionFound(key: String, conflictsWith: String)
+    /// How many possible contradictions one consolidation recorded.
+    case contradictionsFound(session: String, count: Int)
     /// A consolidation wrote a fact about the person to the shared workspace.
     case sharedFactWritten(key: String)
     /// Project files whose session log was expired by retention; facts kept.
@@ -789,6 +861,10 @@ public enum MemoryLogEvent: Sendable, Equatable {
             return "memory near-duplicate stopped: \(key) is already \(kept)"
         case .nearDuplicatesStopped(let session, let count):
             return "memory session=\(session) consolidation stopped \(count) near-duplicate(s)"
+        case .contradictionFound(let key, let conflictsWith):
+            return "memory possible conflict: \(key) may disagree with \(conflictsWith)"
+        case .contradictionsFound(let session, let count):
+            return "memory session=\(session) consolidation recorded \(count) possible conflict(s)"
         case .expired(let files):
             return "memory expired the session log of \(files.count) project file(s), facts kept: "
                 + files.joined(separator: ", ")

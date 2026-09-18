@@ -13,14 +13,17 @@ import TinyTitanMemory
 struct SideEngineMemoryAdapter: MemorySideEngine, Sendable {
     let engine: SideEngine
 
-    func duplicates(_ a: MemoryFact, _ b: MemoryFact) async -> Bool? {
-        await yesNo(.duplication(aKey: a.key, aValue: a.value,
-                                 bKey: b.key, bValue: b.value))
+    /// The stored fact is `A` and the incoming one `B`, which is the order the
+    /// prompts were measured in. On the 4B the same pair answers YES in that
+    /// order and NO reversed, so the mapping is part of the contract.
+    func duplicates(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? {
+        await yesNo(.duplication(aKey: stored.key, aValue: stored.value,
+                                 bKey: new.key, bValue: new.value))
     }
 
-    func contradicts(_ a: MemoryFact, _ b: MemoryFact) async -> Bool? {
-        await yesNo(.contradiction(aKey: a.key, aValue: a.value,
-                                   bKey: b.key, bValue: b.value))
+    func contradicts(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? {
+        await yesNo(.contradiction(aKey: stored.key, aValue: stored.value,
+                                   bKey: new.key, bValue: new.value))
     }
 
     func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool? {

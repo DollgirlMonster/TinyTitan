@@ -33,15 +33,22 @@ public struct MemoryFact: Sendable, Equatable {
 ///   (`docs/side-engine-tasks.md`).
 public protocol MemorySideEngine: Sendable {
     /// T5: do these two facts say the same thing? True means a reader learns
-    /// nothing from the second that the first did not already tell them.
-    func duplicates(_ a: MemoryFact, _ b: MemoryFact) async -> Bool?
+    /// nothing from `new` that `stored` did not already tell them.
+    ///
+    /// **`stored` comes first.** The order is not cosmetic: the prompts were
+    /// measured with the fact already in the store as `A` and the incoming one
+    /// as `B`, and on the 4B the same pair answers YES in that order and NO
+    /// reversed (`docs/side-engine-tasks.md`). A caller that swaps them gets a
+    /// silent no.
+    func duplicates(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool?
 
-    /// T3: do these two statements disagree?
+    /// T3: do these two statements disagree? `stored` first, for the same
+    /// reason.
     ///
     /// Advisory. Disagreement is not supersession — telling a state that moved
     /// on from one that is wrong is T4, which no measured size decides — so a
     /// caller must not refuse a write on this answer alone.
-    func contradicts(_ a: MemoryFact, _ b: MemoryFact) async -> Bool?
+    func contradicts(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool?
 
     /// T7: could this fact answer this question?
     func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool?

@@ -115,6 +115,58 @@ import TinyTitanMemory
                                              MemoryFact(key: "a/two", value: "1"))
         #expect(after == nil)
     }
+
+    /// The whole path with a real install: resolve, load, judge, shut down.
+    ///
+    /// A model run, and **release-only**: in a debug build the CPU engine is
+    /// unoptimized and one judgement takes tens of minutes, so there is no
+    /// point running it there. `TINYTITAN_SIDE_ENGINE_E2E` names the install,
+    /// defaulting to the shipped 4B (`=qwen3.5_9B_4Bit` for the 9B); run it
+    /// with `swift test -c release --no-parallel --filter
+    /// theRealInstallAnswersThroughTheFactoryAndTheAdapter`. Both installs
+    /// decide the two pairs below, and `benchmark/side_engine_wired_cases.py`
+    /// has the wider set.
+    @Test(.enabled(if: sideEngineEndToEndEnabled()))
+    func theRealInstallAnswersThroughTheFactoryAndTheAdapter() async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // TinyTitanServer
+            .deletingLastPathComponent()   // tests
+            .deletingLastPathComponent()   // <root>
+        let modelsDirectory = root.appendingPathComponent("models")
+        let requested = ProcessInfo.processInfo.environment["TINYTITAN_SIDE_ENGINE_E2E"]
+        let name = (requested?.isEmpty == false ? requested : nil)
+            ?? ServerSideEngineFactory.defaultInstall
+
+        let side = try #require(
+            ServerSideEngineFactory.make(
+                environment: [ServerSideEngineFactory.environmentKey: name],
+                modelsDirectory: modelsDirectory.path,
+                isClientGenerating: nil),
+            "no \(name) install under \(modelsDirectory.path)")
+        let adapter = SideEngineMemoryAdapter(engine: side)
+
+        // Stored first, incoming second. On the 4B the same pair reversed
+        // answers NO, which is why this order is asserted against the real
+        // model here as well as in the unit tests.
+        let duplicate = await adapter.duplicates(
+            MemoryFact(key: "characters/marcus/eyes", value: "grey"),
+            MemoryFact(key: "characters/marcus/eye_colour", value: "grey"))
+        #expect(duplicate == true)
+
+        let different = await adapter.duplicates(
+            MemoryFact(key: "characters/marcus/eyes", value: "grey"),
+            MemoryFact(key: "characters/ines/eyes", value: "green"))
+        #expect(different == false)
+
+        await adapter.shutdown()
+    }
+}
+
+/// A debug build runs the CPU engine unoptimized: one judgement there takes
+/// tens of minutes, so the model-run test is release-only.
+private func sideEngineEndToEndEnabled() -> Bool {
+    ProcessInfo.processInfo.environment["TINYTITAN_SIDE_ENGINE_E2E"] != nil
+        && !_isDebugAssertConfiguration()
 }
 
 /// Answers every question with one scripted string.
