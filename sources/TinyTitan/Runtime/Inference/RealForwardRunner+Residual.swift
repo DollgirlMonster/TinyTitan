@@ -521,7 +521,8 @@ extension RealForwardRunner {
         }
         cb = next
         let selection = indexer.selectKeysPrefill(startPosition: startPosition,
-                                                  tokens: tokens)
+                                                  tokens: tokens,
+                                                  layer: layer)
         // The chunk's last row is the one a sequential run's final decode
         // step also produces, so it is the comparable one.
         if activationDumpDirectory != nil, layer == Self.qsaSnapshotLayer,

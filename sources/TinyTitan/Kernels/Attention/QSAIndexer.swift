@@ -427,8 +427,18 @@ final class QSAIndexer {
     /// Every query gets the same treatment the decode path gives one: its own
     /// ragged tail forced in, then complete blocks by score until the cell
     /// budget runs out. A query inside the window keeps everything it can see.
-    func selectKeysPrefill(startPosition: Int, tokens: Int)
-        -> QSASelection? {
+    func selectKeysPrefill(startPosition: Int, tokens: Int,
+                           layer: Int = -1) -> QSASelection? {
+        let traceStart = ProcessInfo.processInfo.environment["TINYTITAN_QSA_SELECT_TRACE"] == "1"
+            ? clock_gettime_nsec_np(CLOCK_UPTIME_RAW) : 0
+        defer {
+            if traceStart != 0 {
+                let hostMillis = Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) &- traceStart) / 1e6
+                FileHandle.standardError.write(Data(String(format:
+                    "[qsa-select] layer=%d start=%d tokens=%d host_ms=%.3f\n",
+                    layer, startPosition, tokens, hostMillis).utf8))
+            }
+        }
         let lastVisible = startPosition + tokens
         guard lastVisible > selectionWidth else { return nil }
         let stride = lastVisible
