@@ -582,9 +582,11 @@ extension Model {
         overrides: [String: Int] = [:]
     ) throws {
         guard config.hyperConnections.enabled else { return }
-        /// One suffix per kernel that reads through `SlotGEMV`.
+        /// One suffix per kernel that reads through `SlotGEMV`. The
+        /// hyper-connection one carries no leading dot: its stems are
+        /// `attn_hyper_connection.…` and `mlp_hyper_connection.…`.
         let families: [(name: String, suffix: String)] = [
-            ("hyper-connection", ".hyper_connection.block_inject_weight"),
+            ("hyper-connection", "hyper_connection.block_inject_weight"),
             ("PLE", ".ple.key_proj"),
             ("QSA-indexer", ".self_attn.indexer.index_q_proj"),
         ]

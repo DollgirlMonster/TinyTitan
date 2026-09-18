@@ -121,6 +121,76 @@ import Foundation
         #expect(m.expertStride == 16384)
     }
 
+    /// One quant entry per tensor, not only the five slots.
+    ///
+    /// The runtime resolves a tensor's width through its override before the
+    /// slot's. That is how a dense install keeps `mlp.*` at 4 bits inside an
+    /// 8-bit slot, and how the hyper-connection gates, the PLE key projection
+    /// and the indexer's keys would be promoted for ~10 MB rather than taking
+    /// the whole attention block — 61% of the active parameters — to 8 bits.
+    @Test func aPerTensorQuantEntryBecomesAnOverride() throws {
+        let stem = "language_model.model.layers.0.self_attn.indexer.index_q_proj"
+        var quant = Self.quant()
+        quant[stem] = Self.quantSlot(8)
+        let (dir, toy) = try Self.writeToyManifest(["quant": quant])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let m = try ManifestReader.load(directoryURL: dir, expecting: toy)
+        #expect(m.quantOverrides == [stem: 8])
+        // The five slots are unchanged: an override says one tensor differs,
+        // not that the build did.
+        #expect(m.quant?.attention.weightBits == 4)
+    }
+
+    @Test func aTensorResolvesThroughItsOverrideThenItsSlot() throws {
+        let quant = try Self.decodedQuant()
+        let stem = "language_model.model.layers.0.self_attn.indexer.index_q_proj"
+
+        #expect(quant.slot(forTensorNamed: "\(stem).weight",
+                          overrides: [stem: 8],
+                          fallback: quant.attention).weightBits == 8)
+        #expect(quant.slot(forTensorNamed: "\(stem).weight",
+                          overrides: [:],
+                          fallback: quant.attention).weightBits == 4)
+        // Restating the slot's width is not an override.
+        #expect(quant.slot(forTensorNamed: "\(stem).weight",
+                          overrides: [stem: 4],
+                          fallback: quant.attention).weightBits == 4)
+    }
+
+    /// The three families whose weights read the attention slot until a
+    /// manifest overrides them, resolved the way `Model` resolves them.
+    @Test func aRoleResolvesBySuffixForTheSlotReadingFamilies() throws {
+        let quant = try Self.decodedQuant()
+        let overrides = [
+            "language_model.model.layers.0.attn_hyper_connection.block_inject_weight": 8,
+            "language_model.model.layers.0.ple.key_proj": 8,
+            "language_model.model.layers.0.self_attn.indexer.index_q_proj": 8,
+        ]
+        let fallback = quant.attention.weightBits
+        #expect(ManifestQuant.roleWeightBits(
+            roleSuffix: "hyper_connection.block_inject_weight",
+            overrides: overrides, fallback: fallback) == 8)
+        #expect(ManifestQuant.roleWeightBits(
+            roleSuffix: ".ple.key_proj", overrides: overrides, fallback: fallback) == 8)
+        #expect(ManifestQuant.roleWeightBits(
+            roleSuffix: ".self_attn.indexer.index_q_proj",
+            overrides: overrides, fallback: fallback) == 8)
+        // A family with no override keeps the attention slot.
+        #expect(ManifestQuant.roleWeightBits(
+            roleSuffix: ".mlp.gate_proj", overrides: overrides, fallback: fallback) == 4)
+    }
+
+    static func quantSlot(_ bits: Int) -> [String: Any] {
+        ["weightBits": bits, "scheme": "affine", "scaleType": "bf16",
+         "biasType": "bf16", "groupSize": Quantization.groupSize]
+    }
+
+    private static func decodedQuant() throws -> ManifestQuant {
+        let data = try JSONSerialization.data(withJSONObject: quant())
+        return try JSONDecoder().decode(ManifestQuant.self, from: data)
+    }
+
     @Test func peekFamilyKeepsFullQwenWhenBitWidthOverridesPresent() throws {
         let arch = ArchConfig.qwen36_35B_A3B
         var files: [String: [String: Any]] = [

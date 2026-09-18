@@ -108,6 +108,26 @@ public struct ManifestQuant: Decodable, Equatable, Sendable {
                                  scaleType: fallback.scaleType, biasType: fallback.biasType,
                                  groupSize: fallback.groupSize)
     }
+
+    /// The width a *role's* tensors are stored at: the override the manifest
+    /// declares for that role, else the fallback.
+    ///
+    /// Keyed by a name suffix rather than by one tensor, because the runtime
+    /// builds one kernel per role and a manifest's overrides name real tensors:
+    /// asking for `layers.0.self_attn.k_proj` would ask about a tensor a
+    /// Gated-DeltaNet layer does not have, and "no override" would read an
+    /// 8-bit k_proj as 4-bit nibbles.
+    ///
+    /// Sorted, so the answer is deterministic. Uniformity across a role is
+    /// enforced by the loader (`Model.validateRoleUniformity`), so there is
+    /// never more than one value to find; sorting means that if one ever slips
+    /// past, the width does not change between runs.
+    public static func roleWeightBits(roleSuffix: String,
+                                      overrides: [String: Int],
+                                      fallback: Int) -> Int {
+        overrides.sorted { $0.key < $1.key }
+            .first { $0.key.hasSuffix(roleSuffix) }?.value ?? fallback
+    }
 }
 
 public struct Manifest: Decodable, Equatable, Sendable {

@@ -160,15 +160,43 @@ def score(path: Path) -> int:
     return 0
 
 
+def baseline() -> int:
+    """What the token ranking scores with no model at all.
+
+    Two regimes, and the difference is the whole finding. A question phrased in
+    the store's own words is found perfectly — the key contains the term. A
+    question that avoids the target's words is where it fails, and the failure
+    is not a near miss: the top three fill up with facts that matched an
+    incidental word.
+    """
+    mechanical = [(f"What is {key.replace('/', ' ')}?", key) for key in BIBLE]
+    paraphrased = [(question, target) for question, target, _, fair in QUESTIONS if fair]
+    for name, cases in (("mechanical", mechanical), ("paraphrased", paraphrased)):
+        hits = {1: 0, 3: 0}
+        for question, target in cases:
+            rank = deterministic_rank(question)
+            for k in (1, 3):
+                hits[k] += recall(rank, target, k)
+        print(f"{name:13s} n={len(cases):3d}  recall@1 {hits[1]}/{len(cases)}  "
+              f"recall@3 {hits[3]}/{len(cases)}")
+    print("\nmechanical = the question uses the key's own words; paraphrased = it "
+          "does not.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prepare", type=Path)
     ap.add_argument("--score", type=Path)
+    ap.add_argument("--baseline", action="store_true",
+                    help="score the token ranking alone, no model")
     args = ap.parse_args()
     if args.prepare:
         return prepare(args.prepare)
     if args.score:
         return score(args.score)
+    if args.baseline:
+        return baseline()
     ap.print_help()
     return 1
 

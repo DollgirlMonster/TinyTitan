@@ -112,8 +112,9 @@ public struct Model {
     /// dispatcher per role; `validateRuntimeSchema` refuses an install that
     /// declares otherwise rather than reading some layers at the wrong width.
     func roleWeightBits(roleSuffix: String, fallback: Int) -> Int {
-        let matches = manifest.quantOverrides.filter { $0.key.hasSuffix(roleSuffix) }
-        return matches.first?.value ?? fallback
+        ManifestQuant.roleWeightBits(roleSuffix: roleSuffix,
+                                     overrides: manifest.quantOverrides,
+                                     fallback: fallback)
     }
 
     /// The width the `q_proj`/`o_proj` pair is stored at.
@@ -150,7 +151,9 @@ public struct Model {
     /// the gates have to be uniform and `validateRoleUniformity` refuses a
     /// manifest that declares otherwise.
     public var hyperConnectionWeightBits: Int {
-        roleWeightBits(roleSuffix: ".hyper_connection.block_inject_weight",
+        // No leading dot: the stem is `attn_hyper_connection.…` or
+        // `mlp_hyper_connection.…`, and `.hyper_connection…` matches neither.
+        roleWeightBits(roleSuffix: "hyper_connection.block_inject_weight",
                        fallback: attentionWeightBits)
     }
 
