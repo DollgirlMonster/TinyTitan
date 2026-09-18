@@ -227,11 +227,16 @@ public enum MemoryRanking {
             // rare one above a common one. Read off the store rather than
             // hardcoded: "town" naming one fact and appearing in another's
             // value is what put the town above the rain rule.
-            let haystacks = candidates.map { ($0, Self.haystack($0)) }
+            //
+            // One lowered haystack at a time, not one per candidate: the
+            // durable store scans up to 2000 records and a value may be 64 KiB,
+            // so holding them all at once would be hundreds of megabytes for a
+            // search that used to allocate one at a time.
             var documentFrequency: [String: Int] = [:]
-            for term in terms {
-                documentFrequency[term] = haystacks.reduce(0) {
-                    $0 + ($1.1.contains(term) ? 1 : 0)
+            for record in candidates {
+                let text = Self.haystack(record)
+                for term in terms where text.contains(term) {
+                    documentFrequency[term, default: 0] += 1
                 }
             }
             let documents = Double(max(1, candidates.count))
