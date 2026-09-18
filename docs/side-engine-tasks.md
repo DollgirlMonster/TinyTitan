@@ -174,3 +174,51 @@ branch.
 
 A task ships only when both halves are good. One-sided accuracy is the shape
 of a model that is not reading the question.
+
+## What the measurement found — 2026-09-18
+
+Run over the 60 cases the script can build here, on the 2B at 4 bits, greedy,
+through `TinyTitanBench cpu35batch`. T1 is not in this run: its cases come from
+the memory guard's recorded journals, which this checkout does not carry, so
+T1 keeps its 92% from 2026-09-11. Both prompt drafts were run over the same
+cases:
+
+```bash
+python3.13 benchmark/side_engine_tasks.py --prepare /tmp/jobs.jsonl
+.build/release/TinyTitanBench cpu35batch models/qwen3.5_2B_4Bit /tmp/jobs.jsonl /tmp/done.jsonl
+python3.13 benchmark/side_engine_tasks.py --score /tmp/done.jsonl
+```
+
+| task | draft | correct | half A | half B | ready |
+| --- | --- | --- | --- | --- | --- |
+| T2 durability | v1 (shipped) | 55% | 10/10 | 1/10 | no |
+| T2 durability | v2 | 60% | 10/10 | 2/10 | no |
+| T3 contradiction | v1 | 100% | 5/5 | 5/5 | **yes** |
+| T4 supersession | v1 | 50% | 3/3 | 0/3 | no |
+| T4 supersession | v2 | 17% | 1/3 | 0/3 | no |
+| T5 duplication | v1 | 50% | 0/4 | 4/4 | no |
+| T5 duplication | v2 | 100% | 4/4 | 4/4 | **yes** |
+| T6 reply check | v1 | 62% | 0/3 | 5/5 | no |
+| T7 retrieval | v1 | 88% | 3/4 | 4/4 | **yes** |
+
+Half A is the answer that says yes to the question (UPDATE for T4); half B is
+the one that says no (CONFLICT for T4).
+
+T3 and T7 pass unchanged in both drafts. T5 is the movement: v1 never says YES
+(0 of 4 pairs that are literally identical), and v2 is perfect — but v2 changes
+two things at once, the facts rendered as sentences and one added clause about
+different wording, so which of the two did the work is not yet separated. The
+sentence form is mechanical (`sentence()` in the benchmark: `characters/marcus/eyes
+= grey` becomes "Marcus's eyes: grey."), which is what would let the engine
+render every key it stores that way with no model in the loop.
+
+The three that are not ready fail in the lazy-branch shape above, and neither
+draft moves them off it. T2 says YES to 9 of the 10 lines of the novel it wrote,
+so it does not filter at all. T6 says NO to all three replies that do contradict
+the store. T4 is 0 of 3 CONFLICT in both drafts, and v2's added rule line makes
+the UPDATE cases worse — 2 of 3 flip to CONFLICT — which is why v2 scores lower
+than v1 there.
+
+So a caller may trust T1, T3, T7, and T5 only if the facts reach it as
+sentences. T2, T4 and T6 need a better prompt, a different model, or a caller
+that tolerates a one-sided answer; none of them decides today.
