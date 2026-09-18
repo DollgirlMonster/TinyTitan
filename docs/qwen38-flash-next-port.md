@@ -730,12 +730,25 @@ on dequantising one of these tensors, since everything above assumes they do.
 ### Still open
 
 - **Decode is 3-5 tok/s**, and it is bound by expert I/O, not compute: a
-  token touches 10 experts across 48 layers, and a route trace simulated
-  against an LRU cache puts the hit rate at 65% for the default 64 slots and
-  78% at 128, where it saturates. That is the ceiling for any policy at this
-  geometry --- 512 experts at top-10 spread far wider than Qwen 3.6's 256 at
-  top-8, which reaches 93.6%. Raising the slot budget is the obvious lever
-  and it costs resident memory: 128 slots is 15.8 GiB here.
+  token touches 10 experts across 48 layers. A route trace simulated against
+  an LRU cache once put the hit rate at 65% for 64 slots and 78% at 128,
+  "where it saturates". **Measured on the runtime 2026-09-18 (TT-011), it does
+  not saturate there:**
+
+  | slots | cache | hit | tok/s | MiB/token |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 64 | 7.92 GiB | 67.7% | 3.44 | 408.0 |
+  | 96 (shipped) | 11.88 GiB | 76.5% | 3.66 | 296.7 |
+  | 128 | 15.84 GiB | 82.6% | **1.21** | 220.0 |
+
+  7,550 prompt tokens, 256 new, greedy, interleaved two runs per point
+  (`benchmark/expert_cache_slots.py`). The hit rate keeps climbing (+6.1 points
+  from 96 to 128) and the reads drop 26%, but at 15.8 GiB this 24 GB machine
+  falls 3x on decode — the cache no longer fits beside the weights — so the
+  shipped 96 slots stay the default and 128 is reachable with
+  `--ram-budget 16G` on a machine that can hold it. The 512-experts-at-top-10
+  working set is far wider than Qwen 3.6's 256-at-top-8 (93.6% hit), which is
+  why this family buys cache where the others have flattened.
 - The n-gram gather still sits inline on the decode path, where it could be
   issued a token ahead. It is 5 KiB a token against the experts' hundreds of
   megabytes, so it is not where the time is.
