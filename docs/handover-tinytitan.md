@@ -1,32 +1,33 @@
-# Handover: after release 5.5, the first release under the TinyTitan name
+# Handover: after release 5.7, the engine and its loopback server
 
 **Paste this into the next session:**
 
 > Continue the TinyTitan work in this checkout. Read `AGENTS.md`, then
-> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.5 is cut and
-> published** (`v5.5` → `a1ad1be`); the project is TinyTitan everywhere, and the
-> two features it ships — JSON enforced by a grammar and a per-request thinking
-> switch — are described in `docs/release-notes-v5.5.md`. The eleven installs
-> under `models/` have receipts **valid for this folder**, because a rename
-> invalidates them; re-issue with `--verify-install` if the folder moves again.
-> **Verification uses only the installs already under `models/`** — never
-> download, convert, repack or re-install a model to make a gate pass, and never
-> fetch one of the installs the operator deleted. Report measurements, not
-> assurances.
+> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.7 is cut and
+> published** (`v5.7` → `44e1ae9`; `tinytitan-5.7-macos-arm64.tar.gz`, 15,303,284
+> bytes, 2026-09-17) and **`main` sits ten commits past it**; the release notes are
+> `docs/release-notes-v5.7.md`. The product is the engine plus its loopback server
+> — the Mac app is gone — and `tools/install_tinytitan.sh` now downloads a built
+> release instead of compiling one. The twelve installs under `models/` have
+> receipts **valid for this folder**, because a rename invalidates them; re-issue
+> with `--verify-install` if the folder moves again. **Verification uses only the
+> installs already under `models/`** — never download, convert, repack or re-install
+> a model to make a gate pass, and never fetch one of the installs the operator
+> deleted. Report measurements, not assurances.
 
-This is the only current brief. It supersedes the handover that preceded it,
-whose traps still bite and are folded in below.
+This is the only current brief; the 5.5 handover it replaces is superseded. The
+traps that one named still bite and are folded in below.
 
 > **The product shape changed: the GUI is gone.** The Mac app, the out-of-process
 > decode service, the app's library and test targets and `tools/make_app_icon.py`
 > were all removed. TinyTitan is an **LLM engine plus its loopback server**:
-> `tools/install_tinytitan.sh` builds the server, optionally downloads a model,
-> installs `~/.local/bin/tinytitan`, and offers to start the server; that command
-> runs `tools/server_launcher.sh`, which prints the base URL a client is pointed
-> at. **Do not add a GUI, a desktop front end, or any work that only one needs** —
-> `AGENTS.md` states the policy and the reason, and this is not a pause.
-> The app's `Info.plist` was also the tree's only version literal; that literal now
-> lives in `ServerVersion.current`
+> `tools/install_tinytitan.sh` downloads the published executables, optionally
+> downloads a model, installs `~/.local/bin/tinytitan`, and offers to start the
+> server; that command runs `tools/server_launcher.sh`, which prints the base URL a
+> client is pointed at. **Do not add a GUI, a desktop front end, or any work that
+> only one needs** — `AGENTS.md` states the policy and the reason, and this is not
+> a pause. The app's `Info.plist` was also the tree's only version literal; that
+> literal now lives in `ServerVersion.current`
 > (`sources/TinyTitanServer/Core/ServerVersion.swift`), is printed in the server's
 > ready banner, and is checked against the release tag by `tools/release.sh`.
 
@@ -46,6 +47,14 @@ whose traps still bite and are folded in below.
 > shebang, which macOS refuses to `exec` (`spawnSync pnpm ENOEXEC`) — the private
 > shim execs `@pnpm/exe.darwin-arm64` instead. `tools/dsh_local.sh status` says what
 > is installed.
+>
+> **Since 5.7 the pin is enforced rather than declared.** Both plugins support
+> exactly `0.1.6-alpha.2` — `dsh-tinytitan`'s peers are exact, not ranges — and
+> **refuse to run** on any other harness, including one whose version cannot be
+> read. A refusal never throws: it writes one line to stderr and returns, so DSH
+> boots, every other plugin loads, and removing ours leaves nothing to undo. stderr
+> is not a preference — the harness prints a plugin's log records only when the boot
+> itself fails, so a host-logger line would be invisible (tracker, plugins section).
 
 ## Where the work stands
 
@@ -53,106 +62,69 @@ whose traps still bite and are folded in below.
 | --- | --- |
 | Repository | `Pummelchen/TinyTitan` (renamed 2026-09-14; the old URL redirects) |
 | Checkout folder | `~/Downloads/TinyTitan` — **renamed from `~/Downloads/NVMAI`**, which invalidated every receipt and `.build`'s debug half |
-| `main` | `a1ad1be`, level with `origin/main`, and `v5.5` is that commit |
-| Release | **5.5 published** — `tinytitan-5.5-macos-arm64.tar.gz`, 26,094,346 bytes, sha256 `1e6f10bb…`; notes' digest matches the uploaded `.sha256` |
-| Models | **11 installs, 461 GB**; receipts re-issued 2026-09-14, so all load again |
-| Goldens stored | 16 (ten MoE + six dense); **10 checked here** (katcoder-4/8, qwen38-4/8, qwen35-{2b,4b,9b}-{4,8}); the six pruned MoE targets are reported not checked |
-| `.build` | release rebuilt after the rename; the stale **debug** tree was removed and rebuilt during the 5.5 dry run |
-| Wiki | `.qwen/wiki`, remote renamed to `TinyTitan.wiki.git`, level with `origin/master` at the 5.5 Changelog and tracker commits |
-| DeepSeek Harness | `web` profile runs `dsh-tinytitan` from this checkout; route provider `tinytitan` (10 models); `qwen38` preset's compaction row points at `dsh-tinytitan/backend` |
-| CI | the tagged commit's CI run is **green including `thread-sanitizer`**; the commit before it failed that job on an **intermittent** reported race at `HTTPServerSupport.swift:106` — see below |
+| `main` | `ab98829`, level with `origin/main`; the release tag is `v5.7` at `44e1ae9`, so **ten commits sit past it** |
+| Release | **5.7 published** 2026-09-17 — `tinytitan-5.7-macos-arm64.tar.gz`, 15,303,284 bytes, checksum beside it |
+| Models | **12 installs, 488 GB**; receipts re-issued 2026-09-14, so all load again |
+| Goldens stored | 16 (ten MoE + six dense); **11 checked here** (agentworld-4bit, qwen35-{2b,4b,9b}-{4,8}, qwen36-{4,8}, qwen38-125b-{4,8}); the five with no install — katcoder-{4,8}, ornith-{4,8}, agentworld-8bit — are reported *not checked* |
+| `.build` | release rebuilt after the rename; a clean scratch release build is part of the 5.7 dry run |
+| Wiki | `.qwen/wiki`, remote `TinyTitan.wiki.git`, level with `origin/master` at `3c0d5fc` |
+| DeepSeek Harness | pinned `0.1.6-alpha.2` and **enforced**; both plugins refuse any other version; the global harness runs the gate, the private one is refreshed but idle until its next start |
+| CI | the last completed `main` run (`da5dcba`) is **green on both jobs, including `thread-sanitizer`**; the two runs after it were cancelled by concurrency or still in flight, not failed |
 
-## What this session landed
+## What has landed since the 5.5 handover
 
-1. **5.5 is published** (`6f469e1` prep, `a1ad1be` notes). Gates on the tagged
-   commit: four lint gates clean (2059 scanned), **1523 tests in 234 suites**,
-   a warning-free clean scratch build, and **all ten installed golden baselines
-   byte-identical**. The six absent baselines are named in the notes, and
-   `models/` was fingerprinted before and after the golden phase.
-2. **The rename's receipts are re-issued.** All eleven bound
-   `/Users/andreborchert/Downloads/NVMAI/models/…`, so every install would have
-   failed with `trusted receipt invalid: model directory mismatch`. Re-issued in
-   place (461 GB re-hashed, no re-download), then proved by a real generation on
-   `qwen3.5_2B_4Bit`.
-3. **The DeepSeek Harness bundle is back, under the new name.** The `web`
-   profile depended on the deleted
-   `file:/Users/andreborchert/Downloads/NVMAI/plugins/dsh-nvmai`; it now runs
-   `dsh-tinytitan` from this checkout, which refreshed the route to provider
-   `tinytitan`, generated the `tinytitan` preset, re-pointed the `qwen38` preset's
-   compaction row, and left no `NVMAI` reference in `~/.dsh/settings.yaml`.
-4. **A route-writer defect found and fixed.** `tools/dsh_route.sh --write` left
-   its own three-line generated header above the section it replaced, so a
-   refresh — which the bundle does at **every harness boot** — added three stale
-   comment lines each time. A rewrite is now byte-identical and
-   `benchmark/test_dsh_route.py` pins it (11 tests).
-5. **The route no longer needs a checkout.** `plugins/dsh-tinytitan/src/generate.js`
-   discovers a `TinyTitanServer` binary and a `models/` directory, runs
-   `--catalog`, and writes the same block and the same settings surgery as the
-   shell tool — pinned byte-for-byte to `tools/dsh_route.sh --print` by its own
-   tests. The shell tool still wins wherever it exists, so a checkout user has
-   one source of truth; the generator is the catalogue case. `node --test` is 34
-   tests, all passing, none skipped.
+1. **5.6** (`2a06c1c`) — the three reported bugs, and an ANE answer of "no". The
+   app could not change models ([#9](https://github.com/Pummelchen/TinyTitan/issues/9));
+   the model installer looked for its binary at a SwiftPM target-triple path
+   ([#8](https://github.com/Pummelchen/TinyTitan/issues/8)); and the ANE exporter
+   wrote a sidecar the Neural Engine had refused and then ran the whole prefill on
+   the CPU. Also raised the build floor to Swift 6.4, gave the server per-session KV
+   and GDN state, and turned the wiki into a user guide with a Cookbook. Dry-run
+   gates: five lint gates clean (2,108 functions), **1,566 tests in 237 suites**,
+   nine goldens byte-identical.
+2. **5.7** (`44e1ae9`) — one command installs a built engine, and the app is gone.
+   `tools/install_tinytitan.sh` downloads the published arm64 executables, verifies
+   the checksum, unpacks them under `~/.tinytitan` and asks one question — which
+   model — so a Mac with no Xcode, Homebrew, Python or Node can go from nothing to a
+   served model; `--version TAG` pins a release and `--from-source` keeps the
+   build path. Every script now runs on `/bin/bash` **3.2.57**, which the launcher
+   did not even parse under before this release. Dry-run gates: six lint gates clean
+   (1,877 functions, 18 scripts), **1,361 tests in 204 suites**, nine goldens
+   byte-identical, and speeds recorded against the 5.6 baseline after a kernel-wide
+   low first pass forced a quiet re-measure.
+3. **The ten commits past the tag** — `plugins/dsh-lan-manager`, a LAN-scoped
+   control plane for a DSH fleet (four commits); the DSH harness pinned to
+   `0.1.6-alpha.2` with **both plugins refusing to run on any other version**
+   (`da5dcba`, `a0ad069`, `ab98829`), which is also what put the plugin suites into
+   CI; a README pass and a badge refresh; and a post-tag 5.7 prep commit carrying
+   the dry run's verification record and the committed speed record.
 
 ## What is open
 
 1. **The `thread-sanitizer` CI job is red on some commits and green on others —
-   an intermittent report in `SSEOutbox.next()`.** On `6f469e1` the job failed
-   with `ThreadSanitizer: reported 1 warnings` — `SUMMARY: ThreadSanitizer: data
-   race HTTPServerSupport.swift:106 in closure #1 in SSEOutbox.next()`, a write
-   by a GCD worker racing a read by `UnsafeContinuation.resume` on the NIO event
-   loop, on the `SSEOutbox` allocated at
-   `HTTPServerHandler+Responses.swift:107` — while its own tests passed
-   (`1523 tests in 234 suites`). On `a1ad1be`, which changes only
-   `docs/release-notes-v5.5.md`, **the same job passed** (17 min), and both local
-   instrumented runs are clean: `--filter ResponsesAPIHTTPTests` (9 tests) and
-   the full `swift test --no-parallel --sanitize=thread` (1523 tests, 392 s,
-   exit 0). So it is intermittent, not deterministic — which is what a real race
-   looks like, and also what a Swift-concurrency continuation artifact looks
-   like. **For benign:** `SSEOutbox`'s state is fully lock-guarded (`frames`,
-   `pendingDrain`, `closed`, `overflowed`, `abandoned`, `closeAfterDrain`,
-   `drainCancelled` are only touched under `NSLock`) and the read frame is
-   compiler-generated/NIO, not this project's code. **Against dismissing it:** an
-   intermittent race is exactly what the gate exists to catch, and a flaky gate
-   reddens unrelated pushes. Repeat the instrumented suite under load (or with
-   `TSAN_OPTIONS=halt_on_error=0` to collect every report) until it reproduces,
-   then decide between a fix, a documented suppression, and a narrowed scope. Do
-   not make CI green by deleting the job.
-2. **Publishing `plugins/dsh-tinytitan`** (researched; what is left is the
-   operator's call, not code). The route refresh **no longer needs a checkout**:
-   `plugins/dsh-tinytitan/src/generate.js` builds the same block in-process by
-   running the discovered `TinyTitanServer --catalog`, and its output is pinned
-   **byte-for-byte** to `tools/dsh_route.sh --print` by `test/generate.test.js`
-   against the real catalog (and a synthetic one). The shell tool stays
-   authoritative wherever a checkout exists; the generator is used only when it
-   is absent or `selfContained: true`. **Where a plugin is published is now
-   known** — `docs/dsh-plugin-publication.md` is the research: upstream has **no**
-   registry or catalogue (a tree search of `deepseek-ai/deepseek-harness` at
-   `master` finds none) and `dsh plugin` merely forwards to pnpm in the profile,
-   so distribution is npm and discovery is the community list
-   [`awesome-dsh-plugin/awesome-dsh-plugin`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin),
-   whose whole submission is one data file (`data/plugins/<owner>__<repo>.yml`,
-   at most 3 entries per PR). That document carries the ready-to-copy entry for
-   this repository's subpackage and the checklist — `dsh.bundle` ✓, a `plugins/`
-   subpackage the CI reads ✓, the `repository` field ✓, real tested code ✓, a repo
-   older than a day ✓, the npm name `dsh-tinytitan` unclaimed — and **it is
-   submitted**: the **`dsh-plugin` topic is set** on this repository, and
-   [PR #5094](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5094)
-   adds the one data file (+6/−0, mergeable) after the catalogue's own tooling
-   came back clean locally — `validateEntries()` clean over 3,633 entries,
-   `awesome-lint` at 79 warnings/0 errors identical to pristine `main`,
-   `added-dates` 3 passed, and a site build of 3,633 rows with detail pages and
-   sitemap entries in both locales. That audit also produced the trap worth
-   knowing: **`build-site.mjs` parses the generated READMEs, not
-   `data/plugins/*.yml`**, so a yml-only submission builds a site missing its own
-   entry until `pr-check.yml`'s regeneration step is replicated — a local row
-   count one below `readEntries()` is that, not a dropped entry. **The licence is
-   settled: MIT on purpose**, because the
-   plugin is an independent work that talks to the server over its HTTP API and
-   copies nothing from the project's lineage; the plugin README says so, so it is
-   not "aligned" with the repository's Apache-2.0 later. Remaining: the
-   catalogue maintainer's review, optional `screenshots.json`, and `npm publish`
-   if the operator wants download counts. The two
-   upstream asks in `docs/dsh-upstream-asks.md` are still unposted.
+   an intermittent report in `SSEOutbox.next()`.** The last completed `main` run
+   passed it, and both local instrumented runs are clean
+   (`--filter ResponsesAPIHTTPTests`, 9 tests; and the full
+   `swift test --no-parallel --sanitize=thread`, exit 0), which is what an
+   intermittent report looks like. **For benign:** `SSEOutbox`'s state is fully
+   lock-guarded (`frames`, `pendingDrain`, `closed`, `overflowed`, `abandoned`,
+   `closeAfterDrain`, `drainCancelled` are only touched under `NSLock`) and the read
+   frame is compiler-generated/NIO, not this project's code. **Against dismissing
+   it:** an intermittent race is exactly what the gate exists to catch, and a flaky
+   gate reddens unrelated pushes. Repeat the instrumented suite under load (or with
+   `TSAN_OPTIONS=halt_on_error=0` to collect every report) until it reproduces, then
+   decide between a fix, a documented suppression, and a narrowed scope. Do not make
+   CI green by deleting the job. See tracker section 1.
+2. **Publishing `plugins/dsh-tinytitan`** — still a decision, not code. The code
+   half is closed: the route refresh no longer needs a checkout
+   (`src/generate.js` runs the discovered `TinyTitanServer --catalog` and its output
+   is pinned byte-for-byte to `tools/dsh_route.sh --print`). **The catalogue PR is
+   still closed** — [#5094](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5094)
+   was closed 2026-09-15 with no comment and no entry in the catalogue — so the
+   choice is resubmit, npm, or a git host; ask why it closed before repeating it.
+   `docs/dsh-plugin-publication.md` carries the research and the ready-to-copy
+   entry. The licence is MIT on purpose. The two upstream asks in
+   `docs/dsh-upstream-asks.md` are still unposted.
 3. **The expert cache cannot be unwired on the models that wire it.**
    `TINYTITAN_KEEP_WIRED` can only turn it *on*, and the Qwen3.8/35B profile rows
    already set it, so on a 24 GB Mac the 12 GiB cache cannot be paged out
@@ -165,6 +137,17 @@ whose traps still bite and are folded in below.
 
 ## Traps worth carrying forward
 
+- **A hand-set `baseURL` can 404 every model call.** `dsh-llm-deepseek` defaults to
+  `protocol: messages`, whose root is `https://api.deepseek.com/anthropic`;
+  `https://api.deepseek.com/v1` is the chat-completions root, and every request then
+  goes to a path DeepSeek does not serve. All four fleet nodes were failing every
+  turn this way until 2026-09-18. The generated route (`tools/dsh_route.sh`) does
+  not make this mistake; config typed by hand does. Full entry in tracker section 4.
+- **A version gate must be visible, not merely correct.** The harness collects a
+  plugin's log records and prints them **only when the boot itself fails**, so a
+  refusal reported through the host logger is invisible on a healthy boot. Both
+  plugins write to stderr for that reason. Found by booting a throwaway harness in a
+  temporary `DSH_HOME`, not by reading — do that again for any boot-time claim.
 - **Renaming the checkout invalidates every install receipt and `.build`'s debug
   half.** Receipts bind absolute paths; re-issue with
   `swift run -c release TinyTitanRepack --verify-install --input-gturbo <dir>`
@@ -173,8 +156,7 @@ whose traps still bite and are folded in below.
   `precompiled file …_Builtin_stdbool….pcm was compiled with module cache path
   '/Users/andreborchert/Downloads/NVMAI/…'` **before a single test ran**;
   `release.sh` reports that as `swift test did not report a passing run`, which
-  reads like a failing test. Remove `.build/debug` and let it
-  rebuild.
+  reads like a failing test. Remove `.build/debug` and let it rebuild.
 - **A release tag that is not yet published may be force-moved.** The dry run's
   numbers must be in the notes, so the sequence is: commit prep → tag → dry run →
   fill in `### Verification` → commit → `git tag -f` → `git push --force origin
@@ -185,10 +167,12 @@ whose traps still bite and are folded in below.
   `plugins/dsh-tinytitan/`, re-install it
   (`dsh plugin --profile web remove dsh-tinytitan`, then `add
   file:<checkout>/plugins/dsh-tinytitan`) or the harness keeps running the copy.
+  This bit on 2026-09-18: both installed copies were a week of edits behind, and
+  only a re-install plus a harness restart put the current code in service.
 - **The wiki is a second repository with its own history.** Pull `.qwen/wiki`
   before editing it; the tracker and the Changelog are separate commits; the
   fine-grained PAT can read it but was rejected for push, so use the `gh`
-  credential helper (`gh auth setup-git`).
+  credential helper (`gh auth setup-git`). A push means **both** repositories.
 - **Verification is what is installed.** `models/` is pruned for disk on purpose;
   a target with no install is reported *not checked* and named in the notes, and
   nothing is fetched to change that. A stored baseline is never deleted because
