@@ -138,6 +138,30 @@ Environment variables, which is how the start scripts pass them:
 | `TINYTITAN_MEMORY_CONSOLIDATION_IDLE_SECONDS` | `30` | Quiet time after a turn before a session is distilled |
 | `TINYTITAN_MEMORY_LOCAL_FALLBACK` | `1` | `0` disables memory instead of degrading |
 | `TINYTITAN_MEMORY_GUARD` | `1` | Stops a model-derived fact from silently superseding one the person asserted. `0` turns it off; see below for what it is worth. |
+| `TINYTITAN_SIDE_ENGINE` | `qwen3.5_4B_4Bit` under the models directory | The resident CPU model the judgements run on: a directory, an install name under `--models-directory`, or `0` to leave it out. The weights load on the first judgement, never at boot. |
+
+### The side-engine
+
+With memory on, the server may keep one small model resident on the CPU to make
+the judgements a deterministic check cannot: whether a fact under a new key is
+a near-duplicate of one already stored, whether two statements disagree,
+whether a stored fact could answer a question. It runs on the cores the main
+engine leaves idle — one thread while a client generation is in flight (3% to a
+concurrent 35B generation, measured) and the performance cores in the gaps —
+and it is never on the critical path. A shut-down engine, a model that will not
+load, or a completion the parser refuses all read as "no decision", and the
+deterministic behaviour stands exactly as it did before the engine existed.
+
+**Which model, and which questions, is measured rather than assumed.** Over the
+60 cases `benchmark/side_engine_tasks.py` can build here, the shipped prompts
+decide contradiction, duplication and retrieval from the 4B up, and the reply
+check from the 9B; durability and supersession are one-sided at every size and
+are deliberately not offered. That is why the default is the 4B and why the 2B
+is not used — `docs/side-engine-tasks.md` carries the matrix. What is wired so
+far is near-duplicate suppression in consolidation, for facts in the session's
+own scope: a fact whose key is new but whose content an existing key in the
+same leading segment already carries is not stored, and the log names both
+keys. The shared-workspace path does not consult it yet.
 
 ### The guard
 

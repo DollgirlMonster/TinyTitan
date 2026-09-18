@@ -226,3 +226,32 @@ needed at the 4B, where the shipped `key = value` form already scores 100%.
 Runs made 2026-09-18 with the release `TinyTitanBench` built from `036f98c`;
 60 jobs, 7,276 tokens: 2B 386.2 s (18.8 tok/s), 4B 1,131.3 s (6.4), 4B v2
 1,168.3 s (6.6), 9B 2,244.1 s (3.2).
+
+## Where it is wired
+
+The port is `MemorySideEngine`
+(`sources/TinyTitanMemory/MemorySideEngine.swift`), and the server adapts
+`SideEngine` to it (`sources/TinyTitanServer/Core/SideEngineService.swift`).
+Only the tasks the matrix above says are ready have a method, and `nil` means
+"no decision", so an engine that is absent, shut down, or confused leaves the
+deterministic path exactly as it was.
+
+The model is `TINYTITAN_SIDE_ENGINE` — an install name under
+`--models-directory`, a directory, or `0` — and defaults to the 4B. The weights
+load on the first judgement, and the width comes from the server's
+`ServerCoordinator.generating` signal.
+
+Wired so far:
+
+- **T5 duplication**, in consolidation's write path, for facts in the session's
+  own scope: a fact whose key is new but whose content an existing key in the
+  same leading segment already carries is not stored, and the log names both
+  keys (`memory near-duplicate stopped: <new> is already <kept>`). Candidates
+  are capped at `MemoryService.maximumDuplicateCandidates`, because one
+  comparison is one model call. The shared-workspace path does not consult it
+  yet.
+
+Still to wire: **T7 retrieval**, ranking a scope's facts for a question, and
+**T3 contradiction**, which can only be advisory — disagreement is not
+supersession, and T4, which would tell the two apart, is not ready at any
+measured size. The reply check (T6) becomes available when the engine is a 9B.

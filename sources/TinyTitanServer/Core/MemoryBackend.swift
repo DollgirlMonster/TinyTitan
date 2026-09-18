@@ -517,14 +517,30 @@ public extension MemoryBackend {
 /// assembled or how memory logs; with memory off it is a pass-through and no
 /// memory type is constructed.
 public enum ServerMemoryFactory {
+    /// - Parameters:
+    ///   - modelsDirectory: where a side-engine install is looked up. Nil
+    ///     leaves the engine off unless a directory is named in the
+    ///     environment, and an engine that is off changes nothing.
+    ///   - isClientGenerating: read before every token the side-engine
+    ///     produces, so it takes one thread while a person is waiting and the
+    ///     performance cores in the gaps. Nil leaves the width alone, which is
+    ///     what a test or a benchmark wants.
     public static func wrap(_ backend: any ServerInferenceBackend,
-                            configuration: MemoryConfiguration = .fromEnvironment())
+                            configuration: MemoryConfiguration = .fromEnvironment(),
+                            modelsDirectory: String? = nil,
+                            isClientGenerating: (@Sendable () -> Bool)? = nil)
         -> any ServerInferenceBackend {
         guard configuration.isEnabled else {
             if let reason = configuration.disabledReason { ServerLog.memory(reason) }
             return backend
         }
-        let service = MemoryService(configuration: configuration) { event in
+        // Built before the service because the service holds the port. The
+        // weights are not read until the first judgement.
+        let sideEngine = ServerSideEngineFactory.make(modelsDirectory: modelsDirectory,
+                                                      isClientGenerating: isClientGenerating)
+        let service = MemoryService(
+            configuration: configuration,
+            sideEngine: sideEngine.map { SideEngineMemoryAdapter(engine: $0) }) { event in
             ServerLog.memory(event.message)
         }
         ServerLog.memory(configuration.summary)

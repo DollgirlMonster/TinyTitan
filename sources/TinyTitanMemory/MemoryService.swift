@@ -17,6 +17,15 @@ public actor MemoryService {
     /// operation; this is how the tests drive the service.
     private let injectedStore: (any MemoryStore)?
     private let injectedJournal: (any SessionJournal)?
+    /// The resident side-engine, when one is wired. Nil in every test and in a
+    /// deployment that has not asked for one, which is what keeps the
+    /// callers' no-decision fallback the ordinary path rather than a special
+    /// case.
+    private let sideEngine: (any MemorySideEngine)?
+    /// The most candidates one duplication check may ask about. One
+    /// comparison is one model call, and the engine is here to catch the
+    /// near-duplicate a key match cannot, not to search the store.
+    static let maximumDuplicateCandidates = 8
     /// One engine, one journal file and one workspace lock per scope.
     ///
     /// Not one engine for the whole service: a request that names another
@@ -55,6 +64,7 @@ public actor MemoryService {
     public init(configuration: MemoryConfiguration,
                 durableStore: (any MemoryStore)? = nil,
                 journal: (any SessionJournal)? = nil,
+                sideEngine: (any MemorySideEngine)? = nil,
                 log: @escaping @Sendable (MemoryLogEvent) -> Void = { _ in }) {
         self.configuration = configuration
         self.localStore = InMemoryStore(limits: configuration.limits)
@@ -62,6 +72,7 @@ public actor MemoryService {
         self.log = log
         self.injectedStore = durableStore
         self.injectedJournal = journal
+        self.sideEngine = sideEngine
     }
 
     /// The engine, store and journal for a scope, built on first use.
@@ -365,6 +376,9 @@ public actor MemoryService {
         workspaces.removeAll()
         lastUsed.removeAll()
         reportedJournalFailures.removeAll()
+        // The side-engine is a second resident model, so it is released on the
+        // same shutdown that releases the stores rather than at process exit.
+        await sideEngine?.shutdown()
     }
 
     /// The journal, for a caller that wants to read it back. Never used to
@@ -548,6 +562,16 @@ public actor MemoryService {
         var written = 0
         var held = 0
         var unchanged = 0
+        var duplicates = 0
+        // Read once, and only when an engine is wired: the deterministic path
+        // pays nothing for the check it cannot make.
+        let candidates: [MemoryRecord]
+        if sideEngine != nil {
+            candidates = (try? await store.search(MemoryQuery(limit: 400),
+                                                  in: context.scope)) ?? []
+        } else {
+            candidates = []
+        }
         for record in records {
             // A fact about the person rather than the project goes to the
             // shared workspace, where every project's bootstrap reads it.
@@ -588,6 +612,17 @@ public actor MemoryService {
                 unchanged += 1
                 continue
             }
+            // T5: a key the deterministic match could not pair with an
+            // existing one, but that says nothing new. Stopping here is what
+            // keeps one fact from acquiring two addresses, which is how a
+            // bootstrap ends up holding a contradiction against itself.
+            if let sideEngine,
+               let kept = await duplicateKey(of: record, among: candidates,
+                                             using: sideEngine) {
+                log(.nearDuplicateStopped(key: record.key.rawValue, kept: kept))
+                duplicates += 1
+                continue
+            }
             var stamped = record
             stamped.sourceSession = context.session.id
             do {
@@ -626,8 +661,35 @@ public actor MemoryService {
             }
         }
         if unchanged > 0 { log(.unchangedSkipped(session: context.session.id, count: unchanged)) }
+        if duplicates > 0 {
+            log(.nearDuplicatesStopped(session: context.session.id, count: duplicates))
+        }
         log(.consolidated(session: context.session.id, records: written))
         return written
+    }
+
+    /// T5: the existing key a new fact duplicates, if there is one.
+    ///
+    /// Candidates are the facts in the same leading segment, capped; one
+    /// comparison is one model call. `nil` — no engine answer, or none of the
+    /// candidates judged a duplicate — leaves the write exactly as it was.
+    private func duplicateKey(of record: MemoryRecord,
+                              among candidates: [MemoryRecord],
+                              using engine: any MemorySideEngine) async -> String? {
+        let fact = MemoryFact(key: record.key.rawValue, value: record.value)
+        var checked = 0
+        for candidate in candidates {
+            guard candidate.key != record.key,
+                  candidate.key.category == record.key.category else { continue }
+            guard checked < Self.maximumDuplicateCandidates else { break }
+            checked += 1
+            let existing = MemoryFact(key: candidate.key.rawValue,
+                                      value: candidate.value)
+            if await engine.duplicates(fact, existing) == true {
+                return candidate.key.rawValue
+            }
+        }
+        return nil
     }
 
     static func fold(_ value: String) -> String {
@@ -682,6 +744,13 @@ public enum MemoryLogEvent: Sendable, Equatable {
     case guardHeld(key: String)
     /// Facts a consolidation returned that already held the same value.
     case unchangedSkipped(session: String, count: Int)
+    /// A new key whose content an existing key already carried. The store
+    /// keeps one address instead of two, and both keys are named — never a
+    /// value.
+    case nearDuplicateStopped(key: String, kept: String)
+    /// How many facts the side-engine's near-duplicate check stopped in one
+    /// consolidation.
+    case nearDuplicatesStopped(session: String, count: Int)
     /// A consolidation wrote a fact about the person to the shared workspace.
     case sharedFactWritten(key: String)
     /// Project files whose session log was expired by retention; facts kept.
@@ -716,6 +785,10 @@ public enum MemoryLogEvent: Sendable, Equatable {
             return "memory shared fact written for every project: \(key)"
         case .unchangedSkipped(let session, let count):
             return "memory session=\(session) consolidation skipped \(count) unchanged fact(s)"
+        case .nearDuplicateStopped(let key, let kept):
+            return "memory near-duplicate stopped: \(key) is already \(kept)"
+        case .nearDuplicatesStopped(let session, let count):
+            return "memory session=\(session) consolidation stopped \(count) near-duplicate(s)"
         case .expired(let files):
             return "memory expired the session log of \(files.count) project file(s), facts kept: "
                 + files.joined(separator: ", ")

@@ -69,12 +69,16 @@ public actor TinyTitanHTTPServer {
                 heartbeatInterval: TimeAmount = .seconds(5),
                 reasoningProfile: ServerReasoningProfile = .default,
                 group: MultiThreadedEventLoopGroup = .init(numberOfThreads: 1),
-                router: (any ModelRouting)? = nil) {
+                router: (any ModelRouting)? = nil,
+                coordinator: ServerCoordinator? = nil) {
         self.group = group
         self.modelID = modelID
         self.backend = backend
-        self.coordinator = ServerCoordinator(queueLimit: queueLimit,
-                                             width: maxConcurrentSequences)
+        // Injectable so a resident side-engine can read the same
+        // `generating` signal the coordinator raises for every client
+        // generation, which is how it chooses its width.
+        self.coordinator = coordinator ?? ServerCoordinator(queueLimit: queueLimit,
+                                                            width: maxConcurrentSequences)
         self.heartbeatInterval = heartbeatInterval
         self.reasoningProfile = reasoningProfile
         self.router = router

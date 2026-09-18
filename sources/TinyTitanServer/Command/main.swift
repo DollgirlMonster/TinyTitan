@@ -166,9 +166,19 @@ do {
             expertCacheSlots: session.expertCacheSlots)
     }
 
+    // The coordinator owns the "a client generation is in flight" signal, and
+    // the resident side-engine reads it to choose its width, so it is built
+    // here and handed to both.
+    let coordinator = ServerCoordinator(queueLimit: arguments.queueLimit,
+                                        width: concurrency)
+
     // Persistent memory wraps whatever backend was built: one decorator on
-    // the way in, and nothing at all when it is disabled.
-    let servingBackend = ServerMemoryFactory.wrap(backend)
+    // the way in, and nothing at all when it is disabled. The side-engine is
+    // built inside, from `TINYTITAN_SIDE_ENGINE` or the default install.
+    let servingBackend = ServerMemoryFactory.wrap(
+        backend,
+        modelsDirectory: arguments.modelsDirectory,
+        isClientGenerating: { coordinator.generating.isBusy })
 
     let server = TinyTitanHTTPServer(
         modelID: facts.modelID,
@@ -176,7 +186,8 @@ do {
         maxConcurrentSequences: concurrency,
         backend: servingBackend,
         reasoningProfile: try reasoningProfile ?? makePlan().reasoningProfile(),
-        router: router)
+        router: router,
+        coordinator: coordinator)
     _ = try await server.start(port: arguments.port)
     let diskCache = facts.promptCacheMode == .off
         ? "off" : arguments.promptCacheDiskDirectory ?? "off"
