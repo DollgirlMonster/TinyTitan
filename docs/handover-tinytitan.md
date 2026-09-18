@@ -64,12 +64,12 @@ traps that one named still bite and are folded in below.
 | Checkout folder | `~/Downloads/TinyTitan` — **renamed from `~/Downloads/NVMAI`**, which invalidated every receipt and `.build`'s debug half |
 | `main` | `ab98829`, level with `origin/main`; the release tag is `v5.7` at `44e1ae9`, so **ten commits sit past it** |
 | Release | **5.7 published** 2026-09-17 — `tinytitan-5.7-macos-arm64.tar.gz`, 15,303,284 bytes, checksum beside it |
-| Models | **12 installs, 488 GB**; receipts re-issued 2026-09-14, so all load again |
+| Models | **12 installs, 488 GB**; every receipt re-checked on 2026-09-18 as bound to this path, so all load |
 | Goldens stored | 16 (ten MoE + six dense); **11 checked here** (agentworld-4bit, qwen35-{2b,4b,9b}-{4,8}, qwen36-{4,8}, qwen38-125b-{4,8}); the five with no install — katcoder-{4,8}, ornith-{4,8}, agentworld-8bit — are reported *not checked* |
 | `.build` | release rebuilt after the rename; a clean scratch release build is part of the 5.7 dry run |
 | Wiki | `.qwen/wiki`, remote `TinyTitan.wiki.git`, level with `origin/master` at `3c0d5fc` |
 | DeepSeek Harness | pinned `0.1.6-alpha.2` and **enforced**; both plugins refuse any other version; the global harness runs the gate, the private one is refreshed but idle until its next start |
-| CI | the last completed `main` run (`da5dcba`) is **green on both jobs, including `thread-sanitizer`**; the two runs after it were cancelled by concurrency or still in flight, not failed |
+| CI | the last completed `main` run (`da5dcba`) is **green on both jobs, including `thread-sanitizer`**; runs after it were cancelled by concurrency or still in flight, not failed |
 
 ## What has landed since the 5.5 handover
 
