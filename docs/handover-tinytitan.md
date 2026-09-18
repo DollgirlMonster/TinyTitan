@@ -117,8 +117,13 @@ traps that one named still bite and are folded in below.
    was closed 2026-09-15 with no comment and no entry in the catalogue — so the
    choice is resubmit, npm, or a git host; ask why it closed before repeating it.
    `docs/dsh-plugin-publication.md` carries the research and the ready-to-copy
-   entry. The licence is MIT on purpose. The two upstream asks in
-   `docs/dsh-upstream-asks.md` are still unposted.
+   entry; it was **resubmitted 2026-09-18 as
+   [#5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396)**
+   (both CI checks green and mergeable) and now waits on a maintainer with write
+   access — this account cannot merge it. The licence is MIT on purpose.
+   `docs/dsh-upstream-asks.md` posted all three asks on 2026-09-18; #7109 and
+   #7110 have verified replies (the doc carries the corrections, including the
+   one that made our first patch wrong) and #7111 is unanswered.
 2. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
    the GPU, a higher expert slot budget, the n-gram gather a token ahead). The
    hardware blockers **TT-021** to **TT-023** were closed on 2026-09-19 — no other

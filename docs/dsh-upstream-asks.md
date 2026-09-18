@@ -14,6 +14,13 @@ disabled and discussions enabled**, so all three are Discussions in *Ideas*:
 
 The patches are small enough to apply locally meanwhile.
 
+**Two replies arrived from `argszero` (2026-09-18/19), and both were re-verified
+against the installed `0.1.6-alpha.2` before this doc was corrected in place.**
+The asks hold. The first suggested patch was wrong in a way that would have
+turned working configurations into silent no-ops, and the second does not
+compile as written; both corrections are below, and a working third-party
+plugin for the first now exists.
+
 Both are about the *seam*, not about any one provider: they change what every
 route gets, and both already hold on the first-party DeepSeek adapter.
 
@@ -53,30 +60,67 @@ profile default level is a thinking level, compaction and session titles think.
   A pi-ai-backed route has no equivalent, so the same harness behaves two ways
   depending on which adapter serves the model.
 
-**Suggested patch** (one place, no schema change): treat an auxiliary purpose as
-naming `off` when the call names no level, in whichever layer resolves the
-default — e.g. in `dsh-llm`'s `resolveCallWithInfo`:
+**Suggested patch, corrected by the reply.** The shape first proposed here —
+force `off` whenever the purpose is auxiliary — is wrong, because a named
+`reasoningEffort` is not a preference: it is a claim that the route supports
+that level, and `resolveCallWithInfo` enforces the claim in two places
+(`packages/llm/llm/src/index.ts:886-901`):
 
-```js
-const AUXILIARY_PURPOSES = new Set(["compaction", "session-title"]);
-// …
-const requested = defaulted.reasoningEffort
-  ?? (AUXILIARY_PURPOSES.has(defaulted.purpose) ? "off" : undefined);
-```
+- on a **non-reasoning route** (`reasoning === undefined`) it raises
+  `UNSUPPORTED_REASONING_EFFORT`;
+- on a **reasoning route whose `efforts` omit `off`** it raises the same. And
+  `off` is easy to omit: `resolveModelReasoning`
+  (`llm-pi-ai/src/catalog.ts:710-745`) writes `map[level] = null` for every
+  level a `reasoningEfforts` dict did *not* name, and
+  `getSupportedThinkingLevels` (`llm-pi-ai/src/models.ts:59-66`) drops exactly
+  those — so `reasoningEfforts: { low, high }` advertises a reasoning route
+  with no `off` in it. (Spelling `off:` with an empty value keeps it; leaving
+  the key out is what removes it.)
 
-Every reasoning model the harness can route lists `off` among its efforts, so the
-existing `UNSUPPORTED_REASONING_EFFORT` check stays the guard it is today.
-Alternatively a profile field (`auxiliaryReasoning`, defaulting to `off`) would
-let a deployment opt out; the seam-level default seems truer to the intent.
+Measured on three declared pi-ai routes, dispatching the auxiliary-call shape
+(`purpose: "compaction"`) with `off` named:
 
-**Acceptance.** With a thinking route, a session's first prompt issues a
-`purpose: "session-title"` request with no thinking (no `reasoning_content`, no
-reasoning tokens in usage), and a compaction call behaves the same, while an
-ordinary turn still thinks at the route's default.
+| route profile | `resolveModelInfo().reasoning` | auxiliary call naming `off` |
+| --- | --- | --- |
+| `reasoningEfforts: { low: …, high: … }` | `{ efforts: [low, high] }` | `finish` `{"kind":"error","code":"UNSUPPORTED_REASONING_EFFORT"}`, **zero content chunks** |
+| `reasoningEfforts: { off:, low: …, high: … }` | `{ efforts: [off, low, high] }` | dispatched normally |
+| `reasoningEfforts: false` | `undefined` | `finish` error `UNSUPPORTED_REASONING_EFFORT`, zero content chunks |
 
-**Local mitigation meanwhile.** TinyTitan ships `plugins/dsh-tinytitan`, a thin bundle
-that mounts a compaction backend forcing `off` for those calls; the route's own
-`reasoning` default still decides ordinary turns.
+The failure is silent where it matters: `stream()` does not throw at the call
+site — the refusal becomes a terminal `finish` chunk carrying the error and no
+content. A compaction produces no checkpoint and a session-title call produces
+a title-less session. The fix therefore has to **ask** the capability rather
+than assume it: `reasoning` present **and** the target level ∈ `efforts` ⇒ name
+it; anything else ⇒ pass the request through unchanged. That is exactly what
+the public `ctx.llm.resolveModelInfo(provider, model, signal)` answers
+(`packages/llm/llm/src/index.ts:733`).
+
+**Also measured on the reply, and not in the original ask:** `purpose ===
+"session-title"` is the **only** purpose `resolveThinking` special-cases in
+`llm-deepseek` (`protocols/chat-completions/serialize.ts:77`), so **compaction
+thinks even on the harness's own adapter** — `x-deepseek-harness-compact: 1`
+asks the *server* to act, it does not stop client-side thinking. The split is
+title vs compaction inside deepseek as well as pi-ai vs deepseek.
+
+**Mountable meanwhile.** The reply author shipped
+[`@argszero/cordis-plugin-aux-reasoning@0.1.0`](https://www.npmjs.com/package/@argszero/cordis-plugin-aux-reasoning)
+([repo](https://github.com/argszero/cordis-plugin-aux-reasoning)), which joins
+the public `llm/stream` waterfall — it sees the raw options, `purpose`
+included, before `resolveCallWithInfo` — looks the route up with
+`resolveModelInfo`, and re-dispatches as a new object only when the target
+level is genuinely offered and the route's declared default differs. Every
+uncertain case is a pass-through plus a report, never a refusal; the target
+defaults to `off`. 25 tests pass against four published `dsh-llm` lines
+(0.1.2-rc.1, 0.1.3-alpha.2, 0.1.5-rc.2, 0.1.6-alpha.2).
+
+**Local mitigation meanwhile.** TinyTitan ships `plugins/dsh-tinytitan`, a thin
+bundle that mounts a compaction backend forcing `off` for compaction calls —
+not titles, because a host-plane plugin's context cannot be wrapped, which is
+ask 1's title half. It names `off` unconditionally, which is correct for the
+routes this checkout emits (`tools/dsh_route.sh` and `generate.js` always list
+`off`), but a route that omits it would silently produce no checkpoint; the
+capability query above is the hardening if this override is ever pointed at a
+foreign route.
 
 ---
 
@@ -114,17 +158,47 @@ most of their output tokens. TinyTitan does report the field; the adapter discar
 it. The doc comment ("reasoning folded into output by pi-ai") describes pi-ai's
 *output* bucket, not the separate count pi-ai also returns.
 
-**Suggested patch** (one line, mirroring the cache fields' "only when non-zero"
-rule):
+**Suggested patch, corrected by the reply.** `reasoning` is optional in pi-ai's
+`Usage` (`@earendil-works/pi-ai/dist/types.d.ts:277`), so the one-line form
+above does not compile under strict null checks; it has to guard the type as
+well as zero:
 
 ```js
-...usage.reasoning > 0 ? { reasoningTokens: usage.reasoning } : {},
+...usage.reasoning !== undefined && usage.reasoning > 0
+  ? { reasoningTokens: usage.reasoning } : {},
 ```
+
+`> 0` is still the right predicate, but not as a copy of the cache fields'
+"only when non-zero" rule: `dsh-llm-deepseek`'s `mapUsage` keeps a reported
+`0` (`reasoning !== undefined`,
+`protocols/chat-completions/translate.ts:70`), and transposing *that* predicate
+here would emit `reasoningTokens: 0` on **every** pi-ai turn. pi-ai's own
+mappers collapse absence into `0` before the harness sees it —
+`reasoning: rawUsage.completion_tokens_details?.reasoning_tokens || 0`
+(`openai-completions.js:1201`, and the same shape in
+`openai-responses-shared.js:449`, `google-generative-ai.js:171` and
+`google-vertex.js:180`) — which is why `!== undefined && > 0` is what makes a
+non-thinking turn omit the field while a reported `0` also omits it.
+
+**Boundary worth putting in the record.** On the completions / responses /
+google paths, "the provider reports no breakdown" and "the provider reports
+zero" both surface as `0`, so the mapped field cannot separate them. It reports
+thinking tokens where thinking was counted and stays absent otherwise, which is
+the most the harness vocabulary can express without a second tri-state field.
 
 **Acceptance.** On a pi-ai route, a thinking turn's `assistant/message` record
 carries `reasoningTokens` matching the provider's
 `completion_tokens_details.reasoning_tokens`; a non-thinking turn omits it, as
-the cache fields do.
+the cache fields do. The reply adds two cases to `llm-pi-ai`'s tests: a
+non-thinking turn, and a provider that reports a count.
+
+**Not mountable.** The reply checked before assuming: the value is discarded
+inside the adapter, before any chunk exists. The only surfaces a plugin can
+see are the mapped `TokenUsage` on the usage chunk and the terminal `finish`
+chunk's `ReplayEnvelope`, and `toPiReplayState` (`llm-pi-ai/src/replay.ts:77-111`)
+carries no usage and no cost. A plugin could only invent a count, which
+per-turn accounting should not accept as provider-reported. This belongs in
+the adapter.
 
 ---
 
@@ -167,7 +241,11 @@ rejects a Host header that is neither the bound address nor an explicit
 
 The first two are small enough to carry as a patch against the installed package
 while upstream decides — but an upgrade replaces `node_modules`, so re-apply
-after one. The first is already worked around by `plugins/dsh-tinytitan` for
-compaction; the second cannot be worked around from outside the adapter, which is
-why it is the more valuable of the two. The third is a schema change in two
-packages, so it is upstream or a fork rather than a patch.
+after one. The first is worked around by `plugins/dsh-tinytitan` for compaction,
+and now also by the third-party `@argszero/cordis-plugin-aux-reasoning` for both
+purposes; the seam fix is still the right home for the default, and any local
+patch has to take the corrected "ask, then name" shape rather than forcing
+`off`. The second cannot be worked around from outside the adapter, which is
+why it is the more valuable of the two, and its corrected form is one line. The
+third is a schema change in two packages, so it is upstream or a fork rather
+than a patch.

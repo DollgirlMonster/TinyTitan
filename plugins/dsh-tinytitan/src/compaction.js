@@ -6,15 +6,14 @@
  * a local thinking model means a summariser that thinks inside its own output
  * cap, and a title call that costs tens of seconds on every new session.
  *
- * A `dsh-llm-deepseek` route has the same behaviour built in
- * (`resolveThinking`: `purpose === "session-title"` returns
- * `{ thinking: "disabled" }`); this module is the equivalent for any route the
- * harness serves through pi-ai, and it does it without reimplementing the
- * compaction engine: `dsh-compaction-basic`'s `summarizeWithLlm` reads exactly
- * one thing off the context it is handed — `ctx.llm.stream` — so a context that
- * delegates everything and overrides that one member is enough, and the
- * instruction, the checkpoint envelope, the pricing and the retry policy all
- * stay the engine's.
+ * `dsh-llm-deepseek` special-cases `purpose === "session-title"` only
+ * (`resolveThinking` returns `{ thinking: "disabled" }`), so compaction thinks
+ * on that route too; this module is the equivalent for any route the harness
+ * serves, and it does it without reimplementing the compaction engine:
+ * `dsh-compaction-basic`'s `summarizeWithLlm` reads exactly one thing off the
+ * context it is handed — `ctx.llm.stream` — so a context that delegates
+ * everything and overrides that one member is enough, and the instruction, the
+ * checkpoint envelope, the pricing and the retry policy all stay the engine's.
  *
  * @module dsh-tinytitan/compaction
  */
