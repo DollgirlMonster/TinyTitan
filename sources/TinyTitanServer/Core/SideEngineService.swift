@@ -13,6 +13,10 @@ import TinyTitanMemory
 struct SideEngineMemoryAdapter: MemorySideEngine, Sendable {
     let engine: SideEngine
 
+    func isDurable(_ fact: MemoryFact) async -> Bool? {
+        await yesNo(.durability(key: fact.key, value: fact.value))
+    }
+
     /// The stored fact is `A` and the incoming one `B`, which is the order the
     /// prompts were measured in. On the 4B the same pair answers YES in that
     /// order and NO reversed, so the mapping is part of the contract.

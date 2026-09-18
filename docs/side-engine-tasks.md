@@ -296,12 +296,17 @@ over the wired cases, one judgement costs **15.2 s on the 4B** and **29.8 s on
 the 9B** (12 cases in 183.1 s and 359.7 s, less the ~1.2 s load; a separate
 2-case run on the 4B measured 31.5 s, which fits). A candidate loop per fact
 would therefore cost minutes, so one consolidation may put
-`MemoryService.maximumSideEngineQuestions` (4) questions in total and at most
-`maximumQuestionsPerFact` (2) to any one fact — about a minute on the 4B, in the
-pause consolidation already runs in.
+`MemoryService.maximumSideEngineQuestions` (6) questions in total and at most
+`maximumQuestionsPerFact` (3) to any one fact — about a minute and a half on the
+4B, in the pause consolidation already runs in.
 
 Wired:
 
+- **T2 durability**, asked first about each fact: one the engine judges not
+  worth keeping is not stored at all, and only the key is logged. It is asked
+  only about model-derived facts — the person's own statements are not the
+  engine's to discard — and a `false` ends the check for that fact, so no
+  comparison is paid for a fact that is going anyway.
 - **T5 duplication** and **T3 contradiction**, in consolidation, for facts in
   the session's own scope and in the shared workspace. A new key whose content
   an existing key in the same leading segment already carries is not stored, and
@@ -311,10 +316,6 @@ Wired:
 
 Not wired:
 
-- **T2 durability.** It is ready at the 4B (95%), which is the default install,
-  but no caller asks it yet: the port has no durability method. The natural
-  caller is consolidation — drop what a later session does not need before it is
-  stored — and the judgement is one question per fact against the same budget.
 - **T4 supersession.** It is ready at both installs once the rule is supplied,
   and nothing supplies one: the port has no supersession method and no path
   looks up a stored rule for the key. That lookup is its own small retrieval

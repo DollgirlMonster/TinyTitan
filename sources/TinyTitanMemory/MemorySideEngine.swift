@@ -33,6 +33,15 @@ public struct MemoryFact: Sendable, Equatable {
 ///   has a caller yet, so neither has a method; add one with its caller
 ///   (`docs/side-engine-tasks.md`).
 public protocol MemorySideEngine: Sendable {
+    /// T2: is this fact worth keeping after the session ends? False means the
+    /// store should not hold it: a line of the story, a remark about the
+    /// writing, an acknowledgement.
+    ///
+    /// A caller must not drop a fact the person asserted on this answer alone —
+    /// the guard's whole premise is that their words are not the model's to
+    /// discard — so the memory path asks only about model-derived facts.
+    func isDurable(_ fact: MemoryFact) async -> Bool?
+
     /// T5: do these two facts say the same thing? True means a reader learns
     /// nothing from `new` that `stored` did not already tell them.
     ///

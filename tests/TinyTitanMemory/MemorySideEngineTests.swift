@@ -156,6 +156,49 @@ import Testing
         #expect(engine.pairs.first?.1.key == "language/response_language")
     }
 
+    @Test func aFactNotWorthKeepingIsNotStored() async throws {
+        let store = InMemoryStore()
+        let engine = StubSideEngine(duplicates: false, contradicts: false, durable: false)
+        let log = LogCollector()
+        let service = MemoryService(configuration: configuration(),
+                                    durableStore: store,
+                                    sideEngine: engine,
+                                    log: { log.append($0) })
+        let context = try #require(await service.beginSession(id: "s-durable"))
+
+        let written = await service.storeConsolidation(
+            [try fact("chapters/note", "Chapter 12: Ines turned the pages.")], in: context)
+
+        #expect(written == 0)
+        let stored = try await store.get(try MemoryKey(validating: "chapters/note"),
+                                         in: context.scope)
+        #expect(stored == nil)
+        #expect(log.messages().contains { $0.contains("not worth keeping") })
+        #expect(log.messages().contains { $0.contains("dropped 1 fact") })
+        // The check ends at the durability answer, so no candidate question
+        // was asked.
+        #expect(engine.questions == 1)
+        #expect(engine.pairs.isEmpty)
+    }
+
+    @Test func aUsersOwnStatementIsNeverDropped() async throws {
+        let store = InMemoryStore()
+        let engine = StubSideEngine(duplicates: false, contradicts: false, durable: false)
+        let service = MemoryService(configuration: configuration(),
+                                    durableStore: store,
+                                    sideEngine: engine)
+        let context = try #require(await service.beginSession(id: "s-asserted"))
+
+        var asserted = try fact("decisions/sync", "Keep the queue single-threaded.")
+        asserted.isUserAsserted = true
+        let written = await service.storeConsolidation([asserted], in: context)
+
+        // Durability is not the engine's question about the person's words, so
+        // it is not even asked.
+        #expect(written == 1)
+        #expect(engine.durabilityQuestions == 0)
+    }
+
     @Test func theQuestionBudgetSpansTheWholeConsolidation() async throws {
         let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: false, contradicts: false)
@@ -185,17 +228,30 @@ private final class StubSideEngine: MemorySideEngine, @unchecked Sendable {
     private let lock = NSLock()
     private let duplicateAnswer: Bool?
     private let contradictionAnswer: Bool?
+    private let durabilityAnswer: Bool?
     private var asked: [(MemoryFact, MemoryFact)] = []
     private var contradictionAsked = 0
+    private var durabilityAsked = 0
 
-    init(duplicates duplicateAnswer: Bool?, contradicts contradictionAnswer: Bool? = nil) {
+    init(duplicates duplicateAnswer: Bool?,
+         contradicts contradictionAnswer: Bool? = nil,
+         durable durabilityAnswer: Bool? = nil) {
         self.duplicateAnswer = duplicateAnswer
         self.contradictionAnswer = contradictionAnswer
+        self.durabilityAnswer = durabilityAnswer
     }
 
     var pairs: [(MemoryFact, MemoryFact)] { lock.withLock { asked } }
-    /// Every question of either kind: the budget counts both.
-    var questions: Int { lock.withLock { asked.count + contradictionAsked } }
+    var durabilityQuestions: Int { lock.withLock { durabilityAsked } }
+    /// Every question of any kind: the budget counts them all.
+    var questions: Int {
+        lock.withLock { asked.count + contradictionAsked + durabilityAsked }
+    }
+
+    func isDurable(_ fact: MemoryFact) async -> Bool? {
+        lock.withLock { durabilityAsked += 1 }
+        return durabilityAnswer
+    }
 
     func duplicates(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? {
         lock.withLock { asked.append((stored, new)) }

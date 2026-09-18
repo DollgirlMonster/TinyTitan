@@ -26,15 +26,16 @@ public actor MemoryService {
     /// total.
     ///
     /// A judgement is a full generation on a CPU model, not a lookup:
-    /// measured over the wired cases, 15.3 s per case on the 4B and 30.0 s on
+    /// measured over the wired cases, 15.2 s per case on the 4B and 29.8 s on
     /// the 9B (`docs/side-engine-tasks.md`). A per-fact candidate loop would
     /// therefore cost minutes, so the loop is bounded by a budget for the
-    /// whole consolidation instead. Four questions is about a minute on the
-    /// 4B, which is the pause consolidation already runs in.
-    static let maximumSideEngineQuestions = 4
-    /// And how many of them one fact may use, so the first fact cannot spend
-    /// the whole budget.
-    static let maximumQuestionsPerFact = 2
+    /// whole consolidation instead. Six questions is about a minute and a half
+    /// on the 4B, which is the pause consolidation already runs in.
+    static let maximumSideEngineQuestions = 6
+    /// And how many of them one fact may use — durability, then a duplicate
+    /// and a contradiction against one candidate — so the first fact cannot
+    /// spend the whole budget.
+    static let maximumQuestionsPerFact = 3
     /// One engine, one journal file and one workspace lock per scope.
     ///
     /// Not one engine for the whole service: a request that names another
@@ -573,6 +574,7 @@ public actor MemoryService {
         var unchanged = 0
         var duplicates = 0
         var conflicts = 0
+        var dropped = 0
         // Read once, and only when an engine is wired: the deterministic path
         // pays nothing for the check it cannot make.
         let candidates: [MemoryRecord]
@@ -629,8 +631,16 @@ public actor MemoryService {
                 }
                 let verdict = await inspect(record, among: pool, using: sideEngine,
                                             budget: min(questionsLeft,
-                                                        Self.maximumQuestionsPerFact))
+                                                        Self.maximumQuestionsPerFact),
+                                            checkingDurability: !record.isUserAsserted)
                 questionsLeft -= verdict.asked
+                if verdict.durable == false {
+                    // T2, and only for a fact the model derived: the person's
+                    // own statements are not the engine's to discard.
+                    log(.notDurableStopped(key: record.key.rawValue))
+                    dropped += 1
+                    continue
+                }
                 if let kept = verdict.duplicate {
                     log(.nearDuplicateStopped(key: record.key.rawValue, kept: kept))
                     duplicates += 1
@@ -664,6 +674,9 @@ public actor MemoryService {
         if unchanged > 0 { log(.unchangedSkipped(session: context.session.id, count: unchanged)) }
         if duplicates > 0 {
             log(.nearDuplicatesStopped(session: context.session.id, count: duplicates))
+        }
+        if dropped > 0 {
+            log(.notDurablesStopped(session: context.session.id, count: dropped))
         }
         if conflicts > 0 {
             log(.contradictionsFound(session: context.session.id, count: conflicts))
@@ -717,23 +730,38 @@ public actor MemoryService {
 
     /// What the side-engine said about one new fact, and what it cost.
     struct SideEngineVerdict {
+        /// `false` means the fact is not worth keeping; `nil` is no answer.
+        let durable: Bool?
         let duplicate: String?
         let conflict: String?
         let asked: Int
     }
 
-    /// T5 and T3 over one new fact, stopping as soon as the budget is gone.
+    /// T2, T5 and T3 over one new fact, stopping as soon as the budget is gone.
     ///
-    /// Candidates are facts in the same leading segment with a different key.
-    /// The duplicate is looked for first and ends the search when found — there
-    /// is nothing to add about a fact already stored. A contradiction is
-    /// carried back but never acted on here.
+    /// Durability comes first and ends the whole check when the answer is no —
+    /// a fact that is not worth keeping needs no comparison. Candidates are
+    /// facts in the same leading segment with a different key; the duplicate is
+    /// looked for before the contradiction, and finding one ends the search
+    /// because there is nothing to add about a fact already stored.
+    /// `checkingDurability` is false for a fact the person asserted, which is
+    /// not the engine's to discard.
     private func inspect(_ record: MemoryRecord,
                          among candidates: [MemoryRecord],
                          using engine: any MemorySideEngine,
-                         budget: Int) async -> SideEngineVerdict {
+                         budget: Int,
+                         checkingDurability: Bool) async -> SideEngineVerdict {
         let fact = MemoryFact(key: record.key.rawValue, value: record.value)
         var asked = 0
+        var durable: Bool?
+        if checkingDurability, budget > 0 {
+            asked += 1
+            durable = await engine.isDurable(fact)
+            if durable == false {
+                return SideEngineVerdict(durable: durable, duplicate: nil,
+                                         conflict: nil, asked: asked)
+            }
+        }
         var conflict: String?
         for candidate in candidates {
             guard candidate.key != record.key,
@@ -745,7 +773,8 @@ public actor MemoryService {
             // Stored first: the prompts answer YES in that order and NO
             // reversed, so the order is part of the contract.
             if await engine.duplicates(existing, fact) == true {
-                return SideEngineVerdict(duplicate: candidate.key.rawValue,
+                return SideEngineVerdict(durable: durable,
+                                         duplicate: candidate.key.rawValue,
                                          conflict: nil, asked: asked)
             }
             guard asked < budget else { break }
@@ -754,7 +783,8 @@ public actor MemoryService {
                 conflict = candidate.key.rawValue
             }
         }
-        return SideEngineVerdict(duplicate: nil, conflict: conflict, asked: asked)
+        return SideEngineVerdict(durable: durable, duplicate: nil,
+                                 conflict: conflict, asked: asked)
     }
 
     static func fold(_ value: String) -> String {
@@ -809,6 +839,12 @@ public enum MemoryLogEvent: Sendable, Equatable {
     case guardHeld(key: String)
     /// Facts a consolidation returned that already held the same value.
     case unchangedSkipped(session: String, count: Int)
+    /// A fact the side-engine judged not worth keeping. It is not stored at
+    /// all, and only the key is logged.
+    case notDurableStopped(key: String)
+    /// How many facts the side-engine's durability check dropped from one
+    /// consolidation.
+    case notDurablesStopped(session: String, count: Int)
     /// A new key whose content an existing key already carried. The store
     /// keeps one address instead of two, and both keys are named — never a
     /// value.
@@ -859,6 +895,11 @@ public enum MemoryLogEvent: Sendable, Equatable {
             return "memory session=\(session) consolidation skipped \(count) unchanged fact(s)"
         case .nearDuplicateStopped(let key, let kept):
             return "memory near-duplicate stopped: \(key) is already \(kept)"
+        case .notDurableStopped(let key):
+            return "memory not worth keeping, not stored: \(key)"
+        case .notDurablesStopped(let session, let count):
+            return "memory session=\(session) consolidation dropped \(count) fact(s) not "
+                + "worth keeping"
         case .nearDuplicatesStopped(let session, let count):
             return "memory session=\(session) consolidation stopped \(count) near-duplicate(s)"
         case .contradictionFound(let key, let conflictsWith):

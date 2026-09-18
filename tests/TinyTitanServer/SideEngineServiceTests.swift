@@ -158,6 +158,18 @@ import TinyTitanMemory
             MemoryFact(key: "characters/ines/eyes", value: "green"))
         #expect(different == false)
 
+        // T2, on one case each way. Both installs reject this narration line
+        // and keep this standing fact; the 9B rejects only 3 of the benchmark's
+        // 10 narration lines against the 4B's 9, which is why the default is
+        // the 4B.
+        let narration = await adapter.isDurable(
+            MemoryFact(key: "session/note2", value: "I will write the next ten chapters now."))
+        #expect(narration == false)
+
+        let standing = await adapter.isDurable(
+            MemoryFact(key: "characters/marcus/eyes", value: "grey"))
+        #expect(standing == true)
+
         await adapter.shutdown()
     }
 }
