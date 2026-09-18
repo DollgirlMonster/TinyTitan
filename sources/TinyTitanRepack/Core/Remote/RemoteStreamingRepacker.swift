@@ -1103,33 +1103,54 @@ public extension RemoteStreamingRepacker {
             family: source.arch.family)
         where local.shareNgramTable && requirement.name == "ngram_table.bin" {
             try Task.checkCancellation()
-            let origin = (local.inputSnapshotDir as NSString)
-                .appendingPathComponent(requirement.name)
-            guard (try? Posix.entryKind(origin)) == .regular else { continue }
-            let destination = (paths.partialDirectory as NSString)
-                .appendingPathComponent(requirement.name)
-            // `entryKind` reports `.absent` for a missing path rather
-            // than throwing, so `try?` is `.some(.absent)` and a `!= nil`
-            // test is true for a file that is not there.
-            if (try? Posix.entryKind(destination)) == .regular {
-                try FileManager.default.removeItem(atPath: destination)
-            }
-            try FileManager.default.linkItem(atPath: origin, toPath: destination)
-            let a = try FileManager.default.attributesOfItem(atPath: origin)
-            let b = try FileManager.default.attributesOfItem(atPath: destination)
-            let sa = (a[FileAttributeKey.size] as? NSNumber)?.uint64Value ?? 0
-            let sb = (b[FileAttributeKey.size] as? NSNumber)?.uint64Value ?? 1
-            guard sa == sb, sa > 0 else {
-                throw RepackError.configurationInvalid(
-                    detail: "\(requirement.name): linked \(sb) bytes, expected \(sa)")
-            }
-            // Digested like any other output. A hardlink is the same
-            // bytes, so the receipt attests over it exactly as it would
-            // over a copy -- sharing changes the disk cost, not the proof.
+            guard let destination = try Self.linkPassthroughFile(
+                named: requirement.name,
+                from: local.inputSnapshotDir,
+                into: paths.partialDirectory) else { continue }
+            // Digested like any other output. A hardlink is the same bytes, so
+            // the receipt attests over it exactly as it would over a copy --
+            // sharing changes the disk cost, not the proof.
             try recordOutputFile(relativePath: requirement.name,
                                  path: destination,
                                  progress: progress)
         }
+    }
+
+    /// Hardlink one passthrough file from the snapshot into the partial
+    /// directory, or nil when the snapshot does not carry it.
+    ///
+    /// Hardlink rather than symlink: both installs then hold one inode, so
+    /// deleting either leaves the other intact, and the runtime's `F_NOCACHE`
+    /// reads are indifferent to the extra link. It needs the two on one
+    /// filesystem, which an install and its snapshot are.
+    ///
+    /// The size check is not ceremony. A truncated or empty table would link
+    /// happily and then be read as a table with rows that are not there, so a
+    /// zero-length origin is refused rather than shared. The name is a
+    /// constant (`ngram_table.bin`) and never comes from a snapshot, so there
+    /// is no traversal to guard here.
+    static func linkPassthroughFile(named name: String,
+                                    from snapshotDirectory: String,
+                                    into partialDirectory: String) throws -> String? {
+        let origin = (snapshotDirectory as NSString).appendingPathComponent(name)
+        guard (try? Posix.entryKind(origin)) == .regular else { return nil }
+        let destination = (partialDirectory as NSString).appendingPathComponent(name)
+        // `entryKind` reports `.absent` for a missing path rather than
+        // throwing, so `try?` is `.some(.absent)` and a `!= nil` test is true
+        // for a file that is not there.
+        if (try? Posix.entryKind(destination)) == .regular {
+            try FileManager.default.removeItem(atPath: destination)
+        }
+        try FileManager.default.linkItem(atPath: origin, toPath: destination)
+        let a = try FileManager.default.attributesOfItem(atPath: origin)
+        let b = try FileManager.default.attributesOfItem(atPath: destination)
+        let sa = (a[FileAttributeKey.size] as? NSNumber)?.uint64Value ?? 0
+        let sb = (b[FileAttributeKey.size] as? NSNumber)?.uint64Value ?? 1
+        guard sa == sb, sa > 0 else {
+            throw RepackError.configurationInvalid(
+                detail: "\(name): linked \(sb) bytes, expected \(sa)")
+        }
+        return destination
     }
 
     private func executeLocalCopy(
