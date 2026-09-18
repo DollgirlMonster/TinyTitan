@@ -98,29 +98,18 @@ traps that one named still bite and are folded in below.
    (`da5dcba`, `a0ad069`, `ab98829`), which is also what put the plugin suites into
    CI; a README pass and a badge refresh; and a post-tag 5.7 prep commit carrying
    the dry run's verification record and the committed speed record.
-4. **Since this brief was written** — `TINYTITAN_KEEP_WIRED` is a tri-state, so `=0`
-   pages the expert cache out even on a 35B row that wires it (TT-008), and the LAN
-   manager reads a session's history with no live agent (TT-030). The [Project
+4. **Since this brief was written** — the `thread-sanitizer` gate is decided: one
+   top-frame suppression for a reproduced Swift-concurrency false positive, with
+   `tools/tsan-storm.sh` kept as the reproduction (TT-001). `TINYTITAN_KEEP_WIRED` is
+   a tri-state, so `=0` pages the expert cache out even on a 35B row that wires it
+   (TT-008), and the LAN manager reads a session's history with no live agent
+   (TT-030). The [Project
    Tracker](https://github.com/Pummelchen/TinyTitan/wiki/Project-Tracker) remains the
    authority on what is still open.
 
 ## What is open
 
-1. **The `thread-sanitizer` CI job is red on some commits and green on others —
-   an intermittent report in `SSEOutbox.next()`.** The last completed `main` run
-   passed it, and both local instrumented runs are clean
-   (`--filter ResponsesAPIHTTPTests`, 9 tests; and the full
-   `swift test --no-parallel --sanitize=thread`, exit 0), which is what an
-   intermittent report looks like. **For benign:** `SSEOutbox`'s state is fully
-   lock-guarded (`frames`, `pendingDrain`, `closed`, `overflowed`, `abandoned`,
-   `closeAfterDrain`, `drainCancelled` are only touched under `NSLock`) and the read
-   frame is compiler-generated/NIO, not this project's code. **Against dismissing
-   it:** an intermittent race is exactly what the gate exists to catch, and a flaky
-   gate reddens unrelated pushes. Repeat the instrumented suite under load (or with
-   `TSAN_OPTIONS=halt_on_error=0` to collect every report) until it reproduces, then
-   decide between a fix, a documented suppression, and a narrowed scope. Do not make
-   CI green by deleting the job. See **TT-001** in the wiki Project Tracker.
-2. **Publishing `plugins/dsh-tinytitan`** — still a decision, not code. The code
+1. **Publishing `plugins/dsh-tinytitan`** — still a decision, not code. The code
    half is closed: the route refresh no longer needs a checkout
    (`src/generate.js` runs the discovered `TinyTitanServer --catalog` and its output
    is pinned byte-for-byte to `tools/dsh_route.sh --print`). **The catalogue PR is
@@ -130,7 +119,7 @@ traps that one named still bite and are folded in below.
    `docs/dsh-plugin-publication.md` carries the research and the ready-to-copy
    entry. The licence is MIT on purpose. The two upstream asks in
    `docs/dsh-upstream-asks.md` are still unposted.
-3. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
+2. Carried forward unchanged: the Qwen 3.8 port items (QSA indexer selections to
    the GPU, a higher expert slot budget, the n-gram gather a token ahead), and the
    hardware blockers **TT-021** to **TT-023** (validation on M1/M2/M4/M5/M6, ANE across
    generations, long-context parity past the exactness window).

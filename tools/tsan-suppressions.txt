@@ -1,0 +1,58 @@
+# ThreadSanitizer suppressions for TinyTitan's CI gate.
+#
+# Used by the `thread-sanitizer` job (and by any local `swift test
+# --sanitize=thread`), through:
+#
+#   TSAN_OPTIONS=suppressions=<checkout>/tools/tsan-suppressions.txt
+#
+# One entry, one reason. Adding another needs the same evidence this one has:
+# a reproduction, and an argument for why the report is not this project's race.
+
+# TT-001 — a Swift-concurrency happens-before that TSan does not model.
+#
+# What it reports, always the same shape (reproduced 2026-09-18):
+#
+#   Write of size 8 at <addr> by T<n>:
+#     #0 closure #1 in SSEOutbox.next() HTTPServerSupport.swift
+#   Previous read of size 8 at <addr> by T<m>:
+#     #0 UnsafeContinuation.resume(returning:) <compiler-generated>
+#     #1 closure #1 in closure #1 in EventLoopFuture.get() AsyncAwaitSupport.swift:90
+#     ... SelectableEventLoop.run ...
+#   Location is heap block of size 1016 allocated by:
+#     #2 closure #1 in closure #3 in ServerHTTPHandler.handleResponses(...) HTTPServerSupport... Responses.swift:108
+#
+# Reproduce (the sanitized server bundle, six processes at once; a single run is
+# usually clean, so the load is what makes it show):
+#
+#   swift build --build-tests --sanitize=thread
+#   B=.build/out/Products/Debug/TinyTitanServerTests.xctest/Contents/MacOS/TinyTitanServerTests
+#   D=.build/out/Products/Debug/TinyTitanServerTests.xctest/Contents/Frameworks/libclang_rt.tsan_osx_dynamic.dylib
+#   for i in 1 2 3 4 5 6; do
+#     DYLD_INSERT_LIBRARIES=$D TSAN_OPTIONS=halt_on_error=0 \
+#       swiftpm-testing-helper --test-bundle-path $B --no-parallel $B \
+#       --testing-library swift-testing &
+#   done; wait
+#
+# Why it is not ours. The racy block is the **drainer Task's own heap allocation**
+# (the closure context at Responses.swift:108), not the outbox: `SSEOutbox` is a
+# separate, small object and every one of its fields is only touched under its
+# `NSLock` (`frames`, `pendingDrain`, `closed`, `overflowed`, `abandoned`,
+# `closeAfterDrain`, `drainCancelled`). The two accesses are the NIO event loop
+# **resuming** the drainer task (`EventLoopFuture.get()`, from `writeSSEChunk`)
+# and that task, once woken on a GCD worker, writing its async frame — the
+# happens-before edge of a `swift_task_switch` that TSan does not see when the
+# resumer is not a Swift task. It needs the drainer to be resumed on another
+# thread at the same moment its frame is written, which is why contention (CI,
+# or six local processes) is what exposes it.
+#
+# Why `race_top` rather than `race`. `race_top` matches only the **top frame** of
+# one of the two stacks; here that is Swift's own continuation-resume helper. A
+# real race inside `SSEOutbox` would have TinyTitan code as a top frame and still
+# be reported, which is the property that keeps this gate meaningful. Confirmed
+# on 2026-09-18: with this file the six-process storm reports nothing and TSan
+# prints "Matched 1 suppressions"; with a pattern that matches nothing the same
+# storm reports the race 3 times out of 6.
+#
+# Remove this entry when a toolchain or swift-nio update stops needing it: run
+# the storm above with no suppression and check that it stays clean.
+race_top:UnsafeContinuation.resume
