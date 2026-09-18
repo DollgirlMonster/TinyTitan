@@ -26,6 +26,28 @@ Two jobs, both at boot, both idempotent:
    preset points that row at `dsh-tinytitan/backend`, which forces thinking off for
    those calls only — ordinary turns keep the route's level.
 
+## Supported harness version
+
+This bundle supports **exactly one DeepSeek Harness release: `0.1.6-alpha.2`** —
+not older, not newer, and not a build from `main`. Both jobs above are written
+against that release: the preset is generated from *its* shipped `standard`
+preset, so the row ids move when the harness does, and the compaction backend
+subclasses that release's `dsh-compaction-basic`. It is also the release
+`tools/dsh_local.sh` installs.
+
+The pin lives in three places that cannot import each other — `package.json`'s
+`peerDependencies` (exact, no range), the launcher's `DSH_VERSION` default, and
+`SUPPORTED_DSH_VERSION` in `src/support.js` — and `test/support.test.js` fails if
+they disagree.
+
+On any other release — older, newer, or a build from `main` — the plugin **refuses
+to run**. It logs one line naming both versions and does nothing else: no route, no
+preset, no watcher, and no writes into your harness home. It never throws, so DSH
+boots normally, every other plugin loads, and removing this plugin leaves nothing
+to undo. A version that cannot be read at all is refused the same way, because a
+plugin that writes into the harness home has no business proceeding on a harness
+it cannot identify.
+
 ## Install
 
 ```sh

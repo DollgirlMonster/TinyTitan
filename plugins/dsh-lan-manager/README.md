@@ -91,6 +91,21 @@ This is a deliberate exposure — the harness web server itself carries no TLS a
 authentication of its own, which is exactly why this plugin fences by source address
 in front of its own routes. Do not port-forward it to the public internet.
 
+## Supported harness version
+
+This plugin supports **exactly one DeepSeek Harness release: `0.1.6-alpha.2`** —
+not older, not newer, and not a build from `main`. It registers a route into the
+harness web server and drives the harness through host services, so a release it
+has not been verified against is not something to guess at. It is the same release
+`dsh-tinytitan` supports and the one `tools/dsh_local.sh` installs, and
+`test/support.test.js` asserts the constants cannot drift apart.
+
+On any other release it **refuses to run**: one log line naming both versions, and
+nothing else — no route registered, no discovery started. It never throws, so DSH
+boots normally, every other plugin loads, and removing this plugin leaves nothing
+to undo. A version that cannot be read at all is refused the same way. The refusal
+is reported even with `logToHost` off, because it is not routine chatter.
+
 ## Install
 
 ```bash

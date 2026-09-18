@@ -28,12 +28,12 @@ import { hostname } from "node:os";
 
 import { resolveConfig, localAddresses, DEFAULT_BASE_PATH } from "./config.js";
 import { resolveMessageFactory } from "./api.js";
-import { dshVersion, pluginVersion } from "./versions.js";
+import { dshVersion, pluginVersion, supportDecision } from "./versions.js";
 import { PeerTable } from "./peers.js";
 import { createHandler } from "./router.js";
 
 export { DEFAULT_BASE_PATH, localAddresses, parseList, resolveConfig } from "./config.js";
-export { dshVersion, pluginVersion } from "./versions.js";
+export { SUPPORTED_DSH_VERSION, dshVersion, pluginVersion, supportDecision } from "./versions.js";
 export {
   DEFAULT_GROUP_KEY,
   DEFAULT_DISCOVERY_SECONDS,
@@ -115,6 +115,18 @@ export const inject = ["webServer"];
  * @returns an object exposing the disposer and the resolved config (for tests).
  */
 export function apply(ctx, config = {}) {
+  // The gate runs first, before `resolveConfig`, so a harness this plugin does
+  // not support cannot reach the route registration below. A refusal is a return
+  // rather than a throw: the harness must boot, every other plugin must load, and
+  // removing this one must leave nothing to undo.
+  const harness = dshVersion();
+  const decision = supportDecision(harness);
+  if (!decision.run) {
+    // Reported even when `logToHost` is off: a refusal is not routine chatter.
+    if (typeof ctx?.logger?.info === "function") ctx.logger.info(decision.refusal);
+    else console.log(decision.refusal);
+    return { mounted: false, refused: true, version: harness };
+  }
   const resolved = resolveConfig(config);
   const log = resolved.logToHost
     ? (message) => {

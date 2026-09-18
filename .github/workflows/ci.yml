@@ -25,6 +25,22 @@ jobs:
     runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Plugin tests (harness-version pins)
+        # The cheapest gate, and independent of the Swift build: the plugin
+        # suites run in about a second together. dsh-tinytitan asserts the one
+        # harness release it supports against both its `package.json` peer pins
+        # and the launcher's pin in `tools/dsh_local.sh`, so drift in either
+        # fails here in seconds rather than at a user's boot.
+        run: |
+          for plugin in plugins/dsh-*; do
+            [ -d "$plugin/test" ] || continue
+            echo "::group::$plugin"
+            (cd "$plugin" && node --test test/*.test.js)
+            echo "::endgroup::"
+          done
       - name: Build release products (0 warnings gate)
         run: |
           swift build -c release 2>&1 | tee /tmp/build.log

@@ -1,10 +1,15 @@
 /**
- * Version reporting for the group view.
+ * Version reporting for the group view, and the one release this plugin supports.
  *
  * A manager listing a fleet wants to know *which harness* each member runs, so a
  * mixed group is visible rather than inferred. Both numbers are read best-effort
  * and are `null` when they cannot be resolved — a missing version must never stop
  * a plugin from mounting, and the manager prints "unknown" rather than a guess.
+ *
+ * The support policy at the bottom of this module is separate from that
+ * reporting, and deliberately **fails closed**: this plugin mounts a route into
+ * somebody's harness, so a release it has not been verified against is a refusal
+ * rather than a guess.
  *
  * @module dsh-lan-manager/versions
  */
@@ -127,4 +132,48 @@ export function pluginVersion({ moduleUrl } = {}) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The one DeepSeek Harness release this plugin supports.
+ *
+ * The manager drives the harness through host services and one dynamic import
+ * (`dsh-llm`'s `createUserMessage`), and registers a route into its web server,
+ * so a release it has not been verified against is not something to guess at.
+ * `test/support.test.js` asserts this against the launcher's pin in
+ * `tools/dsh_local.sh`, so the two cannot drift apart.
+ */
+export const SUPPORTED_DSH_VERSION = "0.1.6-alpha.2";
+
+/**
+ * Whether this plugin runs on the harness it was handed, and why not when it does not.
+ *
+ * The same policy as `dsh-tinytitan`'s, and duplicated on purpose: the two are
+ * separately installable packages that cannot import each other, and a shared
+ * third package for eleven lines would be a worse trade than a test that fails
+ * when their constants diverge.
+ *
+ * A version read as different and a version that cannot be read are both a
+ * refusal — failing closed is what keeps "supports `0.1.6-alpha.2`" a statement
+ * about the product. A refusal is a **return, never a throw**: this plugin mounts
+ * into somebody else's profile, so the harness must boot, every other plugin must
+ * load, and removing this one must leave nothing to undo.
+ *
+ * @param version - a version from {@link dshVersion}.
+ * @param supported - the supported release, for tests.
+ * @returns `{ run, refusal }` — `refusal` is one line, or `null` when it runs.
+ */
+export function supportDecision(version, supported = SUPPORTED_DSH_VERSION) {
+  if (version === supported) return { run: true, refusal: null };
+  const readable = typeof version === "string" && version.length > 0;
+  const what = readable
+    ? `DeepSeek Harness ${version} is not supported`
+    : "the DeepSeek Harness version could not be read";
+  return {
+    run: false,
+    refusal: `dsh-lan-manager: ${what}, and this plugin supports ${supported} exactly — ` +
+      "not older, not newer, and not a build from main. It registers an API into " +
+      "your harness, so it is not running here. DSH itself is unaffected and keeps " +
+      `working; pin the harness to ${supported}, or remove this plugin.`,
+  };
 }

@@ -29,6 +29,7 @@ import { findModelsDir } from "./generate.js";
 import { registerRoute } from "./route.js";
 import { ensureCompactionPreset } from "./setup.js";
 import { watchModels } from "./models-watch.js";
+import { dshVersion, supportDecision } from "./support.js";
 
 /** Plugin name, as the harness registry shows it. */
 export const name = "dsh-tinytitan";
@@ -65,6 +66,13 @@ export {
   auxiliaryThinkingOff,
   createAuxiliaryQuietCompaction,
 } from "./compaction.js";
+export {
+  SUPPORTED_DSH_VERSION,
+  dshVersion,
+  packageFrom,
+  siblingPackage,
+  supportDecision,
+} from "./support.js";
 
 /**
  * Run the plugin.
@@ -72,11 +80,23 @@ export {
  * @param config - the row config; see {@link resolveConfig}.
  */
 export function apply(ctx, config = {}) {
+  // The gate runs first, and before `resolveConfig`, so a harness this plugin
+  // does not support cannot reach a single write. A refusal is a return rather
+  // than a throw: the harness must boot, every other plugin must load, and
+  // removing this one must leave nothing to undo.
+  const harness = dshVersion();
+  const decision = supportDecision(harness);
+  const log = typeof config.log === "function"
+    ? config.log
+    : (message) => {
+      if (typeof ctx?.logger?.info === "function") ctx.logger.info(message);
+      else console.log(message);
+    };
+  if (!decision.run) {
+    log(decision.refusal);
+    return { refused: true, version: harness };
+  }
   const resolved = resolveConfig(config);
-  const log = resolved.log ?? ((message) => {
-    if (typeof ctx?.logger?.info === "function") ctx.logger.info(message);
-    else console.log(message);
-  });
   // A read-only home, a missing checkout or a failed write must not take the
   // profile down: the harness still works, only this convenience does not.
   if (resolved.registerRoute) {
