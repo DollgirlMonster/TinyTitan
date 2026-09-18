@@ -24,6 +24,7 @@ import { timingSafeEqual } from "node:crypto";
 import {
   ApiError,
   archiveSession,
+  createWorkspace,
   deleteWorkspace,
   listActiveWorkspaces,
   listAllActiveSessions,
@@ -61,6 +62,9 @@ export async function readJsonBody(req, maxBytes = DEFAULT_MAX_BODY_BYTES) {
   for await (const chunk of req) {
     size += chunk.length;
     if (size > maxBytes) {
+      // Stop reading and drop the connection: leaving an unread body on a
+      // keep-alive socket is how one request's bytes get read as the next one's.
+      req.destroy?.();
       throw new ApiError("body-too-large", `request body exceeds ${maxBytes} bytes`, 413);
     }
     chunks.push(chunk);
@@ -128,7 +132,7 @@ export function createHandler(options) {
     if (typeof value === "function" && typeof value.create !== "function") return value();
     return value;
   };
-  const { ctx, config, log = () => {} } = options;
+  const { ctx, config, log = () => {}, peers, self } = options;
   const basePath = config.basePath;
   const maxBodyBytes = config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const netOptions = {
@@ -190,6 +194,8 @@ export function createHandler(options) {
         res,
         ctx,
         config,
+        peers,
+        self,
         messageFactory: readFactory(),
         maxBodyBytes,
         source: verdict,
@@ -247,7 +253,7 @@ export function isAllowedOrigin(origin, host, config) {
  * @param args - handler state.
  * @returns `{status, body}` or a value the caller serializes.
  */
-async function dispatch({ route, method, req, res, ctx, config, messageFactory, maxBodyBytes, source }) {
+async function dispatch({ route, method, req, res, ctx, config, peers, self, messageFactory, maxBodyBytes, source }) {
   if (method === "OPTIONS") return { status: 204, body: { ok: true } };
 
   if (route === "/" || route === "/health") {
@@ -257,6 +263,11 @@ async function dispatch({ route, method, req, res, ctx, config, messageFactory, 
         plugin: "dsh-lan-manager",
         version: config.version ?? null,
         dshHome: process.env.DSH_HOME ?? null,
+        group: config.groupKey ?? null,
+        self: self ?? null,
+        peerCount: peers?.list().length ?? 0,
+        discoveryIntervalSeconds: config.discoveryIntervalSeconds ?? null,
+        lastDiscovery: peers?.lastRefresh ?? null,
         messageStrategy: messageFactory?.strategy ?? "unavailable",
         source: { address: source.address, family: source.family, reason: source.reason },
         endpoints: [
@@ -264,13 +275,97 @@ async function dispatch({ route, method, req, res, ctx, config, messageFactory, 
           "GET  /workspaces",
           "GET  /sessions",
           "GET  /workspaces/:id/sessions",
+          "GET  /peers",
+          "GET  /peers/:id",
+          "GET  /inventory",
+          "POST /gossip",
           "POST /prompt",
           "POST /prompt-all",
+          "POST /workspaces",
           "POST /sessions/:id/archive",
           "POST /workspaces/:id/delete",
         ],
       },
     };
+  }
+
+  // --- the group -----------------------------------------------------------
+  // `/peers` is the light list — who is in the group, how big each one is — and
+  // is also what the mesh gossips. `/inventory` is the aggregate a manager
+  // reads: this instance's own workspaces and sessions, plus every member's,
+  // in one call, so a manager never has to walk the fleet to draw the picture.
+  if (route === "/peers") {
+    const light = (peers?.list() ?? []).map((peer) => ({
+      id: peer.id,
+      address: peer.address,
+      port: peer.port,
+      name: peer.name,
+      source: peer.source,
+      version: peer.version,
+      lastSeen: peer.lastSeen,
+      rttMs: peer.rttMs,
+      workspaceCount: peer.workspaceCount,
+      sessionCount: peer.sessionCount,
+    }));
+    return {
+      body: {
+        ok: true,
+        group: config.groupKey ?? null,
+        self: self ?? null,
+        lastDiscovery: peers?.lastRefresh ?? null,
+        discoveryIntervalSeconds: config.discoveryIntervalSeconds ?? null,
+        peers: light,
+      },
+    };
+  }
+
+  if (route === "/inventory") {
+    const own = listActiveWorkspaces(ctx, { includeEmpty: config.includeEmptyWorkspaces === true });
+    const sessions = listAllActiveSessions(ctx);
+    return {
+      body: {
+        ok: true,
+        group: config.groupKey ?? null,
+        self: self ?? null,
+        lastDiscovery: peers?.lastRefresh ?? null,
+        workspaces: own.workspaces ?? [],
+        sessions: sessions.sessions ?? [],
+        peers: peers?.list() ?? [],
+      },
+    };
+  }
+
+  const onePeer = /^\/peers\/(.+)$/.exec(route);
+  if (method === "GET" && onePeer) {
+    const found = peers?.get(decodeURIComponent(onePeer[1]));
+    if (!found) throw new ApiError("not-found", `no peer ${decodeURIComponent(onePeer[1])}`, 404);
+    return { body: { ok: true, peer: found } };
+  }
+
+  // A member pushes addresses it knows. They are candidates only — validated by
+  // the table before anything is dialled — so a poisoned list cannot turn into a
+  // connection, and this stays a hint exchange rather than remote control.
+  if (method === "POST" && route === "/gossip") {
+    const body = await readJsonBody(req, maxBodyBytes);
+    const entries = Array.isArray(body.peers) ? body.peers : [];
+    const kept = peers?.mergeGossip(entries, { from: source.address }) ?? 0;
+    return { body: { ok: true, offered: entries.length, kept, group: config.groupKey ?? null } };
+  }
+
+  // Register an existing folder as a workspace. `startSession` is refused rather
+  // than ignored: creating a live session needs the harness's session service,
+  // and answering `ok` to something that did not happen is worse than saying so.
+  if (method === "POST" && route === "/workspaces") {
+    const body = await readJsonBody(req, maxBodyBytes);
+    if (body.startSession === true) {
+      throw new ApiError(
+        "not-implemented",
+        "startSession is not wired yet: the plugin can register the folder, but starting a live session still needs the harness session service",
+        501,
+      );
+    }
+    const receipt = await createWorkspace(ctx, { path: body.path, title: body.title });
+    return { body: { ok: true, ...receipt } };
   }
 
   if (method === "GET" && route === "/workspaces") {

@@ -17,7 +17,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveConfig } from "../src/config.js";
+import { DEFAULT_GROUP_KEY, resolveConfig } from "../src/config.js";
 import { resolveMessageFactory, setContextOverrides } from "../src/api.js";
 import { createHandler, isAllowedOrigin, readJsonBody, subPath } from "../src/router.js";
 
@@ -128,7 +128,9 @@ function makeReq({ method = "GET", url = "/dsh-lan/health", body, headers = {}, 
   return {
     method,
     url,
-    headers,
+    // Every real caller presents the group key, so tests do too — except the
+    // ones testing the door itself, which pass their own header and win here.
+    headers: { "x-dsh-token": DEFAULT_GROUP_KEY, ...headers },
     socket: { remoteAddress: remote },
     async *[Symbol.asyncIterator]() { for (const chunk of payload) yield chunk; },
   };
@@ -161,7 +163,14 @@ async function setup(overrides = {}) {
   const ctx = fakeCtx({ store, ...overrides });
   const config = resolveConfig(overrides.config ?? {}, {});
   const factory = await resolveMessageFactory(async () => { throw new Error("no dsh-llm here"); });
-  const handler = createHandler({ ctx, config, messageFactory: factory, log: () => {} });
+  const handler = createHandler({
+    ctx,
+    config,
+    messageFactory: factory,
+    log: () => {},
+    peers: overrides.peers,
+    self: overrides.self,
+  });
   return { ctx, config, factory, handler, store };
 }
 
@@ -523,5 +532,117 @@ test("a missing workspaceRegistry still serves the session-derived list", async 
     assert.equal(res.status, 200);
     assert.equal(res.body.workspaces.length, 2, "still grouped from sessions");
     assert.equal(res.body.workspaces[0].registered, false);
+  } finally { store.cleanup(); }
+});
+
+/** A PeerTable stand-in: the router only ever reads these four things. */
+function fakePeers({ peers = [], kept = 0 } = {}) {
+  const state = { merged: [] };
+  return {
+    state,
+    lastRefresh: 1234,
+    list: () => peers,
+    get: (selector) => peers.find((p) => p.id === selector || p.address === selector || p.name === selector),
+    mergeGossip: (entries, options) => {
+      state.merged.push({ entries, from: options?.from });
+      return kept;
+    },
+  };
+}
+
+test("GET /peers is the light list, with no inventories embedded", async () => {
+  const peers = fakePeers({
+    peers: [{
+      id: "192.168.18.25:3080", address: "192.168.18.25", port: 3080, name: "node-a",
+      source: "seed", version: "0.1.0", lastSeen: 99, rttMs: 4,
+      workspaceCount: 1, sessionCount: 2,
+      workspaces: [{ id: "w1" }], sessions: [{ sessionId: "s1" }],
+    }],
+  });
+  const { handler, store } = await setup({ peers, self: { id: "me:3080", name: "me", addresses: ["127.0.0.1"] } });
+  try {
+    const res = await call(handler, { url: "/dsh-lan/peers" });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.group, DEFAULT_GROUP_KEY);
+    assert.equal(res.body.peers.length, 1);
+    assert.equal(res.body.peers[0].sessionCount, 2);
+    assert.equal(res.body.peers[0].sessions, undefined, "the light list carries counts, not inventories");
+  } finally { store.cleanup(); }
+});
+
+test("GET /inventory aggregates this instance and every member", async () => {
+  const peers = fakePeers({
+    peers: [{
+      id: "192.168.18.25:3080", address: "192.168.18.25", port: 3080, name: "node-a",
+      workspaceCount: 1, sessionCount: 1,
+      workspaces: [{ id: "ws-remote", path: "/Users/node3/ProjectX" }],
+      sessions: [{ sessionId: "s-remote", workspaceId: "ws-remote" }],
+    }],
+  });
+  const { handler, store } = await setup({ peers, self: { id: "me:3080", name: "me", addresses: ["127.0.0.1"] } });
+  try {
+    const res = await call(handler, { url: "/dsh-lan/inventory" });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.self.name, "me");
+    assert.ok(res.body.workspaces.length >= 2, "this instance's own workspaces are present");
+    assert.ok(res.body.sessions.length >= 1);
+    assert.equal(res.body.peers[0].workspaces[0].id, "ws-remote", "a member's inventory rides along");
+  } finally { store.cleanup(); }
+});
+
+test("GET /peers/:id resolves a member, and 404s an unknown one", async () => {
+  const peers = fakePeers({ peers: [{ id: "192.168.18.25:3080", address: "192.168.18.25", name: "node-a", workspaceCount: 0, sessionCount: 0 }] });
+  const { handler, store } = await setup({ peers });
+  try {
+    assert.equal((await call(handler, { url: "/dsh-lan/peers/192.168.18.25" })).status, 200);
+    assert.equal((await call(handler, { url: "/dsh-lan/peers/192.168.18.25:3080" })).status, 200);
+    assert.equal((await call(handler, { url: "/dsh-lan/peers/nobody" })).status, 404);
+  } finally { store.cleanup(); }
+});
+
+test("POST /gossip hands the addresses to the table and reports what was kept", async () => {
+  const peers = fakePeers({ kept: 2 });
+  const { handler, store } = await setup({ peers });
+  try {
+    const res = await call(handler, {
+      method: "POST", url: "/dsh-lan/gossip",
+      body: { peers: [{ address: "192.168.18.25", port: 3080 }, { address: "192.168.18.26", port: 3080 }] },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual({ offered: res.body.offered, kept: res.body.kept }, { offered: 2, kept: 2 });
+    assert.equal(peers.state.merged.length, 1, "the table did the validating, not the route");
+    assert.equal(peers.state.merged[0].from, "127.0.0.1", "the source address is recorded for the log");
+  } finally { store.cleanup(); }
+});
+
+test("POST /workspaces registers a folder, and refuses startSession honestly", async () => {
+  const store = makeStore();
+  try {
+    const created = [];
+    const ctx = setContextOverrides(
+      { get: (name) => (name === "workspaceRegistry" ? {
+        list: () => [],
+        create: async (path, title) => {
+          created.push({ path, title });
+          return { id: "ws-new", path, title: title ?? "New" };
+        },
+      } : undefined) },
+      { sessionCacheDir: store.dir, archivedSessionIds: new Set() },
+    );
+    const config = resolveConfig({}, {});
+    const factory = await resolveMessageFactory(async () => { throw new Error("x"); });
+    const handler = createHandler({ ctx, config, messageFactory: factory, log: () => {} });
+
+    const ok = await call(handler, { method: "POST", url: "/dsh-lan/workspaces", body: { path: "/Users/me/New", title: "New" } });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.workspaceId, "ws-new");
+    assert.deepEqual(created, [{ path: "/Users/me/New", title: "New" }]);
+
+    const missing = await call(handler, { method: "POST", url: "/dsh-lan/workspaces", body: {} });
+    assert.equal(missing.status, 400, "a path is required");
+
+    const notWired = await call(handler, { method: "POST", url: "/dsh-lan/workspaces", body: { path: "/Users/me/New", startSession: true } });
+    assert.equal(notWired.status, 501);
+    assert.match(notWired.body.message, /session service/);
   } finally { store.cleanup(); }
 });

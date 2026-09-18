@@ -1,21 +1,35 @@
 # Bundle patch: mounts this plugin's own row at the profile root, which is what
 # runs its apply() and registers the management route on the harness web server.
 #
-# Every field is optional; these are the defaults written out. The one that is
-# deliberately absent is `token`: with no token, anything inside the allowlist
-# may call the API, which is the right default for a single-user LAN and the
-# wrong one for a shared network. Set it there:
+# Every field is optional; these are the defaults written out.
 #
-#   token: !env DSH_LAN_TOKEN
+# The **group key** is one string with two jobs: members carrying it are one
+# fleet, and it is the door key every request presents. It ships with a public
+# default (`tinytitan-lan`) so a fresh install joins the group with no setup —
+# which means it *groups* rather than *protects*. Change it on every Mac when the
+# network is not entirely yours:
 #
-# or export DSH_LAN_TOKEN and leave this file alone (the environment is read as
-# a fallback). A token written literally into this file ends up in git.
+#   groupKey: !env DSH_LAN_KEY
+#
+# or export DSH_LAN_KEY and leave this file alone (the environment is read as a
+# fallback, and DSH_LAN_TOKEN is accepted too). A key written literally into this
+# file ends up in git.
 - insert:
     - id: dsh-lan-manager
       name: dsh-lan-manager
       config:
         # Route prefix. The API answers at <basePath>/health, <basePath>/workspaces, …
         basePath: /dsh-lan
+        # Discovery runs itself: Tailscale peers, Bonjour (_dsh-lan._tcp), and any
+        # addresses seeded with `peers`. `discoverSubnet` is the only source that
+        # touches hosts which never opted in, so it is off by default.
+        discoveryIntervalSeconds: 60
+        discoverTailscale: true
+        discoverBonjour: true
+        discoverSubnet: false
+        # peers:
+        #   - 192.168.18.25
+        #   - node3.local:3080
         # Workspaces with no visible session are not shown by the web page; they
         # are hidden here too unless this is true.
         includeEmptyWorkspaces: false

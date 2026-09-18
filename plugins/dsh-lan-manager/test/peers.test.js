@@ -1,0 +1,254 @@
+/**
+ * Tests for the peer table. The two properties that matter are pinned here:
+ * nothing is dialled before it validates against the fence's allowlist, and a
+ * peer's gossip can only ever add *candidates* for the next cycle.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  MAX_GOSSIP_ENTRIES,
+  PeerTable,
+  discoveryDelayMs,
+  mapLimit,
+  peerKey,
+  validateCandidate,
+} from "../src/peers.js";
+
+const CONFIG = { basePath: "/dsh-lan", peerPort: 3080, groupKey: "tinytitan-lan", token: "tinytitan-lan" };
+
+/** A resolve() stub mapping names to addresses. */
+const resolver = (table) => async (name) => {
+  const address = table[name];
+  if (!address) throw new Error(`ENOTFOUND ${name}`);
+  return { address };
+};
+
+test("validateCandidate admits an address inside the allowlist", async () => {
+  const ok = await validateCandidate({ address: "192.168.18.25", port: 3080, source: "seed" }, { config: CONFIG });
+  assert.deepEqual(ok, { address: "192.168.18.25", port: 3080, name: "192.168.18.25", source: "seed" });
+});
+
+test("validateCandidate judges a hostname by what it resolves to, not by its name", async () => {
+  const resolve = resolver({ "Node3.local": "100.114.69.128", "evil.example": "8.8.8.8" });
+  const mine = await validateCandidate({ address: "Node3.local", port: 3080, source: "bonjour" }, { config: CONFIG, resolve });
+  assert.equal(mine.address, "100.114.69.128", "a Tailscale peer resolves into the allowlist");
+  const hostile = await validateCandidate({ address: "evil.example", port: 3080, source: "gossip:x" }, { config: CONFIG, resolve });
+  assert.equal(hostile, undefined, "a name pointing at the public internet is dropped");
+});
+
+test("validateCandidate rejects unresolvable names, bad ports and unparseable addresses", async () => {
+  const resolve = resolver({});
+  for (const candidate of [
+    { address: "nowhere.local", port: 3080 },
+    { address: "10.0.0.5", port: 0 },
+    { address: "10.0.0.5", port: 99999 },
+    { address: "", port: 3080 },
+  ]) {
+    assert.equal(await validateCandidate(candidate, { config: CONFIG, resolve }), undefined, JSON.stringify(candidate));
+  }
+});
+
+test("mapLimit keeps input order and never exceeds its bound", async () => {
+  let active = 0;
+  let peak = 0;
+  const items = Array.from({ length: 40 }, (_, i) => i);
+  const results = await mapLimit(items, 8, async (item) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    active -= 1;
+    return item * 2;
+  });
+  assert.deepEqual(results, items.map((i) => i * 2));
+  assert.ok(peak <= 8, `peak concurrency ${peak} must not exceed 8`);
+});
+
+test("a peer's gossip only adds candidates, and never this machine", () => {
+  const table = new PeerTable({ config: CONFIG, self: { id: "me", addresses: ["192.168.18.27"] } });
+  const kept = table.mergeGossip(
+    [
+      { address: "192.168.18.25", port: 3080 },
+      { address: "192.168.18.27", port: 3080 }, // ourselves — ignored
+      { address: "192.168.18.25", port: 3080 }, // duplicate — counted once
+      { address: "", port: 3080 },
+    ],
+    { from: "192.168.18.30:3080" },
+  );
+  assert.equal(kept, 1);
+  assert.equal(table.gossip.size, 1);
+  assert.equal(table.peers.size, 0, "gossip alone never creates a member");
+  assert.equal(table.gossip.get(peerKey("192.168.18.25", 3080)).source, "gossip:192.168.18.30:3080");
+});
+
+test("gossip is capped so a hostile member cannot grow the table without bound", () => {
+  const table = new PeerTable({ config: CONFIG });
+  const flood = Array.from({ length: MAX_GOSSIP_ENTRIES + 50 }, (_, i) => ({
+    address: `10.0.${Math.floor(i / 254)}.${(i % 254) + 1}`,
+    port: 3080,
+  }));
+  table.mergeGossip(flood, { from: "hostile" });
+  assert.equal(table.gossip.size, MAX_GOSSIP_ENTRIES);
+});
+
+test("refresh records a member's inventory, merges its gossip, and prunes the stale", async () => {
+  let clock = 1_000_000;
+  let cycles = 0;
+  const table = new PeerTable({
+    config: CONFIG,
+    self: { id: "me", addresses: ["192.168.18.27"] },
+    now: () => clock,
+    ttlMs: 1000,
+    // The member answers only on the first cycle, so the second one can show
+    // what happens to a member discovery no longer offers.
+    discovery: async () => (cycles++ === 0
+      ? [
+        { address: "192.168.18.25", port: 3080, name: "node-a", source: "seed" },
+        { address: "192.168.18.26", port: 3080, name: "node-b", source: "seed" },
+        { address: "192.168.18.27", port: 3080, name: "me", source: "seed" },
+        { address: "8.8.8.8", port: 3080, name: "public", source: "seed" },
+      ]
+      : []),
+    fetch: async ({ address }) => {
+      if (address === "192.168.18.26") return { status: 401, body: { error: "unauthorized" } };
+      if (address !== "192.168.18.25") return { status: 0, body: undefined };
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          group: "tinytitan-lan",
+          self: { name: "node-a", addresses: ["192.168.18.25"], version: "0.1.0" },
+          workspaces: [{ id: "w1", path: "/Users/me/ProjectA" }],
+          sessions: [{ sessionId: "s1", workspaceId: "w1" }],
+          peers: [{ address: "100.114.69.128", port: 3080, name: "Node3" }],
+        },
+      };
+    },
+  });
+
+  const list = await table.refresh();
+  assert.equal(list.length, 1, "one member: the 401 and the public address are not members");
+  assert.equal(list[0].workspaceCount, 1);
+  assert.equal(list[0].sessionCount, 1);
+  assert.equal(list[0].name, "node-a");
+  assert.equal(table.gossip.size, 1, "the member's gossip became a candidate for the next cycle");
+  assert.equal(table.gossip.has(peerKey("100.114.69.128", 3080)), true);
+
+  clock += 5000;
+  const after = await table.refresh();
+  assert.equal(after.length, 0, "a member discovery no longer offers, past the TTL, drops out");
+});
+
+test("a member reporting another group is refused even when it answers 200", async () => {
+  const table = new PeerTable({
+    config: CONFIG,
+    discovery: async () => [{ address: "192.168.18.25", port: 3080 }],
+    fetch: async () => ({ status: 200, body: { ok: true, group: "someone-elses-group", self: { name: "x" } } }),
+  });
+  assert.equal((await table.refresh()).length, 0);
+});
+
+test("get resolves by id, address or name", async () => {
+  const table = new PeerTable({
+    config: CONFIG,
+    discovery: async () => [{ address: "192.168.18.25", port: 3080, name: "node-a", source: "seed" }],
+    fetch: async () => ({ status: 200, body: { ok: true, group: "tinytitan-lan", self: { name: "node-a" }, workspaces: [], sessions: [], peers: [] } }),
+  });
+  await table.refresh();
+  assert.equal(table.get("192.168.18.25:3080").name, "node-a");
+  assert.equal(table.get("192.168.18.25").name, "node-a");
+  assert.equal(table.get("node-a").name, "node-a");
+  assert.equal(table.get("nobody"), undefined);
+});
+
+test("a refresh cycle that throws in discovery still returns the table", async () => {
+  const table = new PeerTable({
+    config: CONFIG,
+    discovery: async () => {
+      throw new Error("tailscale exploded");
+    },
+  });
+  assert.deepEqual(await table.refresh(), []);
+});
+
+/** A group read that finds nothing, so only validation is exercised. */
+const nullFetch = async () => ({ status: 0, body: undefined });
+
+/** Hostname candidates, so every one of them needs a resolve. */
+function hostCandidates(count) {
+  return Array.from({ length: count }, (_, i) => ({
+    address: `node-${i}.local`, port: 3080, name: `node-${i}`, source: "bonjour",
+  }));
+}
+
+test("the jittered interval stays within 10% and never goes non-positive", () => {
+  assert.equal(discoveryDelayMs(60, 0.5), 60_000, "the middle of the range is the interval");
+  assert.equal(discoveryDelayMs(60, 0), 54_000, "the low edge is -10%");
+  assert.equal(discoveryDelayMs(60, 1), 66_000, "the high edge is +10%");
+  for (const random of [0, 0.1, 0.37, 0.9, 1]) {
+    const delay = discoveryDelayMs(5, random);
+    assert.ok(delay >= 4_500 && delay <= 5_500, `${delay}ms for random=${random}`);
+    assert.ok(delay > 0);
+  }
+  assert.equal(discoveryDelayMs(0, 0.5), 60_000, "a nonsense interval falls back to a minute");
+});
+
+test("a hostname is resolved once and reused, so the threadpool is not re-hit", async () => {
+  let calls = 0;
+  let clock = 1_000_000;
+  const table = new PeerTable({
+    config: { ...CONFIG, resolveConcurrency: 4, resolveTtlMs: 60_000 },
+    now: () => clock,
+    discovery: async () => hostCandidates(3),
+    resolve: async (name) => { calls += 1; return { address: "192.168.18.9", name }; },
+    fetch: nullFetch,
+  });
+  await table.refresh();
+  assert.equal(calls, 3, "one lookup per unique name");
+  await table.refresh();
+  assert.equal(calls, 3, "the second cycle reuses the cached answers");
+  clock += 120_000;
+  await table.refresh();
+  assert.equal(calls, 6, "and re-resolves once the TTL has passed");
+});
+
+test("hostname resolution runs on its own, shallower limit", async () => {
+  let active = 0;
+  let peak = 0;
+  const table = new PeerTable({
+    config: { ...CONFIG, resolveConcurrency: 2 },
+    discovery: async () => hostCandidates(12),
+    resolve: async (name) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      active -= 1;
+      return { address: "192.168.18.9", name };
+    },
+    fetch: nullFetch,
+  });
+  await table.refresh();
+  assert.ok(peak <= 2, `peak concurrent resolutions ${peak} must not exceed resolveConcurrency (2)`);
+  assert.ok(peak >= 1);
+});
+
+test("a name that does not resolve is cached too, so it is not retried every cycle", async () => {
+  // Measured: a stale Bonjour name burns the full mDNS timeout (~5 s) on every
+  // attempt. Caching the failure is what stops that repeating every cycle.
+  let calls = 0;
+  let clock = 1_000_000;
+  const table = new PeerTable({
+    config: { ...CONFIG, resolveConcurrency: 4, resolveTtlMs: 60_000 },
+    now: () => clock,
+    discovery: async () => [{ address: "gone.local", port: 3080, name: "gone", source: "bonjour" }],
+    resolve: async () => { calls += 1; throw new Error("ENOTFOUND gone.local"); },
+    fetch: nullFetch,
+  });
+  assert.deepEqual(await table.refresh(), [], "a name that does not resolve is not a member");
+  assert.equal(calls, 1);
+  await table.refresh();
+  assert.equal(calls, 1, "the second cycle reuses the failure instead of waiting again");
+  clock += 120_000;
+  await table.refresh();
+  assert.equal(calls, 2, "and tries again once the TTL has passed");
+});

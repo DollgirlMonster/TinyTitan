@@ -21,7 +21,29 @@ curl -X POST http://192.168.18.27:3080/dsh-lan/prompt-all \
 | 3a | Prompt **every** active session | `POST /dsh-lan/prompt-all` |
 | 4 | Delete a workspace (archiving its sessions first) | `POST /dsh-lan/workspaces/:id/delete` |
 | 5 | Archive a session | `POST /dsh-lan/sessions/:id/archive` |
+| 6 | Register an existing folder as a workspace | `POST /dsh-lan/workspaces` |
+| 7 | The group: who else is running, and what they hold | `GET /dsh-lan/peers` · `GET /dsh-lan/peers/:id` |
+| 8 | One aggregate for a manager: this Mac **and** every member | `GET /dsh-lan/inventory` |
+| 9 | Take a peer's address list and share ours (mesh) | `POST /dsh-lan/gossip` |
 | — | Liveness and the caller's fence verdict | `GET /dsh-lan/health` |
+
+**The group.** Every instance shares one **group key** (a string, default
+`tinytitan-lan`, changeable) and discovers the others without being told where
+they are — **every online tailnet peer whatever OS or continent it runs on**,
+Bonjour (`_dsh-lan._tcp`) on the local network, configured `peers`, and optionally
+a local-subnet sweep — on a timer (60 s default). Note that Bonjour does not cross
+a tailnet, and a peer behind an ACL that blocks the port stays invisible: the mesh
+gossip is what carries discovery from one member to the rest. Each member keeps
+the others' active workspaces and sessions, and members trade address lists with
+each other so one found Mac is enough to find the rest. Every gossiped address is
+validated against the same LAN/Tailscale allowlist the request fence uses before
+anything is dialled, and a member must answer with our group key to be listed.
+
+**The mesh knows; a manager acts.** A plugin never sends a prompt to another
+instance and never modifies one. Prompting and mutating is the job of the
+external manager — `ttlanmanager`, the **TinyTitan DSH LAN Manager**, in this
+repository's `sources/` — which reads the group from any one member's
+`/inventory` and then talks to the member that owns the thing being acted on.
 
 **"Active" means what the web page shows.** A workspace is active when the
 registry lists it *and* it owns at least one non-archived session; a session is
@@ -45,9 +67,13 @@ layers, checked in this order:
    unparseable address, is refused. The peer address is taken from the socket;
    `X-Forwarded-For` is deliberately **not** trusted, because a forwarded header is
    attacker-controlled and trusting it would let any caller claim loopback.
-2. **Shared token** (`token` / `DSH_LAN_TOKEN`), compared in constant time. Optional
-   — the right default for a single-user LAN, and the *only* thing separating two
-   machines on the same private range.
+2. **The group key** (`groupKey` / `token`, `DSH_LAN_KEY` / `DSH_LAN_TOKEN`),
+   compared in constant time. It is one string with two jobs: the door key every
+   request presents, and the tag that decides which instances are one fleet.
+   **It ships with a default (`tinytitan-lan`), so by default it groups rather
+   than protects** — every Mac that installs this plugin joins the same group
+   with no setup, and any host on the allowlist that knows the default can call
+   it. Change it on every Mac when the network is not entirely yours.
 3. **Origin**, on mutating verbs only: a foreign site in an allowlisted browser must
    not be usable as a confused deputy.
 
@@ -151,8 +177,9 @@ sessions are archived first; the response reports `archivedSessionIds` and any
 
 ## Managing a cluster
 
-Each harness instance is independent — there is no shared registry — so drive them
-by address. A loop over the fleet:
+The plugin discovers the group itself, so this is only the fallback for a
+network with neither Tailscale nor Bonjour. A loop over addresses you already
+know:
 
 ```bash
 for host in 192.168.18.27 192.168.18.25 192.168.18.29 192.168.18.26; do
@@ -178,7 +205,17 @@ done
 | Key | Env | Default | Meaning |
 |---|---|---|---|
 | `basePath` | `DSH_LAN_BASE_PATH` | `/dsh-lan` | Route prefix |
-| `token` | `DSH_LAN_TOKEN` | none | Shared secret, `x-dsh-token` |
+| `groupKey` / `token` | `DSH_LAN_KEY`, `DSH_LAN_TOKEN` | `tinytitan-lan` | Group tag **and** the secret every request presents |
+| `peers` | `DSH_LAN_PEERS` | `[]` | Seed addresses (`host` or `host:port`) to try even when discovery finds nothing |
+| `discoveryIntervalSeconds` | `DSH_LAN_DISCOVERY_SECONDS` | `60` | How often the group is refreshed (minimum 5) |
+| `discoverTailscale` | — | `true` | Enumerate every online tailnet peer — macOS, Linux, Windows — from the Tailscale CLI |
+| `discoverBonjour` | — | `true` | Browse/advertise `_dsh-lan._tcp` through macOS `dns-sd` |
+| `discoverSubnet` | — | `false` | Sweep each local `/24` on the peer port — the only source that touches hosts which never opted in |
+| `peerPort` | — | `3080` | The port other members answer on |
+| `probeTimeoutMs` | `DSH_LAN_PROBE_TIMEOUT` | `3000` | How long a peer probe waits — three seconds because a member may be on another continent |
+| `discoveryConcurrency` | — | `24` | How many peers are probed at once (socket connects) |
+| `resolveConcurrency` | `DSH_LAN_RESOLVE_CONCURRENCY` | `4` | How many hostnames are resolved at once — a stale name takes the full mDNS timeout (~5 s) |
+| `resolveTtlMs` | — | `300000` | How long an answer is reused, **including a failure**: a stale Bonjour name otherwise costs ~5 s every cycle |
 | `allowAddresses` | `DSH_LAN_ALLOW` | `[]` | Extra single hosts or CIDRs to admit |
 | `ipv4Networks` | — | loopback, RFC1918, link-local, CGNAT | Replace the IPv4 allowlist |
 | `ipv6Networks` | — | `::1/128`, `fc00::/7`, `fe80::/10` | Replace the IPv6 allowlist |
@@ -196,6 +233,8 @@ done
 | `src/router.js` | the three guards, routing, JSON bodies and responses |
 | `src/api.js` | the operations against `workspaceRegistry` / `agents` |
 | `src/net.js` | the address fence (pure, no I/O) |
+| `src/discovery.js` | Tailscale, Bonjour, seeds and subnet candidates (best-effort, never throws) |
+| `src/peers.js` | the peer table: validate, probe, gossip, expire, on a timer |
 | `src/config.js` | config and environment resolution |
 
 It reads harness services lazily through `ctx.get(...)` and imports no harness
@@ -207,7 +246,7 @@ literal shape and reports which path it took in `/health`.
 ## Tests
 
 ```bash
-npm test        # node --test 'test/*.test.js' — 46 cases
+npm test        # node --test 'test/*.test.js' — 78 cases
 ```
 
 `test/net.test.js` is the important one: it pins every allowed range and, more to

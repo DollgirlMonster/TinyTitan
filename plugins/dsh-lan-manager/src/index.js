@@ -24,17 +24,48 @@
  *
  * @module dsh-lan-manager
  */
+import { hostname } from "node:os";
+
 import { resolveConfig, localAddresses, DEFAULT_BASE_PATH } from "./config.js";
 import { resolveMessageFactory } from "./api.js";
+import { dshVersion, pluginVersion } from "./versions.js";
+import { PeerTable } from "./peers.js";
 import { createHandler } from "./router.js";
 
 export { DEFAULT_BASE_PATH, localAddresses, parseList, resolveConfig } from "./config.js";
+export { dshVersion, pluginVersion } from "./versions.js";
+export {
+  DEFAULT_GROUP_KEY,
+  DEFAULT_DISCOVERY_SECONDS,
+  DEFAULT_PEER_PORT,
+} from "./config.js";
+export {
+  BONJOUR_SERVICE,
+  bonjourPeers,
+  discoverCandidates,
+  exec,
+  parseBonjourBrowse,
+  parseBonjourResolve,
+  parseTailscalePeers,
+  seedPeers,
+  subnetHosts,
+  tailscalePeers,
+} from "./discovery.js";
+export {
+  DEFAULT_TTL_MS,
+  PeerTable,
+  httpJson,
+  mapLimit,
+  peerKey,
+  validateCandidate,
+} from "./peers.js";
 export {
   ApiError,
   Failure,
   agents,
   archiveSession,
   archivedSet,
+  createWorkspace,
   deleteWorkspace,
   findWorkspace,
   listActiveWorkspaces,
@@ -126,9 +157,33 @@ export function apply(ctx, config = {}) {
     },
   };
 
+  // Who we are to the rest of the group. The addresses are this machine's own,
+  // used to keep us out of our own peer table and to tell a manager where this
+  // instance answers.
+  const nodeName = hostname();
+  const port = webServer.port ?? resolved.peerPort;
+  const self = {
+    id: `${nodeName}:${port}`,
+    name: nodeName,
+    port,
+    addresses: localAddresses().map((entry) => entry.address),
+    // The plugin's own version, and the harness it is running inside: a manager
+    // showing a fleet needs to see a mixed group, not guess at one.
+    version: resolved.version ?? pluginVersion(),
+    dshVersion: dshVersion(),
+  };
+
+  const peers = new PeerTable({ config: resolved, log, self });
+  peers.start();
+  // One cycle at boot so the first `/inventory` a peer or the manager asks for
+  // is not empty. Backgrounded: a slow source must not delay mounting the route.
+  peers.refresh().catch((error) => log(`initial discovery failed: ${error?.message ?? error}`));
+
   const handler = createHandler({
     ctx,
     config: resolved,
+    peers,
+    self,
     // The handler closes over a live view: once the promise settles the real
     // factory is used for every subsequent request.
     get messageFactory() {
@@ -143,8 +198,12 @@ export function apply(ctx, config = {}) {
     handler,
   });
 
-  if (typeof ctx?.effect === "function") ctx.effect(() => () => dispose?.());
-  ctx.on?.("dispose", () => dispose?.());
+  const stopAll = () => {
+    peers.stop();
+    dispose?.();
+  };
+  if (typeof ctx?.effect === "function") ctx.effect(() => () => stopAll());
+  ctx.on?.("dispose", () => stopAll());
 
   const addresses = localAddresses();
   const lanFacing = addresses.filter(

@@ -563,3 +563,38 @@ export async function deleteWorkspace(ctx, workspaceId, options = {}) {
     archiveFailures,
   };
 }
+
+/**
+ * Register an existing folder as a workspace.
+ *
+ * The harness's own `create(path, title)` refuses anything that is not already a
+ * directory, so this adds a *record*: it does not make a folder. A manager that
+ * asks for a workspace at a path that does not exist gets a clear error instead
+ * of a half-made directory tree.
+ *
+ * @param ctx - harness context.
+ * @param selector - `{ path, title }`.
+ * @returns a receipt for the created (or already-present) workspace.
+ */
+export async function createWorkspace(ctx, selector = {}) {
+  const reg = registry(ctx);
+  const path = typeof selector.path === "string" ? selector.path.trim() : "";
+  if (!path) throw new ApiError(Failure.BAD_REQUEST, "path is required", 400);
+  if (typeof reg.create !== "function") {
+    throw new ApiError(Failure.NO_REGISTRY, "this harness does not expose workspace creation", 503);
+  }
+  let workspace;
+  try {
+    workspace = await reg.create(path, selector.title);
+  } catch (error) {
+    // `create` throws for a missing directory and for a path that is a file;
+    // both are the caller's to fix, so they are a 400 and not a 500.
+    throw new ApiError(Failure.BAD_REQUEST, error instanceof Error ? error.message : String(error), 400);
+  }
+  return {
+    workspaceId: String(workspace?.id ?? ""),
+    path: String(workspace?.path ?? path),
+    title: String(workspace?.title ?? selector.title ?? ""),
+    created: true,
+  };
+}
