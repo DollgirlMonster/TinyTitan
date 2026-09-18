@@ -177,48 +177,52 @@ of a model that is not reading the question.
 
 ## What the measurement found — 2026-09-18
 
-Run over the 60 cases the script can build here, on the 2B at 4 bits, greedy,
-through `TinyTitanBench cpu35batch`. T1 is not in this run: its cases come from
-the memory guard's recorded journals, which this checkout does not carry, so
-T1 keeps its 92% from 2026-09-11. Both prompt drafts were run over the same
-cases:
+Run over the 60 cases the script can build here, greedy, through
+`TinyTitanBench cpu35batch`. T1 is not in this run: its cases come from the
+memory guard's recorded journals, which this checkout does not carry, so T1
+keeps its 92% from 2026-09-11.
+
+**The 2B is not the instrument.** A first pass on it said T5 was one-sided and
+T7 nearly so, and both of those are wrong about the task — a 4B decides them.
+So the shipped (v1) prompts were run at all three sizes, and the second draft
+(v2) on the 4B:
 
 ```bash
 python3.13 benchmark/side_engine_tasks.py --prepare /tmp/jobs.jsonl
-.build/release/TinyTitanBench cpu35batch models/qwen3.5_2B_4Bit /tmp/jobs.jsonl /tmp/done.jsonl
+.build/release/TinyTitanBench cpu35batch models/qwen3.5_4B_4Bit /tmp/jobs.jsonl /tmp/done.jsonl
 python3.13 benchmark/side_engine_tasks.py --score /tmp/done.jsonl
 ```
 
-| task | draft | correct | half A | half B | ready |
-| --- | --- | --- | --- | --- | --- |
-| T2 durability | v1 (shipped) | 55% | 10/10 | 1/10 | no |
-| T2 durability | v2 | 60% | 10/10 | 2/10 | no |
-| T3 contradiction | v1 | 100% | 5/5 | 5/5 | **yes** |
-| T4 supersession | v1 | 50% | 3/3 | 0/3 | no |
-| T4 supersession | v2 | 17% | 1/3 | 0/3 | no |
-| T5 duplication | v1 | 50% | 0/4 | 4/4 | no |
-| T5 duplication | v2 | 100% | 4/4 | 4/4 | **yes** |
-| T6 reply check | v1 | 62% | 0/3 | 5/5 | no |
-| T7 retrieval | v1 | 88% | 3/4 | 4/4 | **yes** |
-
 Half A is the answer that says yes to the question (UPDATE for T4); half B is
-the one that says no (CONFLICT for T4).
+the one that says no (CONFLICT for T4). A task is ready only when both halves
+are good.
 
-T3 and T7 pass unchanged in both drafts. T5 is the movement: v1 never says YES
-(0 of 4 pairs that are literally identical), and v2 is perfect — but v2 changes
-two things at once, the facts rendered as sentences and one added clause about
-different wording, so which of the two did the work is not yet separated. The
-sentence form is mechanical (`sentence()` in the benchmark: `characters/marcus/eyes
-= grey` becomes "Marcus's eyes: grey."), which is what would let the engine
-render every key it stores that way with no model in the loop.
+| task | 2B v1 | 4B v1 | 4B v2 | 9B v1 |
+| --- | --- | --- | --- | --- |
+| T2 durability | 55% (10/10, 1/10) | 45% (9/10, 0/10) | 70% (10/10, 4/10) | 50% (10/10, 0/10) |
+| T3 contradiction | 100% (5/5, 5/5) | 100% (5/5, 5/5) | 100% (5/5, 5/5) | 100% (5/5, 5/5) |
+| T4 supersession | 50% (3/3, 0/3) | 50% (3/3, 0/3) | 67% (1/3, 3/3) | 50% (3/3, 0/3) |
+| T5 duplication | 50% (0/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) |
+| T6 reply check | 62% (0/3, 5/5) | 62% (0/3, 5/5) | 75% (1/3, 5/5) | 100% (3/3, 5/5) |
+| T7 retrieval | 88% (3/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) | 100% (4/4, 4/4) |
 
-The three that are not ready fail in the lazy-branch shape above, and neither
-draft moves them off it. T2 says YES to 9 of the 10 lines of the novel it wrote,
-so it does not filter at all. T6 says NO to all three replies that do contradict
-the store. T4 is 0 of 3 CONFLICT in both drafts, and v2's added rule line makes
-the UPDATE cases worse — 2 of 3 flip to CONFLICT — which is why v2 scores lower
-than v1 there.
+Read down the columns. T3 is good at every size. T5 and T7 go from one-sided on
+the 2B to perfect on the 4B and stay there. T6 needs the 9B: the 2B and the 4B
+catch 0 of its 3 contradicting replies, the 9B all three. T2 and T4 are
+one-sided at every size with the shipped prompts, which is a prompt problem
+rather than a capacity one — and the second draft moves both without settling
+either: T2's negative half goes from 0 of 10 to 4 of 10, and T4's added rule
+line takes CONFLICT from 0 of 3 to 3 of 3 while UPDATE falls from 3 of 3 to 1 of
+3, trading one one-sided answer for the other. (The 2B's own v2 run — T2 60%,
+T4 17%, T5 100% — is in the history of `03d79f7`.)
 
-So a caller may trust T1, T3, T7, and T5 only if the facts reach it as
-sentences. T2, T4 and T6 need a better prompt, a different model, or a caller
-that tolerates a one-sided answer; none of them decides today.
+**So the model is part of the result.** The 4B is the floor that decides
+contradiction, duplication and retrieval; the 9B adds the reply check; the 2B
+decides contradiction and nothing else of these five. Durability and
+supersession are not ready on any of the three and must not be wired to a
+caller. The sentence-rendered facts that earlier fixed T5 for the 2B are not
+needed at the 4B, where the shipped `key = value` form already scores 100%.
+
+Runs made 2026-09-18 with the release `TinyTitanBench` built from `036f98c`;
+60 jobs, 7,276 tokens: 2B 386.2 s (18.8 tok/s), 4B 1,131.3 s (6.4), 4B v2
+1,168.3 s (6.6), 9B 2,244.1 s (3.2).

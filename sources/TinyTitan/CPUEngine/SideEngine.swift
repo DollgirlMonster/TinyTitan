@@ -1,16 +1,24 @@
 import Foundation
 
-/// The seven single-decision tasks a 2B side-engine is asked, and the prompts
+/// The seven single-decision tasks the side-engine is asked, and the prompts
 /// that ask them.
 ///
-/// `docs/side-engine-tasks.md` is the argument: a 2B fails at composition —
-/// "return the parts of this fact the person stated" was 0 of 12 — and succeeds
-/// at one decision at a time (T1, "did the person state this clause?", measured
-/// 92%, with 7 of 8 invented clauses rejected). Every task here is therefore
-/// **one question with a closed answer set**: YES/NO, or UPDATE/CONFLICT. The
-/// prompts are the measured ones from `benchmark/side_engine_tasks.py`; this
-/// file is the shipped copy of them, and `SideEngineTests` pins the wording so
-/// the two cannot drift apart silently.
+/// `docs/side-engine-tasks.md` is the argument: a small model fails at
+/// composition — "return the parts of this fact the person stated" was 0 of 12
+/// — and succeeds at one decision at a time (T1, "did the person state this
+/// clause?", measured 92%). Every task here is therefore **one question with a
+/// closed answer set**: YES/NO, or UPDATE/CONFLICT. The prompts are the
+/// measured ones from `benchmark/side_engine_tasks.py`; this file is the
+/// shipped copy of them, and `SideEngineTests` pins the wording so the two
+/// cannot drift apart silently.
+///
+/// **Which model, and for which tasks.** The engine is model-agnostic — any
+/// dense Qwen3.5 snapshot fits — but the tasks are not decided equally at every
+/// size. Measured over the same 60 cases (`docs/side-engine-tasks.md`):
+/// contradiction is good from the smallest up, duplication and retrieval need
+/// a 4B, the reply check needs a 9B, and durability and supersession are
+/// one-sided at all three sizes and must not be wired to a caller. The 2B is
+/// not the verification instrument.
 public enum SideEngineTask: String, Sendable, CaseIterable {
     case clauseAttribution = "T1"
     case durability = "T2"
@@ -203,10 +211,11 @@ public enum SideEngineError: Error, CustomStringConvertible {
     }
 }
 
-/// The resident helper: one 2B, mapped once, answering one decision at a time.
+/// The resident helper: one side-engine model, mapped once, answering one
+/// decision at a time.
 ///
 /// **Residency.** The loader runs on the first `judge` and never again, so a
-/// process that never needs a memory judgement never maps 1.9 GB.
+/// process that never needs a memory judgement never maps the weights.
 ///
 /// **One at a time.** The actor serialises everything, which the engine
 /// requires (one KV state, one position) and which the caller wants: a
@@ -301,6 +310,11 @@ public actor SideEngine {
 }
 
 /// `CPUQwen35` plus the tokenizer from the same directory.
+///
+/// This wrapper adds no model assumption to the engine, so the snapshot
+/// directory is the whole choice of model. For the shipped prompts the 4B is
+/// the verified floor and the 9B decides more (`docs/side-engine-tasks.md`);
+/// the 2B does not.
 ///
 /// unchecked-invariant: every member is touched only from the `SideEngine`
 /// actor that owns this wrapper, which serialises `reset`, `encode`, and
