@@ -90,7 +90,9 @@ The converter writes the snapshot's table from the checkpoint's shards. Given
 this flag it instead hardlinks the existing table and skips fetching the 128
 n-gram shards entirely — the 102 GB and ~1.5 h saving above. Same gate: the
 config's PLE parameters must match those the existing table was built from, and
-its size must equal the computed `padded_rows * ple_head_dim * 2`.
+its size must equal the computed `padded_rows * ple_head_dim * 2`. The gate is
+`reusable_table_path` in `tools/prepare_qwen38.py`, and
+`benchmark/test_prepare_qwen38.py` pins it one addressed constant at a time.
 
 ## Order of operations
 
