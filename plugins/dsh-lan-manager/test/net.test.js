@@ -115,6 +115,21 @@ test("IPv4-mapped IPv6 is judged as IPv4", () => {
   assert.deepEqual(unwrapAddress("::ffff:10.0.0.1"), { family: "ipv4", address: "10.0.0.1" });
 });
 
+test("an IPv4-mapped address is judged as IPv4 in every spelling", () => {
+  // Dotted, hex and fully expanded all name 192.168.1.5. Before the fix the hex
+  // spelling was refused while the dotted one was admitted, so a caller's
+  // standing depended on how its stack printed the address.
+  const spellings = ["::ffff:192.168.1.5", "::ffff:c0a8:105", "0:0:0:0:0:ffff:192.168.1.5"];
+  for (const address of spellings) {
+    assert.deepEqual(unwrapAddress(address), { family: "ipv4", address: "192.168.1.5" }, address);
+    assert.equal(checkAddress(address).allowed, true, address);
+  }
+  // The public mapping must stay refused whichever way it is spelled.
+  for (const address of ["::ffff:8.8.8.8", "::ffff:808:808", "0:0:0:0:0:ffff:8.8.8.8"]) {
+    assert.equal(checkAddress(address).allowed, false, address);
+  }
+});
+
 test("normalizeIpv6 makes equivalent forms compare equal", () => {
   // The normalized form is fully expanded on purpose: matching happens on bytes,
   // so `fe80::1` and `fe80:0:0:0:0:0:0:1` must collapse to the same string.
@@ -124,6 +139,17 @@ test("normalizeIpv6 makes equivalent forms compare equal", () => {
   assert.equal(normalizeIpv6("[::1]"), normalizeIpv6("::1"), "brackets stripped");
   assert.equal(normalizeIpv6("fe80::1%en0"), normalizeIpv6("fe80::1"), "zone id stripped");
   assert.equal(normalizeIpv6("10.0.0.1"), undefined, "IPv4 is not IPv6");
+});
+
+test("malformed IPv6 is refused, never repaired into an allowed address", () => {
+  // Each of these was previously rewritten by the parser into a *different*,
+  // valid address — `fc00::1::2` (two `::`) landed inside the allowed fc00::/7,
+  // and a trailing colon produced an empty group that was read as a zero.
+  const malformed = ["1::2::3", "fc00::1::2", "1:2:3:4:5:6:7:", "1:2:3:4:5:6:7:8::", ":::", "fe80:::1"];
+  for (const address of malformed) {
+    assert.equal(normalizeIpv6(address), undefined, `${address} must not parse`);
+    assert.equal(checkAddress(address).allowed, false, `${address} must be refused`);
+  }
 });
 
 test("ipv6InNetwork matches on bytes, not string prefixes", () => {

@@ -82,7 +82,15 @@ export function ipv4InNetwork(address, network, prefix) {
 
 /**
  * Normalize an IPv6 literal for prefix comparison: lowercase, strip brackets,
- * drop a zone id (`%en0`), and shorten the longest run of zero groups to `::`.
+ * drop a zone id (`%en0`), rewrite an IPv4-embedded tail into hex, and shorten
+ * the longest run of zero groups to `::`.
+ *
+ * Malformed input is **rejected** (`undefined`) rather than repaired. The fence's
+ * contract is deny-by-default, so a literal the parser cannot make sense of must
+ * not be rewritten into some other address — `fc00::1::2` (two `::`) previously
+ * normalized to `fc00:0:0:0:0:0:1:2` and was admitted as `fc00::/7`, and a
+ * trailing colon produced an empty group that `ipv6ToBytes` read as a zero.
+ *
  * @param value - candidate address.
  * @returns the normalized form, or `undefined` when it is not IPv6.
  */
@@ -94,24 +102,44 @@ export function normalizeIpv6(value) {
   if (zone !== -1) text = text.slice(0, zone);
   if (!text.includes(":")) return undefined;
 
+  // An IPv4-embedded tail (`::ffff:192.168.1.5`) is legal IPv6. Rewrite the
+  // dotted quad as the two hex groups it stands for before the group logic, so
+  // that form parses instead of being refused as "ten groups".
+  const lastColon = text.lastIndexOf(":");
+  const dottedTail = text.slice(lastColon + 1);
+  if (dottedTail.includes(".")) {
+    const octets = dottedTail.split(".");
+    if (octets.length !== 4) return undefined;
+    const values = octets.map((octet) => (/^\d{1,3}$/.test(octet) ? Number(octet) : NaN));
+    if (values.some((n) => !Number.isInteger(n) || n > 255)) return undefined;
+    const high = ((values[0] << 8) | values[1]).toString(16);
+    const low = ((values[2] << 8) | values[3]).toString(16);
+    text = `${text.slice(0, lastColon)}:${high}:${low}`;
+  }
+
+  const isGroup = (g) => /^[0-9a-f]{1,4}$/.test(g);
+
   // Expand `::` in place: head groups, then the zeros the gap stands for, then
   // the tail. Putting the padding at the front would move the network bits and
   // make a correct `fe80::/10` test fail on an expanded address.
-  const collapsed = text.includes("::");
-  if (collapsed) {
+  if (text.includes("::")) {
+    // At most one `::`, and it must stand for at least one zero group.
+    if (text.split("::").length > 2) return undefined;
     const at = text.indexOf("::");
     const head = text.slice(0, at);
     const tail = text.slice(at + 2);
-    const headGroups = head ? head.split(":").filter((g) => g !== "") : [];
-    const tailGroups = tail ? tail.split(":").filter((g) => g !== "") : [];
-    const missing = 8 - headGroups.length - tailGroups.length;
-    if (missing < 0) return undefined;
+    const headGroups = head === "" ? [] : head.split(":");
+    const tailGroups = tail === "" ? [] : tail.split(":");
+    const groups = [...headGroups, ...tailGroups];
+    if (groups.some((g) => !isGroup(g))) return undefined;
+    const missing = 8 - groups.length;
+    if (missing < 1) return undefined;
     return [...headGroups, ...Array(missing).fill("0"), ...tailGroups]
       .map((g) => g.replace(/^0+(?=.)/, ""))
       .join(":");
   }
   const groups = text.split(":");
-  if (groups.length !== 8) return undefined;
+  if (groups.length !== 8 || groups.some((g) => !isGroup(g))) return undefined;
   return groups.map((g) => g.replace(/^0+(?=.)/, "")).join(":");
 }
 
@@ -162,6 +190,13 @@ export function ipv6InNetwork(address, network, prefix) {
 
 /**
  * Strip the IPv4-mapped IPv6 prefix so `::ffff:192.168.1.5` is judged as IPv4.
+ *
+ * All three spellings of the mapped prefix name the same IPv4 address — dotted
+ * (`::ffff:192.168.1.5`), hex (`::ffff:c0a8:105`) and fully expanded — so they
+ * must reach the same verdict; before this, the hex spelling was refused while
+ * the dotted one was admitted, which made a caller's standing depend on how its
+ * stack happened to print the address.
+ *
  * @param address - remote address from the socket.
  * @returns `{family, address}` with the mapped form unwrapped.
  */
@@ -171,8 +206,16 @@ export function unwrapAddress(address) {
   if (mapped) return { family: "ipv4", address: mapped[1] };
   if (ipv4ToInt(text) !== undefined) return { family: "ipv4", address: text };
   const v6 = normalizeIpv6(text);
-  if (v6 !== undefined) return { family: "ipv6", address: v6 };
-  return { family: "unknown", address: text };
+  if (v6 === undefined) return { family: "unknown", address: text };
+  const groups = v6.split(":");
+  if (groups.length === 8
+      && groups[0] === "0" && groups[1] === "0" && groups[2] === "0"
+      && groups[3] === "0" && groups[4] === "0" && groups[5] === "ffff") {
+    const high = Number.parseInt(groups[6], 16);
+    const low = Number.parseInt(groups[7], 16);
+    return { family: "ipv4", address: `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}` };
+  }
+  return { family: "ipv6", address: v6 };
 }
 
 /**
@@ -188,7 +231,10 @@ export function checkAddress(address, options = {}) {
   const { family, address: normalized } = unwrapAddress(address);
 
   if (family === "unknown") {
-    return { allowed: false, reason: "unparseable-source-address", address: String(address ?? "") };
+    // `family` is carried on every verdict, including this one: callers switch on
+    // it (a hostname needs resolving before it can be judged), and an omitted
+    // field here reads as "not unknown" to an `=== "unknown"` test.
+    return { allowed: false, reason: "unparseable-source-address", address: String(address ?? ""), family };
   }
 
   // Explicit extra allowances run first, so an operator can open one host without
