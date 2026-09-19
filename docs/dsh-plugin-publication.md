@@ -138,11 +138,12 @@ generated preset.
    that PR was closed 2026-09-15 with no comment, and the fork behind it is gone.
    Re-submitted 2026-09-18 as
    [PR #5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396),
-   from `Pummelchen/awesome-dsh-plugin` on branch `add-tinytitan-plugin`, level
-   with the catalogue's `main`. One file, +6/−0; nothing here can hurry a merge.
-   The fork exists only as that PR's head, and to run the catalogue's own checks
-   against its `main`: **delete it once #5396 is merged or closed.** A solved PR
-   is all it is for, and a standing fork is clutter.
+   from `Pummelchen/awesome-dsh-plugin` on branch `add-tinytitan-plugin`.
+   **Merged 2026-09-19 by `fkysly`** (merge commit `4d136c1`), so the catalogue
+   half is done: `dsh-tinytitan` is listed. The fork is now inert — delete it,
+   but the `gh` token here lacks the `delete_repo` scope, so run
+   `gh auth refresh -h github.com -s delete_repo` first or remove it in the web
+   UI. Nothing depends on it.
 4. **Optionally add `screenshots.json`** to `plugins/dsh-tinytitan/` (1–8 images
    already in this repository) so the storefront shows the plugin rather than
    scraping the README.
