@@ -38,6 +38,7 @@ SCRATCH="${TINYTITAN_MEMVAL_SCRATCH:-$ROOT/.build/benchmark-logs/memval-scratch-
 case "$BENCH" in
   pong)  BENCH_DIR=value ;;
   book|smoke) BENCH_DIR=book ;;
+  master) BENCH_DIR="${TINYTITAN_MASTER_SCENARIO:?set TINYTITAN_MASTER_SCENARIO}" ;;
   *)     BENCH_DIR="$BENCH" ;;
 esac
 LOGS="$ROOT/.build/benchmark-logs/memory-$BENCH_DIR-$LABEL"
@@ -50,7 +51,10 @@ case "$BENCH" in
   correct) SCRIPT="$ROOT/benchmark/memory_correct.py";  ARMS=(control auto) ;;
   projects) SCRIPT="$ROOT/benchmark/memory_projects.py"; ARMS=(control auto) ;;
   volume)  SCRIPT="$ROOT/benchmark/memory_volume.py";   ARMS=(control auto full) ;;
-  *) echo "usage: $0 smoke|pong|book|correct|projects|volume [arm]" >&2; exit 2 ;;
+  # The ten master prompts: one scenario per invocation, named by
+  # TINYTITAN_MASTER_SCENARIO (see benchmark/memval_master.sh).
+  master)  SCRIPT="$ROOT/benchmark/memory_master.py";   ARMS=(summary auto) ;;
+  *) echo "usage: $0 smoke|pong|book|correct|projects|volume|master [arm]" >&2; exit 2 ;;
 esac
 [[ -n "$ONLY" ]] && ARMS=("$ONLY")
 if [[ -n "${TINYTITAN_MEMVAL_ARMS:-}" && "$BENCH" != smoke ]]; then
