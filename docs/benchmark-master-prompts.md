@@ -7,18 +7,37 @@ written to be reusable by any harness — the memory benchmarks use them, but
 nothing here depends on memory: a scenario is a task, a timeline, and a set of
 facts whose truth changes.
 
-Two are implemented and carry the recorded measurements:
+All ten are runnable. Prompts 1 and 2 also have dedicated harnesses that carry
+the recorded measurements; 3–10 run through the generic driver built from this
+catalogue.
 
 | # | scenario | harness |
 | --- | --- | --- |
-| 1 | The Photograph | `benchmark/memory_book.py` |
-| 2 | Pong | `benchmark/memory_value.py` |
+| 1 | The Photograph | `benchmark/memory_book.py`; also `memory_master.py` |
+| 2 | Pong | `benchmark/memory_value.py`; also `memory_master.py` |
+| 3–10 | the rest | `benchmark/memory_master.py` |
 
-The other eight are designs. The three mini-worlds in
-`benchmark/memory_scenarios.py` (`ops`, `lab`, `contract`) are **not** these
-prompts: they are side-engine case worlds of the same domains, used to feed
-one-decision judgements rather than to run whole sessions. Prompts 4, 6, 8 and
-10 are transition-dense on purpose; 1 and 2 are the controls.
+`benchmark/master_scenarios.py` is this document as data — the brief, the
+per-session instruction, the injected changes, the quiz and the truth.
+`benchmark/memory_master.py` drives one scenario through the memory arms and
+scores three things: **foundation** (keys that never change) as a no-regression
+check, **carryable** (keys that change at least once) as the signal, and a
+separate **stale** count — an answer that is an older value of a key, given
+after it changed. Both sets are derived from the timeline, so they cannot drift
+from the truth.
+
+```bash
+# all ten, one run each, shipped arms (summary + memory auto)
+TINYTITAN_MEMVAL_MODEL=qwen36 TINYTITAN_MEMVAL_QUANT=4 benchmark/memval_master.sh
+benchmark/memval_master.sh ledger filing            # named scenarios
+python3 benchmark/memory_master.py report-all       # the picture, all ten
+```
+
+The three mini-worlds in `benchmark/memory_scenarios.py` (`ops`, `lab`,
+`contract`) are **not** these prompts: they are side-engine case worlds of the
+same domains, used to feed one-decision judgements rather than to run whole
+sessions. Prompts 4, 6, 8 and 10 are transition-dense on purpose; 1 and 2 are
+the controls.
 
 ## How a harness uses one
 
@@ -86,7 +105,7 @@ by prior.
 
 ## 3. Ledger API — a staged service migration
 
-**Domain:** code, long-lived repository. **Sessions:** 8. **Status:** design.
+**Domain:** code, long-lived repository. **Sessions:** 8. **Status:** runnable.
 
 **Master prompt (verbatim):**
 
@@ -110,7 +129,7 @@ shape a summary carries forward wrongly.
 
 ## 4. Pigeon — an operations runbook
 
-**Domain:** infrastructure. **Sessions:** 6. **Status:** design.
+**Domain:** infrastructure. **Sessions:** 6. **Status:** runnable.
 
 **Master prompt (verbatim):**
 
@@ -130,7 +149,7 @@ decommission that removes a fact rather than changing it.
 
 ## 5. Northwind × Calder — a negotiated contract
 
-**Domain:** legal drafting. **Sessions:** 7. **Status:** design.
+**Domain:** legal drafting. **Sessions:** 7. **Status:** runnable.
 
 **Master prompt (verbatim):**
 
@@ -151,7 +170,7 @@ the superseded text must not be quoted.
 
 ## 6. Compound K — a bench assay protocol
 
-**Domain:** laboratory research. **Sessions:** 6. **Status:** design.
+**Domain:** laboratory research. **Sessions:** 6. **Status:** runnable.
 
 **Master prompt (verbatim):**
 
@@ -173,7 +192,7 @@ corrected value without flagging a conflict.
 
 ## 7. Vantage — a tabletop campaign bible
 
-**Domain:** game design. **Sessions:** 8. **Status:** design.
+**Domain:** game design. **Sessions:** 8. **Status:** runnable.
 
 **Master prompt (verbatim):**
 
@@ -195,7 +214,7 @@ board — without hundreds of words of prose per session.
 
 ## 8. The kitchen — a renovation spec
 
-**Domain:** physical project. **Sessions:** 7. **Status:** design.
+**Domain:** physical project. **Sessions:** 7. **Status:** runnable.
 
 **Master prompt (verbatim):**
 
@@ -215,7 +234,7 @@ the failure mode where a stale figure survives into a purchase order.
 
 ## 9. Sleep and memory — a cohort study protocol
 
-**Domain:** research design. **Sessions:** 8. **Status:** design.
+**Domain:** research design. **Sessions:** 8. **Status:** runnable.
 
 **Master prompt (verbatim):**
 
@@ -236,7 +255,7 @@ rather than merely reading oddly.
 
 ## 10. The annual filing — regulatory compliance
 
-**Domain:** finance and compliance. **Sessions:** 7. **Status:** design.
+**Domain:** finance and compliance. **Sessions:** 7. **Status:** runnable.
 
 **Master prompt (verbatim):**
 
