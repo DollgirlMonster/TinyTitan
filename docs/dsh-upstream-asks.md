@@ -155,6 +155,26 @@ one acknowledged gap — a caller that names a level explicitly is not covered b
 the selection home — which is the resolver's job as a *capability* rule, not the
 policy's.
 
+**The plugin-side half, from a third reply (2026-09-19).** `wangzhanchao883`
+adds the case this ask does not cover: a third-party plugin's *own* model call
+is not one of the harness's auxiliary calls, so it cannot borrow the `purpose`
+classification at all — the vocabulary is `compaction`/`session-title`, and a
+plugin-invented value is in no allowlist. The plugin can only query the
+capability at its own call site and then name a level.
+
+Its failure shape is worse than the one above. An error `finish` at least
+carries a code; the plugin-side failure returns normally, throws nothing and
+carries no code — the caller simply never gets the JSON, and a caller that
+retries on a thrown error never retries. They hit it twice, and lost a second
+round to the "no error" part. This is exactly why `plugins/dsh-tinytitan`'s
+compaction override names `off` unconditionally *only* while the routes this
+checkout emits list `off`: on a foreign route it would fail in that silent way,
+and the capability query is the hardening.
+
+The reply also corrects its own earlier advice (#3468, #6797) — "just pass
+`reasoningEffort: off`" — which holds only where the route lists `off`, and
+points at field notes in #6857.
+
 ---
 
 ## 2. Map pi-ai's reasoning usage into `reasoningTokens`
