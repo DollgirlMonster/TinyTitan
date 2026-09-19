@@ -3,10 +3,12 @@
 One runtime fix carries this release: an install whose manifest names the GDN
 `linear_attn.in_proj_a`/`in_proj_b` pair explicitly at the attention slot's own
 width is honoured again instead of refused on load, which is what stopped a
-`qwen38flash` 4-bit install from serving at all (issue #16). The rest of what
-landed since 5.8 is measurement: the ten master prompts are runnable end to end,
-and which model judges the side-engine's tasks — the resident 4B on the CPU or
-the model already on the engine — is now a number instead of a belief.
+`qwen38flash` 4-bit install from serving at all (issue #16). Beside it is a
+one-line ordering fix the thread-sanitizer gate caught on this release's own
+commit, and the rest of what landed since 5.8 is measurement: the ten master
+prompts are runnable end to end, and which model judges the side-engine's tasks
+— the resident 4B on the CPU or the model already on the engine — is now a
+number instead of a belief.
 
 ### A GDN a/b override at the attention slot's width is honoured
 
@@ -28,6 +30,17 @@ Verified on this checkout by adding that override to the shipped 125B manifest
 and its receipt: the reported error fired verbatim, and with the fix the same
 install answered. `RoleUniformityTests` pins the regression, and the qwen38 4-bit
 golden passes unchanged.
+
+### A T7 hint is queued before the search returns
+
+The T7 background caller's registration was fire-and-forget: `memory_search`
+scheduled the question in an unstructured task and returned, so the question
+could still be unqueued when the search's answer was. Nothing on the request
+path waits on a judgement either way, but the thread-sanitizer gate widened that
+window until `MemoryRetrievalTests` failed on the release commit — a caller that
+awaits the hint right after a search could arrive before the question was
+registered. Registration is now awaited and only enqueues; the sweep still runs
+on its own task in the idle window (`sources/TinyTitanMemory/MemoryService.swift`).
 
 ### The ten master prompts are runnable, and memory has a baseline that is not "off"
 

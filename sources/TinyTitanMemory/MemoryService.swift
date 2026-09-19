@@ -576,28 +576,30 @@ public actor MemoryService {
     /// The ranking hint this call may read, and the closure that schedules the
     /// background pass the next search will read from.
     ///
-    /// The schedule closure is fire-and-forget on purpose: it hands the
-    /// question to the hinter's own task and returns, so a search never waits
-    /// on a judgement. Both are empty unless this really is a text search and
+    /// The closure queues the question on the hinter before the search returns,
+    /// so the question is registered by the time the answer is; it still never
+    /// waits on a judgement, because `register` only enqueues. That ordering is
+    /// why an observer that awaits the hint right after a search cannot race the
+    /// registration. Both are empty unless this really is a text search and
     /// a side-engine is wired, which is what leaves the deterministic path
     /// byte-for-byte what it was.
     private func retrievalContext(name: String,
                                   arguments: [String: MemoryToolValue],
                                   store: any MemoryStore,
                                   scope: MemoryScope)
-        async -> (MemoryRetrievalHint, (@Sendable (MemoryQuery) -> Void)?) {
+        async -> (MemoryRetrievalHint, (@Sendable (MemoryQuery) async -> Void)?) {
         guard name == "memory_search", let hinter = retrievalHinter,
               let text = arguments["query"]?.stringValue,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return (.none, nil)
         }
         let hint = await hinter.hint(question: text, in: scope)
-        let schedule: @Sendable (MemoryQuery) -> Void = { query in
+        let schedule: @Sendable (MemoryQuery) async -> Void = { query in
             guard let asked = query.text,
                   !asked.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return
             }
-            Task { await hinter.register(question: asked, in: scope, store: store) }
+            await hinter.register(question: asked, in: scope, store: store)
         }
         return (hint, schedule)
     }

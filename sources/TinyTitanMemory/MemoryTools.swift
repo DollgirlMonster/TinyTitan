@@ -121,7 +121,7 @@ public enum MemoryTools {
                                limits: MemoryLimits,
                                guarding: Bool = false,
                                retrievalHint: MemoryRetrievalHint = .none,
-                               onSearch: (@Sendable (MemoryQuery) -> Void)? = nil) async -> MemoryToolResult {
+                               onSearch: (@Sendable (MemoryQuery) async -> Void)? = nil) async -> MemoryToolResult {
         do {
             switch name {
             case "memory_get":
@@ -195,10 +195,14 @@ public enum MemoryTools {
                     tags: arguments["tags"]?.stringArrayValue ?? [],
                     minimumImportance: arguments["min_importance"]?.doubleValue,
                     limit: arguments["limit"]?.intValue ?? 10)
-                // Registered, not awaited: the search answers from the ranking
-                // it already has, and the background pass leaves a hint for a
-                // later one. `onSearch` is nil unless a side-engine is wired.
-                onSearch?(query)
+                // Queued before the search answers: `register` only hands the
+                // question to the hinter's own task and never runs the engine,
+                // so this is not the search waiting on a judgement. Awaiting it
+                // means a caller that observes the hint right after a search
+                // cannot arrive before the question was even queued — the race
+                // TSAN caught in `MemoryRetrievalTests`. `onSearch` is nil
+                // unless a side-engine is wired.
+                await onSearch?(query)
                 let ranked = try await store.search(query, in: scope)
                 let records = retrievalHint.isEmpty
                     ? ranked
