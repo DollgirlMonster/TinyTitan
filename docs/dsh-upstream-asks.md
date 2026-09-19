@@ -288,6 +288,40 @@ another machine on the same subnet can load it; and the `/api` fence still
 rejects a Host header that is neither the bound address nor an explicit
 `--trusted-host`.
 
+**The reply (2026-09-19, `PerryLink`), and one correction to our reading.** Our
+description of the tree holds except for *which* check is the gate:
+
+- The startup guard is not it. `packages/bundle/web-app/src/startup.ts:74-76`
+  refuses the literal `0.0.0.0` and nothing else — `--host` is an unrestricted
+  `.option('--host <host>')` (`:51`), so `--host 192.168.1.5` passes the action,
+  is published to the bundle patch, and reaches the webserver row.
+- It dies one layer down, in the webserver's own schema:
+  `host: z.union([z.const('127.0.0.1'), z.const('0.0.0.0')]).required()`
+  (`packages/host/webserver/src/index.ts:126`), above the comment naming "the two
+  supported values" (`:59-61`). An interface literal dies at schema validation;
+  the wildcard dies earlier, at the CLI guard.
+- The LAN-trust half is as we wrote, and its second half is the sharper point:
+  `resolveLanTrust` branches on the wildcard literal
+  (`packages/bundle/web-app/src/index.ts:126-130`), so any other bind returns
+  `lanAddresses: []` and a `trustedHosts` of only the explicit `--trusted-host`
+  values (`:131`); the banner reuses that snapshot (`:263-271`), and the fence
+  admits a non-loopback Host only from `trustedHosts`
+  (`packages/client/connection/src/api-request-trust.ts:103`, 403/401 at
+  `rpc-host.ts:97-100`). A specific-interface bind would need its address folded
+  into that list.
+- On the security consideration: "requires a token" is **already true** —
+  `/api` wants the launch token's signed cookie on top of the fence, minted into
+  the index URL by `authenticatedUrl` (`browser-auth.ts:223-247`) — so an opt-in
+  flag would not be adding authentication. A LAN bind changes the *reach*, not
+  the credential, while that credential is printed in the ready banner. Whether
+  the trade is acceptable is a deployment call, not the maintainer's.
+- **What a user can do today:** remote access has to arrive *at* loopback. The
+  documented path is an SSH launch (the URL still prints, the browser handoff is
+  suppressed); a local proxy or tunnel to `127.0.0.1` also works. The reply
+  grepped for an explicit `ssh -L`/`LocalForward` recipe and found none in the
+  tree — the docs describe the SSH case without spelling out the forwarding
+  command — so that is unverified **as documented guidance**.
+
 ---
 
 ## Applying these locally
