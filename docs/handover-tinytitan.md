@@ -1,13 +1,13 @@
-# Handover: after release 5.8, the engine and its loopback server
+# Handover: after release 5.9, the engine and its loopback server
 
 **Paste this into the next session:**
 
 > Continue the TinyTitan work in this checkout. Read `AGENTS.md`, then
-> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.8 is cut and
-> published** (`v5.8` → `4fc0726`; `tinytitan-5.8-macos-arm64.tar.gz`, 15,436,730
-> bytes, sha256 `e96e4635d1c5dea879f92b6b39179a89e9c0e667a0844fd837878f66c1d7d35e`,
-> 2026-09-19) and **`main` sits one commit past it** — this brief; the release notes
-> are `docs/release-notes-v5.8.md`. The product is the engine plus its loopback
+> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.9 is cut and
+> published** (`v5.9` → `4d0c225`; `tinytitan-5.9-macos-arm64.tar.gz`, 15,437,857
+> bytes, sha256 `2c9a6657a5516dcb754837542b20f95122a02370be10dc983c1e581a4030f8d7`,
+> 2026-09-20) and **`main` sits one commit past it** — this brief; the release notes
+> are `docs/release-notes-v5.9.md`. The product is the engine plus its loopback
 > server — the Mac app is gone — and `tools/install_tinytitan.sh` downloads a built
 > release instead of compiling one. The twelve installs under `models/` have
 > receipts **valid for this folder**, because a rename invalidates them; re-issue
@@ -16,7 +16,7 @@
 > a model to make a gate pass, and never fetch one of the installs the operator
 > deleted. Report measurements, not assurances.
 
-This is the only current brief; the 5.7 handover it replaces is superseded. The
+This is the only current brief; the 5.8 handover it replaces is superseded. The
 traps that one named still bite and are folded in below.
 
 > **The product shape changed: the GUI is gone.** The Mac app, the out-of-process
@@ -63,17 +63,28 @@ traps that one named still bite and are folded in below.
 | --- | --- |
 | Repository | `Pummelchen/TinyTitan` (renamed 2026-09-14; the old URL redirects) |
 | Checkout folder | `~/Downloads/TinyTitan` — **renamed from `~/Downloads/NVMAI`**, which invalidated every receipt and `.build`'s debug half |
-| `main` | `4fc0726`, level with `origin/main`; `v5.8` points at it and this brief is the one commit past it |
-| Release | **5.8 published** 2026-09-19 — `tinytitan-5.8-macos-arm64.tar.gz`, 15,436,730 bytes, sha256 `e96e4635…` with its `.sha256` beside it |
+| `main` | level with `origin/main`, one commit past `v5.9` (this brief); the release commit is `4d0c225` |
+| Release | **5.9 published** 2026-09-20 — `tinytitan-5.9-macos-arm64.tar.gz`, 15,437,857 bytes, sha256 `2c9a6657…` with its `.sha256` beside it |
 | Models | **12 installs, 488 GB**; every receipt bound to this path, so all load |
 | Goldens stored | 16; **11 checked** here (qwen38-125b-4bit, agentworld-{4,8}, qwen36-{4,8}, qwen35-{2b,4b,9b}-{4,8}); the five with no install — `ornith-{4,8}`, `qwen38-8`, `katcoder-{4,8}` — are reported *not checked* and named in the notes |
-| `.build` | release rebuilt for 5.8; a clean scratch release build is part of each dry run |
+| `.build` | release rebuilt for 5.9; a clean scratch release build is part of each dry run |
 | Wiki | `.qwen/wiki`, remote `TinyTitan.wiki.git`, level with `origin/master` |
 | DeepSeek Harness | pinned `0.1.6-alpha.2` and **enforced**; both plugins refuse any other version; the global harness runs the gate, the private one is refreshed but idle until its next start |
-| CI | every `main` push runs both jobs including `thread-sanitizer`; the 5.8 push is the run to watch (`gh run list`) |
+| CI | every `main` push runs both jobs including `thread-sanitizer`; the 5.9 push is the run to watch (`gh run list`) |
 
 ## What has landed
 
+- **5.9** (`4d0c225`) — an install whose manifest names the GDN
+  `in_proj_a`/`in_proj_b` pair at the attention slot's own width loads and serves
+  again (issue #16, a qwen38flash 4-bit install); the ten master prompts are
+  runnable end to end, with a client's own summary as the baseline memory has to
+  beat; and which judge runs the side-engine's tasks is a measurement. Beside
+  those, one ordering fix: a search queues its T7 question before it answers
+  (`docs/release-notes-v5.9.md`). Gates: six lint gates clean (2,035 functions,
+  20 scripts), **1,484 tests in 222 suites**, 11 goldens byte-identical, a
+  warning-free scratch build, and a 4B speed record with every generation metric
+  inside the 10% gate — the two synthetic kernel metrics read low under system
+  load and the notes carry both values and the reason.
 - **5.8** (`4fc0726`) — the memory side-engine (a 4B on the CPU decides
   durability, duplication, contradiction and supersession, six questions a
   consolidation), the rule that holds a write back, IDF retrieval plus the
@@ -84,8 +95,6 @@ traps that one named still bite and are folded in below.
   warning-free scratch build, and speeds inside the 10% gate against 5.7.
 - **5.7** (`44e1ae9`) — one command installs a built engine, the app is gone, and
   every script runs on `/bin/bash` 3.2.57. `docs/release-notes-v5.7.md`.
-- **5.6** (`2a06c1c`) — the three reported bugs and an ANE answer of "no".
-  `docs/release-notes-v5.6.md`.
 
 ## What is open
 
@@ -93,16 +102,20 @@ The [Project Tracker](https://github.com/Pummelchen/TinyTitan/wiki/Project-Track
 is the authority, and it holds one table with no Open row. Two items are Blocked
 on other people:
 
-1. **TT-018 — publishing `plugins/dsh-tinytitan`.** The catalogue PR
-   [#5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396) is
-   open, CLEAN and mergeable and waits on a maintainer with write access; npm
-   publishing is the operator's account. The `Pummelchen/awesome-dsh-plugin` fork
-   is only that PR's head: **delete it once #5396 is merged or closed.**
+1. **TT-018 — publishing `plugins/dsh-tinytitan`.** The catalogue half is
+   **done**: [#5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396)
+   merged 2026-09-19 (merge commit `4d136c1`) and `dsh-tinytitan` is listed. Only
+   the npm publish remains, on the operator's account. The
+   `Pummelchen/awesome-dsh-plugin` fork is now inert; it **cannot be deleted from
+   this checkout** because the token lacks `delete_repo`.
 2. **TT-020 — reaching the LAN manager from another machine.**
-   `docs/dsh-upstream-asks.md` posted three asks; #7109 and #7110 have verified
-   replies and our suggested patches were corrected there, but **#7111** — a
-   non-loopback bind — is unanswered, so the plugin works and nothing can reach it
-   remotely yet.
+   [Discussion #7111](https://github.com/deepseek-ai/deepseek-harness/discussions/7111)
+   was **answered 2026-09-19 by `PerryLink`**: the gate is the webserver schema,
+   which admits exactly `127.0.0.1` and `0.0.0.0`, not the CLI guard; a
+   specific-interface bind would also need its address folded into
+   `resolveLanTrust`'s `trustedHosts`. Upstream's call, so the plugin works and
+   nothing reaches it remotely yet. `docs/dsh-upstream-asks.md` holds all three
+   asks and the replies.
 3. **Carried forward, not tracked as tasks:** the Qwen 3.8 port items — QSA
    indexer selections to the GPU, a higher expert slot budget, the n-gram gather a
    token ahead. TT-021–TT-023 were closed on 2026-09-19 (no other machines; no disk
@@ -136,9 +149,27 @@ on other people:
   numbers must be in the notes, so the sequence is: commit prep → tag → dry run →
   fill in `### Verification` → commit → `git tag -f` → `git push --force origin
   vX.Y` → `--publish`. `--publish` re-runs every gate and rebuilds the archive,
-  so **the published digest and size are never the dry run's** (5.8: 15,436,743
-  bytes dry, 15,436,730 published; 5.5: 26,093,424 dry, 26,094,346 published) —
-  that is what the placeholders are for.
+  so **the published digest and size are never the dry run's** (5.9: 15,437,771
+  bytes dry, 15,437,857 published; 5.8: 15,436,743 dry, 15,436,730 published;
+  5.5: 26,093,424 dry, 26,094,346 published) — that is what the placeholders are
+  for.
+- **A fire-and-forget registration can race the observer that awaits it.** The
+  T7 schedule closure in `MemoryService` handed the question to an unstructured
+  `Task { await hinter.register(…) }` and returned, so `waitForRetrievalHints()`
+  could return before the question was queued; the plain suite passed and only
+  `--sanitize=thread` failed, on the 5.9 release commit. Fixed by awaiting the
+  queueing hop, which never runs the engine. The general form: when something is
+  described as background, the seam that observes it must wait for the
+  *hand-over*, not merely for already-started work.
+- **The synthetic kernel metrics swing with the machine, not the code.** QKV GEMV
+  and GDN in-projection have read 55.4–78.6 and 66.8–77.4 GB/s across the
+  v5.5–v5.8 records on this machine, and 5.9 measured 63.5/67.9 while macOS's
+  `dasd` held a core at ~95% and Chrome was active. The speed gate compares
+  against the previous release's record, which can be the series' high-water
+  mark. Cross-check the generation metrics and the greedy response hash (an
+  unchanged hash means no arithmetic moved), then record both values and the
+  reason in `### Verification` rather than re-rolling the number into a
+  flattering record.
 - **A `file:` plugin install is a copy.** After editing
   `plugins/dsh-tinytitan/`, re-install it
   (`dsh plugin --profile web remove dsh-tinytitan`, then `add
