@@ -375,4 +375,70 @@ Wired:
 
 Not wired:
 
-- **T6 reply check** becomes available when the engine is a 9B.
+- **T6 reply check** — the 4B catches 0 of 3 contradicting replies; a 9B, or the
+  served model, is what decides it. The served model is measured below.
+
+## Asking the served model instead of the 4B (2026-09-19)
+
+The default judge is a dense 4B on the CPU, chosen for what it does *not* cost:
+no engine time, no eviction of the person's prompt cache, no second resident
+model. But the served model is already loaded and much larger, so the question
+is fair, and it is now a measurement: `benchmark/side_engine_judges.py` runs one
+prepared case file through either judge — `cpu:<install>` drives the dense CPU
+engine, `server:<url>:<model>` posts to a running server — and scores both with
+`side_engine_tasks.py`'s own scorer. The 60 book-world cases, one run each:
+
+| task | 4B CPU | served 35B |
+| --- | ---: | ---: |
+| T2 durability | 95% (9/10, 10/10) | 95% (9/10, 10/10) |
+| T3 contradiction | 100% | 100% |
+| T4 supersession | 100% | 100% |
+| T5 duplication | **100%** | 75% (4/4, 2/4) |
+| T6 reply check | 62% (5/5, 0/3) | **100%** (5/5, 3/3) |
+| T7 retrieval | 100% | 100% |
+| seconds per judgement | 21.8 | **2.5** |
+
+**Bigger is not uniformly better, and the two judges are complementary.** The
+4B rejects the narration line `Chapter 34: the inn burned as the tide came in.`
+that the 35B keeps, and the 35B rejects `Chapter 63: the certificate lay in the
+drawer, unsigned.` that the 4B keeps. On T5 the 35B reads the two keys literally
+and calls `characters/marcus/eyes = grey` against
+`notes/marcus = marcus's eyes are grey` a NO — the 4B is right that it is the
+same fact. Split by task, the pair beats either alone: **T2 10/10**, **T5 8/8**,
+**T6 8/8**.
+
+**The seconds are not comparable.** 21.8 s is otherwise-idle CPU that overlaps
+the person's turn (3% while generating, at one thread, measured); 2.5 s is the
+main engine, under the one-generation gate, from a prompt the prefix cache cannot
+reuse. The honest comparison is 21.8 s of CPU against 2.5 s of the person's
+engine.
+
+### Three more worlds, for diversity
+
+`book` and `pong` share a shape — a fixed set in session one, then a handful of
+changes — so three worlds were added (`benchmark/memory_scenarios.py`): `ops`
+(an infrastructure runbook), `lab` (a protocol with a correction), `contract`
+(clauses and an amendment). They produce 53 one-decision cases across
+T2/T3/T4/T5/T7, all authored, all pinned by `test_memory_scenarios.py`:
+
+| task | 4B CPU | served 35B |
+| --- | ---: | ---: |
+| T2 durability | 94% (3/3, 13/14) | **100%** (3/3, 14/14) |
+| T3 contradiction | 100% | 100% |
+| T4 supersession | 100% | 100% |
+| T5 duplication | 100% | 100% |
+| T7 retrieval | 100% | 100% |
+| seconds per judgement | 32.1 | **2.4** |
+
+**What the worlds changed.** On the book world the served model was *worse* on
+one task (T5 75%); on the new worlds it is equal or better. The one case the 4B
+drops is `protocol/incubation = 37 C for 45 minutes`, a standing protocol fact it
+refuses as not durable. Three ground-truth errors were found and fixed while
+building the worlds — a T3 pair that used two different keys for a
+"contradiction", and two T4 UPDATE cases whose rule made the answer contestable —
+which is why the worlds carry a test rather than a comment.
+
+**What this changes about the wiring.** Nothing yet. The default stays the 4B for
+T2/T5; the served model is the candidate for T6, which the 4B cannot do and a 9B
+or the 35B does perfectly. Moving a task to the served model is a config choice
+the port does not yet express, and this measurement comes first.
