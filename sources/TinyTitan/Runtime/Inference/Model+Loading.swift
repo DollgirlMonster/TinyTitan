@@ -451,22 +451,29 @@ extension Model {
     /// reach. Its neighbours (`in_proj_qkv`, `in_proj_z`, `out_proj`, and every
     /// attention projection) resolve the tensor's own slot; `gdnA`/`gdnB`
     /// validate against the attention slot because the kernel that reads them
-    /// takes a *bf16-or-slot* flag rather than a width. A quantized override on
-    /// the pair is therefore not applied, and the install fails the size check
-    /// with "in_proj_a.weight size N does not match expected M", which reads
-    /// like corruption rather than a limit. Only a 16-bit override is honoured,
-    /// and a quantized one is named here instead.
+    /// takes a *bf16-or-slot* flag rather than a width. So an override is
+    /// honoured exactly when it names a width that kernel can read — the
+    /// attention slot's own width, or bf16 — and any other width is refused by
+    /// name here, because the failure it used to produce ("in_proj_a.weight
+    /// size N does not match expected M") reads like corruption rather than a
+    /// limit.
+    ///
+    /// **Naming the slot's width is honoured, not refused.** A manifest that
+    /// carries an explicit `in_proj_a` at the slot's 4 bits describes the width
+    /// the kernel already uses; refusing it broke a `qwen38flash` install
+    /// (issue #16) on load, before any weight was read.
     static func validateRoleUniformity(overrides: [String: Int],
-                                       family: ModelFamily) throws {
+                                       family: ModelFamily,
+                                       attentionBits: Int) throws {
         guard !overrides.isEmpty else { return }
         for (stem, bits) in overrides.sorted(by: { $0.key < $1.key })
         where stem.hasSuffix(".linear_attn.in_proj_a")
             || stem.hasSuffix(".linear_attn.in_proj_b") {
-            guard bits == 16 else {
+            guard bits == 16 || bits == attentionBits else {
                 throw ModelError.unsupportedArchitecture(
                     detail: "\(family.rawValue) declares \(stem) at \(bits) bits; the GDN "
-                        + "a/b kernel reads that pair at the attention slot's width or as "
-                        + "bf16, so a quantized override there is not honoured")
+                        + "a/b kernel reads that pair at the attention slot's width "
+                        + "(\(attentionBits)) or as bf16, so that override is not honoured")
             }
         }
         // The runtime's roles, not one suffix per tensor: q/o share a
@@ -550,7 +557,8 @@ extension Model {
         // sandwich/scale tensors.
         try validateFamilyQuantSupport(config: config, quant: quant,
                                        overrides: overrides)
-        try validateRoleUniformity(overrides: overrides, family: config.family)
+        try validateRoleUniformity(overrides: overrides, family: config.family,
+                                   attentionBits: quant.attention.weightBits)
         try validateLayerTensors(checks: checks, config: config, quant: quant,
                                  overrides: overrides)
         // A dense install packs no experts at all (`expertsPerLayer: 0` and an
