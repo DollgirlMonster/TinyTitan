@@ -90,23 +90,48 @@ and what it does not change yet are in `docs/side-engine-tasks.md`.
 ### Performance
 
 The README's benchmark table was **not** re-measured for this release; its rows
-are quoted as they stand. Measured on this commit for this release:
+are quoted as they stand. Measured on this commit for this release against the
+5.8 record (`benchmark/internal-speeds/v5.9.json`):
 
-- the engine's own speeds against the 5.8 record
-  (`benchmark/internal-speeds/v5.9.json`): PERFORMANCE_PENDING.
+- routed MoE **43.6 GB/s** (−1.4%), CPU int8 GEMV **47.5 GB/s** (−3.5%), prefill
+  **24.1 tok/s** (−6.9%), decode **25.0 tok/s** (−6.4%), first token **0.29 s**
+  (+7.4%), effective decode **67.8 GB/s** (−6.4%), ANE prefill **48.4 tok/s**
+  (−1.9%) — every one inside the 10% gate;
+- the greedy response is byte-identical to 5.8 (`quality.response_sha256`
+  unchanged), so no arithmetic moved;
+- the two synthetic kernel metrics read low — QKV GEMV **63.5 GB/s** (−19.2%)
+  and GDN in-projection **67.9 GB/s** (−12.3%) — and `### Verification` records
+  why: the machine was under system-maintenance load, and those metrics have
+  ranged 55.4–78.6 and 66.8–77.4 GB/s across the v5.5–v5.8 records here.
 
 ### Verification
 
 Measured on this commit by the release dry run:
 
-- six lint gates clean, LINT_FUNCTIONS_PENDING functions scanned, the shell gate
-  over SHELL_SCRIPTS_PENDING scripts on bash 3.2.57;
-- TEST_COUNT_PENDING tests in TEST_SUITES_PENDING suites, all passing;
-- GOLDEN_COUNT_PENDING golden baselines byte-identical;
+- six lint gates clean, **2,035 functions** scanned, the shell gate over 20
+  scripts on bash 3.2.57;
+- **1,484 tests in 222 suites**, all passing; and 7 `MemoryRetrievalTests`
+  under `--sanitize=thread`, 15 runs in a row, after the ordering fix above;
+- **11 golden baselines byte-identical**;
 - a clean scratch release build with the compiler-warning scan clean, and the
   archive staged and packaged from that tree;
 - the engine's speeds recorded against the 5.8 baseline and committed
-  (`benchmark/internal-speeds/v5.9.json`), every metric inside the gate.
+  (`benchmark/internal-speeds/v5.9.json`): every generation metric and the
+  quality proxy inside the gate, with the greedy response hash unchanged.
+
+**Two synthetic kernel metrics are past the 10% speed gate and are not a code
+regression.** QKV GEMV measured **63.5 GB/s against 78.6** (−19.2%) and GDN
+in-projection **67.9 against 77.4 GB/s** (−12.3%). The measurement ran while
+macOS's Duet Activity Scheduler held a core at ~95% and Chrome was active
+(`dasd` sampled at 93–97% throughout, load average ≈6); the same synthetic
+metrics have ranged **55.4–78.6 GB/s** (QKV) and **66.8–77.4 GB/s** (GDN) across
+the v5.5–v5.8 records on this machine, with 5.8 the series' high-water mark —
+each earlier release shows the same first-run-low, re-run-high pattern the 5.9
+re-run repeated. Nothing in this release touches those kernels (the runtime
+changes are a load-time validation and a memory-path ordering fix), every
+generation metric came back inside the gate on the re-run, and the greedy
+response is byte-identical to 5.8. The record is committed as measured rather
+than re-rolled to flatter it.
 
 **Five golden targets are not checked**, because their install is not under
 `models/` and nothing may be fetched to change that: `ornith-8`, `ornith-4`,
