@@ -115,5 +115,45 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(run["sessions"][2]["stale"], 0)  # 6 was never the value
 
 
+class ConsolidationWaitTests(unittest.TestCase):
+    """The wait must end on a decision, not only on a distillation.
+
+    Counting only `memory consolidated session=` made a skipped consolidation
+    look like work in flight, and the wait then burned its whole limit on a
+    session the engine had already finished — harness overhead recorded as
+    memory cost.
+    """
+
+    def _with_log(self, contents: str):
+        import tempfile
+        directory = tempfile.TemporaryDirectory()
+        log = pathlib.Path(directory.name) / "server.log"
+        log.write_text(contents)
+        saved = master.SERVER_LOG
+        master.SERVER_LOG = str(log)
+        self.addCleanup(setattr, master, "SERVER_LOG", saved)
+        self.addCleanup(directory.cleanup)
+        return log
+
+    def test_a_store_write_summary_is_not_an_engine_decision(self):
+        self._with_log("[t] memory memory session=s-1 consolidated 3 records\n")
+        self.assertEqual(master.consolidation_outcomes(), (0, 0))
+
+    def test_a_skip_ends_the_wait(self):
+        log = self._with_log("")
+        before = master.consolidation_outcomes()
+        log.write_text("[t] memory consolidation skipped session=s-1: "
+                       "10 new characters, nothing to distil\n")
+        self.assertLess(master.wait_for_consolidation(before, limit=30), 5)
+        self.assertEqual(master.consolidation_outcomes(), (0, 1))
+
+    def test_a_distillation_ends_the_wait(self):
+        log = self._with_log("")
+        before = master.consolidation_outcomes()
+        log.write_text("[t] memory consolidated session=s-2 turns=1 facts=1 seconds=9\n")
+        self.assertLess(master.wait_for_consolidation(before, limit=30), 5)
+        self.assertEqual(master.consolidation_outcomes(), (1, 0))
+
+
 if __name__ == "__main__":
     unittest.main()

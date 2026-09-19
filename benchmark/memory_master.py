@@ -88,22 +88,39 @@ def model_id() -> str:
         return json.load(response)["data"][0]["id"]
 
 
-def consolidations_logged() -> int:
+def consolidation_outcomes() -> tuple[int, int]:
+    """The engine's decisions so far: (distilled, skipped).
+
+    Every session the engine considers ends in one of two lines, so a caller can
+    wait for *a decision* rather than for a distillation. Counting only
+    `memory consolidated session=` made a skip — "nothing to distil" — look like
+    work still in flight, and the wait then burned its whole limit, which put up
+    to 600 s of harness overhead into the memory arm's wall clock and made the
+    cost comparison read as if every session paid a consolidation generation.
+    The store's own `memory memory session=<id> consolidated N records` line is a
+    write summary, not an engine decision, and is deliberately not counted.
+    """
     if not SERVER_LOG or not os.path.exists(SERVER_LOG):
-        return -1
+        return (-1, -1)
+    distilled = skipped = 0
     with open(SERVER_LOG, errors="replace") as handle:
-        return sum(1 for line in handle if "consolidated session=" in line)
+        for line in handle:
+            if "memory consolidated session=" in line:
+                distilled += 1
+            elif "memory consolidation skipped session=" in line:
+                skipped += 1
+    return (distilled, skipped)
 
 
-def wait_for_consolidation(before: int, limit: float = 600) -> float:
-    if before < 0:
+def wait_for_consolidation(before: tuple[int, int], limit: float = 600) -> float:
+    if before[0] < 0:
         return 0.0
     started = time.time()
     while time.time() - started < limit:
-        if consolidations_logged() > before:
+        if consolidation_outcomes() != before:
             return time.time() - started
         time.sleep(2)
-    print("  (no consolidation observed within the wait)")
+    print("  (no consolidation decision within the wait)")
     return time.time() - started
 
 
@@ -125,7 +142,7 @@ def run_arm(arm: str) -> None:
     for session in range(1, SPEC["sessions"] + 1):
         prompt = scenarios.session_prompt(
             SPEC, session, carried if arm == "summary" else None)
-        seen = consolidations_logged()
+        seen = consolidation_outcomes()
         result = post([{"role": "user", "content": prompt}], model)
         answers = scenarios.extract_quiz(result["content"], SPEC["keys"])
         result.update(session=session, answers=answers)

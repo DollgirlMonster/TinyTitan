@@ -184,7 +184,8 @@ for ARM in "${ARMS[@]+"${ARMS[@]}"}"; do
   TINYTITAN_MEMVAL_SERVER_LOG="$SERVER_LOG" TINYTITAN_MEMVAL_RESULTS="$LOGS" \
     python3 "$SCRIPT" "$ARM" 2>&1 | tee "$LOGS/run-$ARM-r$RUN.log"
   stop_server
-  echo "--- consolidations for $ARM run $RUN:"; grep -c "consolidated session=" "$SERVER_LOG" || true
+  echo "--- consolidations for $ARM run $RUN:"
+  grep -cE "memory (consolidated session=|consolidation skipped session=)" "$SERVER_LOG" || true
 done
 done
 
