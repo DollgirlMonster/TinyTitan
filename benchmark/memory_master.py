@@ -24,6 +24,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -52,11 +53,12 @@ SPEC = scenarios.SCENARIOS[NAME]
 ARMS = ("summary", "auto")
 TEMPERATURE = os.environ.get("TINYTITAN_MEMVAL_TEMPERATURE")
 # Pong's stages emit a whole file of code; the others emit sections. The ceiling
-# is room for the work *and* the closing quiz: at 2,500 a session that deliberates
-# about formatting was cut off before the JSON block, which scored as a full set
-# of misses and journalled a truncated session into memory. Compliant sessions
-# never approached the old cap, so raising it changes nothing for them.
-MAX_TOKENS = 5_200 if NAME == "pong" else 6_000
+# is room for the work *and* the quiz: at 2,500 a session that deliberated about
+# formatting was cut off before the JSON block, which scored as a full set of
+# misses and journalled a truncated session into memory. Compliant sessions never
+# approached the old cap, so raising it changes nothing for them.
+MAX_TOKENS = int(os.environ.get("TINYTITAN_MEMVAL_MAX_TOKENS",
+                                5_200 if NAME == "pong" else 6_000))
 
 SUMMARY_PROMPT = (
     "Summarize, in at most 200 words, everything a worker of the next session "
@@ -79,9 +81,13 @@ def post(messages, model, max_tokens=MAX_TOKENS):
     started = time.time()
     with urllib.request.urlopen(request, timeout=3_600) as response:
         payload = json.load(response)
-    choice = payload["choices"][0]["message"]
+    choice = payload["choices"][0]
+    message = choice.get("message") or {}
     usage = payload.get("usage", {})
-    return {"content": choice.get("content") or "",
+    return {"content": message.get("content") or "",
+            # A sibling of `message` in the choice, not a field of it: reading it
+            # from the message silently yielded "" for every reply, which made a
+            # truncated session indistinguishable from a missing quiz.
             "finish_reason": choice.get("finish_reason") or "",
             "prompt_tokens": usage.get("prompt_tokens", 0),
             "completion_tokens": usage.get("completion_tokens", 0),
@@ -209,16 +215,21 @@ def score_run(results: list) -> dict:
                "prompt_tokens": result["prompt_tokens"],
                "completion_tokens": result["completion_tokens"],
                "seconds": result["seconds"],
+               "summary_seconds": result.get("summary_seconds", 0.0),
                "wait": result.get("consolidation_wait", 0.0)}
         if expected is None:
             scored.append(row)
             continue
         if not result["answers"]:
-            # No quiz at all: the instrument failed, usually a completion cut off
-            # by the token cap before the JSON block. Scoring it would record a
-            # full set of misses that say nothing about memory, so the session is
-            # excluded from the denominators and named in the report instead.
+            # No quiz at all: the instrument failed. Distinguished so the report
+            # says which kind: a completion cut off at the token ceiling, or a
+            # reply that finished and simply never carried the JSON block. Neither
+            # says anything about memory, so the session is excluded from the
+            # denominators and named in the report instead.
             row["invalid"] = True
+            row["invalid_reason"] = ("truncated at the token ceiling"
+                                     if result.get("finish_reason") == "length"
+                                     else "no quiz in a completed reply")
             scored.append(row)
             continue
         for key in SPEC["keys"]:
@@ -246,7 +257,10 @@ def load_runs() -> dict:
         stem = path.stem.rsplit("-r", 1)[0]
         arm = stem.rsplit("-", 1)[-1]
         if arm in ARMS:
-            runs.setdefault(arm, []).append(score_run(json.loads(path.read_text())))
+            scored = score_run(json.loads(path.read_text()))
+            match = re.search(r"-r(\d+)$", path.stem)
+            scored["run"] = int(match.group(1)) if match else 1
+            runs.setdefault(arm, []).append(scored)
     return runs
 
 
@@ -255,13 +269,14 @@ def report() -> None:
     print(f"\n=== {NAME} ({SPEC['domain']}, {SPEC['sessions']} sessions) "
           f"foundation={len(SPEC['foundation'])} carryable={len(SPEC['carryable'])}")
     print(f"{'arm':8s} {'foundation':>14s} {'carryable':>14s} {'stale':>6s} "
-          f"{'prompt':>8s} {'completion':>11s} {'seconds':>8s}")
+          f"{'prompt':>8s} {'completion':>11s} {'gen s':>7s} {'cons s':>7s} "
+          f"{'summ s':>7s} {'cost s':>7s}")
     for arm in ARMS:
         for run in runs.get(arm, []):
             foundation = [0, 0]
             carryable = [0, 0]
             stale = 0
-            prompt = completion = seconds = 0
+            prompt = completion = generation = consolidation = summary = 0
             for row in run["sessions"]:
                 foundation[0] += row["foundation"][0]
                 foundation[1] += row["foundation"][1]
@@ -270,19 +285,26 @@ def report() -> None:
                 stale += row["stale"]
                 prompt += row["prompt_tokens"]
                 completion += row["completion_tokens"]
-                seconds += row["seconds"] + row["wait"]
+                generation += row["seconds"]
+                consolidation += row["wait"]
+                summary += row["summary_seconds"]
             pct = (lambda pair: f"{100 * pair[0] / pair[1]:.0f}%"
                    if pair[1] else "n/a")
-            print(f"{arm:8s} {foundation[0]}/{foundation[1]} {pct(foundation):>5s} "
+            # `cost` is the model time the arm spends: session generation, plus
+            # the memory arm's real consolidation generation, plus the summary
+            # arm's own summary requests. Never the harness's own wait.
+            print(f"{arm + str(run.get('run', 1)):8s} "
+                  f"{foundation[0]}/{foundation[1]} {pct(foundation):>5s} "
                   f"{carryable[0]}/{carryable[1]} {pct(carryable):>5s} {stale:6d} "
-                  f"{prompt:8d} {completion:11d} {seconds:8.0f}")
+                  f"{prompt:8d} {completion:11d} {generation:7.0f} "
+                  f"{consolidation:7.0f} {summary:7.0f} "
+                  f"{generation + consolidation + summary:7.0f}")
             invalid = [r for r in run["sessions"] if r.get("invalid")]
             if invalid:
                 named = ", ".join(
-                    f"{r['session']} ({r['finish_reason'] or 'no finish reason'})"
+                    f"{r['session']} [{r.get('invalid_reason', 'invalid')}]"
                     for r in invalid)
-                print(f"         excluded: {len(invalid)} session(s) with no quiz — "
-                      f"{named}")
+                print(f"         excluded: {len(invalid)} session(s) — {named}")
     # The one line a suite-level reader needs: carryable carried, and stale.
     print("carryable carried (sessions 2+), and stale old values:")
     for arm in ARMS:
@@ -290,22 +312,29 @@ def report() -> None:
             carried = sum(r["carryable"][0] for r in run["sessions"])
             total = sum(r["carryable"][1] for r in run["sessions"])
             stale = sum(r["stale"] for r in run["sessions"])
-            print(f"  {arm:8s} {carried}/{total}  stale {stale}")
+            print(f"  {arm + str(run.get('run', 1)):8s} {carried}/{total}  stale {stale}")
             misses = [f"{r['session']}:{key}" for r in run["sessions"] for key in r["wrong"]]
             if misses:
                 print(f"    misses: {' '.join(misses)}")
 
 
 def report_all(root: Path) -> None:
-    """Every master scenario that has results under `root`, one line each."""
-    print(f"\n{'scenario':12s} {'arm':8s} {'carryable':>14s} {'stale':>6s} {'foundation':>14s}")
+    """Every master scenario that has results under `root`, one line each.
+
+    Aggregates every stored run of a scenario and arm, so repeats show as a
+    larger denominator rather than being averaged away; `invalid` counts the
+    sessions the instrument excluded, and `cost` is model time only.
+    """
+    print(f"\n{'scenario':12s} {'arm':8s} {'runs':>4s} {'carryable':>13s} "
+          f"{'stale':>5s} {'foundation':>13s} {'invalid':>7s} {'cost s':>8s}")
     for name in scenarios.SCENARIOS:
         for arm in ARMS:
             paths = sorted(root.glob(f"memory-{name}-*/{name}-{arm}-r*.json"))
             if not paths:
                 continue
-            spec = scenarios.SCENARIOS[name]
             carried = total = stale = foundation = foundation_total = 0
+            invalid = 0
+            cost = 0.0
             for path in paths:
                 run = score_run(json.loads(path.read_text()))
                 for row in run["sessions"]:
@@ -314,8 +343,11 @@ def report_all(root: Path) -> None:
                     foundation += row["foundation"][0]
                     foundation_total += row["foundation"][1]
                     stale += row["stale"]
-            print(f"{name:12s} {arm:8s} {carried:6d}/{total:<5d} {stale:6d} "
-                  f"{foundation:6d}/{foundation_total:<5d}")
+                    invalid += 1 if row.get("invalid") else 0
+                    cost += row["seconds"] + row["wait"] + row["summary_seconds"]
+            print(f"{name:12s} {arm:8s} {len(paths):4d} {carried:6d}/{total:<6d} "
+                  f"{stale:5d} {foundation:6d}/{foundation_total:<6d} "
+                  f"{invalid:7d} {cost:8.0f}")
 
 
 if __name__ == "__main__":

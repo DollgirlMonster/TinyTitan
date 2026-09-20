@@ -67,28 +67,43 @@ def sampling():
     return {} if TEMPERATURE is None else {"temperature": float(TEMPERATURE)}
 
 
-def consolidations_logged() -> int:
-    if not SERVER_LOG or not os.path.exists(SERVER_LOG):
-        return -1
-    with open(SERVER_LOG, errors="replace") as handle:
-        return sum(1 for line in handle if "consolidated session=" in line)
+def consolidation_outcomes() -> tuple[int, int]:
+    """The engine's decisions so far: (distilled, skipped).
 
-
-def wait_for_consolidation(before: int, limit: float = 300) -> float:
-    """Waits for the server to distil the session that just ended.
-
-    A real user pauses between sessions; the idle timer runs in that pause.
-    The harness has no pause, so it waits for the log line instead. Returns
-    the seconds spent waiting, which are reported as part of the arm's cost.
+    A session the engine skips logs `memory consolidation skipped session=`,
+    not `memory consolidated session=`; counting only the latter made a skip
+    look like work in flight and burned the whole wait limit, recording harness
+    overhead as memory cost. The store's `memory memory session=<id>
+    consolidated N records` write summary is not an engine decision.
     """
-    if before < 0:
+    if not SERVER_LOG or not os.path.exists(SERVER_LOG):
+        return (-1, -1)
+    distilled = skipped = 0
+    with open(SERVER_LOG, errors="replace") as handle:
+        for line in handle:
+            if "memory consolidated session=" in line:
+                distilled += 1
+            elif "memory consolidation skipped session=" in line:
+                skipped += 1
+    return (distilled, skipped)
+
+
+def wait_for_consolidation(before: tuple[int, int], limit: float = 300) -> float:
+    """Waits for the engine to decide the session that just ended.
+
+    A real user pauses between sessions; the idle timer runs in that pause. The
+    harness has no pause, so it waits for the decision instead — either outcome,
+    so a skip does not sit out the limit. Returns the seconds spent waiting,
+    which are reported as part of the arm's cost.
+    """
+    if before[0] < 0:
         return 0.0
     started = time.time()
     while time.time() - started < limit:
-        if consolidations_logged() > before:
+        if consolidation_outcomes() != before:
             return time.time() - started
         time.sleep(2)
-    print("  (no consolidation observed within the wait)")
+    print("  (no consolidation decision within the wait)")
     return time.time() - started
 
 
@@ -424,7 +439,7 @@ def run_arm(arm: str):
         # A fresh conversation every session. Anything a later session knows
         # about its project came from memory, and anything it knows about the
         # other project came from the other project's memory.
-        seen = consolidations_logged()
+        seen = consolidation_outcomes()
         result = post([{"role": "user", "content": prompt}], model, workspace)
         answers = extract_quiz(result["content"])
         correct, leaked, total = score(project, answers)

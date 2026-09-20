@@ -161,6 +161,10 @@ for ARM in "${ARMS[@]+"${ARMS[@]}"}"; do
   SERVER_LOG="$LOGS/server-$ARM-r$RUN.log"
 
   echo "=== $BENCH / $LABEL / $ARM / run $RUN  (memory=$MEMORY memory_tools=$TOOLS consolidation_idle=${IDLE}s dir=$MEMDIR port=$PORT)"
+  # Conditions, not decoration: this machine's synthetic speeds and its
+  # generation rate both move with background load (dasd, in particular), and a
+  # wall clock without the conditions it was measured under is not comparable.
+  echo "    host: load $(uptime | sed 's/.*load averages: //') | $(ps -Ao pcpu,comm | awk '/dasd/{printf "dasd %s%%", $1}')"
   # Never let the launcher find a server to "stop": that path races the
   # readiness poll. The port is free before every arm, or the arm does not
   # start.

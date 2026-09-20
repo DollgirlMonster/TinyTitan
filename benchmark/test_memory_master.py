@@ -109,9 +109,22 @@ class ScoreTests(unittest.TestCase):
         ])
         last = run["sessions"][-1]
         self.assertTrue(last["invalid"])
+        self.assertEqual(last["invalid_reason"], "truncated at the token ceiling")
         self.assertEqual(last["carryable"], [0, 0])  # excluded, not 0/5
         self.assertEqual(last["stale"], 0)
         self.assertEqual(last["wrong"], [])
+
+    def test_a_completed_reply_without_a_quiz_says_so(self):
+        master.SPEC = scenarios.SCENARIOS["photograph"]
+        spec = scenarios.SCENARIOS["photograph"]
+        base = {"prompt_tokens": 500, "completion_tokens": 400, "seconds": 10.0,
+                "consolidation_wait": 0.0, "finish_reason": "stop"}
+        run = master.score_run([
+            dict(base, session=1, answers=dict(spec["truth"](1))),
+            dict(base, session=5, answers={}),
+        ])
+        self.assertEqual(run["sessions"][-1]["invalid_reason"],
+                         "no quiz in a completed reply")
 
     def test_a_self_chosen_scenario_scores_against_session_one(self):
         master.SPEC = scenarios.SCENARIOS["pong"]
@@ -128,6 +141,24 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(run["sessions"][1]["carryable"], [3, 3])
         self.assertEqual(run["sessions"][2]["carryable"], [2, 3])
         self.assertEqual(run["sessions"][2]["stale"], 0)  # 6 was never the value
+
+
+class QuizExtractionTests(unittest.TestCase):
+    def test_the_full_key_block_wins_over_an_earlier_partial_one(self):
+        keys = ["a", "b", "c"]
+        text = ('```json\n{"a": 1}\n```\nwork mentions {"a": 1, "b": 2}\n'
+                '```json\n{"a": 1, "b": 2, "c": 3}\n```')
+        self.assertEqual(scenarios.extract_quiz(text, keys),
+                         {"a": 1, "b": 2, "c": 3})
+
+    def test_a_partial_block_is_still_a_fallback(self):
+        self.assertEqual(scenarios.extract_quiz('```json\n{"a": 1}\n```', ["a", "b"]),
+                         {"a": 1})
+
+    def test_the_quiz_is_asked_for_first(self):
+        prompt = scenarios.quiz_prompt(scenarios.SCENARIOS["pigeon"])
+        self.assertIn("Begin your reply", prompt)
+        self.assertIn("first thing in your reply", prompt)
 
 
 class ConsolidationWaitTests(unittest.TestCase):

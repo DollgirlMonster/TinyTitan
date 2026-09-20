@@ -389,22 +389,38 @@ def session_prompt(spec: dict, session: int, carried: str | None = None) -> str:
 def quiz_prompt(spec: dict) -> str:
     keys = ", ".join(spec["keys"])
     asks = "; ".join(f"{key} ({spec['desc'][key]})" for key in spec["keys"])
-    return ("Finally, answer this continuity quiz as a JSON object in a ```json "
-            f"block with exactly these keys: {keys}. Meaning: {asks}.")
+    # The quiz comes first so the instrument cannot be lost to a long or
+    # meandering reply: a session that gets truncated, or that never writes the
+    # block at all, used to score as a full set of memory misses. Answering from
+    # retention before re-deriving anything is also the cleaner measurement.
+    return ("Begin your reply with this continuity quiz as a JSON object in a "
+            f"```json block with exactly these keys: {keys}. Meaning: {asks}. "
+            "The JSON block must be the first thing in your reply, answered from "
+            "what you actually remember or have been told. Then do the work above "
+            "in at most 1,200 words.")
 
 
 def extract_quiz(text: str, keys) -> dict:
-    """The last JSON object in the reply that shares a key with the quiz."""
+    """The reply's quiz block, preferring one that carries the whole key set.
+
+    The quiz is asked for first, so blocks are scanned in order: the first one
+    holding every key wins, and a later block that merely shares a key is only
+    a fallback. Reading backwards used to be right when the quiz was the last
+    thing in the reply; it would now be the *work* that got mistaken for it.
+    """
     candidates = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.S)
     candidates += re.findall(r"(\{[^{}]*\})", text, re.S)
-    for candidate in reversed(candidates):
+    partial = None
+    for candidate in candidates:
         try:
             parsed = json.loads(candidate)
         except json.JSONDecodeError:
             continue
         if isinstance(parsed, dict) and set(parsed) & set(keys):
-            return parsed
-    return {}
+            if set(keys) <= set(parsed):
+                return parsed
+            partial = partial or parsed
+    return partial or {}
 
 
 def normalise(value):

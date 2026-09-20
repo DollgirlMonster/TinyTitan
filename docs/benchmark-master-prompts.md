@@ -45,8 +45,10 @@ the controls.
 2. **Later sessions** send "continue" plus, on the sessions the scenario names,
    one injected change — a revision, a reversal, a corrected value, a
    decommission.
-3. **Every session ends with a JSON quiz** over the scenario's keys, scored
-   against what is true *by then*.
+3. **Every session opens with a JSON quiz** over the scenario's keys, scored
+   against what is true *by then*. It is asked for first so the instrument
+   cannot be lost to a long or truncated reply, and so the answer comes from
+   retention rather than from work just re-derived in the same reply.
 4. **Score three ways.** *Foundation* (constant keys) is a no-regression check.
    *Carryable* (arbitrary decisions and every key that changes) is the signal,
    reported as carried/total plus a **stale count** — sessions after a change
