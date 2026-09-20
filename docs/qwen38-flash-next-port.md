@@ -205,7 +205,14 @@ verified geometry above and adds facts the config/source audit could not show:
   values raise. Thinking on also pre-opens `<think>\n` in the generation
   prompt (the off branch emits the closed block), and upstream
   `generation_config.json` defaults to temperature 1.0 / Top-K 20 /
-  Top-P 0.95 — a per-family sampling-default question for P1. TinyTitan now has
+  Top-P 0.95. **Implemented 2026-09-21 as two rows** — thinking
+  `1.0 / 0.95 / 20`, instruct `0.7 / 0.80 / 20 / presence 1.5`, both min-p 0.0 —
+  selected by the request's thinking mode
+  (`GenerationDefaults.qwen38Thinking` / `qwen38Instruct`, applied in
+  `OpenAIRequestValidator`). The presence penalty had to be implemented first:
+  the sampler refused every non-zero value until then, and min-p is still not
+  implemented (0.0 in both rows, and a non-zero is refused rather than ignored).
+  TinyTitan now has
   the per-family control: `ModelFamily.reasoningControl` gates
   `--reasoning-effort` / `TINYTITAN_REASONING_EFFORT` / the API's
   `reasoning_effort` field (binary families reject them; effort is a

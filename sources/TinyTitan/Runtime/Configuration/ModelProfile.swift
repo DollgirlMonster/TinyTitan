@@ -185,14 +185,17 @@ public struct ModelProfile: Sendable, Equatable {
         // 5.41): a one-layer-ahead read lands after the next plan and takes
         // SSD time from the demand reads. The cache stays wired through
         // prefill (see keepExpertCacheWired).
+        // Sampling is the *thinking* row here; the request's thinking mode
+        // selects between it and the instruct row at validation time
+        // (`GenerationDefaults.forFamily(_:thinking:)`).
         Key("qwen3.8-flash-next", 4): (12 << 30, 0, 0, 4_096,
-                                       GenerationDefaults.Sampling(temperature: 1.0, topK: GenerationDefaults.topK, topP: 0.95),
+                                       GenerationDefaults.qwen38Thinking,
                                        true, true, false, false, true, false),
         // 8-bit: 32 slots (8 GiB) 2.05 / 2.06 tok/s; 40 slots (9.5 GiB) 2.18 /
         // 2.27 with swap falling; 48 (13 GiB) 2.24-2.33 but ~1 GB of swap
         // growth per run on this 24 GB machine. 40 is the no-paging middle.
         Key("qwen3.8-flash-next", 8): (Int(9.5 * Double(1 << 30)), 0, 0, 4_096,
-                                       GenerationDefaults.Sampling(temperature: 1.0, topK: GenerationDefaults.topK, topP: 0.95),
+                                       GenerationDefaults.qwen38Thinking,
                                        true, true, false, false, true, false),
     ]
 
