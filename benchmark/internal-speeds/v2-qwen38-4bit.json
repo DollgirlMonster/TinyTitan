@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "environment": {
+    "recorded_at": "2026-09-20T23:32:48+00:00",
+    "git_commit": "808cea3",
+    "git_describe": "v2",
+    "macos": "27.0",
+    "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+    "python": "3.14.7",
+    "physical_memory_bytes": 25769803776
+  },
+  "model": {
+    "path": "models/qwen3.8-flash-next_125B_A6B_4Bit",
+    "family": "qwen38flash",
+    "prompt": "difference swift vs c++ in detail",
+    "max_new_tokens": 256
+  },
+  "gpu": {
+    "qkv_gemv": {
+      "gbps": 67.5,
+      "bytes_per_launch": 17301504
+    },
+    "routed_moe": {
+      "gbps": 46.3,
+      "bytes_per_launch": 12582912
+    },
+    "gdn_inproj": {
+      "gbps": 75.9,
+      "bytes_per_launch": 12648448
+    },
+    "qkv_gemv_gbps": 67.5,
+    "routed_moe_gbps": 46.3,
+    "gdn_inproj_gbps": 75.9
+  },
+  "cpu": {
+    "best_gbps": 44.8,
+    "best_threads": 8,
+    "rows": [
+      {
+        "threads": 1,
+        "ms_per_pass": 6.04,
+        "gbps": 11.8,
+        "tok_per_second_2b_8bit": 6.2
+      },
+      {
+        "threads": 2,
+        "ms_per_pass": 3.37,
+        "gbps": 21.1,
+        "tok_per_second_2b_8bit": 11.1
+      },
+      {
+        "threads": 4,
+        "ms_per_pass": 2.06,
+        "gbps": 34.7,
+        "tok_per_second_2b_8bit": 18.2
+      },
+      {
+        "threads": 6,
+        "ms_per_pass": 1.91,
+        "gbps": 37.4,
+        "tok_per_second_2b_8bit": 19.7
+      },
+      {
+        "threads": 8,
+        "ms_per_pass": 1.59,
+        "gbps": 44.8,
+        "tok_per_second_2b_8bit": 23.6
+      }
+    ]
+  },
+  "generation": {
+    "finish": "maxTokens",
+    "prefill_tokens": 7,
+    "prefill_seconds": 3.12,
+    "decode_tokens": 256,
+    "decode_seconds": 64.12,
+    "decode_tokens_per_second": 3.993,
+    "prefill_tokens_per_second": 2.2435897435897436,
+    "ttft_seconds": 3.12,
+    "total_seconds": 67.24000000000001,
+    "weight_bytes": 3454121216,
+    "effective_decode_gbps": 13.790627437554585,
+    "response": "<think>\nThe user is asking for a detailed comparison between Swift and C++ programming languages. This is a technical comparison question. I should cover multiple dimensions: history, syntax, memory management, type system, performance, use cases, ecosystem, concurrency, error handling, and more. Let me organize this comprehensively.\n</think>\n\n# Swift vs C++ \u2014 Detailed Comparison\n\n## 1. Overview & Philosophy\n\n| Aspect | Swift | C++ |\n|---|---|---|\n| **Created** | 2014 (Apple) | 1983 (Bjarne Stroustrup) |\n| **Paradigm** | Multi-paradigm (OOP, functional, protocol-oriented) | Multi-paradigm (OOP, procedural, generic, functional) |\n| **Design Goal** | Safe, modern, expressive replacement for Obj-C/C | \"C with Classes\" evolved into a massive general-purpose language |\n| **Standardization** | Apple-driven (open-sourced 2015) | ISO/IEC 14882 (C++11/14/17/20/23) |\n| **Primary Domains** | iOS/mac",
+    "response_sha256": "9cf9157865100dd2222d633d0b619c3cf9e2e87f9ec501b3b5cd17b2b51e43a1",
+    "response_characters": 901,
+    "response_tokens": 256
+  },
+  "ane": {
+    "applicable": false,
+    "reason": "the ANE prefill path does not pay for a qwen38flash model: measured 0.72x against the GPU at 4,333 tokens, because the GPU already attends to only the indexer's ~2,051 selected keys while the ANE graph is dense over the context and its per-variant Core ML load is 7-14 s. A sidecar is exportable only to re-measure"
+  },
+  "quality": {
+    "keyword_coverage": 0.4166666666666667,
+    "keywords_present": [
+      "swift",
+      "c++",
+      "performance",
+      "memory",
+      "type"
+    ],
+    "trigram_repetition": 0.008849557522123908,
+    "response_sha256": "9cf9157865100dd2222d633d0b619c3cf9e2e87f9ec501b3b5cd17b2b51e43a1",
+    "characters": 901
+  }
+}

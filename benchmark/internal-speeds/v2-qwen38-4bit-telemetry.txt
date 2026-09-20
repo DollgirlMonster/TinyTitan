@@ -1,0 +1,92 @@
+# Qwen3.8-Flash-Next 125B-A6B 4-bit — v2 baseline telemetry
+
+First baseline recorded against tag `v2` (commit `808cea3`), for optimising
+decode. Nothing here is a release artifact; it is the "before" picture.
+
+## Conditions
+
+- Machine: Mac15,3 (M3) 24 GB, macOS 27.0, Swift 6.4; as idle as possible
+  (`dasd` 0.0%, load ~1.9, no other model process).
+- Model: `models/qwen3.8-flash-next_125B_A6B_4Bit` (3.2 GB `model_weights.bin`,
+  63 GB `packed_experts`, 95 GB `ngram_table.bin`).
+- Prompt: `difference swift vs c++ in detail`; `--max-new 256 --temperature 0`.
+- Durable record: `benchmark/internal-speeds/v2-qwen38-4bit.json`.
+
+## Headline
+
+| metric | value |
+|---|---:|
+| prefill | 7 tokens / 2.49 s (**2.2 tok/s**) |
+| TTFT | 3.12 s (record run) / 2.49 s (telemetry run) |
+| decode | 256 tokens / 63.73 s (**4.02 tok/s**) |
+| total | 66.17 s |
+| GPU busy | 27,389 ms of 66,173 ms span (**41% occupied**) |
+| effective decode (record basis) | 13.8 GB/s |
+| GPU QKV GEMV / routed MoE / GDN in-proj | 67.5 / 46.3 / 75.9 GB/s |
+| CPU int8 GEMV best | 44.8 GB/s at 8 threads |
+
+`effective decode` uses `model_weights.bin` (3.45 GB) only, so for this install
+it understates the real streaming — the expert payload is the 63 GB
+`packed_experts/`, not `model_weights.bin`.
+
+## Resolved profile (stderr, `TINYTITAN_RUNNER_STATS=1`)
+
+```
+TinyTitan profile model=qwen3.8-flash-next bits=4 family=qwen38flash tabled
+budget=12288MiB prefetch=0 tier=0 chunk=4096 sampling=1.0/20/0.95
+topk_simd=true attn_simd=true hc_fused=false qsa_select=false keep_wired=true
+early_hits=false
+```
+
+Note `prefetch=0` and `early_hits=false`: the expert prefetch ring is **off** in
+this profile, so that lever is untapped rather than exhausted. `keep_wired=true`
+is the TT-008 tri-state.
+
+## GPU by role, over 256 decode tokens
+
+| role | ms | calls | ms/call |
+|---|---:|---:|---:|
+| attn_norm_qkv | 10,890.6 | 12,240 | 0.89 |
+| attn_tail_router | 5,829.9 | 12,240 | 0.48 |
+| moe_phase1_miss_fixup_phase2 | 4,975.6 | 10,108 | 0.49 |
+| head_logits | 3,440.0 | 255 | **13.49** |
+| moe_phase1_hit | 3,298.1 | 10,108 | 0.33 |
+| moe_phase1_2_routed | 1,450.5 | 2,132 | 0.68 |
+| shared_expert | 1,017.3 | 12,240 | 0.08 |
+| prefill_gdn_router | 354.8 | 36 | 9.86 |
+| prefill_routed_tile | 210.5 | 253 | 0.83 |
+| prefill_attn_router | 119.7 | 12 | 9.98 |
+| sample | 54.7 | 256 | 0.21 |
+| prefill_shared_expert | 31.5 | 48 | 0.66 |
+| prefill_moe_reduce | 20.9 | 48 | 0.44 |
+| prefill_head | 15.9 | 1 | 15.90 |
+| **busy total** | **27,389** | | |
+
+## Reading it
+
+- **59% of the span is not GPU work** (66.17 s span against 27.39 s busy) — the
+  idle budget the CPU-core and I/O plans are aimed at.
+- **`attn_norm_qkv` is the single largest GPU item** (10.9 s, 40% of busy) at
+  12,240 calls — 47.8 per token, i.e. one per layer across the 48 layers —
+  which is 42.5 ms of every token.
+- **`head_logits` costs 13.5 ms/token** for 255 calls — the 8-bit head GEMV is
+  the largest per-call cost in the profile.
+- The MoE miss path (`moe_phase1_miss_fixup_phase2`, 5.0 s) plus the hit path
+  (3.3 s) plus routed (1.5 s) is the expert half of the token.
+- Prefill is negligible on a 7-token prompt (2.49 s is mostly first-touch and
+  head); a coding-length prompt is a different measurement
+  (`docs/qwen38-prefill-profile.md`).
+
+## Command
+
+```bash
+TINYTITAN_RUNNER_STATS=1 TINYTITAN_KERNEL_STATS=1 \
+  .build/release/TinyTitanCLI \
+  --model models/qwen3.8-flash-next_125B_A6B_4Bit \
+  --prompt "difference swift vs c++ in detail" --max-new 256 --temperature 0
+```
+
+`TINYTITAN_RUNNER_STATS` also logs the resolved profile. The server additionally
+emits a per-decode line with `io_ms`, `expert_hit_rate`, evictions, reloads,
+`expert_read_mib`, load percentiles and `io_hidden_pct`
+(`sources/TinyTitanServer/Core/ServerInference.swift`); the CLI does not.
