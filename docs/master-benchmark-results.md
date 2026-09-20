@@ -4,8 +4,16 @@ The ten scenarios in `docs/benchmark-master-prompts.md`, run end to end through
 two arms by `benchmark/memory_master.py`: **summary** — memory off, the client
 carrying its own 200-word note, which is this benchmark's "no method" baseline —
 and **memory auto** — memory on, tools off, the engine writing by consolidation.
-`qwen36` 4-bit (Qwen 3.6 35B-A3B), release build of TinyTitan 5.9, one engine for
-every run in this table.
+`qwen36` 4-bit (Qwen 3.6 35B-A3B) on this machine. **The build is not uniform,
+and that is a defect in this table.** The first six worlds' r1 runs used the 5.9
+release build (`.build/release` built 05:13). `vantage`, `kitchen`, `cohort`,
+`filing` and every repeat then ran after **another session rebuilt the tree at
+15:07 with an uncommitted, behaviour-affecting change** to the expert-cache
+budget clamp (`min(wanted, physicalMemory / 2)` became `/ 3`, cutting the budget
+from 12 GiB to 8 GiB on this 24 GiB machine). The harness's staleness guard
+compares the binary against source mtimes, so it cannot see that the binary is no
+longer the committed tree. A re-run on one committed build is required before
+these numbers are treated as final.
 
 **This supersedes the earlier four-scenario write-up.** That pass measured with
 an instrument that could lose the quiz entirely: a session cut off at the token
@@ -173,7 +181,9 @@ above is reproducible rather than hand-derived.
   error (a hallucinated answer counts as a miss); *stale* is the clean
   memory-specific signal. Wall clocks from the first six worlds were measured
   under heavy background load and from `vantage` onward under a quiet machine, so
-  cross-world cost is indicative only. The quiz-first instrument is harder than
+  cross-world cost is indicative only. The instrument change above is the larger
+  caveat: two builds are mixed in one table, so the cost column in particular is
+  not a single-engine comparison. The quiz-first instrument is harder than
   the discarded one for both arms, and all of these numbers are its output, not
   the earlier instrument's.
 
