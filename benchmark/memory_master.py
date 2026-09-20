@@ -25,6 +25,7 @@ import importlib.util
 import json
 import os
 import re
+import statistics
 import sys
 import time
 import urllib.request
@@ -350,11 +351,97 @@ def report_all(root: Path) -> None:
                   f"{invalid:7d} {cost:8.0f}")
 
 
+def _pct(pair) -> str:
+    return f"{100 * pair[0] / pair[1]:.1f}%" if pair[1] else "n/a"
+
+
+def aggregate(root: Path, names=None) -> None:
+    """Pooled and per-world statistics over every stored run.
+
+    Both averages are reported because they can disagree: pooling weights each
+    world by how many key-instances it scored, so one large world can dominate,
+    while the unweighted mean treats worlds equally. A verdict should quote both
+    and name the dominant world rather than pick the flattering one.
+    """
+    global NAME, SPEC, OUT
+    saved = (NAME, SPEC, OUT)
+    worlds = []
+    pooled = {arm: {"carryable": [0, 0], "foundation": [0, 0],
+                    "stale": 0, "cost": 0.0, "invalid": 0} for arm in ARMS}
+    try:
+        for name in (names or list(scenarios.SCENARIOS)):
+            directory = next(
+                (d for d in sorted(root.glob(f"memory-{name}-*"))
+                 if d.is_dir() and not d.name.endswith("-firstpass")), None)
+            if directory is None:
+                continue
+            NAME = name
+            SPEC = scenarios.SCENARIOS[name]
+            OUT = directory
+            runs = load_runs()
+            entry = {}
+            for arm in ARMS:
+                c = [0, 0]
+                f = [0, 0]
+                stale = invalid = 0
+                cost = 0.0
+                for run in runs.get(arm, []):
+                    for row in run["sessions"]:
+                        for index in (0, 1):
+                            c[index] += row["carryable"][index]
+                            f[index] += row["foundation"][index]
+                        stale += row["stale"]
+                        invalid += 1 if row.get("invalid") else 0
+                        cost += (row["seconds"] + row["wait"]
+                                 + row["summary_seconds"])
+                entry[arm] = {"carryable": c, "foundation": f,
+                              "stale": stale, "cost": cost, "invalid": invalid}
+                for index in (0, 1):
+                    pooled[arm]["carryable"][index] += c[index]
+                    pooled[arm]["foundation"][index] += f[index]
+                pooled[arm]["stale"] += stale
+                pooled[arm]["cost"] += cost
+                pooled[arm]["invalid"] += invalid
+            worlds.append((name, entry))
+    finally:
+        NAME, SPEC, OUT = saved
+
+    print(f"\nworlds: {len(worlds)}")
+    for name, entry in worlds:
+        a, s = entry["auto"], entry["summary"]
+        print(f"  {name:12s} memory {_pct(a['carryable']):>6s} carry / "
+              f"{_pct(a['foundation']):>6s} fnd | summary {_pct(s['carryable']):>6s} / "
+              f"{_pct(s['foundation']):>6s} | stale {a['stale']:2d}/{s['stale']:<2d} | "
+              f"cost {a['cost'] / 60:4.1f}/{s['cost'] / 60:4.1f} min")
+    print("\npooled (every scored key-instance, all runs):")
+    for arm in ARMS:
+        d = pooled[arm]
+        print(f"  {arm:8s} carryable {d['carryable'][0]:3d}/{d['carryable'][1]:<3d} "
+              f"{_pct(d['carryable']):>6s} | foundation {d['foundation'][0]:3d}/"
+              f"{d['foundation'][1]:<3d} {_pct(d['foundation']):>6s} | stale "
+              f"{d['stale']:2d} | model cost {d['cost'] / 60:6.1f} min | "
+              f"invalid {d['invalid']}")
+    print("\nunweighted mean of per-world percentages:")
+    for metric in ("carryable", "foundation"):
+        means = {}
+        for arm in ARMS:
+            values = [100 * e[arm][metric][0] / e[arm][metric][1]
+                      for _, e in worlds if e[arm][metric][1]]
+            means[arm] = (statistics.mean(values),
+                          statistics.stdev(values) if len(values) > 1 else 0.0)
+        delta = means["auto"][0] - means["summary"][0]
+        print(f"  {metric:11s} memory {means['auto'][0]:5.1f}% "
+              f"(sd {means['auto'][1]:4.1f})  summary {means['summary'][0]:5.1f}% "
+              f"(sd {means['summary'][1]:4.1f})  delta {delta:+.1f} pp")
+
+
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else "report"
     if command in ARMS:
         run_arm(command)
     elif command == "report-all":
         report_all(OUT.parent)
+    elif command == "stats":
+        aggregate(OUT.parent, sys.argv[2:] or None)
     else:
         report()
