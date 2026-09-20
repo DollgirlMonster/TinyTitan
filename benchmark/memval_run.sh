@@ -92,6 +92,31 @@ if [[ -n "$newest_source" ]]; then
   exit 1
 fi
 
+# --- provenance --------------------------------------------------------------
+# The mtime check above catches a *stale* binary; it cannot catch a binary built
+# from a *different* tree. An uncommitted edit compiled into a rebuild passes it
+# silently, and a suite then measures two engines while claiming one -- which is
+# what happened on 2026-09-20, when another session's expert-cache change was
+# compiled into a rebuild halfway through a ten-world run. So refuse a dirty
+# tree unless that is deliberate, and record what was actually measured.
+DIRTY="$(git -C "$ROOT" status --porcelain)"
+if [[ -n "$DIRTY" && "${TINYTITAN_MEMVAL_ALLOW_DIRTY:-0}" != "1" ]]; then
+  echo "ERROR: the working tree is dirty, so a build from it is not the committed engine:" >&2
+  printf '%s\n' "$DIRTY" | sed 's/^/       /' >&2
+  echo "       commit or stash the changes and rebuild, or set TINYTITAN_MEMVAL_ALLOW_DIRTY=1" >&2
+  echo "       to measure a dirty tree deliberately." >&2
+  exit 1
+fi
+{
+  echo "commit: $(git -C "$ROOT" rev-parse HEAD)"
+  echo "dirty: $([[ -n "$DIRTY" ]] && echo yes || echo no)"
+  echo "dirty_allowed: ${TINYTITAN_MEMVAL_ALLOW_DIRTY:-0}"
+  echo "binary: $BINARY"
+  echo "binary_sha256: $(shasum -a 256 "$BINARY" | awk '{print $1}')"
+  echo "recorded_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$LOGS/run-meta.txt"
+echo "  provenance: $(git -C "$ROOT" rev-parse --short HEAD) binary $(shasum -a 256 "$BINARY" | cut -c1-12) dirty=$([[ -n "$DIRTY" ]] && echo yes || echo no)"
+
 # The PIDs actually listening on the port -- the server binary, never the
 # launcher shell around it. Killing the launcher leaves the model running:
 # bash does not forward a signal to the child it is waiting on, and an
