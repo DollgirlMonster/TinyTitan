@@ -18,6 +18,35 @@ struct OpenAIValidationTests {
         #expect(validated.generationConfig.presencePenalty == 0)
     }
 
+    @Test func qwen38SelectsItsSamplingRowFromTheThinkingMode() throws {
+        let data = Data(#"{"model":"m","messages":[{"role":"user","content":"x"}]}"#.utf8)
+        let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
+
+        let on = try OpenAIRequestValidator.validate(
+            request, modelID: "m",
+            reasoningProfile: ServerReasoningProfile(family: .qwen38flash,
+                                                     thinkingMode: .on,
+                                                     reasoningEffort: nil),
+            sampling: GenerationDefaults.qwen38Thinking)
+        #expect(on.generationConfig.temperature == 1.0)
+        #expect(on.generationConfig.topP == 0.95)
+        #expect(on.generationConfig.topK == 20)
+        #expect(on.generationConfig.presencePenalty == 0)
+
+        // The same served model, asked for non-thinking, must take the instruct
+        // row even though the model was loaded with the thinking one.
+        let off = try OpenAIRequestValidator.validate(
+            request, modelID: "m",
+            reasoningProfile: ServerReasoningProfile(family: .qwen38flash,
+                                                     thinkingMode: .off,
+                                                     reasoningEffort: nil),
+            sampling: GenerationDefaults.qwen38Thinking)
+        #expect(off.generationConfig.temperature == 0.7)
+        #expect(off.generationConfig.topP == 0.80)
+        #expect(off.generationConfig.topK == 20)
+        #expect(off.generationConfig.presencePenalty == 1.5)
+    }
+
     @Test func requiredToolChoiceIsRejected() throws {
         let data = Data(#"""
         {"model":"m","messages":[{"role":"user","content":"x"}],"tool_choice":"required"}
