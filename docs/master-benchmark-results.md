@@ -1,108 +1,191 @@
 # Master-prompt benchmark results
 
 The ten scenarios in `docs/benchmark-master-prompts.md`, run end to end through
-the memory arms by `benchmark/memory_master.py`. **Four of ten are complete**;
-the run was stopped on request after `pigeon` on 2026-09-19. One run per arm, no
-repeats, so every number is single-sample.
+two arms by `benchmark/memory_master.py`: **summary** — memory off, the client
+carrying its own 200-word note, which is this benchmark's "no method" baseline —
+and **memory auto** — memory on, tools off, the engine writing by consolidation.
+`qwen36` 4-bit (Qwen 3.6 35B-A3B), release build of TinyTitan 5.9, one engine for
+every run in this table.
 
-**Setup.** `qwen36` 4-bit (Qwen 3.6 35B-A3B). `summary` = memory off with a
-200-word note the harness carries forward at each boundary — what a client's own
-compaction does. `auto` = memory on, tools off, the engine writing by
-consolidation. Each session is a new conversation; the quiz is scored against
-what is true by then.
+**This supersedes the earlier four-scenario write-up.** That pass measured with
+an instrument that could lose the quiz entirely: a session cut off at the token
+ceiling scored as a full set of memory misses, and a skipped consolidation was
+waited out for ten minutes and charged to memory. Its numbers are not comparable,
+and its headline claim — memory 20/20 against the summary's 14/20 on `pigeon` —
+did not survive. The summary's "collapse" in that pass was one truncated
+session; with the instrument fixed, `pigeon` is a consistent memory loss.
 
-**Scores.** *Foundation* is keys that never change (a no-regression check);
-*carryable* is keys that change at least once; *stale* counts an answer that is
-an older value of a key, given after it changed — the memory-specific failure.
-All three are recomputed from the stored answers.
+## Method
 
-## Complete
+- **Session shape.** Every session receives the scenario's brief or work
+  instruction plus its injected change, and is asked to **open its reply with the
+  continuity quiz as a JSON block**, then do the work in at most 1,200 words. The
+  quiz is first so the instrument cannot be lost to a long or truncated reply,
+  and so the answer comes from retention rather than from work re-derived in the
+  same reply.
+- **Ceiling.** 6,000 completion tokens (5,200 for `pong`, whose stages emit a
+  file of code), overridable with `TINYTITAN_MEMVAL_MAX_TOKENS`.
+- **Scoring.** *Foundation* — keys that never change, a no-regression check.
+  *Carryable* — keys that change at least once, the signal, as carried/total.
+  *Stale* — an answer that is an older value of a key, given after it changed;
+  the memory-specific failure. All three are recomputed from the stored answers.
+- **Invalid sessions.** A reply with no parseable quiz is excluded from the
+  denominators and reported with its reason. Across the whole suite there were
+  **zero**: 232 stored sessions, every one scored.
+- **Cost.** Model time only: session generation, plus the memory arm's real
+  consolidation generations, plus the summary arm's own summary requests. The
+  harness's own waits are never counted.
+- **Runs.** One run per arm for seven worlds; `photograph`, `pigeon` and
+  `contract` were each run three times per arm, so their figures aggregate all
+  runs and their spread is shown separately.
+- **Conditions.** Each arm logs host load and `dasd` CPU at its start. The first
+  six worlds (their r1) ran with `dasd` saturated at 95–105% of a core, which cut
+  generation to ~5–14 tokens/s; from `vantage` onward the machine was quiet
+  (`dasd` 0.0%, load ~2). Cross-world wall clocks are therefore indicative only.
 
-| scenario | arm | foundation | carryable | stale | seconds |
-| --- | --- | ---: | ---: | ---: | ---: |
-| photograph (fiction) | summary | 81/81 100% | 44/45 98% | 1 | 616 |
-| photograph | auto (memory) | 81/81 100% | 41/45 91% | 2 | 2,580 |
-| pong (code port) | summary | 8/8 100% | 6/6 100% | 0 | 476 |
-| pong | auto (memory) | 8/8 100% | 6/6 100% | 0 | 504 |
-| ledger (code migration) | summary | 21/21 100% | 21/21 100% | 0 | 118 |
-| ledger | auto (memory) | 21/21 100% | 20/21 95% | 1 | 3,619 |
-| pigeon (operations) | summary | 3/5 60% | 14/20 70% | 1 | 236 |
-| pigeon | auto (memory) | 5/5 100% | 20/20 100% | 0 | 1,071 |
+## Results
 
-Misses: photograph/summary `ferry_running`@9; photograph/auto
-`marcus_knows_photo`@4, `halvorsen_confessed`@4, `inn_status`@5,
-`ferry_running`@10; ledger/auto `id_scheme`@7; pigeon/summary every key at
-session 5 (`gateway_port`, `worker_port`, `worker_owner`, `rollback_hours`,
-`scheduler_state`) and three of them again at session 6.
+Per world — memory / summary. `carry` and `fnd` are percentages; `stale` and
+`cost` are totals over that world's runs (three runs for the starred worlds).
 
-## What the benchmark has told us so far
+| world | carry (mem / sum) | fnd (mem / sum) | stale (mem / sum) | cost min (mem / sum) |
+|---|---:|---:|---:|---:|
+| photograph * | 51.1 / **85.9** | 67.1 / **80.2** | 36 / 12 | 80.7 / 45.7 |
+| pong | 100 / 100 | 100 / 100 | 0 / 0 | 10.6 / 8.3 |
+| ledger | 52.4 / **61.9** | **95.2** / 66.7 | 4 / 0 | 41.7 / 15.4 |
+| pigeon * | 63.3 / **75.0** | **40.0** / 26.7 | 14 / 1 | 61.7 / 36.1 |
+| contract * | 61.1 / **69.4** | 50.0 / **63.9** | 15 / 16 | 71.8 / 47.4 |
+| compound_k | **65.0** / 50.0 | **100** / 20.0 | 3 / 1 | 18.8 / 12.6 |
+| vantage | 53.6 / **75.0** | n/a | 4 / 0 | 45.5 / 23.8 |
+| kitchen | **76.7** / 43.3 | **83.3** / 16.7 | 5 / 6 | 22.2 / 13.8 |
+| cohort | **62.9** / 37.1 | **42.9** / 14.3 | 2 / 2 | 25.1 / 15.4 |
+| filing | **62.5** / 29.2 | **100** / 66.7 | 4 / 6 | 21.6 / 16.6 |
 
-**1. The client's own summary is a much stronger baseline than "no memory".**
-It wins or ties on three of four scenarios. Any claim that memory helps has to be
-made against this arm, not against memory-off — which is what the earlier S1–S5
-suite compared on its code scenarios.
+`*` three runs per arm; the other worlds are one run per arm.
 
-**2. Memory's win appears exactly where the design predicted: a dense,
-arbitrary, revised fact set.** On `pigeon` — an ops runbook of ports, owners, a
-rollback window and a decommission — memory carried the carryable set **20/20
-against the summary's 14/20**, with the summary holding a stale value and, for
-the first time, losing a *foundation* key. The summary's failure is a
-late-session collapse: at session 5 it answered none of the five keys, and three
-were still wrong at session 6. Nothing about those facts is prose-shaped or
-derivable, which is the shape a summary is worst at.
+**Pooled over every scored key-instance, all runs:**
 
-**3. Memory's loss appears on prose.** On `photograph` the summary carried 44/45
-against memory's 41/45, with half the stale values. This confirms the earlier
-audit: on a novel, memory faithfully preserves the model's own drift, and the
-guard only partially closes that. The four misses are events (an inn burning, a
-character found, a confession), not attributes.
+| arm | carryable | foundation | stale | model cost |
+|---|---:|---:|---:|---:|
+| summary | **294/431 = 68.2%** | **251/347 = 72.3%** | **44** | **235.1 min** |
+| memory | 256/431 = 59.4% | 234/347 = 67.4% | 87 | 399.6 min |
 
-**4. Cost is the tax on every session.** Memory's wall clock is 4.2× the
-summary's on photograph (2,580 s vs 616 s), 4.5× on pigeon, and **30×** on ledger
-(3,619 s vs 118 s), because memory pays a consolidation generation per session
-that the summary does not. On pigeon it bought 30 carryable points; on ledger it
-bought nothing.
+**Unweighted mean of the per-world percentages** (each world counts once), one
+standard deviation across worlds:
 
-**5. Foundation held everywhere for memory; the summary lost it on pigeon.**
-Memory was 100% on the no-regression set in all four scenarios. The summary's
-60% on pigeon is the only foundation failure measured — a blunt summary drops
-facts it has no reason to drop.
+| metric | memory | summary | delta |
+|---|---:|---:|---:|
+| carryable | 64.9% (sd 14.4) | 62.7% (sd 22.6) | **+2.2 pp** |
+| foundation | 75.4% (sd 25.7) | 50.6% (sd 31.6) | **+24.8 pp** |
+
+**Repeat spread** (carryable, then foundation, per run):
+
+| world | arm | r1 | r2 | r3 | mean carry | mean fnd |
+|---|---|---:|---:|---:|---:|---:|
+| photograph | summary | 89 / 93 | 80 / 48 | 89 / 100 | 86.7% | 80.2% |
+| photograph | memory | 49 / 73 | 49 / 35 | 56 / 94 | 51.3% | 67.3% |
+| pigeon | summary | 70 / 40 | 75 / 20 | 80 / 20 | 75.0% | 26.7% |
+| pigeon | memory | 65 / 40 | 60 / 60 | 65 / 20 | 63.3% | 40.0% |
+| contract | summary | 75 / 67 | 54 / 58 | 79 / 67 | 69.3% | 64.2% |
+| contract | memory | 67 / 33 | 71 / 33 | 46 / 83 | 61.3% | 49.7% |
+
+## What the benchmark says
+
+1. **On changing facts there is no reliable difference.** Pooled, memory is
+   8.8 pp behind (59.4% vs 68.2%); unweighted, it is 2.2 pp ahead (64.9% vs
+   62.7%). The two averages disagree because `photograph` alone supplies 135 of
+   the 431 carryable checks and memory is far worse there (51.1% vs 85.9%). The
+   defensible claim is a wash on carryable, not a win in either direction.
+2. **Memory's advantage is invariant facts.** Unweighted foundation is 75.4%
+   against the summary's 50.6%, +24.8 pp — and the pooled figure only looks level
+   because `photograph` supplies 243 of the 347 foundation checks and memory
+   loses it there. Memory wins foundation in `compound_k` (100 vs 20), `kitchen`
+   (83 vs 17), `filing` (100 vs 67), `ledger` (95 vs 67) and `pigeon` (40 vs
+   27), and loses it in `photograph` (67 vs 80) and `contract` (50 vs 64). It is
+   a real advantage, not a uniform one: on prose it also drops invariant facts.
+3. **The failure it is meant to avoid is worse, not better.** Stale answers are
+   87 against the summary's 44 — 2.0× — and memory is the staler arm in five of
+   the ten worlds (`photograph`, `ledger`, `pigeon`, `compound_k`, `vantage`),
+   ties in two and is less stale in three.
+4. **It costs 1.7× the model time** (399.6 vs 235.1 min). The memory arm pays a
+   consolidation generation per session; the summary pays one summary request
+   per session.
+5. **Per world:** memory wins `compound_k`, `kitchen`, `cohort`, `filing`; ties
+   `pong`; loses `photograph`, `ledger` (carryable), `pigeon`, `contract`,
+   `vantage`. Every win is a world where the summary drops invariant facts and
+   never recovers them.
+6. **The repeats separate the stable signals from the noisy ones.** Carryable is
+   directionally stable where it matters: memory loses `pigeon` in all three
+   runs and `photograph` in all three. Foundation is the noisy metric —
+   `photograph`'s summary ranges 48–100% and `contract`'s memory 33–83% — so the
+   aggregate foundation advantage rests on the repeats, not on one sample.
+
+**Verdict.** Memory is not a general improvement over a client's own summary:
+on changing facts it is a wash, and it is 1.7× the cost with twice the stale
+answers. What it does reliably is hold *invariant* facts that the baseline
+summary drops outright — worth enabling where that failure mode matters, not as
+a default. Nothing here justifies removing the code; it justifies leaving it
+opt-in and fixing TT-035 before any further claim.
+
+## Defects this suite exposed
+
+Each was found because the numbers looked wrong, and each is fixed and pinned:
+
+1. **A skipped consolidation did not end the wait** (`ea63d6f`). The harness
+   counted only `memory consolidated session=` lines, so a session the engine
+   deliberately skipped — "nothing to distil" — looked like work in flight and
+   burned the whole 600 s limit. On the discarded first pass that was 1,998 of
+   `photograph`/auto's 2,580 s and 2,419 of `ledger`/auto's 3,619 s: harness
+   overhead charged to memory. The same bug is fixed in `memory_book.py`,
+   `memory_value.py`, `memory_correct.py`, `memory_projects.py` and
+   `memory_volume.py`.
+2. **A truncated session scored as a full set of misses** (`8af3205`, `94c8f4d`).
+   The ceiling sat below what a verbose session needs, so the model was cut off
+   before the quiz, and the truncated session was still journalled into memory
+   and polluted it. The ceiling is 6,000 now and a session with no parseable quiz
+   is invalid rather than zero.
+3. **`finish_reason` was read from the wrong object** (`94c8f4d`). It is a
+   sibling of `message` inside each choice, not a field of the message, so every
+   reply looked as if it had none and truncation could not be told from a missing
+   quiz.
+4. **TT-035 — consolidation keeps an amended fact beside the original.** On
+   `contract`, sessions distilled the same facts under different prefixes
+   (`mga/*`, then `msa/calder/*`; in the fresh run `msa/*`, then `agreement/*`),
+   so no supersession can fire and both values stay live. The defect is
+   structural and reproducible in the logs, but its score impact is noisy:
+   `contract`'s memory foundation was 33%, 33%, 83% across the three runs.
+   Tracked in the wiki Project Tracker.
+
+The suite also gained `benchmark/memory_master.py stats` (`81f1219`), which
+computes both aggregates from the same scorer the reports use, so every number
+above is reproducible rather than hand-derived.
 
 ## What this does and does not say
 
-- **Does:** the benchmark discriminates. Across four worlds the arms separate in
-  both directions, and the separation follows the fact density and the
-  arbitrariness of the carried set, not the domain.
-- **Does not:** support a general "memory is better". On two of four it is worse
-  or equal, and the six unmeasured worlds — `contract`, `compound_k`, `vantage`,
-  `kitchen`, `cohort`, `filing` — are the transition-dense ones where the
-  `pigeon` result predicts memory's advantage. They must be run before any
-  summary of the feature.
-- **Caveats.** One run per arm, one model, no repeats. *Carryable* conflates a
-  memory failure with a model reasoning error (photograph/auto's
-  `marcus_knows_photo`@4 is a hallucination, not a stale value); *stale* is the
-  memory-specific signal. A scenario's `seconds` includes consolidation waits.
+- **Does:** show that the arms separate, that the separation follows the
+  invariant-versus-changing fact split rather than the domain, and that the
+  memory arm's cost and stale count are consistently higher.
+- **Does not:** support a general "memory is better". Three worlds have three
+  runs and seven have one; one model, one engine, one machine; `foundation` is
+  noisy enough that any single world's figure should be read with its repeat
+  spread in mind.
+- **Caveats.** *Carryable* conflates a memory failure with a model reasoning
+  error (a hallucinated answer counts as a miss); *stale* is the clean
+  memory-specific signal. Wall clocks from the first six worlds were measured
+  under heavy background load and from `vantage` onward under a quiet machine, so
+  cross-world cost is indicative only. The quiz-first instrument is harder than
+  the discarded one for both arms, and all of these numbers are its output, not
+  the earlier instrument's.
 
-## Remaining
-
-`contract` (7 sessions), `compound_k` (6), `vantage` (8), `kitchen` (7),
-`cohort` (8), `filing` (7). Pigeon was re-run to completion after an earlier
-partial run.
-
-## Resume
+## Reproduce
 
 ```bash
 TINYTITAN_MEMVAL_MODEL=qwen36 TINYTITAN_MEMVAL_QUANT=4 TINYTITAN_MEMVAL_RUNS=1 \
-  benchmark/memval_master.sh contract compound_k vantage kitchen cohort filing
-python3 benchmark/memory_master.py report-all
-```
-
-A finished scenario can be reported on its own without re-running:
-
-```bash
-TINYTITAN_MASTER_SCENARIO=pigeon \
-TINYTITAN_MEMVAL_RESULTS=.build/benchmark-logs/memory-pigeon-qwen36-4bit \
-  python3 benchmark/memory_master.py report
+  benchmark/memval_master.sh
+TINYTITAN_MEMVAL_MODEL=qwen36 TINYTITAN_MEMVAL_QUANT=4 \
+TINYTITAN_MEMVAL_RUNS=2 TINYTITAN_MEMVAL_FIRST_RUN=2 \
+  benchmark/memval_master.sh pigeon contract photograph
+python3 benchmark/memory_master.py stats
 ```
 
 Results live under `.build/benchmark-logs/memory-<scenario>-qwen36-4bit/` and are
