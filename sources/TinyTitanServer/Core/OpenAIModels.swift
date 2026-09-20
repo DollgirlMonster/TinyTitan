@@ -591,9 +591,10 @@ public enum OpenAIRequestValidator {
         guard request.logprobs != true else {
             throw invalid("logprobs are not supported", "logprobs", "unsupported_value")
         }
-        guard request.presencePenalty == nil || request.presencePenalty == 0 else {
-            throw invalid("presence_penalty must be zero", "presence_penalty", "unsupported_value")
-        }
+        // A non-zero presence penalty is supported now: the sampler subtracts it
+        // once per distinct id already in the history. This guard used to reject
+        // every non-zero value, which is why Qwen3.8's published instruct row
+        // (presence 1.5) could not be expressed.
         guard request.frequencyPenalty == nil || request.frequencyPenalty == 0 else {
             throw invalid("frequency_penalty must be zero", "frequency_penalty", "unsupported_value")
         }
@@ -778,7 +779,8 @@ public enum OpenAIRequestValidator {
                                       topK: topK,
                                       topP: topP,
                                       presencePenalty: request.presencePenalty
-                                          ?? GenerationDefaults.presencePenalty,
+                                          ?? sampling.presencePenalty,
+                                      minP: sampling.minP,
                                       repetitionPenalty: repetitionPenalty,
                                       seed: request.seed,
                                       stopStrings: stopStrings)

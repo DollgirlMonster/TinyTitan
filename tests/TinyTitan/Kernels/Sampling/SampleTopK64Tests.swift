@@ -12,10 +12,36 @@ import Testing
         try config.validate()
     }
 
-    @Test func nonzeroPresencePenaltyIsRejected() {
+    @Test func aPresencePenaltyNowValidates() throws {
+        // Qwen3.8's published instruct row uses 1.5, and this used to throw:
+        // nonzero presence penalties were refused outright.
+        try GenerationConfig(presencePenalty: 1.5).validate()
+    }
+
+    @Test func aNonzeroMinPIsRefusedRatherThanIgnored() {
         #expect(throws: GeneratorError.self) {
-            try GenerationConfig(presencePenalty: 0.1).validate()
+            try GenerationConfig(minP: 0.1).validate()
         }
+    }
+
+    @Test func qwen38PublishesBothModeRows() {
+        let thinking = GenerationDefaults.forFamily(.qwen38flash, thinking: true)
+        #expect(thinking.temperature == 1.0)
+        #expect(thinking.topP == 0.95)
+        #expect(thinking.topK == 20)
+        #expect(thinking.minP == 0)
+        #expect(thinking.presencePenalty == 0)
+
+        let instruct = GenerationDefaults.forFamily(.qwen38flash, thinking: false)
+        #expect(instruct.temperature == 0.7)
+        #expect(instruct.topP == 0.80)
+        #expect(instruct.topK == 20)
+        #expect(instruct.minP == 0)
+        #expect(instruct.presencePenalty == 1.5)
+
+        // The mode-less accessor keeps the card's default, which is thinking.
+        #expect(GenerationDefaults.forFamily(.qwen38flash) == thinking)
+        #expect(GenerationDefaults.forFamily(.qwen38flashMTP, thinking: false) == instruct)
     }
 
     @Test func truncationDefaultsDoNotDisableGreedyEligibility() {

@@ -11,33 +11,67 @@ public enum GenerationDefaults {
     public static let topK = 20
     public static let topP: Float = 0.95
     public static let presencePenalty: Float = 0
+    /// Min-p is zero in every shipped row, which means the filter is off. The
+    /// engine does not implement a min-p filter yet, so `validate` refuses a
+    /// non-zero value rather than silently sampling as if it were zero.
+    public static let minP: Float = 0
 
     public struct Sampling: Sendable, Equatable {
         public var temperature: Float
         public var topK: Int
         public var topP: Float
-        public init(temperature: Float, topK: Int, topP: Float) {
+        public var minP: Float
+        /// OpenAI presence penalty: subtracted from the logit of every id the
+        /// history already contains, once per distinct id.
+        public var presencePenalty: Float
+        public init(temperature: Float, topK: Int, topP: Float,
+                    minP: Float = GenerationDefaults.minP,
+                    presencePenalty: Float = GenerationDefaults.presencePenalty) {
             self.temperature = temperature
             self.topK = topK
             self.topP = topP
+            self.minP = minP
+            self.presencePenalty = presencePenalty
         }
     }
 
     public static let house = Sampling(temperature: temperature,
                                        topK: topK, topP: topP)
 
+    /// Qwen3.8-Flash-Next publishes **two** rows, because the checkpoint is
+    /// specified with different sampling inside and outside thinking mode.
+    /// Thinking is the card's default; instruct (non-thinking) raises the
+    /// penalty on repetition.
+    public static let qwen38Thinking = Sampling(temperature: 1.0, topK: topK,
+                                                topP: 0.95)
+    public static let qwen38Instruct = Sampling(temperature: 0.7, topK: topK,
+                                                topP: 0.80, presencePenalty: 1.5)
+
     /// Defaults for a family, used wherever the caller did not ask for a value.
     /// An explicit request always wins -- this only fills the gap.
+    ///
+    /// Qwen3.8 keeps the thinking row here for callers that have no mode to
+    /// give; a caller that knows the request's thinking mode must use
+    /// `forFamily(_:thinking:)`.
     public static func forFamily(_ family: ModelFamily) -> Sampling {
         switch family {
         case .qwen38flash, .qwen38flashMTP:
-            // Qwen3.8-Flash-Next is specified at temperature 1.0 / top-p 0.95.
-            return Sampling(temperature: 1.0, topK: topK, topP: 0.95)
+            return qwen38Thinking
         case .qwen35Dense:
             // Qwen 3.5 is a Qwen 3.6-lineage card: 0.6 / top-p 0.95.
             return Sampling(temperature: 0.6, topK: topK, topP: 0.95)
         default:
             return house
+        }
+    }
+
+    /// The family's row for the mode the request will actually run in.
+    public static func forFamily(_ family: ModelFamily, thinking: Bool) -> Sampling {
+        switch family {
+        case .qwen38flash, .qwen38flashMTP:
+            return thinking ? qwen38Thinking : qwen38Instruct
+        default:
+            return forFamily(family)
         }
     }
 }
@@ -52,10 +86,12 @@ public struct GenerationConfig: Sendable {
     public var temperature: Float = GenerationDefaults.temperature
     public var topK: Int? = GenerationDefaults.topK
     public var topP: Float? = GenerationDefaults.topP
-    /// OpenAI-compatible presence penalty. TinyTitan currently supports the
-    /// neutral value only; keeping it explicit prevents front ends from
-    /// silently drifting to a different policy.
+    /// OpenAI-compatible presence penalty: subtracted once from the logit of
+    /// every id the history already contains. Zero is neutral.
     public var presencePenalty: Float = GenerationDefaults.presencePenalty
+    /// Min-p filter threshold. Zero means off, which is every shipped row; a
+    /// non-zero value is refused by `validate` until the filter is implemented.
+    public var minP: Float = GenerationDefaults.minP
     public var repetitionPenalty: Float = 1.0
     public var seed: UInt64? = nil         // nil = nondeterministic
     public var stopStrings: [String] = []
@@ -74,6 +110,7 @@ public struct GenerationConfig: Sendable {
                 topK: Int? = GenerationDefaults.topK,
                 topP: Float? = GenerationDefaults.topP,
                 presencePenalty: Float = GenerationDefaults.presencePenalty,
+                minP: Float = GenerationDefaults.minP,
                 repetitionPenalty: Float = 1.0,
                 seed: UInt64? = nil,
                 stopStrings: [String] = [],
@@ -84,6 +121,7 @@ public struct GenerationConfig: Sendable {
         self.topK = topK
         self.topP = topP
         self.presencePenalty = presencePenalty
+        self.minP = minP
         self.repetitionPenalty = repetitionPenalty
         self.seed = seed
         self.stopStrings = stopStrings
@@ -117,9 +155,17 @@ public struct GenerationConfig: Sendable {
             throw GeneratorError.invalidGenerationConfig(
                 "repetitionPenalty must be finite and at least one")
         }
-        guard presencePenalty.isFinite, presencePenalty == 0 else {
+        guard presencePenalty.isFinite else {
             throw GeneratorError.invalidGenerationConfig(
-                "presencePenalty must be zero; nonzero presence penalties are not implemented")
+                "presencePenalty must be finite")
+        }
+        guard minP.isFinite, minP >= 0, minP < 1 else {
+            throw GeneratorError.invalidGenerationConfig(
+                "minP must be at least zero and below one")
+        }
+        guard minP == 0 else {
+            throw GeneratorError.invalidGenerationConfig(
+                "minP is not implemented; every published row uses zero")
         }
         if temperature > 0, topK == nil, let topP, topP < 1 {
             throw GeneratorError.invalidGenerationConfig(
@@ -238,11 +284,13 @@ final class Sampler {
                        outToken: MTLBuffer) throws -> SamplePath {
         let v = UInt32(vocab)
 
-        let appliedPenalty = config.repetitionPenalty != 1.0 && !history.isEmpty
+        let appliedPenalty = (config.repetitionPenalty != 1.0
+                              || config.presencePenalty != 0) && !history.isEmpty
         if appliedPenalty {
-            applyRepetitionPenaltyInPlace(logits: logits,
-                                          history: history,
-                                          penalty: config.repetitionPenalty)
+            applyPenaltiesInPlace(logits: logits,
+                                  history: history,
+                                  repetition: config.repetitionPenalty,
+                                  presence: config.presencePenalty)
         }
         // Structured output: floor every token the grammar no longer accepts,
         // in the shared logits buffer, before the softcap+softmax front-end
@@ -348,9 +396,18 @@ final class Sampler {
     /// token appended since the last call (the history's last element). The
     /// logit edit still runs for every distinct id every call because the
     /// logits buffer is fresh per token.
-    private func applyRepetitionPenaltyInPlace(logits: MTLBuffer,
-                                               history: [Int32],
-                                               penalty: Float) {
+    /// Both history-reading penalties, in one pass over the shared logits.
+    ///
+    /// `repetition` is the HF-style multiplicative penalty; `presence` is the
+    /// OpenAI-style additive one, subtracted once per distinct id. They share
+    /// the frequency table and the host-side window before the softcap front
+    /// end, so applying them together costs one walk of the table rather than
+    /// two. Both work inside the softcap's space, which is where the repeated
+    /// logit already lived for the repetition penalty.
+    private func applyPenaltiesInPlace(logits: MTLBuffer,
+                                       history: [Int32],
+                                       repetition: Float,
+                                       presence: Float) {
         if !penaltyHistorySeeded {
             for id in history where id >= 0 && Int(id) < vocab {
                 penaltyFrequency[id, default: 0] += 1
@@ -383,24 +440,33 @@ final class Sampler {
         }
 
         let ptr = logits.contents().bindMemory(to: Float16.self, capacity: vocab)
+        let limit = logitSoftcap * 0.9999
         for (id, _) in penaltyFrequency {
             guard id >= 0 && Int(id) < vocab else { continue }
             let i = Int(id)
-            let z = Float(ptr[i])
-            let penalized: Float
-            if logitSoftcap > 0 {
-                let capped = logitSoftcap * tanhf(z / logitSoftcap)
-                let cappedPenalized = capped > 0 ? capped / penalty : capped * penalty
-                // A saturated negative logit times the penalty can leave the
-                // softcap's open interval; clamp inside it so atanh stays
-                // finite.
-                let limit = logitSoftcap * 0.9999
-                let clamped = max(min(cappedPenalized, limit), -limit)
-                penalized = logitSoftcap * atanhf(clamped / logitSoftcap)
-            } else {
-                penalized = z > 0 ? z / penalty : z * penalty
+            var value = Float(ptr[i])
+            if repetition != 1.0 {
+                if logitSoftcap > 0 {
+                    let capped = logitSoftcap * tanhf(value / logitSoftcap)
+                    // A saturated negative logit times the penalty can leave the
+                    // softcap's open interval; clamp inside it so atanh stays
+                    // finite.
+                    let scaled = capped > 0 ? capped / repetition : capped * repetition
+                    value = logitSoftcap * atanhf(max(min(scaled, limit), -limit) / logitSoftcap)
+                } else {
+                    value = value > 0 ? value / repetition : value * repetition
+                }
             }
-            ptr[i] = Float16(penalized)
+            if presence != 0 {
+                if logitSoftcap > 0 {
+                    let capped = logitSoftcap * tanhf(value / logitSoftcap)
+                    value = logitSoftcap
+                        * atanhf(max(min(capped - presence, limit), -limit) / logitSoftcap)
+                } else {
+                    value -= presence
+                }
+            }
+            ptr[i] = Float16(value)
         }
     }
 
