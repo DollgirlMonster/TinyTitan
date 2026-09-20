@@ -90,3 +90,43 @@ TINYTITAN_RUNNER_STATS=1 TINYTITAN_KERNEL_STATS=1 \
 emits a per-decode line with `io_ms`, `expert_hit_rate`, evictions, reloads,
 `expert_read_mib`, load percentiles and `io_hidden_pct`
 (`sources/TinyTitanServer/Core/ServerInference.swift`); the CLI does not.
+
+## Server-side expert-I/O telemetry (per decode token, 256 tokens, same prompt)
+
+Captured by launching `tools/server_launcher.sh server full qwen38 4 default off`
+with `TINYTITAN_RUNNER_STATS=1 TINYTITAN_KERNEL_STATS=1` and posting the prompt to
+`/v1/chat/completions`. **Post by the 125B's own id** — `/v1/models` is
+catalogue-ordered, and posting to `data[0]` makes the on-demand switcher load the
+4B instead.
+
+| field | value | reading |
+|---|---:|---|
+| `expert_hit_rate` | **71.67%** | 90,309 hits / 35,700 misses |
+| `expert_evictions` | 32,628 | heavy churn in the 96-slot cache |
+| `expert_reloads` | 23,811 | **67% of misses re-read an expert the cache once held** |
+| `expert_read_mib` | 94,270 (92 GB) | 368 MB/token; ≈1.44 GB/s average against a ~3.6 GB/s SSD |
+| `io_ms` | 113.3 | expert I/O per token |
+| `wait_ms` | 90.5 | exposed wait per token |
+| `io_hidden_pct` | **12.13%** | only an eighth of miss I/O is hidden |
+| `rdadvise_ms` / `rdadvise_mib` | 13.5 / 84,740 | advice traffic ≈ the reads themselves |
+| `expert_load_p50/p95/p99` | 4 / 8 / 8 ms | SSD latency |
+| `prefetch_issued_per_token` | **0.00** | prefetch ring is off |
+| `early_hit_layers` | 0 | `early_hits=false` |
+| `head_ms` | 12.7 | 8-bit head GEMV per token |
+| `body_ms` / `cb1_ms` / `cb2_ms` | 225.4 / 4.4 / 1.1 | per token |
+| occupancy / busy | **39.5%** / 102.9 ms per token | `span_ms=66,630` |
+
+### What this gives the optimisation plans
+
+- **I/O is the biggest single lever**: 90.5 ms/token of exposed wait, only 12% of
+  miss I/O hidden, and two thirds of all misses are **reloads** — so retention and
+  scheduling matter more than prediction depth for this model.
+- **The prefetch ring is off** (`prefetch=0`, `prefetch_issued_per_token=0`), so
+  the prefetch lever is genuinely untapped here rather than already spent.
+- **The SSD is not saturated** (≈1.44 GB/s average of ~3.6 GB/s), which is what
+  makes CPU-side staging and CPU expert computation plausible rather than
+  bandwidth-starved.
+- CPU compute headroom: 102.9 ms of GPU busy per token against ~59% idle span,
+  and the CPU's own role in the token is small (the CLI breakdown shows the CPU
+  turnaround only indirectly; the role table above is the GPU side).
+
