@@ -167,11 +167,22 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     /// A smaller budget does not trade throughput gently for memory -- it falls off
     /// by 2.2x while saving RAM that the OS would otherwise have to hold anyway.
     ///
-    /// This inverts under the page-cache policy, where the OS holds the working set
-    /// and slot memory is redundant pressure: 4-bit measured 13.61 tok/s at 16
-    /// slots against 8.78 at 128. So this constant is only correct while expert
-    /// reads bypass the cache. Re-tune it if that ever changes, and re-tune it at
-    /// the shipped `--max-context`, never a reduced one.
+    /// A note here used to claim this inverts under the page-cache policy - the OS
+    /// holding the working set and slot memory being redundant pressure, with 4-bit
+    /// measuring "13.61 tok/s at 16 slots against 8.78 at 128". **That no longer
+    /// reproduces and the note was removed rather than left to guide tuning**: swept
+    /// against the page-cache reader on an 8 GB mini, 8 / 16 / 24 / 32 / 40 slots
+    /// give 6.319 / 6.769 / 7.395 / 8.138 / 8.552 tok/s with the await falling
+    /// 5564 -> 3358 ms. Monotonic, the opposite sign, and 16 slots costs 21%
+    /// against 40 - so more slots is right under either reader, which is what the
+    /// budget below selects. Re-tune at the shipped `--max-context`, never a
+    /// reduced one.
+    ///
+    /// The reader finding is left as a finding, not acted on: the serial page-cache
+    /// reader beats the bounded parallel default by 8.334 against 7.717 tok/s, but
+    /// `docs/v4-core-design.md` records that trade as deliberate - about 20% for a
+    /// footprint that is actually bounded - so reversing it is a product decision
+    /// about memory predictability, not a defect to fix.
     public static let defaultExpertCacheBudgetBytes = 8 << 30
 
     /// Decode defaults that are not one number across the catalogue.
@@ -229,16 +240,50 @@ public struct RuntimeConfiguration: Sendable, Equatable {
 
     /// A tuned budget the machine can actually hold.
     ///
-    /// `decodeTuning` returns what measured fastest on a 24 GiB machine. Half
+    /// `decodeTuning` returns what measured fastest on a 24 GiB machine. A third
     /// of physical memory is the ceiling because the slot cache is not the only
     /// resident claim -- dense weights, the KV cache and the prompt cache all
     /// have to fit beside it. Without this, a 12 GiB default aimed at
     /// qwen38flash would be handed unchanged to a 16 GiB Mac.
+    ///
+    /// A third rather than a half, and `defaultExpertCacheBudgetBytes` is the
+    /// evidence: 8 GiB is a third of the 24 GiB machine those budgets were tuned
+    /// on, so a third reproduces the tuned value exactly where it was tuned and
+    /// scales down where a constant could not. At a half, an 8 GB mini is handed
+    /// 64 slots -- 4.22 GiB of cache against a 70.8 MB slot -- and pages:
+    /// measured swap 855 -> 1610 MB and 5.576 tok/s, against a flat swap and
+    /// 7.289 tok/s at the 40 slots a third selects. The failure is the one
+    /// `expertCacheSlots` already documents for 8-bit, where an over-budget
+    /// cache cost 4.8x throughput with the hit rate *falling*, so it is a paging
+    /// problem rather than a cache one.
+    ///
+    /// Verified end to end on the machine that found it: the server with no cache
+    /// flag decodes 9.27 tok/s against 2.26 before, at 4.59 GB resident with swap
+    /// flat, which is the explicit-40 reference (9.34) within noise.
+    ///
+    /// The cost is on the large machine, and it is small but real. An install whose
+    /// profile table asks for **more** than a third -- qwen3.6 35B-A3B 4-bit asks
+    /// for 10 GiB, and a 24 GB Mac passes a half (12 GiB) untouched -- does lose
+    /// slots to this ceiling. Measured on a 24 GB M3 with the same binary and an
+    /// interleaved A/B, three pairs, 256 tokens at temperature 0:
+    ///
+    ///      default (128 slots, 8 GiB)   16.374 / 16.624 / 16.666 tok/s
+    ///      --expert-cache-slots 160     16.750 / 16.777 / 16.761 tok/s
+    ///
+    /// 16.55 against 16.76, about **-1.3% decode**, and time to first token moved
+    /// the other way (1.27-1.32 s against 1.44-1.56 s) because less cache is
+    /// wired. The tuned 10 GiB was not paging there -- peak footprint 14.25 GB,
+    /// zero swaps -- so this ceiling buys memory headroom on the small machine at
+    /// a measured price on the large one. Making the ceiling conditional -- a floor
+    /// at the tuned budget, so only machines *below* the tune are cut -- is the
+    /// obvious next experiment; it is not done here because the 8 GB nodes are
+    /// where the win is and this port stays behaviour-identical to the engine that
+    /// measured it.
     public static func affordableExpertCacheBudget(
         _ wanted: Int,
         physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
         guard physicalMemory > 0 else { return wanted }
-        return min(wanted, Int(physicalMemory / 2))
+        return min(wanted, Int(physicalMemory / 3))
     }
 
     /// Parses a RAM budget such as `2G`, `512M`, `8GiB` or a plain byte count.
