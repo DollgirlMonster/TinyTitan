@@ -51,8 +51,12 @@ NAME = os.environ.get("TINYTITAN_MASTER_SCENARIO", "photograph")
 SPEC = scenarios.SCENARIOS[NAME]
 ARMS = ("summary", "auto")
 TEMPERATURE = os.environ.get("TINYTITAN_MEMVAL_TEMPERATURE")
-# Pong's stages emit a whole file of code; the others emit sections.
-MAX_TOKENS = 5_200 if NAME == "pong" else 2_500
+# Pong's stages emit a whole file of code; the others emit sections. The ceiling
+# is room for the work *and* the closing quiz: at 2,500 a session that deliberates
+# about formatting was cut off before the JSON block, which scored as a full set
+# of misses and journalled a truncated session into memory. Compliant sessions
+# never approached the old cap, so raising it changes nothing for them.
+MAX_TOKENS = 5_200 if NAME == "pong" else 6_000
 
 SUMMARY_PROMPT = (
     "Summarize, in at most 200 words, everything a worker of the next session "
@@ -78,6 +82,7 @@ def post(messages, model, max_tokens=MAX_TOKENS):
     choice = payload["choices"][0]["message"]
     usage = payload.get("usage", {})
     return {"content": choice.get("content") or "",
+            "finish_reason": choice.get("finish_reason") or "",
             "prompt_tokens": usage.get("prompt_tokens", 0),
             "completion_tokens": usage.get("completion_tokens", 0),
             "seconds": time.time() - started}
@@ -146,6 +151,10 @@ def run_arm(arm: str) -> None:
         result = post([{"role": "user", "content": prompt}], model)
         answers = scenarios.extract_quiz(result["content"], SPEC["keys"])
         result.update(session=session, answers=answers)
+        if not answers:
+            print(f"  WARNING: {NAME}/{arm}/session {session} produced no quiz "
+                  f"(finish={result.get('finish_reason') or 'unknown'}); "
+                  f"scored as invalid, not as a total miss")
         if SPEC["self_chosen"] and session == 1:
             self_truth = {key: answers.get(key) for key in SPEC["keys"]}
             result["self_truth"] = self_truth
@@ -195,11 +204,21 @@ def score_run(results: list) -> dict:
         session = result["session"]
         expected = expected_for(session, self_truth)
         row = {"session": session, "foundation": [0, 0], "carryable": [0, 0],
-               "stale": 0, "wrong": [], "prompt_tokens": result["prompt_tokens"],
+               "stale": 0, "wrong": [], "invalid": False,
+               "finish_reason": result.get("finish_reason", ""),
+               "prompt_tokens": result["prompt_tokens"],
                "completion_tokens": result["completion_tokens"],
                "seconds": result["seconds"],
                "wait": result.get("consolidation_wait", 0.0)}
         if expected is None:
+            scored.append(row)
+            continue
+        if not result["answers"]:
+            # No quiz at all: the instrument failed, usually a completion cut off
+            # by the token cap before the JSON block. Scoring it would record a
+            # full set of misses that say nothing about memory, so the session is
+            # excluded from the denominators and named in the report instead.
+            row["invalid"] = True
             scored.append(row)
             continue
         for key in SPEC["keys"]:
@@ -257,6 +276,13 @@ def report() -> None:
             print(f"{arm:8s} {foundation[0]}/{foundation[1]} {pct(foundation):>5s} "
                   f"{carryable[0]}/{carryable[1]} {pct(carryable):>5s} {stale:6d} "
                   f"{prompt:8d} {completion:11d} {seconds:8.0f}")
+            invalid = [r for r in run["sessions"] if r.get("invalid")]
+            if invalid:
+                named = ", ".join(
+                    f"{r['session']} ({r['finish_reason'] or 'no finish reason'})"
+                    for r in invalid)
+                print(f"         excluded: {len(invalid)} session(s) with no quiz — "
+                      f"{named}")
     # The one line a suite-level reader needs: carryable carried, and stale.
     print("carryable carried (sessions 2+), and stale old values:")
     for arm in ARMS:

@@ -98,6 +98,21 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(last["stale"], 1)             # and it is the old value
         self.assertEqual(last["wrong"], ["inn_status"])
 
+    def test_a_session_with_no_quiz_is_excluded_not_scored_as_misses(self):
+        master.SPEC = scenarios.SCENARIOS["photograph"]
+        spec = scenarios.SCENARIOS["photograph"]
+        base = {"prompt_tokens": 500, "completion_tokens": 2500, "seconds": 10.0,
+                "consolidation_wait": 0.0, "finish_reason": "length"}
+        run = master.score_run([
+            dict(base, session=1, answers=dict(spec["truth"](1))),
+            dict(base, session=5, answers={}),
+        ])
+        last = run["sessions"][-1]
+        self.assertTrue(last["invalid"])
+        self.assertEqual(last["carryable"], [0, 0])  # excluded, not 0/5
+        self.assertEqual(last["stale"], 0)
+        self.assertEqual(last["wrong"], [])
+
     def test_a_self_chosen_scenario_scores_against_session_one(self):
         master.SPEC = scenarios.SCENARIOS["pong"]
         rules = {"field_width": 800, "field_height": 600, "win_score": 11,
