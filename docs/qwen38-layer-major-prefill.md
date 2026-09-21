@@ -56,20 +56,23 @@ one run per arm, and the profile echo is identical apart from the flag). This is
 a divergence in prefill logits, not a truncation artifact, and it is not baseline
 nondeterminism: a repeat of the chunk-major arm under the same conditions
 reproduced `32630aaf…` byte for byte, so the restructure is what moves the text.
-That leaves two candidates, and the experiment that separates them:
 
-1. **The prefetch ring against the released cache.** Prefetch issues speculative
-   reads for layer L+1 during layer L, and layer-major releases layer L-1's
-   streamer inside the same loop. Shipped prefetch depth changed from 0 to 1
-   *after* the earlier identity check, so this interaction is new — the check to
-   run is layer-major with `TINYTITAN_PREDICTIVE_PREFETCH=0`.
-2. **A numerical difference between the hit and miss prefill paths.** The arms'
-   residency differs 4.7x (0.149 against 0.700), so such a difference would show
-   exactly here; the check is the same run with
-   `TINYTITAN_DECODE_EXPERT_EXECUTION=barrier`.
+Two of the three candidates are now eliminated by measurement:
 
-Both checks must reproduce `32630aaf…` before the restructure is treated as
-sound, which is also the precondition for the cached-pool retry.
+- **Prefetch is not involved.** Layer-major with
+  `TINYTITAN_PREDICTIVE_PREFETCH=0` produced the *same* text (`b574afad…`) and the
+  same prefill time (1034.5 s against 1030.5 s). That matches the code: the ring
+  is entered only from `RealForwardRunner+Decode`, so it never runs during
+  prefill at all.
+- **Baseline nondeterminism is not involved** (the repeat above).
+
+What remains is the loop restructure itself against the *slot concentration* it
+is paired with, and one run separates them: **layer-major with
+`TINYTITAN_PREFILL_LAYER_SLOTS=96`** takes the same restructured path with the
+shipped cache size, so it decides whether the 512-slot residency is what moves
+the logits or whether the reordered layer/chunk visits do. Both this run and the
+shipped path must reproduce `32630aaf…` before the cached-pool retry is worth
+building.
 
 ## The problem, measured
 
