@@ -32,11 +32,16 @@ import Testing
     @Test func tabledValuesMatchWhatWasMeasured() {
         let q38 = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash, weightBits: 4, environment: [:])
         #expect(q38.expertCacheBudgetBytes == 12 << 30)
-        #expect(q38.prefetchDepth == 0)
+        // Depth 1 since 2026-09-21: the ring was re-measured and wins at both
+        // prompt lengths now (7-token +15.7%, ~500-token +14.6%), which
+        // supersedes the 2026-09-05 decision to leave it off.
+        #expect(q38.prefetchDepth == 1)
         #expect(q38.keepExpertCacheWired)
         #expect(!q38.earlyExpertHits)
         let q38b = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash, weightBits: 8, environment: [:])
         #expect(q38b.expertCacheBudgetBytes == Int(9.5 * Double(1 << 30)) && q38b.prefetchIOTier == 0)
+        // Inferred from the 4-bit A/B (see the 8-bit row comment), not measured.
+        #expect(q38b.prefetchDepth == 1)
         #expect(q38.sampling.temperature == 1.0 && q38.sampling.topP == 0.95)
         #expect(!q38.hcFused && !q38.qsaGPUSelect)
         let q36 = ModelProfile.resolve(modelID: "qwen3.6-35b-a3b", family: .qwen36, weightBits: 8, environment: [:])

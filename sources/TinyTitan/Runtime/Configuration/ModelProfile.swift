@@ -171,30 +171,32 @@ public struct ModelProfile: Sendable, Equatable {
         Key("kat-coder-v2.5", 8): (12 << 30, 1, 0, 4_096,
                                    GenerationDefaults.Sampling(temperature: 1.0, topK: GenerationDefaults.topK, topP: 0.95),
                                    true, true, false, false, true, false),
-        // Qwen3.8-Flash-Next: 96 slots (12 GiB) still climbing, prefetch one
-        // deep +12%; its card specifies temperature 1.0 / top-p 0.95. The
-        // fused hyper-connection gates and the GPU key select are measured
-        // washes and stay off.
-        // 4-bit, 2026-09-05 profile: prefetch OFF. Per-token counters showed
-        // the ring had been clogged since its first token (a wrong prediction
-        // for layer 47 was never reclaimed), so every earlier prefetch
-        // measurement compared variants of a mechanism that issued ~5 reads
-        // per token. Repaired and running as designed it loses on this SSD at
-        // every setting (512-token story runs, prefetch off 5.81 / 5.83; rank
-        // order 4.70 / 4.66; probe-margin gate 0.03 4.95 / 5.26; 0.06 5.10 /
-        // 5.41): a one-layer-ahead read lands after the next plan and takes
-        // SSD time from the demand reads. The cache stays wired through
-        // prefill (see keepExpertCacheWired).
+        // Qwen3.8-Flash-Next: 96 slots (12 GiB) still climbing; its card
+        // specifies temperature 1.0 / top-p 0.95. The fused hyper-connection
+        // gates and the GPU key select are measured washes and stay off.
+        // 4-bit, 2026-09-21: prefetch depth 1, ON. The 2026-09-05 decision to
+        // leave the ring off came from 512-token story runs where it lost. On
+        // this engine it now wins at both prompt lengths measured: the 7-token
+        // prompt 3.993 -> 4.621 tok/s decode (+15.7%), the ~500-token prompt
+        // 3.627 -> 4.158 (+14.6%), with the expert hit rate up 4.5-4.7 points,
+        // misses down 11-17% and io_hidden up. The ring turns speculative reads
+        // into hits *before* demand rather than merely warming pages, and the
+        // response is byte-identical (golden re-checked). The cache stays wired
+        // through prefill (see keepExpertCacheWired).
         // Sampling is the *thinking* row here; the request's thinking mode
         // selects between it and the instruct row at validation time
         // (`GenerationDefaults.forFamily(_:thinking:)`).
-        Key("qwen3.8-flash-next", 4): (12 << 30, 0, 0, 4_096,
+        Key("qwen3.8-flash-next", 4): (12 << 30, 1, 0, 4_096,
                                        GenerationDefaults.qwen38Thinking,
                                        true, true, false, false, true, false),
         // 8-bit: 32 slots (8 GiB) 2.05 / 2.06 tok/s; 40 slots (9.5 GiB) 2.18 /
         // 2.27 with swap falling; 48 (13 GiB) 2.24-2.33 but ~1 GB of swap
         // growth per run on this 24 GB machine. 40 is the no-paging middle.
-        Key("qwen3.8-flash-next", 8): (Int(9.5 * Double(1 << 30)), 0, 0, 4_096,
+        // Prefetch depth 1 here is inferred from the 4-bit A/B, not measured:
+        // the ring is family-level and width-independent, and this install is
+        // not present to A/B. The depth-0 this replaces was inferred the same
+        // way from the 2026-09-05 measurement.
+        Key("qwen3.8-flash-next", 8): (Int(9.5 * Double(1 << 30)), 1, 0, 4_096,
                                        GenerationDefaults.qwen38Thinking,
                                        true, true, false, false, true, false),
     ]

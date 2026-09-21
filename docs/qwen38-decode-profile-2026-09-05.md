@@ -1,5 +1,16 @@
 # Qwen3.8-Flash-Next 4-bit decode: measured profile and optimization plan
 
+> **Superseded in part, 2026-09-21.** The §8 verdict that prefetch cannot work
+> ("loses at every setting", "not viable on this SSD in this I/O path") does not
+> hold on the current engine: with the ring at depth 1 it wins at both prompt
+> lengths re-measured (7-token 3.993 -> 4.621 tok/s, +15.7%; ~500-token
+> 3.627 -> 4.158, +14.6%), with byte-identical output, and depth 1 is now the
+> Qwen3.8-Flash-Next profile default. Note that the absolute rates here (5.8-6.1
+> tok/s) and there (3.6-4.6) are not comparable across sessions; what flipped is
+> the within-session prefetch-on against prefetch-off comparison. Everything else
+> below is the 2026-09-05 record and still reads as such. Re-measurement:
+> `benchmark/internal-speeds/v2-qwen38-4bit-telemetry.txt`.
+
 Date: 2026-09-05. Machine: base M3 MacBook Pro, 8 GPU cores, 24 GB, ~3.6 GB/s
 SSD. Checkpoint: `models/qwen3.8-flash-next_125B_A6B_4Bit` (48 layers, 512
 experts, top-10, expert stride 2,768,896 B). Shipped profile row: 12 GiB

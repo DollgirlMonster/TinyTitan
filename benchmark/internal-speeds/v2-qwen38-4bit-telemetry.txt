@@ -169,4 +169,49 @@ The ring turns speculative reads into cache hits **before** demand, so misses an
 read bytes fall rather than the ring merely warming pages. Output is
 byte-identical, so this is a pure scheduling change.
 
+### The same ring on a ~500-token prompt (also a win)
+
+The profile's 2026-09-05 decision kept the ring off because it lost on 512-token
+story runs. Re-measured on a ~500-token varied technical prompt, server path,
+`max_completion_tokens 128`:
+
+| metric | prefetch off | prefetch depth 1 |
+|---|---:|---:|
+| decode | 3.647 / 3.607 tok/s | **4.137 / 4.178** (+14.6%) |
+| occupancy | 48.9 / 49.1% | 52.4 / 52.4% |
+| expert hit rate | 0.5734 | **0.6188** |
+| expert misses | 31,616 | 28,250 |
+| expert read MiB | 83,486 | 74,598 |
+| `io_ms` | 129.7 / 129.4 | 107.3 / 106.8 |
+| `io_hidden_pct` | 11.7 / 12.1% | 14.8 / 15.0% |
+
+The ring wins at **both** prompt lengths on this engine, so depth 1 is now the
+profile default for the 4-bit row; the 8-bit row inherits it by inference (the
+ring is family-level and width-independent, and that install is not present to
+A/B), and the 2026-09-05 note is superseded in `ModelProfile.swift`.
+
+### The shipped default, re-recorded
+
+With the row at depth 1, `internal-speeds` was run again on the same 7-token
+prompt and 256 new tokens (`benchmark/internal-speeds/v2-qwen38-4bit-prefetch-default.json`):
+
+| field | pre-change baseline | shipped default |
+|---|---:|---:|
+| decode | 3.993 tok/s | **4.676** |
+| TTFT | 3.12 s | 2.39 s |
+| response | `9cf91578…`, 901 chars | `3619d939…`, 1,070 chars |
+
+Provenance, because the A/Bs straddle a deliberate numerics change and their
+hashes are therefore not all comparable. The short-prompt A/B records
+`9cf91578…`, the original baseline's hash, in both arms. The long-prompt A/B ran
+on a later binary and has no stored baseline for its own prompt, so what it
+establishes is that its two arms produced byte-identical text (`051f5536…`, both
+arms and both runs). The shipped default records `3619d939…`; that difference is
+the instruct-row presence penalty, not prefetch — the same binary with
+`--presence-penalty 0` reproduces the original baseline, and the golden gate
+passes on the promoted default (`tools/golden-baseline.sh --check qwen38-4`:
+"output identical to baseline" against the re-captured
+`benchmark/golden/qwen3.8-flash-next-125b-a6b-4bit.txt`).
+
+
 

@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "environment": {
+    "recorded_at": "2026-09-21T01:58:53+00:00",
+    "git_commit": "366028a",
+    "git_describe": "v2-9-g366028a-dirty",
+    "macos": "27.0",
+    "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+    "python": "3.14.7",
+    "physical_memory_bytes": 25769803776
+  },
+  "model": {
+    "path": "models/qwen3.8-flash-next_125B_A6B_4Bit",
+    "family": "qwen38flash",
+    "prompt": "difference swift vs c++ in detail",
+    "max_new_tokens": 256
+  },
+  "gpu": {
+    "qkv_gemv": {
+      "gbps": 59.6,
+      "bytes_per_launch": 17301504
+    },
+    "routed_moe": {
+      "gbps": 41.3,
+      "bytes_per_launch": 12582912
+    },
+    "gdn_inproj": {
+      "gbps": 70.3,
+      "bytes_per_launch": 12648448
+    },
+    "qkv_gemv_gbps": 59.6,
+    "routed_moe_gbps": 41.3,
+    "gdn_inproj_gbps": 70.3
+  },
+  "cpu": {
+    "best_gbps": 46.4,
+    "best_threads": 8,
+    "rows": [
+      {
+        "threads": 1,
+        "ms_per_pass": 5.99,
+        "gbps": 11.9,
+        "tok_per_second_2b_8bit": 6.3
+      },
+      {
+        "threads": 2,
+        "ms_per_pass": 3.01,
+        "gbps": 23.7,
+        "tok_per_second_2b_8bit": 12.5
+      },
+      {
+        "threads": 4,
+        "ms_per_pass": 1.55,
+        "gbps": 45.9,
+        "tok_per_second_2b_8bit": 24.2
+      },
+      {
+        "threads": 6,
+        "ms_per_pass": 1.71,
+        "gbps": 41.8,
+        "tok_per_second_2b_8bit": 22.0
+      },
+      {
+        "threads": 8,
+        "ms_per_pass": 1.54,
+        "gbps": 46.4,
+        "tok_per_second_2b_8bit": 24.4
+      }
+    ]
+  },
+  "generation": {
+    "finish": "maxTokens",
+    "prefill_tokens": 7,
+    "prefill_seconds": 2.39,
+    "decode_tokens": 256,
+    "decode_seconds": 54.75,
+    "decode_tokens_per_second": 4.676,
+    "prefill_tokens_per_second": 2.928870292887029,
+    "ttft_seconds": 2.39,
+    "total_seconds": 57.14,
+    "weight_bytes": 3454121216,
+    "effective_decode_gbps": 16.1507768273242,
+    "response": "<think>\nThe user is asking for a detailed comparison between Swift and C++. This is a programming language comparison question. I need to cover multiple dimensions: history, philosophy, memory management, type system, syntax, performance, use cases, concurrency, error handling, generics, OOP vs protocol-oriented, tooling, ecosystem, etc. Let me provide a thorough, well-structured comparison that covers the most important differences across many dimensions.\n</think>\n\n# Swift vs C++ \u2014 A Detailed Comparison\n\n## 1. Philosophy & Design Goals\n\n| Aspect | **Swift** | **C++** |\n|---|---|---|\n| Origin | Apple (2014), Chris Lattner | Bjarne Stroustrup (1983) |\n| Goal | Safe, modern replacement for Obj-C/C; \"safe by default\" | General-purpose systems language; zero-overhead abstraction |\n| Paradigm | Multi-paradigm: protocol-oriented, functional, OOP | Multi-paradigm: procedural, OOP, generic, functional, metaprogramming |\n| Safety focus | Memory safety enforced at compile time; optionals eliminate null dereference | Safety is *opt-in*; UB from raw pointers, manual",
+    "response_sha256": "3619d939c9148c1dae0c684776c8845f1e3c788c700e32054574717f5d54437c",
+    "response_characters": 1070,
+    "response_tokens": 256
+  },
+  "ane": {
+    "applicable": false,
+    "reason": "the ANE prefill path does not pay for a qwen38flash model: measured 0.72x against the GPU at 4,333 tokens, because the GPU already attends to only the indexer's ~2,051 selected keys while the ANE graph is dense over the context and its per-variant Core ML load is 7-14 s. A sidecar is exportable only to re-measure"
+  },
+  "quality": {
+    "keyword_coverage": 0.6666666666666666,
+    "keywords_present": [
+      "swift",
+      "c++",
+      "performance",
+      "memory",
+      "compile",
+      "type",
+      "manual",
+      "safety"
+    ],
+    "trigram_repetition": 0.007299270072992692,
+    "response_sha256": "3619d939c9148c1dae0c684776c8845f1e3c788c700e32054574717f5d54437c",
+    "characters": 1070
+  }
+}
