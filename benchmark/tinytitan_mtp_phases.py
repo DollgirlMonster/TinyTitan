@@ -47,6 +47,13 @@ PROMPT = ("Write out the multiplication table for 7, from 7 x 1 to 7 x 30, "
           "table, nothing else.")
 MAX_TOKENS = 256
 
+# The request's presence penalty. 0 keeps the request pure greedy, which is the
+# condition the decode loop checks before it will use the MTP draft at all
+# (`RawCompletion.isPureGreedy`). Qwen3.8's instruct row sets 1.5 for a
+# thinking-off request, so an MTP qualification on that family must pin 0 here or
+# the draft path never engages and both arms measure the scalar decode.
+PRESENCE_PENALTY = 0.0
+
 MTP_MODELS = {
     "4bit": ROOT / "models/ornith-1.5_35B_A3B_4Bit",
     "8bit": ROOT / "models/ornith-1.5_35B_A3B_8Bit",
@@ -99,6 +106,7 @@ def generate() -> dict | None:
         "model": resolve_api_model(PORT),
         "messages": [{"role": "user", "content": PROMPT}],
         "temperature": 0,
+        "presence_penalty": PRESENCE_PENALTY,
         "seed": 41,
         "max_completion_tokens": MAX_TOKENS,
     }, separators=(",", ":")).encode()
@@ -175,12 +183,17 @@ def main() -> int:
                         help="discarded runs per arm (the old default was 1)")
     parser.add_argument("--verify-arm", choices=("pair", "tile"), default="pair",
                         help="TINYTITAN_MTP_VERIFY for the mtp-on arm")
+    parser.add_argument("--presence-penalty", type=float, default=0.0,
+                        help="presence penalty sent with the request; 0 keeps it "
+                             "pure greedy, which MTP requires (Qwen3.8's instruct "
+                             "row otherwise applies 1.5)")
     parser.add_argument("--pairs", type=int, default=1,
                         help="off/on/on/off blocks after the warmups")
     parser.add_argument("--allow-busy-gpu", action="store_true")
     args = parser.parse_args()
-    global VERIFY_ARM
+    global VERIFY_ARM, PRESENCE_PENALTY
     VERIFY_ARM = args.verify_arm
+    PRESENCE_PENALTY = args.presence_penalty
 
     if args.target:
         target = (ROOT / args.target).resolve()

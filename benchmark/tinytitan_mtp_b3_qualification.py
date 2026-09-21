@@ -49,11 +49,29 @@ def main() -> int:
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), default="function")
     parser.add_argument("--blocks", type=int, default=2,
                         help="off/on/on/off blocks after the two warmups")
+    parser.add_argument("--target", default=None,
+                        help="target model directory (e.g. the Qwen3.8 4-bit install)")
+    parser.add_argument("--sidecar", default=None,
+                        help="MTP sidecar directory to pair with --target")
+    parser.add_argument("--ram-budget", default="8G",
+                        help="--ram-budget for the server")
+    parser.add_argument("--presence-penalty", type=float, default=0.0,
+                        help="presence penalty sent with the request; 0 keeps it "
+                             "pure greedy, which MTP requires")
     parser.add_argument("--allow-busy-gpu", action="store_true")
     args = parser.parse_args()
 
     ph.PROMPT = SCENARIOS[args.scenario]
     ph.VERIFY_ARM = "pair"
+    ph.PRESENCE_PENALTY = args.presence_penalty
+    if args.target:
+        target = (ph.ROOT / args.target).resolve()
+        sidecar = (ph.ROOT / args.sidecar).resolve() if args.sidecar else ph.SIDECAR
+        label = target.name
+    else:
+        target = ph.MTP_MODELS[args.quant]
+        sidecar = ph.SIDECAR
+        label = args.quant
 
     signal.signal(signal.SIGINT, g0._on_signal)
     signal.signal(signal.SIGTERM, g0._on_signal)
@@ -63,13 +81,15 @@ def main() -> int:
     tag_prefix = f"b3_{args.scenario}"
     try:
         for mtp in (False, True):
-            print(f"[{args.quant}/{args.scenario}] warmup "
+            print(f"[{label}/{args.scenario}] warmup "
                   f"mtp={'on' if mtp else 'off'}", flush=True)
-            ph.one_run(args.quant, mtp, f"{tag_prefix}_warmup")
+            ph.one_run(target, sidecar, mtp, f"{tag_prefix}_warmup",
+                       args.ram_budget)
         for block in range(args.blocks):
             for mtp in (False, True, True, False):
-                row = ph.one_run(args.quant, mtp,
-                                 f"{tag_prefix}_b{block}_{len(rows)}")
+                row = ph.one_run(target, sidecar, mtp,
+                                 f"{tag_prefix}_b{block}_{len(rows)}",
+                                 args.ram_budget)
                 rows.append(row)
                 extra = (f"acc {row.get('acceptance', 0):.1f}%"
                          if row["arm"] == "on" else "")
