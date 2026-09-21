@@ -325,12 +325,33 @@ misses the counters still count. Swap did not grow during the sweep (3.6 -> 3.5
 GB used), so the trade costs undeclared memory headroom rather than paging over a
 three-minute window.
 
+The ~500-token prompt confirms the sign with more scatter: 3.977 -> 4.261
+(+7.1%) and 4.064 -> 4.090 (+0.6%), mean +0.155 (**+3.9%**), 2/2 positive, the
+same response (`051f5536…`). The scatter is the machine's rather than the
+trade's — the shipped arm itself moved 3.977 -> 4.064 between rounds — so across
+both prompt lengths the honest number is **+4-5% decode**.
+
 The same sweep closes the advice question from the other side. Inside the
 page-cache path, `TINYTITAN_RDADVISE_POLICY=off` measures **+3.5%** against the
 shipped path but ~1.8% *below* the page-cache arm with advice on: advice earns
 its keep exactly where the reads can consume it. With Lever 2 (advice adds no
 device traffic under bounded I/O) that is the whole picture — dead work when the
 reads bypass the cache, useful when they use it.
+
+**Prefill does not benefit, and that is the same fact as the layer-major ceiling.**
+The same trade on the 9,000-token prompt, two paired rounds:
+
+| round | shipped prefill | page cache | occupancy shipped / page cache |
+| --- | ---: | ---: | --- |
+| 1 | 385.8 s | 389.2 s | 90.1% / 88.9% |
+| 2 | 384.0 s | 391.1 s | 89.7% / 88.9% |
+
+No gain (0/2; the page-cache arm is 1.4% slower on the mean). Prefill's expert
+reads are already ~90% overlapped with GPU work, so there is no exposed I/O for a
+page cache to serve — which is the same 90% occupancy that bounds the layer-major
+line at ~10% (see `docs/qwen38-layer-major-prefill.md`). The page-cache arm's swap
+also grew 712 MB in round 2 (3.49 -> 4.21 GB), against a flat/falling shipped arm,
+so the prefill case is a memory cost with no throughput return.
 
 **Not a default change.** The shipped default is deliberate: the page-cache path
 "borrows memory it never declares", which is the property the streaming design
