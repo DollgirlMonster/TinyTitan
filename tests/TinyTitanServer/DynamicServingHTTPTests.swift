@@ -201,7 +201,12 @@ struct DynamicServingHTTPTests {
 
             _ = try await send(port, "POST", "/v1/chat/completions", json: chat("flash_8-Bit"))
             let flash = try #require(log.requests.last)
-            #expect(flash.generationConfig.temperature == 1.0)
+            // Qwen3.8 has two published rows. This fixture serves it with
+            // thinking off, so the instruct row applies -- not the thinking row
+            // the model was catalogued with.
+            #expect(flash.generationConfig.temperature == 0.7)
+            #expect(flash.generationConfig.topP == 0.80)
+            #expect(flash.generationConfig.presencePenalty == 1.5)
             #expect(flash.maximumCompletionTokens == RoutingFixture.configuredContext)
 
             _ = try await send(port, "POST", "/v1/chat/completions", json: chat("small-2b"))

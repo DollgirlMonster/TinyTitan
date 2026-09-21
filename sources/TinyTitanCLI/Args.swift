@@ -21,6 +21,10 @@ public struct Args: Equatable, Sendable {
     public var topKWasSet: Bool = false
     public var topPWasSet: Bool = false
     public var repetitionPenalty: Float
+    /// OpenAI presence penalty: subtracted once per distinct id already in the
+    /// history. Zero unless the family's row carries one (Qwen3.8 instruct 1.5).
+    public var presencePenalty: Float
+    public var presencePenaltyWasSet: Bool = false
     public var seed: UInt64?
     public var stops: [String]
     public var quiet: Bool
@@ -49,6 +53,8 @@ public struct Args: Equatable, Sendable {
                 topKWasSet: Bool = false,
                 topPWasSet: Bool = false,
                 repetitionPenalty: Float = 1.0,
+                presencePenalty: Float = GenerationDefaults.presencePenalty,
+                presencePenaltyWasSet: Bool = false,
                 seed: UInt64? = nil,
                 stops: [String] = [],
                 quiet: Bool = false,
@@ -72,6 +78,8 @@ public struct Args: Equatable, Sendable {
         self.topKWasSet = topKWasSet
         self.topPWasSet = topPWasSet
         self.repetitionPenalty = repetitionPenalty
+        self.presencePenalty = presencePenalty
+        self.presencePenaltyWasSet = presencePenaltyWasSet
         self.expertCacheSlots = expertCacheSlots
         self.rdadvise = rdadvise
         self.prefillChunk = prefillChunk
@@ -142,6 +150,8 @@ extension Args {
       --top-k <int>             Top-k truncation, 1...256 (default 20; 0 = off).
       --top-p <float>           Nucleus truncation (default 0.95).
       --repetition-penalty <f>  Repetition penalty (default 1.0).
+      --presence-penalty <f>    Presence penalty, -2...2 (default: the model's
+                                own row; 1.5 for Qwen3.8 outside thinking mode).
       --seed <uint64>           Deterministic sampling seed (default off).
       --stop <string>           Stop substring (repeatable).
       --rdadvise <mode>         Expert read-ahead advice: off, default,
@@ -195,6 +205,8 @@ extension Args {
         var topK: Int? = GenerationDefaults.topK
         var topP: Float? = GenerationDefaults.topP
         var repetitionPenalty: Float = 1.0
+        var presencePenalty: Float = GenerationDefaults.presencePenalty
+        var presencePenaltyWasSet = false
         var seed: UInt64?
         var stops: [String] = []
         var quiet = false
@@ -290,6 +302,17 @@ extension Args {
                     throw ArgsError.invalidValue(flag: flag, value: value)
                 }
                 repetitionPenalty = parsed
+            case "--presence-penalty":
+                let value = try takeValue(argv, &index, flag: flag)
+                // OpenAI's own bounds. The sampler subtracts the value once per
+                // distinct id already in the history; Qwen3.8's instruct row is
+                // the one published row that uses a non-zero value (1.5).
+                guard let parsed = Float(value), parsed.isFinite,
+                      parsed >= -2, parsed <= 2 else {
+                    throw ArgsError.invalidValue(flag: flag, value: value)
+                }
+                presencePenalty = parsed
+                presencePenaltyWasSet = true
             case "--seed":
                 let value = try takeValue(argv, &index, flag: flag)
                 guard let parsed = UInt64(value) else {
@@ -372,6 +395,8 @@ extension Args {
                     topKWasSet: topKWasSet,
                     topPWasSet: topPWasSet,
                     repetitionPenalty: repetitionPenalty,
+                    presencePenalty: presencePenalty,
+                    presencePenaltyWasSet: presencePenaltyWasSet,
                     seed: seed,
                     stops: stops,
                     quiet: quiet,

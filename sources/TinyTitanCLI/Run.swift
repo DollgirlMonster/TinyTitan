@@ -109,16 +109,30 @@ public func run(args: Args,
         // A family whose model card specifies its own sampling gets it here,
         // where the manifest has been read. Anything the caller named on the
         // command line wins; this only fills what they left alone.
-        let familySampling = (try? ManifestReader.peekIdentity(directoryURL: modelURL))
+        let peekedIdentity = try? ManifestReader.peekIdentity(directoryURL: modelURL)
+        let profileSampling = peekedIdentity
             .map { ModelProfile.resolve(identity: $0).sampling }
             ?? GenerationDefaults.forFamily(.qwen36)
+        // Qwen3.8 publishes two rows and the profile carries only the thinking
+        // one, so the mode picks between them here -- the same choice the server
+        // makes during validation.
+        let familySampling: GenerationDefaults.Sampling
+        if let family = peekedIdentity?.family,
+           family == .qwen38flash || family == .qwen38flashMTP {
+            familySampling = GenerationDefaults.forFamily(
+                family, thinking: args.thinkingMode == .on)
+        } else {
+            familySampling = profileSampling
+        }
         let config = GenerationConfig(
             maxNewTokens: effectiveMaxNew,
             temperature: args.temperatureWasSet
                 ? args.temperature : familySampling.temperature,
             topK: args.topKWasSet ? args.topK : familySampling.topK,
             topP: args.topPWasSet ? args.topP : familySampling.topP,
-            presencePenalty: GenerationDefaults.presencePenalty,
+            presencePenalty: args.presencePenaltyWasSet
+                ? args.presencePenalty : familySampling.presencePenalty,
+            minP: familySampling.minP,
             repetitionPenalty: args.repetitionPenalty,
             seed: args.seed,
             stopStrings: args.stops,

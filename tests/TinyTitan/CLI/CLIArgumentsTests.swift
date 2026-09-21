@@ -67,7 +67,8 @@ import TinyTitan
             "--model", "m.gturbo", "--prompt", "hi",
             "--max-new", "32", "--max-context", "512",
             "--temperature", "0", "--top-k", "40", "--top-p", "0.95",
-            "--repetition-penalty", "1.1", "--seed", "42",
+            "--repetition-penalty", "1.1", "--presence-penalty", "1.5",
+            "--seed", "42",
             "--stop", "A", "--stop", "B", "--quiet",
         ])
         #expect(arguments.maxNew == 32)
@@ -76,9 +77,23 @@ import TinyTitan
         #expect(arguments.topK == 40)
         #expect(arguments.topP == 0.95)
         #expect(arguments.repetitionPenalty == 1.1)
+        #expect(arguments.presencePenalty == 1.5)
+        #expect(arguments.presencePenaltyWasSet)
         #expect(arguments.seed == 42)
         #expect(arguments.stops == ["A", "B"])
         #expect(arguments.quiet)
+    }
+
+    @Test func presencePenaltyIsBoundedToTheOpenAIRange() throws {
+        // Qwen3.8's instruct row is 1.5, so the flag has to accept it; outside
+        // OpenAI's -2...2 is refused rather than clamped.
+        let accepted = try Args.parse(["--model", "m", "--prompt", "x",
+                                       "--presence-penalty", "-0.5"])
+        #expect(accepted.presencePenalty == -0.5)
+        #expect(accepted.presencePenaltyWasSet)
+        #expect(throws: ArgsError.self) {
+            try Args.parse(["--model", "m", "--prompt", "x", "--presence-penalty", "2.5"])
+        }
     }
 
     @Test func contextArgumentAcceptsQwenMaximumAndRejectsLargerValues() throws {
@@ -171,6 +186,7 @@ import TinyTitan
         let expected: Set<String> = [
             "--model", "--prompt", "--messages-file", "--max-new", "--max-context",
             "--temperature", "--top-k", "--top-p", "--repetition-penalty",
+            "--presence-penalty",
             "--seed", "--stop", "--quiet", "--help",
             "--rdadvise", "--expert-cache-slots", "--prefill-chunk", "--concise",
             "--kv-bits", "--rope-scaling", "--thinking", "--reasoning-effort",
