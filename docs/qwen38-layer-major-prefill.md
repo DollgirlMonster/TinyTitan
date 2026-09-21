@@ -1,11 +1,12 @@
 # Design: layer-major prefill for Qwen3.8-Flash-Next
 
 **Status: implemented behind `TINYTITAN_PREFILL_LAYER_MAJOR=1`, default off, and
-now measured with slot concentration (2026-09-21). The expert-read reduction is
-real and larger than this design predicted, but the restructure is 2.7x slower in
-wall clock, so the flag stays off.** The sections below are the design as written;
-the measurement follows the header, and says what would have to change for a
-retry.
+measured (2026-09-21) with and without slot concentration. The expert-read
+reduction is real and larger than this design predicted, but the restructure is
+2.7x slower in wall clock, its output diverges from chunk-major, and chunk-major
+already runs prefill at 90% GPU occupancy — so the whole line can win at most
+~10% even if it were free. It is closed; the flag stays off.** The sections below
+are the design as written; the measurements follow the header.
 
 ## Measured, 2026-09-21: the reads fall 92%, the wall rises 2.7x
 
@@ -40,39 +41,60 @@ of a GPU with nothing else to run. Chunk-major never pays it because its
 per-layer caches open once, during the first chunk, where the open overlaps GPU
 work; its only cost is then 74 ms per boundary.
 
-### What a retry would have to change
+### Correction: on this engine the ordering is what saves the reads
 
-The read reduction is worth having (162 -> 12 GiB on a 9k prompt); the per-layer
-build is what eats it. A version worth measuring would keep **one** concentrated
-slot pool and retarget it at each layer — no free/allocate/mlock cycle, no
-re-verification — and pre-open layer L+1 while L runs, so the open overlaps GPU
-work. Until then the flag stays off: as shipped, layer-major is 2.7x slower.
+The concentration was added because layer-major alone measured no read reduction
+(8136cf6: 113.4 -> 113.8 GiB). That no longer reproduces. Layer-major at the
+*shipped* 96 slots, with no concentration at all, read **14,270 MiB** against the
+concentrated arm's 12,577 MiB — both against chunk-major's 166,119 MiB, measured
+on the same prompt and machine. Each run's 32-token decode portion accounts for
+roughly 10 GiB of those totals, so the prefill reads are ~152 GiB for chunk-major
+against ~2-4 GiB for either layer-major arm: the reordering alone is what keeps a
+layer's working set in its slots across the band's chunks. That makes the
+concentration a ~1.7 GiB refinement rather than the enabling half, and it means
+the 4add9dd premise should be re-derived, not inherited, by any retry.
+
+### The whole line can win at most ~10% of prefill
+
+Worth stating before anyone builds the pooled retry: on this prompt chunk-major
+prefill runs at **90.0% GPU occupancy** (`busy_ms=343,279` of `span_ms=381,500`),
+so the exposed expert I/O layer-major could remove is 38 s of 381 s. Even a
+version with a free restructure and zero reads could not beat 343 s, i.e. about
+-10%. The design's "~15-20% of prefill" came from a 2026-09-05 profile doc where
+non-GPU time was 21% of a 651 s 10k prefill; the QSA work has since cut the GPU
+half, so the same read saving is worth proportionally less. The flag stays off,
+and the cached-pool retry is not worth building for this.
 
 ## Open item: the identity check fails on this prompt
 
-On the 9,000-token prompt the two arms returned different greedy text
-(chunk-major `32630aaf…`, layer-major `b574afad…`, diverging at the first token;
-one run per arm, and the profile echo is identical apart from the flag). This is
-a divergence in prefill logits, not a truncation artifact, and it is not baseline
-nondeterminism: a repeat of the chunk-major arm under the same conditions
-reproduced `32630aaf…` byte for byte, so the restructure is what moves the text.
+On the 9,000-token prompt both layer-major arms returned different greedy text
+from chunk-major (`32630aaf…` against `b574afad…`, diverging at the first token;
+one run per arm, and the profile echo is identical apart from the flags). This is
+a divergence in prefill logits, not a truncation artifact, and not baseline
+nondeterminism: a repeat of the chunk-major arm reproduced `32630aaf…` byte for
+byte.
 
-Two of the three candidates are now eliminated by measurement:
+Three candidates have been eliminated or narrowed by measurement:
 
-- **Prefetch is not involved.** Layer-major with
-  `TINYTITAN_PREDICTIVE_PREFETCH=0` produced the *same* text (`b574afad…`) and the
-  same prefill time (1034.5 s against 1030.5 s). That matches the code: the ring
-  is entered only from `RealForwardRunner+Decode`, so it never runs during
-  prefill at all.
-- **Baseline nondeterminism is not involved** (the repeat above).
+- **Baseline nondeterminism** — eliminated by that repeat.
+- **The prefetch ring** — eliminated: layer-major with
+  `TINYTITAN_PREDICTIVE_PREFETCH=0` produced the same text (`b574afad…`) and the
+  same prefill time (1034.5 against 1030.5 s). The ring is entered only from
+  `RealForwardRunner+Decode`, so it never runs during prefill.
+- **The 512-slot concentration** — eliminated by the discriminator: layer-major
+  with `TINYTITAN_PREFILL_LAYER_SLOTS=96` reproduces `b574afad…` exactly, at
+  1042.5 s and 14,270 MiB.
 
-What remains is the loop restructure itself against the *slot concentration* it
-is paired with, and one run separates them: **layer-major with
-`TINYTITAN_PREFILL_LAYER_SLOTS=96`** takes the same restructured path with the
-shipped cache size, so it decides whether the 512-slot residency is what moves
-the logits or whether the reordered layer/chunk visits do. Both this run and the
-shipped path must reproduce `32630aaf…` before the cached-pool retry is worth
-building.
+What the two layer-major arms share, and chunk-major does not, is residency: a
+layer's expert set stays in its slots across the band's chunks (see the
+*Correction* section above — ~2-4 GiB of prefill reads against 152 GiB). The text
+therefore follows **which experts are resident**, which points at a numerical
+difference between the hit and miss prefill paths rather than at the visit order
+or the slot count. That would be a property of the shipped machinery, not of
+layer-major alone; with the line bounded at ~10% of prefill it is not worth
+another 20-minute run to apportion the last part. It does mean any future revival
+must prove byte-identical output under a residency-matched configuration, not
+merely at the shipped cache size.
 
 ## The problem, measured
 

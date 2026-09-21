@@ -304,6 +304,40 @@ swap sampling is the follow-up, and the ceiling experiment stays closed until
 that is done. A long-prompt repeat is worth the same run: the 7-token prompt is
 where the reads matter least.
 
+## Lever 4 — the page-cache path (measured; a documented trade, not a new default)
+
+`TINYTITAN_BOUNDED_IO=0` opts out of the `F_NOCACHE` expert reader, so slot
+misses are served by plain preads and the unified buffer cache can hold expert
+data. The streamer's own comment records what the shipped default pays for a
+declared footprint: "15-30% of decode throughput" on the engine that measured it.
+On this engine, paired and interleaved on the same short prompt:
+
+| round | shipped (bounded) | page cache | delta |
+| --- | ---: | ---: | ---: |
+| 1 | 4.414 | 4.727 | +0.313 |
+| 2 | 4.481 | 4.765 | +0.284 |
+| 3 | 4.444 | 4.560 | +0.116 |
+
+Mean **+0.238 tok/s (+5.4%)**, 3/3 positive, response identical
+(`2087738fce…`). `io_ms` falls 94-100 -> 86-89 while the miss counters do not
+move (80.9 GiB of requested reads in both), so the page cache is serving slot
+misses the counters still count. Swap did not grow during the sweep (3.6 -> 3.5
+GB used), so the trade costs undeclared memory headroom rather than paging over a
+three-minute window.
+
+The same sweep closes the advice question from the other side. Inside the
+page-cache path, `TINYTITAN_RDADVISE_POLICY=off` measures **+3.5%** against the
+shipped path but ~1.8% *below* the page-cache arm with advice on: advice earns
+its keep exactly where the reads can consume it. With Lever 2 (advice adds no
+device traffic under bounded I/O) that is the whole picture — dead work when the
+reads bypass the cache, useful when they use it.
+
+**Not a default change.** The shipped default is deliberate: the page-cache path
+"borrows memory it never declares", which is the property the streaming design
+exists to protect. It stays an opt-in, worth about +5% decode on this machine.
+The 15-30% figure predates the prefetch ring, whose hit conversion is why the
+remaining page-cache benefit is smaller now.
+
 
 
 
