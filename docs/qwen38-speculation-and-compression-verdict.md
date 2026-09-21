@@ -106,3 +106,47 @@ path that is wait-bound rather than bandwidth-bound.
 | n-gram drafting | not implemented; does not address the recorded verify-path cost |
 | placement rebuild | dense backbone already resident; SSD unsaturated; cache at optimum -> low value here |
 | lossless compression | ~10% limit on experts, 0% with a fast codec; n-gram table 23-29% for negligible traffic |
+
+## Item 3 — the I/O path: split reads and separated pools cannot add bandwidth
+
+Code facts (`sources/TinyTitanKernelsC/expert_io.c`): each miss is one `pread` of
+the whole 2,768,896 B expert; a pool of 4 workers with one fd each claims indices
+under a mutex; `submit_batch` is **single-batch-at-a-time and synchronous**, so a
+demand batch waits on `batch_idle` behind any in-flight speculative batch; and
+speculative batches already run on a throttled disk tier (`setiopolicy_np`).
+
+Device measurements on the real install, `F_NOCACHE`, random experts across the
+whole 63 GB corpus:
+
+| outstanding 2.64 MiB reads | per-read latency | aggregate |
+| ---: | ---: | ---: |
+| 1 | 1.20 ms | 2.15 GB/s |
+| 4 | 3.42 ms | 3.02 GB/s |
+| 8 | 6.49 ms | 3.18 GB/s |
+
+The device saturates at **~3.0-3.2 GB/s**. Past roughly four outstanding reads
+extra concurrency buys no bandwidth and only lengthens every read.
+
+- **Splitting a miss is refuted.** Four sub-reads of one expert measure p50
+  1.04 ms against 1.10 unsplit — a tail improvement only (p99 7.2 -> 1.45 ms) —
+  and applied to a 2-3-miss layer it would raise outstanding reads from ~3 to
+  ~12, which the table prices at 6-15 ms per read with flat aggregate.
+- **Separating the pools is refuted.** With the prefetch ring off, in-situ
+  `expert_load_p50_ms` is still **4 ms** (`io_ms` 116.7/114.9, `wait_ms`
+  91.4/90.3, 96,399 MiB read) against **4 ms** with the ring on (95.7/95.5,
+  83.1/82.8, 80,647 MiB) — the 4 ms is the device at its 4-outstanding knee
+  (3.42 ms measured), not speculative interference. The ring in fact *lowers*
+  bytes and wait and decodes 17% faster (3.945/4.051 against 4.659/4.666 tok/s).
+- Throttling speculative reads is the wrong direction for queue occupancy: at 16
+  outstanding, utility-tier reads take 24.7 ms against 15.5 ms at the default
+  tier, so a throttled read occupies the queue longer.
+
+**Why there is almost no room.** 116 misses/token x 2.638 MiB = **307 MiB/token**,
+and at the saturated 3.0-3.2 GB/s that is **94-100 ms/token of device time** —
+which is what `io_ms` (96-117) and `wait_ms` (83-91) measure. Decode is running
+at the device's saturated throughput. The only levers that can move it are
+reading fewer bytes (the cache is at its measured optimum, and precision cuts and
+expert dropping are excluded by the quality and RAM rules) or overlapping those
+307 MiB with compute — the architectural item the repo measured as backwards in
+the pre-prefetch era and which the per-layer dependency makes hard. Re-arranging
+reads cannot add bandwidth.
