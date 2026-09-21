@@ -53,22 +53,23 @@ work. Until then the flag stays off: as shipped, layer-major is 2.7x slower.
 On the 9,000-token prompt the two arms returned different greedy text
 (chunk-major `32630aaf…`, layer-major `b574afad…`, diverging at the first token;
 one run per arm, and the profile echo is identical apart from the flag). This is
-a divergence in prefill logits, not a truncation artifact. Three candidates, and
-the experiment that separates them:
+a divergence in prefill logits, not a truncation artifact, and it is not baseline
+nondeterminism: a repeat of the chunk-major arm under the same conditions
+reproduced `32630aaf…` byte for byte, so the restructure is what moves the text.
+That leaves two candidates, and the experiment that separates them:
 
 1. **The prefetch ring against the released cache.** Prefetch issues speculative
    reads for layer L+1 during layer L, and layer-major releases layer L-1's
    streamer inside the same loop. Shipped prefetch depth changed from 0 to 1
-   *after* the earlier identity check, so this interaction is new.
+   *after* the earlier identity check, so this interaction is new — the check to
+   run is layer-major with `TINYTITAN_PREDICTIVE_PREFETCH=0`.
 2. **A numerical difference between the hit and miss prefill paths.** The arms'
    residency differs 4.7x (0.149 against 0.700), so such a difference would show
-   exactly here.
-3. **Baseline nondeterminism on a long prompt**, which would make the identity
-   check vacuous rather than violated.
+   exactly here; the check is the same run with
+   `TINYTITAN_DECODE_EXPERT_EXECUTION=barrier`.
 
-Run order: chunk-major twice on this prompt (separates 3), then layer-major with
-prefetch forced off (tests 1), then the same with
-`TINYTITAN_DECODE_EXPERT_EXECUTION=barrier` if 1 still differs (tests 2).
+Both checks must reproduce `32630aaf…` before the restructure is treated as
+sound, which is also the precondition for the cached-pool retry.
 
 ## The problem, measured
 
