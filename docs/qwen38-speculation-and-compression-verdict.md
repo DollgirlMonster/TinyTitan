@@ -98,6 +98,43 @@ occupancy rather than throughput. Roughly 6 GB of disk saved on 63 GB, paid for
 with a decompression core per unit of read bandwidth, is a bad trade for a decode
 path that is wait-bound rather than bandwidth-bound.
 
+### Why "fewer bytes" does not become "more bandwidth" here
+
+Compression does cut bytes on the wire; the question is whether the decompressor
+can keep up, and on this data the answer is no by a wide margin. Measured on the
+real expert bytes: `zstd -12` gives 134,217,728 -> 120,206,303 B (89.56%) and
+decompresses at **0.96 GB/s per core** (120.2 MB in 0.12-0.13 s).
+
+Per decode token, at the shipped 64 slots (`--ram 8`):
+
+| quantity | value |
+| --- | ---: |
+| expert demand reads | 307 MiB (116 misses x 2.638 MiB) |
+| compressed to 89.56% | 275 MiB |
+| I/O time saved at the saturated ~3.1 GB/s | **~10.5 ms** |
+| decompression of 275 MiB at 0.96 GB/s/core | **~300 ms of core time** |
+
+So the byte saving is ~10 ms/token and the CPU cost is ~300 ms/token on one core
+— about 30x the prize, and even spread over eight cores (~37 ms) it exceeds the
+saving while competing for the same memory controller and package power. The repo
+has measured that competition directly: real CPU compute during decode raised
+GPU-busy 44.9% and cut throughput 22.6% (CPU co-execution), so "spread it over
+spare cores" is not free either. Compression would also add a staging copy, since
+today the bounded reader `pread`s straight into the slot buffer.
+
+**Why the ratio is so small.** The checkpoint is already a lossy compression: 4-bit
+affine, group 64, with BF16 scale and bias per group. A group's record is 32 B of
+4-bit codes plus 2 B scale plus 2 B bias, so only ~11% of the bytes are even
+candidate material for an entropy coder, and the 4-bit codes are near-uniform.
+Perfect coding of the scale/bias streams would therefore cap out near 11%, which
+is what zstd's 89.6% is already approaching. The ratios in the ZipNN paper come
+from BF16/FP8 checkpoints whose exponent bytes are highly redundant; those bytes
+do not exist in this install.
+
+Where compression *would* pay on this machine: the 102 GB `ngram_table.bin`
+(71-77% with xz / zstd -12, i.e. ~25-30 GB of disk) whose per-token traffic is
+~5 KB, and any future checkpoint that ships BF16 or FP8 rather than 4-bit.
+
 ## Summary
 
 | concept | measured outcome |
