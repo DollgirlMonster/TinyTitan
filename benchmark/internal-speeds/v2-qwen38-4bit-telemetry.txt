@@ -419,6 +419,50 @@ in the decode and prefill paths now has a measurement taken with the current
 engine, and the shipped configuration is the measured optimum of every family
 except the page-cache opt-in (+4-5% decode, undeclared footprint).
 
+## Lever 7 — the RAM-budget curve, 1 to 16 GB
+
+`--ram-budget <n>G` is taken verbatim (the clamp applies only to the install's
+default budget), so this sweeps the expert cache directly. One run per budget on
+the short prompt, 256 new tokens, temperature 0, commit `ac7becd`, rebuilt
+release binary sha256 `c20aeef2…` (built 2026-09-21 18:21). A budget resolves to
+slots by `expertCacheSlots` — 2,768,896 B stride x 48 layers, nearest allowed
+rung then stepped down to honour the budget:
+
+| RAM budget | slots | decode tok/s | prefill s | expert read MiB | hit rate | wait_ms | io_ms | io_hidden | evictions / reloads |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 GB | 8 | **request failed** | — | — | — | — | — | — | — |
+| 2 GB | 16 | 2.873 | 4.2 | 159,119 | 0.522 | 105 | 182.1 | 6.0% | 67,935 / 56,659 |
+| 4 GB | 32 | 3.436 | 4.2 | 121,355 | 0.635 | 97 | 144.5 | 9.3% | 51,977 / 41,469 |
+| 6 GB | 48 | 3.967 | 4.2 | 98,429 | 0.704 | 90 | 119.1 | 11.6% | 41,653 / 31,913 |
+| 8 GB | 64 | **4.547** | 4.3 | 80,793 | 0.757 | 84 | 97.2 | 13.6% | 33,434 / 24,462 |
+| 10 GB | 64 | **4.599** | 4.3 | 80,642 | 0.758 | 84 | 95.7 | 13.7% | 33,434 / 24,462 |
+| 12 GB | 96 | 4.000 | 4.8 | 57,465 | 0.827 | 141 | 68.1 | 32.9% | 21,849 / 14,413 |
+| 16 GB | 128 | 2.260 | 4.9 | 44,510 | 0.866 | 297 | 80.2 | 38.8% | 14,098 / 8,183 |
+
+Every successful arm returned the same response (`2087738fce…`, 1,223 chars), so
+budget changes the schedule only.
+
+- **1 GB is not slow, it is unusable.** Generation fails with "expert cache
+  cannot place requested experts: 10 experts do not fit in 8 cache slots (policy
+  lfu, avoiding 0 slots)" — the model routes top-10, so a budget must afford at
+  least 10 slots per layer, and the 8-slot rung cannot. The practical floor is
+  2 GB / 16 slots.
+- **The optimum is 64 slots, and the shipped clamp is already there.** 8 GB and
+  10 GB both resolve to 64 slots, and their counters are bit-identical (same
+  evictions, same reloads) with decode within 1.1% — which is both a drift check
+  and a confirmation of the slot arithmetic.
+- **Past 64 slots the curve falls while the counters improve**: hit rate
+  0.757 -> 0.827 -> 0.866 and reads 80.8 -> 57.5 -> 44.5 GiB, but decode
+  4.60 -> 4.00 -> 2.26 tok/s and `wait_ms` 84 -> 141 -> 297. The bigger cache
+  hides more of the wait and still loses, and at 16 GB the machine also swapped
+  2.8 GB during the run (3.7 -> 6.6 GB). This is the same wait effect Lever 3
+  measured, now across the whole curve: bytes are not the constraint.
+- **Prefill is flat** (4.2-4.9 s) across every budget, which is the prefill
+  cache being inert (Lever 3's other half).
+
+Single run per budget; the curve's shape is far outside the machine's scatter,
+but treat any single point as +/-10%.
+
 
 
 
