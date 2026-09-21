@@ -224,5 +224,57 @@ passes on the promoted default (`tools/golden-baseline.sh --check qwen38-4`:
 "output identical to baseline" against the re-captured
 `benchmark/golden/qwen3.8-flash-next-125b-a6b-4bit.txt`).
 
+## Lever 2 — expert read advice and read submission (measured, left unchanged)
+
+Two decode-side knobs had never been A/B'd on this engine:
+`TINYTITAN_RDADVISE_POLICY=off` and `TINYTITAN_EXPERT_IO_SUBMISSION=immediate`.
+Every arm of every sweep below returned the same response (`2087738fce…`), so
+both are output-invariant. Short prompt, 256 tokens, temperature 0.
+
+| arm | runs (tok/s) | paired mean | positive |
+| --- | --- | ---: | ---: |
+| base | 4.495 / 4.481 / 4.543 / 4.593 / 4.577 / 4.478 / 4.596 / 4.509 | — | — |
+| rdadvise off | 4.645 / 4.647 / 4.598 / 4.618 / 4.607 / 4.612 / 4.533 | **+0.053 (+1.15%)** | 4/4 |
+| submission immediate | 4.623 / 4.677 / 4.545 / 4.638 / 4.588 / 4.624 | **+0.059 (+1.29%)** | 3/4 |
+| `EXPERT_IO_SYNC=event` | 3.961 | **-0.534 (-11.9%)** | — |
+
+The last four base samples against the last four of each arm are one
+interleaved pass (four rounds of base/rd-off/immediate), which is what the
+paired column quotes: the unpaired base drifted 4.478-4.596 (2.6%) across the
+session, more than either effect, so only the paired differences carry weight.
+`sync=event` stays off for the same reason the wiki says it is the comparison
+path, not the fast one: it triples `wait_ms`.
+
+**Why the advice is dead work rather than I/O.** The streamer advises on its own
+plain descriptor while the reads go through a separate `F_NOCACHE` reader, so
+the advice warms a page cache the demand path never reads. It is issued once per
+missed expert (26,797 calls for this 256-token run) and the co-execution plan's
+idle budget already books `rdadvise` at 1.0 ms/token. Sampling `iostat -d disk0 1`
+during generation settles what it does *not* do: every arm reads 108.6-109.4 GiB
+off the device for ~80.7 GiB of demand expert reads (ratio 1.35, constant), so
+the advice adds no device traffic at all. Its whole cost is syscall and
+scheduling work, which is why removing it is worth about a percent.
+
+**Neither default was changed, because the sign is family-dependent.** The same
+paired design on Qwen 3.6 35B-A3B 4-bit (`qwen3.6-35b-a3b_4-Bit`, the same
+`deferred`/`default` shipped settings) reverses:
+
+| arm | round 1 | round 2 |
+| --- | ---: | ---: |
+| base | 17.466 | 17.441 |
+| rdadvise off | 16.873 (-3.4%) | 12.046 (-31%, contaminated: identical counters, +6.6 s wall) |
+| submission immediate | 16.869 (-3.4%) | 16.807 (-3.6%) |
+
+That confirms `docs/v4.2-expert-streaming-engine.md`'s reason for leaving
+submission deferred ("immediate submission was slower in the representative
+real-model A/B") on the family it was measured against. A global flip would
+therefore trade ~+1% on Qwen3.8 for ~-3.5% on Qwen3.6, and capturing the Qwen3.8
+side would need a per-profile field with its own cross-family evidence — not
+worth a ~1% effect at the edge of resolution. What is settled is that the two
+are nested rather than additive: advice is only issued on the deferred path
+(`plannedLoad == nil`), so `immediate` already skips it, and the combined arm
+measured +1.40%, inside the noise of either alone.
+
+
 
 

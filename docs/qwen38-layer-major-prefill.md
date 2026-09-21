@@ -1,8 +1,74 @@
 # Design: layer-major prefill for Qwen3.8-Flash-Next
 
-**Status: proposal. Not implemented.** Written because the measurement that
-motivates it is solid and the restructure is not something to start
-improvisationally.
+**Status: implemented behind `TINYTITAN_PREFILL_LAYER_MAJOR=1`, default off, and
+now measured with slot concentration (2026-09-21). The expert-read reduction is
+real and larger than this design predicted, but the restructure is 2.7x slower in
+wall clock, so the flag stays off.** The sections below are the design as written;
+the measurement follows the header, and says what would have to change for a
+retry.
+
+## Measured, 2026-09-21: the reads fall 92%, the wall rises 2.7x
+
+Both halves exist (un-concentrated at 8136cf6, concentration at 4add9dd), so the
+pair could finally be measured. Conditions: 24 GiB M3, macOS 27.0, commit
+2538d43, a 9,000-token prompt (three 4,096-token chunks), 32 new tokens,
+temperature 0, server path, prefetch at its now-shipped depth 1.
+
+| | chunk-major (shipped) | layer-major + 512 slots |
+| --- | ---: | ---: |
+| prefill | **379.7 s** | 1030.5 s (**2.7x**) |
+| expert reads | 166,119 MiB (162 GiB) | **12,577 MiB (12.3 GiB)** |
+| expert hit rate | 0.149 | **0.700** |
+| evictions / reloads | 60,738 / 41,029 | 2,219 / 569 |
+| GPU busy (sum of roles) | 343.3 s | 346.7 s |
+| occupancy | 90.0% | 33.5% |
+| kernel roles | — | every role within 2% of chunk-major |
+
+The read reduction is not the ~39% this design predicted but **92%**: with a
+layer's whole expert set resident, the band reads that layer's needed experts
+once instead of re-streaming them per chunk. The mechanism works as argued. It
+also does not matter:
+
+**The GPU does identical work in both arms and the wall is 2.7x longer**, so the
+cost is CPU-side time between layer passes — not I/O, not kernels. The kernel
+gaps name it: `prefill_moe_reduce -> prefill_gdn_router` totals **663.7 s** over
+the 143 layer-chunk boundaries (4.64 s each, against 7.9 s in total for
+chunk-major). That is the cost of building a layer's cache outside any overlap:
+`releaseLayerStreamer(layer - 1)` drops the previous layer, then the next is
+opened — 512 slots allocated, size-checked, SHA-256 verified and wired — in front
+of a GPU with nothing else to run. Chunk-major never pays it because its
+per-layer caches open once, during the first chunk, where the open overlaps GPU
+work; its only cost is then 74 ms per boundary.
+
+### What a retry would have to change
+
+The read reduction is worth having (162 -> 12 GiB on a 9k prompt); the per-layer
+build is what eats it. A version worth measuring would keep **one** concentrated
+slot pool and retarget it at each layer — no free/allocate/mlock cycle, no
+re-verification — and pre-open layer L+1 while L runs, so the open overlaps GPU
+work. Until then the flag stays off: as shipped, layer-major is 2.7x slower.
+
+## Open item: the identity check fails on this prompt
+
+On the 9,000-token prompt the two arms returned different greedy text
+(chunk-major `32630aaf…`, layer-major `b574afad…`, diverging at the first token;
+one run per arm, and the profile echo is identical apart from the flag). This is
+a divergence in prefill logits, not a truncation artifact. Three candidates, and
+the experiment that separates them:
+
+1. **The prefetch ring against the released cache.** Prefetch issues speculative
+   reads for layer L+1 during layer L, and layer-major releases layer L-1's
+   streamer inside the same loop. Shipped prefetch depth changed from 0 to 1
+   *after* the earlier identity check, so this interaction is new.
+2. **A numerical difference between the hit and miss prefill paths.** The arms'
+   residency differs 4.7x (0.149 against 0.700), so such a difference would show
+   exactly here.
+3. **Baseline nondeterminism on a long prompt**, which would make the identity
+   check vacuous rather than violated.
+
+Run order: chunk-major twice on this prompt (separates 3), then layer-major with
+prefetch forced off (tests 1), then the same with
+`TINYTITAN_DECODE_EXPERT_EXECUTION=barrier` if 1 still differs (tests 2).
 
 ## The problem, measured
 
