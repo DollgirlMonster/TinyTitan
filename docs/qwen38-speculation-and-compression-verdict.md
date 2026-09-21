@@ -135,6 +135,35 @@ Where compression *would* pay on this machine: the 102 GB `ngram_table.bin`
 (71-77% with xz / zstd -12, i.e. ~25-30 GB of disk) whose per-token traffic is
 ~5 KB, and any future checkpoint that ships BF16 or FP8 rather than 4-bit.
 
+### Could the decompression move to another engine stage?
+
+"Compress the stream and unpack it inside the engine" changes *who* pays, not
+whether it pays. The decisive comparison is the SSD wait removed against the cost
+of undoing the compression, per decode token (307 MiB of demand reads at
+`--ram 8`):
+
+| option | cost per token | versus 10.5 ms saved |
+| --- | ---: | --- |
+| CPU `zstd -d` at 0.96 GB/s/core | ~300 ms (1 core), ~37 ms (8 cores) | loses 3-30x |
+| GPU unpack: read 275 + write 307 MiB at ~60 GB/s | **~10 ms** | a wash before other costs |
+| staging copy alone (307 MiB memcpy, measured) | ~9 ms | already eats the saving |
+
+The GPU path is the only one that is even close, and it is close because the
+decompression *is itself* a memory-bandwidth operation: it saves 32 MiB on the
+3.1 GB/s link and spends 582 MiB on the ~60 GB/s one, which at a 1.1x ratio and a
+~20x link-to-memory gap is designed to cancel. It would also land in series with
+the layer's compute (the MoE kernel cannot start until the record is unpacked),
+needing the same overlap that the exposed SSD wait needs, and would require a
+repacked 63 GB checkpoint plus a new unpack kernel for zero expected net gain.
+
+The engine already uses compression where the arithmetic works, and it is lossy
+on purpose: 4-bit affine weights (4x fewer bytes than FP16) and 8-bit KV (with a
+4-bit option). Those pay because the reduction is 2-4x, not 1.1x — the general
+rule being that compression inside a stage wins when the slow link is far slower
+than the memory doing the decoding *and* the ratio is large. A network hop between
+shards (10-100x slower than memory) is the case that qualifies; an NVMe at
+3 GB/s feeding a GPU with 60 GB/s and a 1.1x ratio is not.
+
 ## Summary
 
 | concept | measured outcome |
