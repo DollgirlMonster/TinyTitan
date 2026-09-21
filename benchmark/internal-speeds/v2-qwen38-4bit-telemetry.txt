@@ -130,3 +130,18 @@ catalogue-ordered, and posting to `data[0]` makes the on-demand switcher load th
   and the CPU's own role in the token is small (the CLI breakdown shows the CPU
   turnaround only indirectly; the role table above is the GPU side).
 
+## Noise floor (three baseline runs, same conditions)
+
+Before any A/B, the baseline was repeated three times through the server path:
+
+| run | decode tok/s | occupancy | busy ms/token | expert counters |
+|---|---:|---:|---:|---|
+| 1 | 4.062 | 41.3% | 108.6 | bit-identical |
+| 2 | 4.071 | 41.0% | 107.3 | bit-identical |
+| 3 | 4.132 | 40.1% | 103.5 | bit-identical |
+
+Spread 0.07 tok/s. The routing is deterministic at temperature 0, so the expert
+counters (hit rate 0.7167, 23,811 reloads, 94,270 MiB read) are identical across
+runs and only wall-clock moves. That makes a 0.1 tok/s difference readable, and
+any arm that *changes the counters* has changed the work, not just the timing.
+
