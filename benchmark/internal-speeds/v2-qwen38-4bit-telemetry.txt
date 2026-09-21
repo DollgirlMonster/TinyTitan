@@ -359,6 +359,51 @@ exists to protect. It stays an opt-in, worth about +5% decode on this machine.
 The 15-30% figure predates the prefetch ring, whose hit conversion is why the
 remaining page-cache benefit is smaller now.
 
+## Lever 5 — the prefetch-quality family, re-measured with a working ring
+
+The tier, lookahead and margin A/Bs that originally set these defaults all ran
+while the prefetch ring was clogged. The 2026-09-05 profile says so itself: "the
+tier and lookahead A/Bs, the 5.0.2 README table — ran with prefetch effectively
+off." With the ring at its shipped depth 1, two paired rounds each and the same
+short prompt, every alternative to the shipped configuration is a wash or a loss,
+and every arm returned the same response (`2087738fce…`).
+
+| arm | round 1 | round 2 | mean delta | issued / adopted per token |
+| --- | ---: | ---: | ---: | --- |
+| shipped (tier default, ahead 1, top-M 1, no gate) | 4.573 | 4.503 | — | 42.6 / 22.9 |
+| `PREFETCH_IO_TIER=utility` | 4.472 | 4.591 | -0.14% (1/2) | 42.8 / 23.3 |
+| `PREFETCH_IO_TIER=throttle` | 4.573 | 4.448 | -0.61% (0/2) | 42.6 / 22.9 |
+| `PREFETCH_AHEAD=2` | 4.403 | 4.417 | -2.82% (0/2) | 43.8 / 19.0 |
+| `PREFETCH_TOP_M=2` | 4.236 | 4.245 | **-6.56% (0/2)** | 76.1 / 16.3 |
+| `PREFETCH_MIN_MARGIN=0.03` | 4.263 | 4.433 | -4.19% (0/2) | 23.4 / 16.6 |
+
+The counters say why: depth 2 casts 76 speculative reads a token and *adopts
+fewer* of them (16.3 against 22.9), and the margin gate filters so hard that it
+loses adoptions too (16.6). One read deep, ungated, on the default I/O tier is
+the optimum — and that is now a measurement rather than a verdict inherited from
+a dead mechanism.
+
+## Lever 6 — the retention family, same re-measurement
+
+Same treatment for the four knobs whose verdicts were also inherited from the
+clogged-ring session. Two paired rounds each, short prompt:
+
+| arm | round 1 | round 2 | mean delta | hit rate |
+| --- | ---: | ---: | ---: | ---: |
+| shipped (early hits off, per-slot, LFU, wired) | 4.369 | 4.620 | — | 0.758 |
+| `EARLY_HITS=1` (also selects gpuResidency + pooled layout) | 4.613 | 4.576 | +2.22% (1/2) | 0.756 |
+| `EXPERT_CACHE_LAYOUT=pool` | 4.528 | 4.394 | -0.75% (1/2) | 0.757 |
+| `EXPERT_CACHE_POLICY=lru` | 4.651 | 4.530 | +2.14% (1/2) | 0.762 |
+| `KEEP_WIRED=0` | 4.646 | 4.310 | -0.37% (1/2) | 0.756 |
+
+Every arm is 1/2 positive and every mean is smaller than its own round-to-round
+swing — the shipped arm itself moved 4.369 -> 4.620, 5.7%, between rounds — so
+all four are washes on this prompt: the shipped choices are not leaving anything
+readable on the table. Settling a 1-2% effect here would take more pairs, not a
+different knob, and none of these promises more than that. Every arm returned
+`2087738fce…`, and `early_hit_layers` moved 0 -> 12,240 when early hits were on,
+so the arms really did take their paths.
+
 
 
 
