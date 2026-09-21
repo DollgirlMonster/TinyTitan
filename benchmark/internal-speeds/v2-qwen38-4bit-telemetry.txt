@@ -356,11 +356,13 @@ line at ~10% (see `docs/qwen38-layer-major-prefill.md`). The page-cache arm's sw
 also grew 712 MB in round 2 (3.49 -> 4.21 GB), against a flat/falling shipped arm,
 so the prefill case is a memory cost with no throughput return.
 
-**Not a default change.** The shipped default is deliberate: the page-cache path
-"borrows memory it never declares", which is the property the streaming design
-exists to protect. It stays an opt-in, worth about +5% decode on this machine.
-The 15-30% figure predates the prefetch ring, whose hit conversion is why the
-remaining page-cache benefit is smaller now.
+**Not a default change, and now not an option either.** The shipped default is
+deliberate: the page-cache path "borrows memory it never declares", which is the
+property the streaming design exists to protect. **Decision 2026-09-21: the
+opt-in is rejected outright — the RAM budget must remain enforced on every
+machine — so the trade is not available regardless of its throughput.** Recorded
+here so it is not re-proposed. The 15-30% figure predates the prefetch ring,
+whose hit conversion is why the remaining page-cache benefit is smaller now.
 
 ## Lever 5 — the prefetch-quality family, re-measured with a working ring
 
