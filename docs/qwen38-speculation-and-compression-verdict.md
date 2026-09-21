@@ -164,6 +164,33 @@ than the memory doing the decoding *and* the ratio is large. A network hop betwe
 shards (10-100x slower than memory) is the case that qualifies; an NVMe at
 3 GB/s feeding a GPU with 60 GB/s and a 1.1x ratio is not.
 
+### Tested, 2026-09-21: the GPU-unpack variant
+
+The estimate above (~10 ms for a GPU pass) was measured rather than left standing.
+A pure GPU blit of one token's records — 307 MiB read plus 307 MiB write, i.e.
+**the floor for any unpack kernel**, since a decoder can only be slower than a
+copy — costs:
+
+| quantity | measured |
+| --- | ---: |
+| GPU unpack pass, lower bound (blit) | **7.87 ms** (81.8 GB/s of traffic) |
+| SSD saved, zstd -12 ratio (89.56%) | 10.5 ms |
+| SSD saved, order-0 codec bound (byte entropy 7.444/8 = 93.0%) | 6.9 ms |
+| CPU `zstd -d` | ~300 ms per core |
+
+The numbers that decide it are the entropy ones, because a GPU can implement an
+**order-0** coder (rANS/Huffman) and cannot practically implement LZ match
+finding. Measured on the real bytes: raw byte entropy **7.444/8 bits**, 4-bit code
+entropy **3.773/4** — so an order-0 coder caps out near 93%, saving **6.9 ms**,
+which is *less than the 7.87 ms floor* its own unpack pass costs. Only a
+match-finding codec (zstd -12 at 89.56%) beats the pass, and then only by
+2.6 ms/token (~1%), while being impractical on the GPU and costing 300 ms/core on
+the CPU. A plane split is a permutation and saves 0% on its own — the 88.83% it
+reaches still needs the entropy coder.
+
+So the variant is not worth building: under a codec a GPU can actually run it is a
+net loss, and under the one codec that would win by ~1% it cannot run there.
+
 ## Summary
 
 | concept | measured outcome |
