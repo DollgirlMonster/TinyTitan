@@ -145,3 +145,28 @@ counters (hit rate 0.7167, 23,811 reloads, 94,270 MiB read) are identical across
 runs and only wall-clock moves. That makes a 0.1 tok/s difference readable, and
 any arm that *changes the counters* has changed the work, not just the timing.
 
+## Lever 1 — the prefetch ring, which was off (win)
+
+`TINYTITAN_PREDICTIVE_PREFETCH=1` raises the profile's depth from 0 to 1. Two
+server runs, then a recorded `internal-speeds` pass
+(`benchmark/internal-speeds/v2-qwen38-4bit-prefetch1.json`):
+
+| metric | baseline | prefetch depth 1 | delta |
+|---|---:|---:|---:|
+| decode (record) | 3.993 tok/s | **4.621** | **+15.7%** |
+| decode (server runs) | 4.062 / 4.071 / 4.132 | 4.551 / 4.463 | +10–12% |
+| TTFT | 3.12 s | 2.48 s | −20.5% |
+| occupancy | 40.1–41.3% | 43.4 / 43.5% | up |
+| expert hit rate | 0.7167 | 0.7636 / 0.7629 | +4.7 pp |
+| expert misses | 35,700 | 29,791 / 29,878 | −17% |
+| expert read MiB | 94,270 | 78,667 / 78,897 | −16% |
+| `io_ms` | 113.3 | 95.0 / 98.4 | −15% |
+| `io_hidden_pct` | 12.13% | 14.38 / 14.14% | up |
+| prefetch issued / adopted per token | 0 / 0 | 42.3 / 22.7 | — |
+| response sha256 | `9cf91578…` | `9cf91578…` | **identical** |
+
+The ring turns speculative reads into cache hits **before** demand, so misses and
+read bytes fall rather than the ring merely warming pages. Output is
+byte-identical, so this is a pure scheduling change.
+
+
