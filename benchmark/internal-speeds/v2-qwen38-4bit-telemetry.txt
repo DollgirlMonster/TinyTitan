@@ -193,13 +193,24 @@ A/B), and the 2026-09-05 note is superseded in `ModelProfile.swift`.
 ### The shipped default, re-recorded
 
 With the row at depth 1, `internal-speeds` was run again on the same 7-token
-prompt and 256 new tokens (`benchmark/internal-speeds/v2-qwen38-4bit-prefetch-default.json`):
+prompt and 256 new tokens (`benchmark/internal-speeds/v2-qwen38-4bit-prefetch-default.json`;
+the first sample was taken while the promotion was still uncommitted and is what
+commit ce85df5 carries, and the file now holds the clean re-run on that commit):
 
 | field | pre-change baseline | shipped default |
 |---|---:|---:|
-| decode | 3.993 tok/s | **4.676** |
-| TTFT | 3.12 s | 2.39 s |
-| response | `9cf91578…`, 901 chars | `3619d939…`, 1,070 chars |
+| decode | 3.993 tok/s | **4.676 / 4.538** |
+| TTFT | 3.12 s | 2.39 / 2.63 s |
+| response | `9cf91578…`, 901 chars | `3619d939…`, 1,070 chars (both runs) |
+
+The 0.14 tok/s spread between the two default runs is wider than the 0.07
+baseline noise floor, which matches the ring's arms being the noisier ones
+(server A/B 4.551 / 4.463); the size of the gain is not in doubt at either
+sample. One side effect to read correctly: `gpu.routed_moe_gbps` reads 46.3
+against 38.4 now, which the comparator flags as a regression. The schedule
+changed, not the kernel — decode is 13.6% faster and the same kernel's share of
+a shorter token moved — so that per-kernel bandwidth is not comparable across
+the two arms the way the comparator assumes.
 
 Provenance, because the A/Bs straddle a deliberate numerics change and their
 hashes are therefore not all comparable. The short-prompt A/B records
