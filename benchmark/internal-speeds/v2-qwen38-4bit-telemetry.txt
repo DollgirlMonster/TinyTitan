@@ -296,13 +296,16 @@ rate 0.757 -> 0.827 and expert read 80.7 -> 57.6 GiB per run — and the token
 still gets slower. So on this engine the cost is not read volume: 4 GiB more
 wired cache (12 GiB against 8 GiB) and a longer slot search cost more than the
 23 GiB of demand reads they save, with the prefetch ring already converting
-misses into hits. **Read this against the machine's memory state, though:** swap
-already held 4.18 GB of 5.12 GB when this ran, so the 96-slot arm may be paying
-for pressure rather than for cache. The clamp is protective under the pressure
-this machine actually has; re-running both arms on an idle machine with per-arm
-swap sampling is the follow-up, and the ceiling experiment stays closed until
-that is done. A long-prompt repeat is worth the same run: the 7-token prompt is
-where the reads matter least.
+misses into hits.
+
+The swap caveat this first carried is now closed. Re-run later the same day with
+swap sampled per arm and much lower pressure (3.3-3.4 GB against 4.18 GB), the
+tuned cache loses again in all three paired rounds: 4.521/4.132, 5.004/4.136,
+4.964/4.065 — mean **-0.719 tok/s (-15.6%)**, 0/3. So on this machine the clamp
+is not merely protective, it is the faster setting by a wide margin, and the
+tuned-96-slot arm is remarkably stable (3.83-4.34 tok/s across six samples). The
+conditional-ceiling experiment stays closed; the long-prompt variant of this A/B
+is the only version not run.
 
 ## Lever 4 — the page-cache path (measured; a documented trade, not a new default)
 
@@ -403,6 +406,16 @@ readable on the table. Settling a 1-2% effect here would take more pairs, not a
 different knob, and none of these promises more than that. Every arm returned
 `2087738fce…`, and `early_hit_layers` moved 0 -> 12,240 when early hits were on,
 so the arms really did take their paths.
+
+The last I/O knob, `TINYTITAN_PARALLEL_IO=0` (shipped on), is a wash as well:
++0.033 / +0.052 / -0.029 against base, mean **+0.019 tok/s (+0.4%)**, 2/3 — with
+the prefetch ring and a 64-slot cache there are rarely several misses in one plan
+for parallel fills to matter. No change.
+
+That completes the knob inventory for this model on this machine: every tunable
+in the decode and prefill paths now has a measurement taken with the current
+engine, and the shipped configuration is the measured optimum of every family
+except the page-cache opt-in (+4-5% decode, undeclared footprint).
 
 
 
