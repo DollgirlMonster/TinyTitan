@@ -23,8 +23,15 @@ final class ExpertPrefetchRing: @unchecked Sendable {
     /// Disk I/O policy for the ring's reads (0 = default tier).
     let ioPolicy: Int32
 
+    /// Submit one storage operation per staged expert instead of one for the
+    /// whole batch, so a slot becomes adoptable as soon as its own read is done.
+    /// Opt-in while it is measured: `TINYTITAN_PREFETCH_PER_EXPERT=1`.
+    let perExpertOperations: Bool
+
     init(device: MTLDevice, expertStride: Int, slotCount: Int, ioPolicy: Int32 = 0) throws {
         self.ioPolicy = ioPolicy
+        self.perExpertOperations =
+            ProcessInfo.processInfo.environment["TINYTITAN_PREFETCH_PER_EXPERT"] == "1"
         guard expertStride > 0, slotCount > 0 else {
             throw ModelError.internalInconsistency(detail: "invalid prefetch ring geometry")
         }
@@ -91,27 +98,63 @@ final class ExpertPrefetchRing: @unchecked Sendable {
         }
         let selectedSlots = Array(free.prefix(count))
         let selectedExperts = Array(wanted.prefix(count))
-        let buffers = selectedSlots.map { slots[$0].buffer }
-        for (slot, expert) in zip(selectedSlots, selectedExperts) {
-            slots[slot].layer = layer
-            slots[slot].expert = expert
-            slots[slot].operation = nil
+        let staged = zip(selectedSlots, selectedExperts).map { slot, expert in
+            (slot: slot, expert: expert, buffer: slots[slot].buffer)
+        }
+        for item in staged {
+            slots[item.slot].layer = layer
+            slots[item.slot].expert = item.expert
+            slots[item.slot].operation = nil
         }
         lock.unlock()
 
+        if perExpertOperations {
+            // One operation per staged expert. With a single operation shared by
+            // the whole batch, `readyBuffers` can adopt a slot only once *every*
+            // read in the batch has completed, so a slow sibling gates a fast
+            // one: measured at two slots that dropped adoption to 21% of issued
+            // reads (from 55%) and raised device reads, because a prediction that
+            // misses its plan is re-read by the demand miss.
+            var firstError: Error?
+            var issued = 0
+            for item in staged {
+                do {
+                    let operation = try model.beginRoutedExpertPrefetch(
+                        layer: layer, experts: [item.expert], into: [item.buffer],
+                        ioPolicy: ioPolicy)
+                    lock.lock()
+                    slots[item.slot].operation = operation
+                    lock.unlock()
+                    issued += 1
+                } catch {
+                    lock.lock()
+                    slots[item.slot].layer = -1
+                    slots[item.slot].expert = -1
+                    slots[item.slot].operation = nil
+                    lock.unlock()
+                    if firstError == nil { firstError = error }
+                }
+            }
+            lock.lock()
+            issuedReads &+= issued
+            lock.unlock()
+            if let firstError { throw firstError }
+            return
+        }
+
         do {
             let operation = try model.beginRoutedExpertPrefetch(
-                layer: layer, experts: selectedExperts, into: buffers, ioPolicy: ioPolicy)
+                layer: layer, experts: selectedExperts, into: staged.map(\.buffer), ioPolicy: ioPolicy)
             lock.lock()
-            for slot in selectedSlots { slots[slot].operation = operation }
-            issuedReads &+= selectedSlots.count
+            for item in staged { slots[item.slot].operation = operation }
+            issuedReads &+= staged.count
             lock.unlock()
         } catch {
             lock.lock()
-            for slot in selectedSlots {
-                slots[slot].layer = -1
-                slots[slot].expert = -1
-                slots[slot].operation = nil
+            for item in staged {
+                slots[item.slot].layer = -1
+                slots[item.slot].expert = -1
+                slots[item.slot].operation = nil
             }
             lock.unlock()
             throw error
