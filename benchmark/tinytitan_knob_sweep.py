@@ -56,10 +56,10 @@ ARMS: list[tuple[str, dict[str, str], str]] = [
      "one pool instead of per-slot buffers"),
     ("prefetch_2", {"TINYTITAN_PREFETCH_TOP_M": "2"},
      "re-check depth 2; measured -6% worse than 1 previously"),
-    ("prefetch_mixed", {"TINYTITAN_PREFETCH_TOP_M": "2",
-                        "TINYTITAN_PREFETCH_MIXED_HORIZON": "1"},
-     "second slot on L+2's rank-1 instead of L+1's rank-2; measured -1.4% "
-     "(docs/qwen38-prefetch-predictor-study.md, round 2)"),
+    # The round-2 mixed-horizon arm (second read on L+2 instead of L+1's second
+    # rank; measured -1.4%, docs/qwen38-prefetch-predictor-study.md) needed a
+    # patch that was reverted after measurement, so it has no arm here: it would
+    # silently measure the baseline.
     ("prefetch_per_expert", {"TINYTITAN_PREFETCH_TOP_M": "2",
                              "TINYTITAN_PREFETCH_PER_EXPERT": "1"},
      "per-slot readiness at depth 2; measured -1.3% with fewer demand bytes"),

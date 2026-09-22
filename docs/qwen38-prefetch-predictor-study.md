@@ -137,8 +137,13 @@ non-resident expert of L+1's probe or from the first of L+2's. The two are almos
 equally precise (0.450 against 0.462 on the round-1 trace) but the far read gets a
 whole extra layer of compute to land in — and readiness is where the two-slot arm's
 adoption went (26.0 adopted of the 40 its ranking offered, with the missing 14
-re-read by the demand path). Opt-in `TINYTITAN_PREFETCH_MIXED_HORIZON=1` stages one
-read per horizon, each the first non-resident expert in its own rank order.
+re-read by the demand path). The arm was built as an experiment patch (one read per
+horizon, each the first non-resident expert in its own rank order), measured, and
+then **reverted**: the tree carries no losing code, only the measurement. The
+patch was two `begin` calls where the shipped path makes one, plus enabling the
+L+2 probe behind a `prefetchMixedHorizon` flag — neither is in the tree. The arms
+below are reproducible from this description and from
+`benchmark/tinytitan_knob_sweep.py`'s `prefetch_per_expert`.
 
 | arm | r1 | r2 | mean | delta | issued/token | adopted/token | adopt/issued | demand MiB/token | io_ms | wait_ms |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -192,10 +197,10 @@ Any future work on prefetch staging has to keep passing the whole list.
 
 ## Round-2 verdict
 
-Do not ship `TINYTITAN_PREFETCH_MIXED_HORIZON`; it stays opt-in and measured
-negative, like every other prefetch allocation measured here. The decode line for
-this model on this machine is closed: the shipped 42.7 speculative reads a token
-fill the device's idle window exactly, adoption is precision-limited at 55%, and
-every route to more adoption costs more device time than the bytes it removes. What
-is left is a faster device or a fundamentally better next-token router — not a
-scheduling change.
+Do not carry a mixed-horizon ring. It was measured negative and its patch is not in
+the tree — the project commits improvements, not losing knobs, so the result lives
+here as a record rather than as an opt-in. The decode line for this model on this
+machine is closed: the shipped 42.7 speculative reads a token fill the device's
+idle window exactly, adoption is precision-limited at 55%, and every route to more
+adoption costs more device time than the bytes it removes. What is left is a faster
+device or a fundamentally better next-token router — not a scheduling change.

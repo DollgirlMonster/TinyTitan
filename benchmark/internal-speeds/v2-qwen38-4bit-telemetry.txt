@@ -466,16 +466,17 @@ but treat any single point as +/-10%.
 ## Lever 8 — the prefetch slot allocation (measured; no change)
 
 The shipped ring is one speculative read a layer, the first non-resident expert in
-the probe's rank order. Two slots can spend the second read on L+1's rank-2 or on
-L+2's rank-1 (opt-in `TINYTITAN_PREFETCH_MIXED_HORIZON=1`); the far read has an
-extra layer to land in, and round 1 of `docs/qwen38-prefetch-predictor-study.md`
-showed the second rank mostly arriving too late to be adopted. Two interleaved
+the probe's rank order. Two slots can spend the second read on L+1's next
+non-resident expert or on L+2's; the far read has an extra layer to land in, and
+round 1 of `docs/qwen38-prefetch-predictor-study.md` showed the second rank mostly
+arriving too late to be adopted. The mixed-horizon arm was an experiment patch,
+measured below and then reverted — the tree carries no losing knob. Two interleaved
 rounds, short prompt, `--ram 8`, binary `d9e1a084…`:
 
 | arm | r1 / r2 | delta | issued / adopted per token | demand MiB/token | io_ms |
 | --- | --- | ---: | --- | ---: | ---: |
 | shipped (near rank order, 1 read) | 4.570 / 4.548 | — | 42.7 / 23.3 | 315.0 | 95.6 |
-| mixed horizon (near + far) | 4.509 / 4.477 | -1.4% | 58.7 / 24.8 | 311.0 | 96.8 |
+| mixed horizon (near + far, patch) | 4.509 / 4.477 | -1.4% | 58.7 / 24.8 | 311.0 | 96.8 |
 | two ranks of L+1, per-expert | 4.481 / 4.514 | -1.3% | 76.2 / 26.2 | 307.3 | 99.3 |
 
 Demand bytes fall in both wider arms and `io_ms` rises — demand throughput
@@ -483,8 +484,9 @@ Demand bytes fall in both wider arms and `io_ms` rises — demand throughput
 reads rather than hidden in idle device time. `spec_load_ms` rises with the ring
 width (1.16 / 1.59 / 1.74), and an adopted read is only worth 2.64 MiB = 0.80 ms
 against a 1.16 ms read. **42.7 reads a token is where the device's idle window is
-full.** All arms returned `2087738fce…`. The opt-in stays measured-negative; the
-shipped path is byte-identical and unchanged.
+full.** All arms returned `2087738fce…`; the shipped path is byte-identical and
+unchanged. `TINYTITAN_PREFETCH_PER_EXPERT=1` is still in the tree from Lever 5's
+session and is the one arm of the three that remains runnable.
 
 
 
