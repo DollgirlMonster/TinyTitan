@@ -173,14 +173,21 @@ public struct ServerArguments: Equatable, Sendable {
                              profile's tuned budget, not fixed.
                              Environment override:
                              TINYTITAN_EXPERT_CACHE_SLOTS.
-      --ram-budget <size>    Bytes the routed-expert cache may use, e.g. 8G,
-                             2G, 512M. Slots are derived from this and the
-                             model's expert stride, so this is the knob and
-                             the slot count is the result. Default 8G, which
-                             holds the measured routing working set; smaller
-                             budgets are markedly slower because expert reads
-                             bypass the page cache and have no fallback.
-                             --expert-cache-slots overrides this.
+      --ram-budget <size>    Resident-memory target for the whole server, e.g.
+                             4G, 8G, 16G. Minimum 4G. The routed-expert cache
+                             gets what is left after the resident weights and
+                             the runtime (about 3.7G on a Qwen3.8 4-bit
+                             install), and the slot count is the largest
+                             supported rung that fits, so the process stays
+                             under the number given. Below 4G the target cannot
+                             be honoured at all -- the weights plus the 8-slot
+                             minimum cache are already about 4.7G -- so it is
+                             refused rather than silently overshot.
+                             With no flag the install's profile names the *cache*
+                             budget instead -- the measured optimum, which is not
+                             a process target. --expert-cache-slots overrides
+                             both. Expert reads bypass the page cache and have
+                             no fallback, so a smaller cache is markedly slower.
       --lazy-load            Bind the port immediately and defer the model load
                              to the first inference request (default off).
       --idle-unload-seconds <n>
@@ -412,7 +419,18 @@ public struct ServerArguments: Equatable, Sendable {
             case "--ram-budget":
                 guard let parsed = RuntimeConfiguration.parseBudgetBytes(value) else {
                     throw ServerArgumentError.invalid(
-                        "--ram-budget must be a positive size such as 2G, 512M or a byte count")
+                        "--ram-budget must be a positive size such as 4G, 512M or a byte count")
+                }
+                // Below 4 GiB the process cannot honour the number: the resident
+                // weights plus the 8-slot minimum cache are already ~4.7 GiB on a
+                // Qwen3.8 4-bit install. Refuse rather than accept a target that
+                // silently overshoots by 2x.
+                guard parsed >= RuntimeConfiguration.minimumProcessTargetBytes else {
+                    throw ServerArgumentError.invalid(
+                        "--ram-budget must be at least "
+                        + "\(RuntimeConfiguration.minimumProcessTargetBytes >> 30)G: a "
+                        + "streaming install holds its weights plus a minimum expert cache "
+                        + "beside them, which is about 4.7G for Qwen3.8 4-bit")
                 }
                 expertCacheBudgetBytes = parsed
             case "--idle-unload-seconds":

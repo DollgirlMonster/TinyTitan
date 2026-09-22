@@ -30,9 +30,11 @@ SERVER = ROOT / ".build/release/TinyTitanServer"
 DENSE_DIR = ROOT / "models/qwen3.5_2B_4Bit"
 
 # Flags that answer every other question, so the concurrency question is the only
-# prompt left. `--ram 1` is under 30% of any Mac this runs on, so it cannot add a
-# red expert-cache warning to the output these tests read.
-QUIET_ANSWERS = ("--answers", "default", "--thinking", "off", "--ram", "1",
+# prompt left. `--ram 4` is the smallest target the launcher accepts (1 and 2 GB
+# cannot be honoured: the weights plus the minimum expert cache are ~4.7 GB), and
+# it is under 30% of any Mac this runs on, so it cannot add a red warning to the
+# output these tests read.
+QUIET_ANSWERS = ("--answers", "default", "--thinking", "off", "--ram", "4",
                  "--engine", "gpu", "--port", "9123")
 
 

@@ -358,6 +358,66 @@ public struct RuntimeConfiguration: Sendable, Equatable {
         }
         return choice
     }
+    /// Bytes that are resident before the expert cache is allocated.
+    ///
+    /// `--ram-budget` names what the whole server may hold, so the cache gets
+    /// the remainder after the weights and the runtime. The weights are the
+    /// manifest's `model_weights.bin` -- lm head, embeddings, attention and the
+    /// shared experts; `packed_experts/` and the n-gram table are streamed and
+    /// are not resident.
+    ///
+    /// The reserve is measured on the 24 GiB M3 with Qwen3.8 4-bit: the server
+    /// loads at 3.75 GiB against a 3.22 GiB weight file, and the smallest cache
+    /// (8 slots, 0.99 GiB) takes it to 4.74 GiB -- exactly the cache delta -- so
+    /// the non-weight floor is 0.53 GiB. That is the Metal context and its
+    /// pipelines, the tokenizer, the expert layout table, the prefetch ring,
+    /// per-sequence scratch and the KV for a short request. 512 MiB is that
+    /// measurement rounded with a little slack.
+    ///
+    /// The KV is the part that grows: this model needs 49,152 B a token at
+    /// 8-bit (48 layers x 2 x 2 KV heads x 256), so 512 MiB covers the runtime
+    /// plus about 10,000 tokens of context and the full 262,144-token window
+    /// would add 12 GiB. The server prints the floor it used, and a long context
+    /// is what takes the estimate past the target.
+    public static let residentRuntimeReserveBytes = 512 << 20
+
+    public static func residentFloorBytes(residentWeightBytes: Int) -> Int {
+        max(0, residentWeightBytes) + residentRuntimeReserveBytes
+    }
+
+    /// The smallest `--ram-budget` the server accepts.
+    ///
+    /// A streaming install cannot stay under less. The resident weight file is
+    /// 2.5-4.5 GiB depending on family and width and the expert cache has an
+    /// 8-slot floor, so the smallest real footprint is about 4.7 GiB on
+    /// Qwen3.8 4-bit. The flag used to accept 1G and 2G and quietly land on that
+    /// floor; it now refuses, because a number the process cannot stay under is
+    /// worse than an error naming the floor. Values at or above this one are
+    /// honoured; values below it are an argument error.
+    public static let minimumProcessTargetBytes = 4 << 30
+
+    /// The largest supported slot count whose cache fits `cacheBytes`, never
+    /// below the smallest rung.
+    ///
+    /// This is the process-target path, and it steps *down* rather than to the
+    /// nearest rung: `expertCacheSlots` rounds to nearest and tolerates 15% over
+    /// its budget, which is right for a tuned profile and wrong for a number the
+    /// user asked the whole server to stay under. The smallest rung is the floor
+    /// because a cache smaller than a layer's top-k cannot place its experts.
+    public static func expertCacheSlotsFitting(expertStrideBytes: UInt64,
+                                               layers: Int,
+                                               cacheBytes: Int) -> Int {
+        guard expertStrideBytes > 0, layers > 0 else {
+            return allowedExpertCacheSlots.first ?? 8
+        }
+        guard cacheBytes > 0 else { return allowedExpertCacheSlots.first ?? 8 }
+        let perSlot = Double(expertStrideBytes) * Double(layers)
+        let fitting = allowedExpertCacheSlots.filter {
+            Double($0) * perSlot <= Double(cacheBytes)
+        }
+        return fitting.last ?? allowedExpertCacheSlots.first ?? 8
+    }
+
     public static let allowedPrefillChunkTokens = [
         32, 64, 128, 256, 512, 1_024, 2_048, 4_096,
     ]

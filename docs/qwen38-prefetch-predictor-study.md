@@ -1,5 +1,14 @@
 # Expert-prefetch predictor: what is achievable, and what actually limits it
 
+> **Note on `--ram` provenance, 2026-09-22.** `--ram-budget` (the launcher's
+> `--ram`) now names a target for the *whole process*, not the expert cache: the
+> cache gets the target minus the resident weights and a measured runtime reserve.
+> Every `--ram 8` measurement in this document was taken under the old meaning,
+> where 8 GB was 64 slots of cache and ~11.6 GiB of real use; today `--ram 8` is
+> a ~32-slot / ~7.8 GiB configuration and `--ram 12` is the flag that reproduces
+> the old one. See Lever 10 of
+> `benchmark/internal-speeds/v2-qwen38-4bit-telemetry.txt`.
+
 Round-1 study for the goal "develop a better expert predictor so we get closer to
 10 tok/s", 2026-09-22, all runs at `--ram-budget 8G` on the 24 GiB M3. Every
 number here is measured; the method is reproducible from the trace facility.

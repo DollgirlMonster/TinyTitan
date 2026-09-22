@@ -137,10 +137,12 @@ RAM budget rather than on speed.** Same tok/s, a fraction of the footprint.
 
 ### 1. RAM budget is an input, not an outcome
 
-The engine takes a declared budget (`--ram-budget 2G`) and derives everything from
-it: slot counts per layer, prefetch depth, KV reservation. It reports the resulting
-predicted hit rate and disk load at startup, and refuses budgets that cannot hold
-the resident tensors.
+The engine takes a declared budget (`--ram-budget 8G`, minimum 4G) and derives
+everything from it: slot counts per layer, prefetch depth, KV reservation. It
+reports the resulting predicted hit rate and disk load at startup, and refuses
+budgets that cannot hold the resident tensors -- 1G and 2G are refused outright,
+since the weights plus the minimum expert cache are already about 4.7G on a
+Qwen3.8 4-bit install.
 
 This inverts v3.x, where slot count was the knob and RAM was whatever fell out.
 

@@ -72,7 +72,7 @@ class RamRuleTests(unittest.TestCase):
             self.skipTest("no install under models/ and no built server to list one")
         self.model = model
 
-    def test_rule_is_forty_percent_rounded_down(self) -> None:
+    def test_rule_is_thirty_percent_rounded_down(self) -> None:
         for memory, expected in MACHINES.items():
             with self.subTest(memory_gb=memory // 2**30):
                 run = dry_run("--model", self.model, physical_bytes=memory)
@@ -91,7 +91,7 @@ class RamRuleTests(unittest.TestCase):
 
         above = dry_run("--model", self.model, "--ram", "8", physical_bytes=memory)
         self.assertEqual(above.returncode, 0, above.stderr)
-        self.assertIn("WARNING: the expert cache would use 8 GB", above.stderr)
+        self.assertIn("WARNING: the server would hold about 8 GB", above.stderr)
         self.assertIn("30% of this Mac's 24 GB", above.stderr)
         self.assertIn("Starting anyway with 8 GB", above.stderr)
         # Warned, not capped: the requested size is what the server is given.
@@ -116,14 +116,40 @@ class RamRuleTests(unittest.TestCase):
         self.assertIn("RAM: model default (measured) |", default.stdout)
 
     def test_boundary_scales_with_the_machine(self) -> None:
-        # 2 GB is the rule on an 8 GB Mac: 2 is silent, 3 warns.
-        for ram, warns in (("2", False), ("3", True)):
-            with self.subTest(ram=ram):
+        # The rule is 2 GB on an 8 GB Mac, so the smallest accepted target (4)
+        # is above it there and below it on a 24 GB Mac (rule 7).
+        small = dry_run("--model", self.model, "--ram", "4", physical_bytes=8 * 2**30)
+        self.assertEqual(small.returncode, 0, small.stderr)
+        self.assertIn("WARNING: the server would hold about 4 GB", small.stderr)
+        self.assertIn("--ram-budget 4G", small.stdout)
+
+        large = dry_run("--model", self.model, "--ram", "4", physical_bytes=24 * 2**30)
+        self.assertEqual(large.returncode, 0, large.stderr)
+        self.assertNotIn("WARNING", large.stderr)
+        self.assertIn("--ram-budget 4G", large.stdout)
+
+    def test_targets_below_the_floor_are_refused(self) -> None:
+        # A streaming install cannot stay under 4 GB: the weights plus the
+        # 8-slot minimum cache are ~4.7 GB. The launcher refuses rather than
+        # accepting a number the runtime would silently overshoot, and a bare
+        # number is refused too instead of being ignored as an unknown word.
+        for ram in ("1", "2", "3", "2G"):
+            with self.subTest(placement="flag", ram=ram):
                 run = dry_run("--model", self.model, "--ram", ram,
-                              physical_bytes=8 * 2**30)
-                self.assertEqual(run.returncode, 0, run.stderr)
-                self.assertEqual("WARNING" in run.stderr, warns)
-                self.assertIn(f"--ram-budget {ram}G", run.stdout)
+                              physical_bytes=24 * 2**30)
+                self.assertEqual(run.returncode, 2, run.stdout)
+                self.assertIn("unknown RAM target", run.stderr)
+                self.assertNotIn("--ram-budget", run.stdout)
+        # A bare number is refused too rather than ignored as an unknown word.
+        # 1 and 0 are not tested positionally: they are thinking levels ("on",
+        # "off") and the optional-value loop reads those first.
+        for ram in ("2", "3", "2G"):
+            with self.subTest(placement="positional", ram=ram):
+                run = dry_run("--model", self.model, ram,
+                              physical_bytes=24 * 2**30)
+                self.assertEqual(run.returncode, 2, run.stdout)
+                self.assertIn("unknown RAM target", run.stderr)
+                self.assertNotIn("--ram-budget", run.stdout)
 
 
 if __name__ == "__main__":

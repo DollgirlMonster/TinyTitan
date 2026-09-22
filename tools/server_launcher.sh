@@ -23,12 +23,13 @@
 #              (minimal, low, medium, high, xhigh, max). The dense Qwen 3.5
 #              models define the binary thinking switch, so their levels are
 #              exactly off|on -- off for a direct answer, on to reason first.
-#   <ram>      the routed-expert cache budget: 1, 2, 4, 8, 16 or 32 (GB).
+#   <ram>      resident-memory target for the server: 4, 8, 16 or 32 (GB).
 #              Anything over 30% of this Mac's physical memory is warned about
 #              in red and used anyway. Omit it to use the install's own measured
-#              profile, which the runtime holds to half of physical memory. The
-#              CPU engine has no expert cache, so it does not ask and the flag
-#              does not apply there.
+#              profile, whose cache budget the runtime holds to a third of
+#              physical memory (a third of the cache plus the resident weights is
+#              what the process then holds). The CPU engine has no expert cache,
+#              so it does not ask and the flag does not apply there.
 #
 # Flags (override the positional form, and work in any order):
 #
@@ -47,8 +48,11 @@
 #   --mode <fast|full>       fast strips CLI boilerplate; full keeps tools
 #   --answers <default|concise>
 #   --thinking <level>
-#   --ram <1|2|4|8|16|32>   expert-cache budget in GB (GPU models only); over
-#              30% of this Mac's physical memory is warned about, not refused
+#   --ram <4|8|16|32>   resident-memory target for the server in GB (GPU
+#              models only); the expert cache gets what is left after the
+#              resident weights and the runtime. 4 GB is the floor (the weights
+#              plus a minimum cache are ~4.7 GB on the 125B install); over 30% of
+#              this Mac's physical memory is warned about, not refused
 #   --context <n|native|max> native 262144, or 524288/1048576 with --yarn
 #   --kv <4|8|16>   KV-cache precision (default 8)
 #   --yarn          enable YaRN context scaling
@@ -85,13 +89,18 @@
 # the API (--models-dir), one resident at a time; GPU models are pinned to
 # native 262,144-token context, a 256 MiB multi-prefix prompt cache, 8-bit KV
 # and MTP off. Everything tuned per model and quantization -- the expert-cache
-# budget, prefetch and its I/O tier, the prefill chunk, sampling -- comes from
-# the install's own ModelProfile row, so the launcher never overrides a measured
-# optimum. Past 30% of physical memory the expert cache starts competing with
-# the rest of the machine -- the cache is wired and cannot be paged out -- so
-# this launcher warns above that line and passes the size on as asked; the
-# runtime separately holds the *profile's* own value to half of physical memory
-# on the default path.
+# budget, prefetch, the prefill chunk, sampling -- comes from the install's own
+# ModelProfile row, so the launcher never overrides a measured optimum.
+#
+# --ram is a **process target**, not a cache size: the runtime subtracts the
+# resident weights and a measured runtime reserve and gives the routed-expert
+# cache what is left, stepping down the slot ladder so the server stays under
+# the number. On a Qwen3.8 4-bit install the floor is about 3.7 GB, so --ram 4
+# lands at the 8-slot minimum (~4.7 GB) and anything below 4 is refused. Past 30% of physical
+# memory the server starts competing with the rest of the machine -- the cache
+# is wired and cannot be paged out -- so this launcher warns above that line and
+# passes the size on as asked; the runtime separately holds the *profile's* own
+# cache value to a third of physical memory on the default (no-flag) path.
 # CPU models take none of the pinned flags: that backend has no prompt cache, no
 # quantized KV and no expert cache, so --kv, --context, --yarn and --ram are
 # reported as not applying rather than passed or dropped in silence.
@@ -164,6 +173,31 @@ CACHE_ARG=""; MTP_MODEL_ARG=""; MTP_MEMORY_ARG=""; CONCURRENCY_ARG=""
 # tools/tinytitan_models.sh is shared with the coder benchmark, which rejects
 # any kind that is not `coder` or `editor` and asserts the id set exactly.
 WEB=0
+# The tiers are the sizes a person can reason about, not the runtime's own
+# slot rungs. Defined here, before the positional parse, because the
+# unlabelled RAM value is read there: with the definition further down the
+# file, bash resolved that call to nothing and a positional RAM tier was
+# silently ignored.
+# The tiers are the sizes a person can reason about, not the runtime's own
+# slot rungs. The runtime derives slots from the budget and the model's own
+# expert stride, so the same tier means fewer slots on a wider model.
+ram_tier() {
+  # A whole number of GB, with or without the "G" suffix, from 4 up. The
+  # runtime's --ram-budget enforces the same floor and the benchmark profile
+  # passes its own value through TINYTITAN_BENCH_RAM_BUDGET. The interactive
+  # question offers 4/8/16/32 or the install's own profile.
+  local value="${1%[Gg]}"
+  case "$value" in
+    *[!0-9]*|"") return 1 ;;
+  esac
+  # 4 GB is the floor: a streaming install holds its weight file (2.5-4.5 GB)
+  # plus an 8-slot minimum expert cache, which is about 4.7 GB on Qwen3.8 4-bit.
+  # A smaller target cannot be honoured, so it is refused here rather than
+  # silently overshot -- the runtime refuses it too.
+  (( 10#$value >= 4 )) || return 1
+  echo "$(( 10#$value ))"
+}
+
 positional=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -262,6 +296,14 @@ for value in "${positional[@]:$pos}"; do
   fi
   if [[ -z "$RAM_ARG" ]]; then
     if ram_tier "$value" >/dev/null 2>&1; then RAM_ARG="$value"; continue; fi
+    # A number here can only have been meant as the RAM tier, so refuse it
+    # instead of ignoring it the way an unrecognised word is ignored: silently
+    # dropping a positional `2` is how a person ends up running the model
+    # default while believing they set a limit.
+    if [[ "$value" =~ ^[0-9]+[Gg]?$ ]]; then
+      echo "unknown RAM target: $value (minimum 4 GB; the weights plus a minimum expert cache are ~4.7 GB on a 125B install, so a smaller target cannot be honoured)" >&2
+      exit 2
+    fi
   fi
 done
 
@@ -688,24 +730,8 @@ fi
 think_word="$(thinking_label "$thinking_level")"
 
 # ============================================================
-# 6) RAM limit: the expert-cache budget
+# 6) RAM target: what the whole server may hold (the cache gets the rest)
 # ============================================================
-
-# The tiers are the sizes a person can reason about, not the runtime's own
-# slot rungs. The runtime derives slots from the budget and the model's own
-# expert stride, so the same tier means fewer slots on a wider model.
-ram_tier() {
-  # Any positive whole number of GB, with or without the "G" suffix, because the
-  # runtime's --ram-budget takes any size and the benchmark profile passes its
-  # own (TINYTITAN_BENCH_RAM_BUDGET). The 1/2/4/8/16/32 menu is still what the
-  # interactive question offers.
-  local value="${1%[Gg]}"
-  case "$value" in
-    *[!0-9]*|"") return 1 ;;
-  esac
-  (( 10#$value >= 1 )) || return 1
-  echo "$(( 10#$value ))"
-}
 
 # 30% of physical memory: the point past which this launcher recommends against
 # the expert cache, and warns.
@@ -719,10 +745,13 @@ ram_tier() {
 # not 40% because the cache is only part of what a running server holds: real
 # usage ran past half of physical memory even with the cache at 40%, so the
 # recommendation that overshot is the one that had to move. It is a
-# recommendation, not a limit: the runtime clamps the *install's* profile to
-# half of physical memory on the default path, and an explicit budget is passed
-# through as `--ram-budget` and taken verbatim -- which is the person's call, so
-# this script warns in red and starts anyway.
+# recommendation, not a limit: the runtime clamps the *install's* profile
+# **cache budget** to a third of physical memory on the default path, and an
+# explicit budget passes through as `--ram-budget` -- a target for the whole
+# process, not just the cache -- which is the person's call, so this script warns
+# in red and starts anyway. (`BatchedMemoryBudget` separately holds the batched
+# KV/slot headroom to half of physical memory less the expert cache; that half is
+# about concurrency, not about this flag.)
 #
 # `TINYTITAN_PHYSICAL_RAM_BYTES` is the test seam: this mapping has to be checkable
 # on a machine of any size.
@@ -751,10 +780,10 @@ warn_ram_over_rule() {
   (( ram_rule_gb > 0 )) || return 0
   (( ram_gb > ram_rule_gb )) || return 0
   ram_over_rule=1
-  warn_red "WARNING: the expert cache would use ${ram_gb} GB, more than the ${ram_rule_gb} GB"
+  warn_red "WARNING: the server would hold about ${ram_gb} GB, more than the ${ram_rule_gb} GB"
   warn_red "         this launcher recommends (30% of this Mac's ${physical_ram_gb} GB). The"
-  warn_red "         cache is wired, so it cannot be paged out and everything else"
-  warn_red "         has to fit beside it. Expect:"
+  warn_red "         expert cache is wired, so it cannot be paged out and everything"
+  warn_red "         else has to fit beside it. Expect:"
   warn_red "           * system instability while the model is loaded"
   warn_red "           * heavy swapping, which stalls other apps (audio, calls)"
   warn_red "           * much slower generation: a paging cache loses more than the"
@@ -764,7 +793,7 @@ warn_ram_over_rule() {
 
 if [[ -n "$RAM_ARG" ]]; then
   if ! ram_gb="$(ram_tier "$RAM_ARG")"; then
-    echo "unknown RAM limit: $RAM_ARG (1, 2, 4, 8, 16 or 32 GB)" >&2
+    echo "unknown RAM target: $RAM_ARG (minimum 4 GB; the weights plus a minimum expert cache are ~4.7 GB on a 125B install, so a smaller target cannot be honoured)" >&2
     exit 2
   fi
   if [[ "$ENGINE" != "cpu" ]]; then warn_ram_over_rule; fi
@@ -773,16 +802,17 @@ elif [[ "$ENGINE" == "cpu" ]]; then
   # routed-expert cache, so a budget would be a number that changes nothing.
   ram_gb=""
 elif (( ! INTERACTIVE )); then
-  # Unattended or dry run: keep the install's own measured profile, which the
-  # runtime holds to half of physical memory. That measured profile is why this
+  # Unattended or dry run: keep the install's own measured profile, whose cache
+  # budget the runtime holds to a third of physical memory. That profile is why this
   # rule is a warning: on the machine it was tuned on it is the right number,
   # and on a smaller one the runtime's own clamp already applies.
   ram_gb=""
 else
   echo ""
-  echo "RAM limit for the expert cache?"
-  echo "  More memory means fewer SSD reads and faster answers, and less"
-  echo "  left for everything else on the Mac."
+  echo "RAM target for the server?"
+  echo "  This is what the whole server may hold, weights and runtime included;"
+  echo "  the expert cache gets the remainder. More cache means fewer SSD reads"
+  echo "  and faster answers, and less left for everything else on the Mac."
   if (( ram_rule_gb > 0 )); then
     echo "  It is wired, so it cannot be paged out. This launcher recommends"
     echo "  at most 30% of this Mac's ${physical_ram_gb} GB (${ram_rule_gb} GB): asking for"
@@ -792,15 +822,15 @@ else
   else
     rule_hint="recommended"
   fi
-  echo "  1) 1 GB    2) 2 GB    3) 4 GB"
-  echo "  4) 8 GB    5) 16 GB   6) 32 GB"
-  echo "  7) Model default (measured per install; ${rule_hint})"
-  printf "Choice [1-7] (default 7): "
+  echo "  1) 4 GB    2) 8 GB    3) 16 GB   4) 32 GB"
+  echo "  (1 and 2 GB are not offered: the weights plus the minimum expert"
+  echo "   cache are about 4.7 GB on a 125B install, so they cannot be met)"
+  echo "  5) Model default (measured per install; ${rule_hint})"
+  printf "Choice [1-5] (default 5): "
   read -r ram_choice || exit 1
-  case "${ram_choice:-7}" in
-    1) ram_gb=1 ;;  2) ram_gb=2 ;;  3) ram_gb=4 ;;
-    4) ram_gb=8 ;;  5) ram_gb=16 ;; 6) ram_gb=32 ;;
-    7) ram_gb="" ;;
+  case "${ram_choice:-5}" in
+    1) ram_gb=4 ;;  2) ram_gb=8 ;;  3) ram_gb=16 ;; 4) ram_gb=32 ;;
+    5) ram_gb="" ;;
     *) echo "invalid choice: $ram_choice" >&2; exit 2 ;;
   esac
   if [[ -n "$ram_gb" ]]; then warn_ram_over_rule; fi
@@ -1079,7 +1109,7 @@ else
     runtime_note="$runtime_note | one generation at a time"
   fi
   if [[ -n "$ram_gb" ]]; then
-    runtime_note="$runtime_note | expert cache ${ram_gb} GB (yours)"
+    runtime_note="$runtime_note | RAM target ${ram_gb} GB (yours)"
   else
     runtime_note="$runtime_note | expert cache, prefetch, sampling from the model profile"
   fi
@@ -1166,7 +1196,7 @@ print_setup() {
   echo "Model: $MODEL_DIR"
   echo "Thinking: $think_word | RAM: $ram_note | At once: $concurrency | Port: $PORT | Ctrl-C to stop"
   if (( ram_over_rule )); then
-    warn_red "WARNING: ${ram_gb} GB of expert cache is over the ${ram_rule_gb} GB this launcher"
+    warn_red "WARNING: ${ram_gb} GB of RAM is over the ${ram_rule_gb} GB this launcher"
     warn_red "         recommends for this Mac (30%). Expect swapping, a less stable"
     warn_red "         system and slower tokens."
   fi

@@ -528,9 +528,10 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             throw ServerInferenceError.unsupportedModel("\(error)")
         }
         let derivedSlots: Int
-        // An explicit --ram-budget always wins; this only supplies the default,
-        // and it is clamped so a family tuned on a 24 GiB machine cannot hand a
-        // smaller one a budget it has no room for.
+        // An explicit --ram-budget names what the whole server may hold; this
+        // only supplies the cache default, and it is clamped so a family tuned
+        // on a 24 GiB machine cannot hand a smaller one a budget it has no room
+        // for.
         let tunedBudget: Int
         if let identity = try? ManifestReader.peekIdentity(directoryURL: modelDirectory) {
             tunedBudget = RuntimeConfiguration.affordableExpertCacheBudget(
@@ -538,12 +539,50 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         } else {
             tunedBudget = RuntimeConfiguration.defaultExpertCacheBudgetBytes
         }
-        if let manifest = try? ManifestReader.load(directoryURL: modelDirectory,
-                                                  expecting: expectedArch) {
+        let loadedManifest = try? ManifestReader.load(directoryURL: modelDirectory,
+                                                      expecting: expectedArch)
+        // Bytes one expert occupies in the cache, across every layer.
+        let cachePerSlotBytes = loadedManifest.map {
+            Double($0.expertStride) * Double($0.arch.numLayers)
+        } ?? 0
+        let residentFloor = RuntimeConfiguration.residentFloorBytes(
+            residentWeightBytes: loadedManifest?.files["model_weights.bin"]
+                .map { Int($0.size) } ?? 0)
+        let gib = { (bytes: Double) in bytes / 1_073_741_824 }
+        let slotsGib = { (slots: Int) in gib(Double(slots) * cachePerSlotBytes) }
+        if let explicitTarget = expertCacheBudgetBytes {
+            // The flag is a target for the whole process, not just the cache:
+            // the weights and the runtime are resident either way, so the cache
+            // is what is left, and the slot count steps down to stay inside the
+            // number the user named.
+            derivedSlots = RuntimeConfiguration.expertCacheSlotsFitting(
+                expertStrideBytes: loadedManifest?.expertStride ?? 0,
+                layers: loadedManifest?.arch.numLayers ?? 0,
+                cacheBytes: explicitTarget - residentFloor)
+            let targetGib = gib(Double(explicitTarget))
+            let floorGib = gib(Double(residentFloor))
+            let cacheGib = slotsGib(derivedSlots)
+            print(String(format: "TinyTitan ram target=%.2fG cache=%.2fG slots=%d "
+                         + "resident_floor=%.2fG estimate=%.2fG",
+                         targetGib, cacheGib, derivedSlots, floorGib,
+                         floorGib + cacheGib))
+            if targetGib < floorGib + cacheGib {
+                print(String(format: "TinyTitan ram warning: %.2fG is below this install's "
+                             + "%.2fG floor (%.2fG resident + the %d-slot minimum cache); "
+                             + "the cache is already at its smallest.",
+                             targetGib, floorGib + cacheGib, floorGib, derivedSlots))
+            }
+        } else if let manifest = loadedManifest {
             derivedSlots = RuntimeConfiguration.expertCacheSlots(
                 expertStrideBytes: manifest.expertStride,
                 layers: manifest.arch.numLayers,
-                budgetBytes: expertCacheBudgetBytes ?? tunedBudget)
+                budgetBytes: tunedBudget)
+            let floorGib = gib(Double(residentFloor))
+            print(String(format: "TinyTitan ram profile cache=%.2fG slots=%d "
+                         + "resident_floor=%.2fG estimate=%.2fG (cache budget, not a "
+                         + "process target)",
+                         slotsGib(derivedSlots), derivedSlots, floorGib,
+                         floorGib + slotsGib(derivedSlots)))
         } else {
             // Unreadable manifest means the load below will fail with a better
             // message than anything this could throw, so pick the safe small end.

@@ -513,3 +513,62 @@ switches left are on/off controls for wins: `TINYTITAN_PREDICTIVE_PREFETCH` and
 `TINYTITAN_BOUNDED_IO=0` (which is faster but rejected by the RAM decision). The
 shipped path is byte-identical to the one these measurements were taken on.
 
+## Lever 10 — `--ram-budget` is a process target, and real RSS now matches it
+
+`--ram-budget` (the launcher's `--ram`) used to name the *expert cache* alone,
+so `--ram 8` produced 64 slots = 7.92 GiB of cache **plus** 3.8 GiB of resident
+weights, runtime and KV: 11.6 GiB of real use for a flag that says 8. Measured
+2026-09-22 on the 24 GiB M3, `--ram 8`, 256 greedy tokens: **11.63 GiB peak**.
+
+It now names what the whole server may hold. The cache gets
+
+    cache = target - (model_weights.bin + residentRuntimeReserveBytes)
+
+with `residentRuntimeReserveBytes` = 512 MiB, measured rather than guessed: the
+server loads at 3.75 GiB against a 3.22 GiB weight file (a non-weight floor of
+0.53 GiB: Metal context and pipelines, tokenizer, expert layout table, prefetch
+ring, per-sequence scratch and the KV for a short request). The slot count is the
+largest supported rung whose cache fits that remainder, so the estimate never
+exceeds the target. Every server start prints the plan and the floor:
+
+    TinyTitan ram target=8.00G cache=3.96G slots=32 resident_floor=3.72G estimate=7.68G
+
+**Minimum 4 GB.** 1G, 2G and 3G are refused as an argument error by both the
+runtime (`--ram-budget`) and the launcher (`--ram`, positional or flag): the
+weights plus the 8-slot minimum cache are ~4.7 GiB on this install, so a smaller
+target cannot be honoured, and accepting one only produced a number the process
+silently overshot by 2x. 4G is accepted and lands on that floor.
+
+Two interleaved rounds not needed here: the peak is a memory measurement, not a
+rate. Slot counts are exact; peaks are RSS sampled every 0.5 s through the
+request. Before = commit `3eb11cf` binary `b14bd43a…`, after = binary `1e899066…`.
+
+| `--ram` | before: slots / peak | after: slots / cache / peak | after swap |
+| ---: | --- | --- | --- |
+| 2 | 16 / 5.85 GiB | *refused* | — |
+| 4 | 32 / 7.84 GiB | 8 / 0.99 / **4.73 GiB** | flat |
+| 6 | 48 / 9.84 GiB | 16 / 1.98 / **5.84 GiB** | flat |
+| 8 | 64 / **11.63 GiB** | 32 / 3.96 / **7.83 GiB** | flat |
+| 10 | 64 / 11.70 GiB | 48 / 5.94 / **9.83 GiB** | flat |
+| 12 | 96 / 15.35 GiB | 64 / 7.92 / **11.71 GiB** | flat |
+| 16 | 128 / 16.18 GiB (paging) | 96 / 11.88 / **15.35 GiB** | +1.35 GB |
+
+Every after row lands within ~0.2 GiB of its own estimate and under its target.
+The 16G arm is the one that still grows swap (+1.35 GB): 96 slots of wired cache
+on a 24 GiB machine under other load is the machine's limit, not the accounting's
+error -- the same 96 slots at the old `--ram 12` grew swap by 1.04 GB.
+
+**What it costs.** Fewer slots for the same number is the point, and it is not
+free: Lever 7's curve puts 32 slots at 3.436 tok/s against 4.547 at 64. So
+`--ram 8` is now ~7.8 GiB and ~25% slower than it was, and the flag that
+reproduces the old `--ram 8` cache is `--ram 12`. The default (no flag) is
+unchanged: the install's profile cache budget clamped to a third of physical
+memory (8 GiB / 64 slots here, ~11.6 GiB real), which is why the profile line
+still prints `budget=12288MiB prefetch=1`.
+
+**One caveat the floor cannot cover: context.** The KV is 49,152 B a token at
+8-bit (48 layers x 2 x 2 KV heads x 256), so the 512 MiB reserve covers the
+runtime plus ~10,000 tokens and the full 262,144-token window would add 12 GiB.
+The estimate is a short-request estimate; a long context is what takes it past
+the target, and the server prints the same floor either way.
+

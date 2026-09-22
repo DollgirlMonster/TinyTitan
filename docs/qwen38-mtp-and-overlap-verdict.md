@@ -1,5 +1,14 @@
 # MTP and I/O overlap: the gate result and the budget (Qwen3.8 4-bit, --ram 8)
 
+> **Note on `--ram` provenance, 2026-09-22.** `--ram-budget` (the launcher's
+> `--ram`) now names a target for the *whole process*, not the expert cache: the
+> cache gets the target minus the resident weights and a measured runtime reserve.
+> Every `--ram 8` measurement in this document was taken under the old meaning,
+> where 8 GB was 64 slots of cache and ~11.6 GiB of real use; today `--ram 8` is
+> a ~32-slot / ~7.8 GiB configuration and `--ram 12` is the flag that reproduces
+> the old one. See Lever 10 of
+> `benchmark/internal-speeds/v2-qwen38-4bit-telemetry.txt`.
+
 Written 2026-09-21. Two items from the last proposal were tried: the MTP
 speculation path (item 1) and more I/O/compute overlap (item 3). Both are closed
 by measurement. All runs used `--ram-budget 8G`.

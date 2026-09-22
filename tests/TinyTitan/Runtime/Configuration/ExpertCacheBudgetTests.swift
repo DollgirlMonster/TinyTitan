@@ -83,6 +83,57 @@ import Testing
                     "stride \(stride): \(actual / 1_073_741_824) GiB exceeds budget")
         }
     }
+
+    /// `--ram-budget` names the whole process, so the cache is the remainder of
+    /// (target - resident floor). These are the qwen38 4-bit geometry and weight
+    /// file, i.e. the install the 2/4/6/8/10/12/16 GB sweep was taken on:
+    /// 2,768,896 B stride x 48 layers = 0.1238 GiB a slot, weights 3.217 GiB.
+    @Test func processTargetsSubtractTheResidentFloor() {
+        let stride = UInt64(2_768_896)
+        let layers = 48
+        let floor = RuntimeConfiguration.residentFloorBytes(
+            residentWeightBytes: 3_454_121_216)
+        // Weights plus the measured 512 MiB runtime reserve.
+        #expect(abs(Double(floor) / 1_073_741_824 - 3.717) < 0.01)
+
+        let expected: [(targetGB: Int, slots: Int)] = [
+            (2, 8),   // below the floor: the smallest cache is already too much
+            (4, 8),   // still below it
+            (6, 16),
+            (8, 32),
+            (10, 48),
+            (12, 64),
+            (16, 96),
+        ]
+        for (targetGB, expectedSlots) in expected {
+            let slots = RuntimeConfiguration.expertCacheSlotsFitting(
+                expertStrideBytes: stride, layers: layers,
+                cacheBytes: (targetGB << 30) - floor)
+            #expect(slots == expectedSlots, "\(targetGB)G gave \(slots) slots")
+            #expect(RuntimeConfiguration.allowedExpertCacheSlots.contains(slots))
+            // The estimate the server prints must not exceed the target, except
+            // where the target is under the floor and no cache can be small
+            // enough.
+            let estimate = Double(floor)
+                + Double(slots) * Double(stride) * Double(layers)
+            if targetGB >= 6 {
+                #expect(estimate <= Double(targetGB << 30),
+                        "\(targetGB)G estimated \(estimate / 1_073_741_824) GiB")
+            }
+        }
+    }
+
+    /// A target with no room left, or an unreadable model, must still produce a
+    /// usable cache rather than zero slots.
+    @Test func aTargetWithNoRoomFallsBackToTheSmallestRung() {
+        let stride = UInt64(2_768_896)
+        #expect(RuntimeConfiguration.expertCacheSlotsFitting(
+            expertStrideBytes: stride, layers: 48, cacheBytes: -1) == 8)
+        #expect(RuntimeConfiguration.expertCacheSlotsFitting(
+            expertStrideBytes: stride, layers: 48, cacheBytes: 0) == 8)
+        #expect(RuntimeConfiguration.expertCacheSlotsFitting(
+            expertStrideBytes: 0, layers: 0, cacheBytes: 8 << 30) == 8)
+    }
 }
 
 /// `--ram-budget` is the user-facing knob, so its parser has to accept what people
