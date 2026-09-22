@@ -453,14 +453,12 @@ public struct RuntimeConfiguration: Sendable, Equatable {
             return .production(chunkTokens: prefillChunkTokens)
         }
     }
-    /// TINYTITAN_EXPERT_CACHE_POLICY = lru | lfu | aging-lfu | decayed overrides
-    /// the configured policy for every front end; read once.
-    public static let expertCachePolicyOverride: ExpertCachePolicy? =
-        ProcessInfo.processInfo.environment["TINYTITAN_EXPERT_CACHE_POLICY"]
-            .flatMap(ExpertCachePolicy.init(rawValue:))
-
+    /// The configured policy as the streaming stack spells it. The
+    /// `TINYTITAN_EXPERT_CACHE_POLICY` override that used to sit here also
+    /// reached two experiment variants (aging-lfu and a decayed use count), and
+    /// every arm measured a wash on this engine, so the switch and the variants
+    /// are gone and the configured lfu/lru choice is the whole surface.
     public var modelExpertCachePolicy: ExpertCachePolicy {
-        if let override = Self.expertCachePolicyOverride { return override }
         return expertCachePolicy == .lru ? .lru : .lfu
     }
 }

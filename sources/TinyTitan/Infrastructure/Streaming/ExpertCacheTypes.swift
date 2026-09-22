@@ -166,22 +166,13 @@ public struct ExpertStreamingStatistics: Sendable, Equatable {
     }
 }
 
+/// The two eviction orders a run may select. The experiment variants beside
+/// them (aging-lfu, a decayed use count with a tunable half-life, and the two
+/// env switches that reached them) all measured washes or losses and have been
+/// removed; LFU is the shipped default, LRU the configured alternative.
 public enum ExpertCachePolicy: String, Sendable {
     case lru
     case lfu
-    case agingLFU = "aging-lfu"
-    /// Exponentially decayed use count: each use adds one, and the score
-    /// halves every `decayHalfLifeTokens` plans of this layer's streamer
-    /// (one plan per decoded token). LFU with the prefill's counts forgotten
-    /// at a controlled rate. Replayed on Qwen3.8 route traces at 96 slots:
-    /// long-prompt hit rate 0.703 (LFU) -> 0.760 (half-life 16), short prompt
-    /// 0.845 -> 0.837, oracle 0.863 / 0.897.
-    case decayed
-
-    /// TINYTITAN_CACHE_DECAY_HALFLIFE, in tokens; read once.
-    public static let decayHalfLifeTokens: Double = {
-        Double(ProcessInfo.processInfo.environment["TINYTITAN_CACHE_DECAY_HALFLIFE"] ?? "") ?? 16
-    }()
 }
 
 public enum ExpertIOBackend: String, Sendable {
@@ -197,21 +188,5 @@ public enum ExpertIOBackend: String, Sendable {
                 detail: "unsupported TINYTITAN_EXPERT_IO_BACKEND '\(raw)'; allowed: pread, metal")
         }
         return backend
-    }
-}
-
-public enum ExpertCacheLayout: String, Sendable {
-    case perSlot = "per-slot"
-    case pool
-
-    static func environmentValue(
-        _ environment: [String: String] = ProcessInfo.processInfo.environment
-    ) throws -> ExpertCacheLayout {
-        guard let raw = environment["TINYTITAN_EXPERT_CACHE_LAYOUT"] else { return .perSlot }
-        guard let layout = ExpertCacheLayout(rawValue: raw) else {
-            throw ModelError.internalInconsistency(
-                detail: "unsupported TINYTITAN_EXPERT_CACHE_LAYOUT '\(raw)'; allowed: per-slot, pool")
-        }
-        return layout
     }
 }

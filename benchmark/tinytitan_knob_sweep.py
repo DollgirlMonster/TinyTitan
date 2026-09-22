@@ -49,30 +49,16 @@ ARMS: list[tuple[str, dict[str, str], str]] = [
      "GPU-side hit/miss classification (gpu_classified_* all zero today)"),
     ("barrier", {"TINYTITAN_DECODE_EXPERT_EXECUTION": "barrier"},
      "control: the simple schedule, expected slower"),
-    ("cache_lru", {"TINYTITAN_EXPERT_CACHE_POLICY": "lru"},
-     "evictions(78/tok) > misses(60/tok) suggests thrash"),
-    ("cache_aging", {"TINYTITAN_EXPERT_CACHE_POLICY": "aging-lfu"}, "ditto"),
-    ("layout_pool", {"TINYTITAN_EXPERT_CACHE_LAYOUT": "pool"},
-     "one pool instead of per-slot buffers"),
-    ("prefetch_2", {"TINYTITAN_PREFETCH_TOP_M": "2"},
-     "re-check depth 2; measured -6% worse than 1 previously"),
-    # The round-2 mixed-horizon arm (second read on L+2 instead of L+1's second
-    # rank; measured -1.4%, docs/qwen38-prefetch-predictor-study.md) needed a
-    # patch that was reverted after measurement, so it has no arm here: it would
-    # silently measure the baseline.
-    ("prefetch_per_expert", {"TINYTITAN_PREFETCH_TOP_M": "2",
-                             "TINYTITAN_PREFETCH_PER_EXPERT": "1"},
-     "per-slot readiness at depth 2; measured -1.3% with fewer demand bytes"),
+    # The cache-policy, cache-layout, prefetch-depth and retention arms are
+    # gone with their knobs: each measured a wash or a loss, was documented, and
+    # was then removed from the engine (their env vars no longer exist, so an arm
+    # here would silently measure the baseline).
     ("prefetch_off", {"TINYTITAN_PREDICTIVE_PREFETCH": "0"},
      "control: confirm prefetch still earns its place"),
     ("slots_128", {"TINYTITAN_EXPERT_CACHE_SLOTS": "128"},
      "hit rate 87.4% at 96; does the curve still climb?"),
     ("slots_64", {"TINYTITAN_EXPERT_CACHE_SLOTS": "64"},
      "control: fewer slots must be worse if the cache matters"),
-    ("no_parallel_io", {"TINYTITAN_PARALLEL_IO": "0"},
-     "control: confirm parallel io earns its place"),
-    ("keep_wired", {"TINYTITAN_KEEP_WIRED": "1"},
-     "skip per-decode pinning"),
     # --- second pass: knobs the first sweep listed but never ran -------------
     ("rdadvise_off", {"TINYTITAN_RDADVISE_POLICY": "off"},
      "rdadvise costs 5.1 ms/token, 3% of the budget"),
@@ -86,14 +72,6 @@ ARMS: list[tuple[str, dict[str, str], str]] = [
      "control: the tiled sampler should win"),
     ("slots_112", {"TINYTITAN_EXPERT_CACHE_SLOTS": "112"},
      "the untested middle: 96 fits at 85.4%, 128 swaps at 89.8%"),
-    ("prefetch_4", {"TINYTITAN_PREFETCH_TOP_M": "4"},
-     "control: recorded -9.8%, confirm on this build"),
-    # The three arms that each landed inside drift. If they are real they
-    # stack; if they are noise they will not.
-    ("combo_marginal", {"TINYTITAN_KEEP_WIRED": "1",
-                        "TINYTITAN_PARALLEL_IO": "0",
-                        "TINYTITAN_EXPERT_CACHE_LAYOUT": "pool"},
-     "keep_wired +4.6%, no_parallel_io +3.7%, layout_pool +1.1% together"),
     # --- 8-bit: the cache is sized in bytes, so a 1.89x expert stride buys
     # fewer slots. 64 slots at 8-bit is 16.1 GB of cache -- essentially the
     # footprint that cost 4-bit 68% at 128 slots. Sweep downward.

@@ -145,21 +145,16 @@ def parse_footers(log_path: pathlib.Path) -> tuple[list[str], list[str]]:
 
 def run_case(mode: str, prompt_name: str, prompt: str,
              io_backend: str = "pread", io_sync: str = "host",
-             cache_layout: str = "per-slot",
-             cache_policy: str = "lfu",
              io_submission: str = "deferred") -> tuple[list[dict[str, object]], pathlib.Path]:
     environment = server_environment()
     environment["TINYTITAN_DECODE_EXPERT_EXECUTION"] = mode
     environment["TINYTITAN_EXPERT_IO_BACKEND"] = io_backend
     environment["TINYTITAN_EXPERT_IO_SYNC"] = io_sync
-    environment["TINYTITAN_EXPERT_CACHE_LAYOUT"] = cache_layout
-    environment["TINYTITAN_EXPERT_CACHE_POLICY"] = cache_policy
     environment["TINYTITAN_EXPERT_IO_SUBMISSION"] = io_submission
     environment["TINYTITAN_RUNNER_STATS"] = "1"
     environment["TINYTITAN_KERNEL_STATS"] = "1"
     log_path = pathlib.Path(benchmark_log_path(
-        f"expert-ab-{mode}-{io_backend}-{io_sync}-{cache_layout}-"
-        f"{cache_policy}-{io_submission}-{prompt_name}.log"))
+        f"expert-ab-{mode}-{io_backend}-{io_sync}-{io_submission}-{prompt_name}.log"))
     with log_path.open("w") as log:
         process = subprocess.Popen(
             server_command(SERVER, PORT),
@@ -178,8 +173,6 @@ def run_case(mode: str, prompt_name: str, prompt: str,
                     "mode": mode,
                     "io_backend": io_backend,
                     "io_sync": io_sync,
-                    "cache_layout": cache_layout,
-                    "cache_policy": cache_policy,
                     "io_submission": io_submission,
                     "prompt": prompt_name,
                     "warmth": warmth,

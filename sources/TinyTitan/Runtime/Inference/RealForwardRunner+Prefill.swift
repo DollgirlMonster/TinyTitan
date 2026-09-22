@@ -66,12 +66,10 @@ extension RealForwardRunner {
     /// earlier, and because removing it would silently change that path's
     /// behaviour. It is not load-bearing today.
     ///
-    /// Skipped when the profile keeps the cache wired — its row, or
-    /// `TINYTITAN_KEEP_WIRED=1` overriding a row that does not: pinning at
-    /// allocation and then releasing here is self-defeating, and cost me one
-    /// wrong conclusion already. With the override at `0` this call is what makes
-    /// the cache pageable through prefill, which is the trade the tri-state exists
-    /// to offer (TT-008).
+    /// Skipped when the profile keeps the cache wired: pinning at allocation
+    /// and then releasing here is self-defeating, and cost one wrong
+    /// conclusion already. For a row that does not wire it, this call is what
+    /// makes the cache pageable through prefill (TT-008).
     private func releasePrefillCacheWiring() {
         if !profile.keepExpertCacheWired {
             model.setExpertCachePinned(false)
@@ -176,49 +174,6 @@ extension RealForwardRunner {
                                               startPosition: startPosition,
                                               config: config)
         do {
-            if layerMajorPrefillEnabled, spans.count > 1,
-               let residuals = try? bandResiduals(count: spans.count,
-                                                  scratch: scratch) {
-                // Layer-major: every chunk of the band sees layer L before any
-                // sees L+1, so each layer's experts stream once for the whole
-                // band instead of once per chunk. Prefill's expert hit rate is
-                // 0.4%, so that count is what the cost tracks.
-                // One layer live at a time, so it can afford the whole
-                // working set. Without this, layer-major measured no reduction
-                // in expert reads at all (113.4 -> 113.8 GiB): a 96-slot cache
-                // against ~512 experts thrashes inside a single chunk, so
-                // nothing survives for the next chunk of the same layer to
-                // reuse. Reordering visits is worthless if a visit leaves
-                // nothing behind.
-                let concentrate = layerMajorSlotConcentration
-                if let concentrate { model.concentratedSlotCount = concentrate }
-                defer { model.concentratedSlotCount = nil }
-                for layer in 0..<cfg.numLayers {
-                    if concentrate != nil, layer > 0 {
-                        model.releaseLayerStreamer(layer - 1)
-                    }
-                    for (spanIndex, span) in spans.enumerated() {
-                        try Task.checkCancellation()
-                        let lower = tokens.index(tokens.startIndex, offsetBy: span.tokenOffset)
-                        let upper = tokens.index(lower, offsetBy: span.tokenCount)
-                        try await executePrefillChunk(
-                            tokens: tokens[lower..<upper],
-                            startPosition: span.startPosition,
-                            slot: slot,
-                            outputMode: outputMode,
-                            logits: logits,
-                            scratch: scratch,
-                            config: config,
-                            writeFinalHead: spanIndex == spans.count - 1,
-                            layerRange: layer..<(layer + 1),
-                            residual: residuals[spanIndex])
-                    }
-                    // Chunks inside a layer run in order, so GDN's recurrent
-                    // state, both conv histories and the PLE latch see the same
-                    // sequence they do chunk-major.
-                }
-                for span in spans { onProgress(span.completedCount) }
-            } else {
             for (spanIndex, span) in spans.enumerated() {
                 try Task.checkCancellation()
                 let lower = tokens.index(tokens.startIndex, offsetBy: span.tokenOffset)
@@ -234,7 +189,6 @@ extension RealForwardRunner {
                     writeFinalHead: spanIndex == spans.count - 1)
                 try Task.checkCancellation()
                 onProgress(span.completedCount)
-            }
             }
         } catch {
             // Any failure — cancellation, a GPU command-buffer error, an I/O
@@ -277,18 +231,12 @@ extension RealForwardRunner {
                                      preparedHidden: MTLBuffer? = nil,
                                      snapshotGDNAfterFirstToken: Bool = false,
                                      useTwoRowProjection: Bool = false,
-                                     pairRoutedMoE: Bool = false,
-                                     // Layer-major prefill runs one layer over
-                                     // every chunk of a band before the next,
-                                     // so each layer's experts stream once
-                                     // rather than once per chunk. Defaults
-                                     // reproduce the chunk-major pass exactly.
-                                     layerRange: Range<Int>? = nil,
-                                     residual: MTLBuffer? = nil) async throws {
-        let layers = layerRange ?? 0..<cfg.numLayers
-        let runPrologue = layers.lowerBound == 0
-        let runEpilogue = layers.upperBound == cfg.numLayers
-        let scratch = residual.map { scratch.withResidual($0) } ?? scratch
+                                     pairRoutedMoE: Bool = false) async throws {
+        // Layer-major prefill (one band of chunks walked layer by layer, with
+        // a residual per chunk) is gone: every call runs the whole stack in
+        // order, so the prologue and epilogue are unconditional.
+        let runPrologue = true
+        let runEpilogue = true
         guard !tokens.isEmpty else { return }
         guard kv != nil else {
             throw PrefillError.chunkedUnsupported("chunked prefill attention requires a KV cache")
@@ -300,7 +248,7 @@ extension RealForwardRunner {
         // start. Writes themselves are position-addressed and validateRange
         // only bounds against maxContext, so running ahead is safe; this guard
         // is an invariant, not a mechanism.
-        guard kvPosition == startPosition || (layerRange != nil && kvPosition <= startPosition) else {
+        guard kvPosition == startPosition else {
             throw PrefillError.chunkedUnsupported(
                 "chunked prefill cursor \(kvPosition) != startPosition \(startPosition)")
         }
@@ -373,9 +321,7 @@ extension RealForwardRunner {
         guard var cb = ctx.queue.makeCommandBuffer() else {
             throw ModelError.residentBufferWrapFailed
         }
-        // Only the first layer group seeds the residual. Layer-major
-        // calls this once per (layer, chunk); re-embedding on every layer
-        // would reset the residual the layers are accumulating into.
+        // The prologue seeds the residual once per chunk.
         if runPrologue {
             if let preparedHidden {
                 // The caller hands over `[t, D]` rows -- an MTP draft's fused
@@ -452,7 +398,7 @@ extension RealForwardRunner {
         var prefillTailNanos: UInt64 = 0
         var prefillActiveExperts: UInt64 = 0
 
-        for L in layers {
+        for L in 0..<cfg.numLayers {
             try await runPrefillLayer(
                 L, cb: &cb, scratch: scratch, layerViews: layerViews,
                 tokens: tokens, startPosition: startPosition, t: t, D: D,
@@ -1481,47 +1427,4 @@ extension RealForwardRunner {
             flushDeferredDumps()
         }
     }
-
-
-    /// One residual per chunk of a band.
-    ///
-    /// The residual is the only buffer that has to survive between layers, so
-    /// layer-major needs one per chunk in flight while every other scratch
-    /// buffer stays per-pass. At 10,240 elements per token that is ~20 KB/token
-    /// -- 84 MB for a 4,096-token chunk -- so a band is bounded by this rather
-    /// than by the ~110 KB/token the full scratch would cost.
-    var layerMajorPrefillEnabled: Bool {
-        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_LAYER_MAJOR"] == "1"
-    }
-
-    func bandResiduals(count: Int,
-                       scratch: PrefillChunkScratchBuffers) throws -> [MTLBuffer] {
-        // The first chunk keeps the existing buffer; only the rest are new, so
-        // a single-chunk prompt allocates nothing.
-        var out: [MTLBuffer] = [scratch.hidden]
-        let bytes = scratch.hidden.length
-        for i in 1..<max(1, count) {
-            guard let made = ctx.device.makeBuffer(length: bytes,
-                                                   options: .storageModePrivate) else {
-                throw PrefillError.chunkedUnsupported(
-                    "layer-major prefill could not allocate residual \(i)")
-            }
-            made.label = "prefill.hidden.band\(i)"
-            out.append(made)
-        }
-        return out
-    }
-
-
-    /// Slots for the active layer under layer-major prefill, or nil to leave
-    /// the configured count alone. 512 covers a layer's full expert set at
-    /// ~1.3 GiB -- less than the 11.9 GiB that 96 slots x 48 layers costs
-    /// today, because only one layer is resident.
-    var layerMajorSlotConcentration: Int? {
-        guard layerMajorPrefillEnabled else { return nil }
-        guard let raw = ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_LAYER_SLOTS"],
-              let value = Int(raw), value > 0 else { return cfg.numExperts }
-        return value
-    }
-
 }

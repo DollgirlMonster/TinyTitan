@@ -26,8 +26,6 @@ private final class PrefetchDestinations: @unchecked Sendable {
 public final class PreadExpertStreamer: @unchecked Sendable {
     public static let scratchAlignment = 2 * 1024 * 1024
     public static var cachePolicyDefault: ExpertCachePolicy { .lfu }
-    /// Read once: this sits on the per-layer miss path.
-    static let parallelIOEnabled = ProcessInfo.processInfo.environment["TINYTITAN_PARALLEL_IO"] != "0"
 
     /// Slot allocations eligible for wiring: one region for the pooled
     /// layout, one per slot otherwise. Recorded at construction; wiring
@@ -104,7 +102,6 @@ public final class PreadExpertStreamer: @unchecked Sendable {
     public let slotCount: Int
     public let cachePolicy: ExpertCachePolicy
     public let ioBackend: ExpertIOBackend
-    public let cacheLayout: ExpertCacheLayout
     public let poolSlotStride: Int
 
     private let fd: Int32
@@ -149,10 +146,6 @@ public final class PreadExpertStreamer: @unchecked Sendable {
     private var slotPinCount: [Int]
     private var expertUseCount: [Int]
     private var expertLoadCount: [Int]
-    /// `.decayed` bookkeeping: the score as of `expertScoreClock`, decayed
-    /// lazily when read.
-    private var expertScore: [Float]
-    private var expertScoreClock: [Int]
     private var useClock = 0
     private var statisticsPlans: UInt64 = 0
     private var statisticsRequestedExperts: UInt64 = 0
@@ -173,31 +166,17 @@ public final class PreadExpertStreamer: @unchecked Sendable {
                 device: MTLDevice,
                 slotCount: Int,
                 cachePolicy: ExpertCachePolicy = .lfu,
-                cacheLayout requestedCacheLayout: ExpertCacheLayout? = nil,
                 eventCoordinator: ExpertIOEventCoordinator? = nil,
                 metalStagingPool: MetalExpertStagingPool? = nil,
                 metalIOService: MetalExpertIOService? = nil) throws {
         precondition(slotCount > 0, "slotCount must be positive")
         self.layout = layout
         self.slotCount = slotCount
-        if let rawPolicy = ProcessInfo.processInfo.environment["TINYTITAN_EXPERT_CACHE_POLICY"] {
-            guard let experimentalPolicy = ExpertCachePolicy(rawValue: rawPolicy) else {
-                throw ModelError.internalInconsistency(
-                    detail: "unsupported TINYTITAN_EXPERT_CACHE_POLICY '\(rawPolicy)'; allowed: lfu, lru, aging-lfu")
-            }
-            self.cachePolicy = experimentalPolicy
-        } else {
-            self.cachePolicy = cachePolicy
-        }
+        self.cachePolicy = cachePolicy
         self.eventCoordinator = eventCoordinator
         self.metalStagingPool = metalStagingPool
         self.metalIOService = metalIOService
         self.ioBackend = try ExpertIOBackend.environmentValue()
-        // Named apart from the property on purpose: a parameter called
-        // `cacheLayout` shadows it for the rest of init, and the pool
-        // allocation below then compares an Optional against `.pool` and
-        // silently allocates per-slot buffers.
-        self.cacheLayout = try requestedCacheLayout ?? ExpertCacheLayout.environmentValue()
         let pageSize = Int(getpagesize())
 
         let openedFD = open(layout.path, O_RDONLY)
@@ -277,62 +256,28 @@ public final class PreadExpertStreamer: @unchecked Sendable {
             close(openedFD)
         }
 
-        if cacheLayout == .pool {
-            let (poolBytes, overflow) = poolSlotStride.multipliedReportingOverflow(by: slotCount)
-            guard !overflow else {
-                unwind()
-                throw StreamerError.allocFailed(errno: EOVERFLOW)
-            }
+        for _ in 0..<slotCount {
             var raw: UnsafeMutableRawPointer?
-            let result = posix_memalign(&raw, Self.scratchAlignment, poolBytes)
+            let result = posix_memalign(&raw, Self.scratchAlignment, allocationSize)
             guard result == 0, let pointer = raw else {
                 unwind()
                 throw StreamerError.allocFailed(errno: result)
             }
             pointers.append(pointer)
             nonisolated(unsafe) let capturedPointer = pointer
-            wireRegions.append((pointer, poolBytes))
+            wireRegions.append((pointer, allocationSize))
             guard let buffer = device.makeBuffer(
                 bytesNoCopy: pointer,
-                length: poolBytes,
+                length: allocationSize,
                 options: .storageModeShared,
                 deallocator: { _, _ in free(capturedPointer) })
             else {
                 unwind()
                 throw StreamerError.bufferWrapFailed
             }
-            for slot in 0..<slotCount {
-                if slot > 0 {
-                    pointers.append(pointer.advanced(by: slot * poolSlotStride))
-                }
-                buffers.append(buffer)
-                bufferOffsets.append(UInt64(slot * poolSlotStride))
-            }
-        } else {
-            for _ in 0..<slotCount {
-                var raw: UnsafeMutableRawPointer?
-                let result = posix_memalign(&raw, Self.scratchAlignment, allocationSize)
-                guard result == 0, let pointer = raw else {
-                    unwind()
-                    throw StreamerError.allocFailed(errno: result)
-                }
-                pointers.append(pointer)
-                nonisolated(unsafe) let capturedPointer = pointer
-                wireRegions.append((pointer, allocationSize))
-                guard let buffer = device.makeBuffer(
-                    bytesNoCopy: pointer,
-                    length: allocationSize,
-                    options: .storageModeShared,
-                    deallocator: { _, _ in free(capturedPointer) })
-                else {
-                    unwind()
-                    throw StreamerError.bufferWrapFailed
-                }
-                buffers.append(buffer)
-                bufferOffsets.append(0)
-            }
+            buffers.append(buffer)
+            bufferOffsets.append(0)
         }
-
         // Fail closed when bounded I/O was requested. Falling through to an
         // ordinary descriptor would silently create an unbounded second cache
         // in the macOS page cache and invalidate the declared RAM budget.
@@ -379,8 +324,6 @@ public final class PreadExpertStreamer: @unchecked Sendable {
         self.slotPinCount = [Int](repeating: 0, count: slotCount)
         self.expertUseCount = [Int](repeating: 0, count: max(1, layout.expertsPerLayer))
         self.expertLoadCount = [Int](repeating: 0, count: max(1, layout.expertsPerLayer))
-        self.expertScore = [Float](repeating: 0, count: max(1, layout.expertsPerLayer))
-        self.expertScoreClock = [Int](repeating: 0, count: max(1, layout.expertsPerLayer))
     }
 
     deinit {
@@ -533,13 +476,6 @@ public final class PreadExpertStreamer: @unchecked Sendable {
         defer { cacheLock.unlock() }
 
         let clock = useClock + 1
-        if cachePolicy == .agingLFU,
-           statisticsPlans > 0,
-           statisticsPlans.isMultiple(of: 1_024) {
-            for expert in expertUseCount.indices {
-                expertUseCount[expert] >>= 1
-            }
-        }
         var assignedSlots = [Int](repeating: -1, count: experts.count)
         var reserved = [Bool](repeating: false, count: slotCount)
         // Loading slots are not valid hits and cannot be reassigned.
@@ -569,10 +505,6 @@ public final class PreadExpertStreamer: @unchecked Sendable {
         useClock = clock
         for expert in experts where expert >= 0 && expert < expertUseCount.count {
             expertUseCount[expert] &+= 1
-            if cachePolicy == .decayed {
-                expertScore[expert] = decayedScoreUnlocked(expert) + 1
-                expertScoreClock[expert] = clock
-            }
         }
         for slot in assignedSlots where slot >= 0 {
             slotLastUse[slot] = clock
@@ -655,9 +587,10 @@ public final class PreadExpertStreamer: @unchecked Sendable {
             } else if let boundedReader {
                 try executeBoundedReads(plan, reader: boundedReader)
             } else {
-                let parallel = Self.parallelIOEnabled
-                    && plan.misses.count > 1
-                try executeCachedPreads(plan, parallel: parallel)
+                // Always parallel when there is more than one miss: the
+                // serial alternative (TINYTITAN_PARALLEL_IO=0) measured a wash
+                // (+0.4%, 2/3) and is gone.
+                try executeCachedPreads(plan, parallel: plan.misses.count > 1)
             }
             try markPlanMissesResident(plan)
         }
@@ -950,7 +883,6 @@ public final class PreadExpertStreamer: @unchecked Sendable {
     public func expertResidencyResources() -> ExpertResidencyResources {
         ExpertResidencyResources(
             table: residencyTable,
-            expertPool: cacheLayout == .pool ? slotBuffers.first : nil,
             poolSlotStride: UInt64(poolSlotStride),
             expertStride: layout.expertStride,
             expertCount: layout.expertsPerLayer)
@@ -1031,13 +963,6 @@ public final class PreadExpertStreamer: @unchecked Sendable {
         for i in expertUseCount.indices { expertUseCount[i] = 0 }
     }
 
-    /// The `.decayed` score of an expert as of the current clock.
-    private func decayedScoreUnlocked(_ expert: Int) -> Float {
-        let age = Double(useClock - expertScoreClock[expert])
-        guard age > 0, expertScore[expert] > 0 else { return expertScore[expert] }
-        return expertScore[expert] * Float(pow(0.5, age / ExpertCachePolicy.decayHalfLifeTokens))
-    }
-
     private func shouldEvictSlot(_ lhs: Int, before rhs: Int) -> Bool {
         if cachePolicy == .lru {
             return slotLastUse[lhs] < slotLastUse[rhs]
@@ -1046,12 +971,6 @@ public final class PreadExpertStreamer: @unchecked Sendable {
         let rhsExpert = slotExpert[rhs]
         if lhsExpert < 0 || rhsExpert < 0 {
             return lhsExpert < rhsExpert
-        }
-        if cachePolicy == .decayed {
-            let lhsScore = decayedScoreUnlocked(lhsExpert)
-            let rhsScore = decayedScoreUnlocked(rhsExpert)
-            if lhsScore != rhsScore { return lhsScore < rhsScore }
-            return slotLastUse[lhs] < slotLastUse[rhs]
         }
         let lhsCount = lhsExpert < expertUseCount.count ? expertUseCount[lhsExpert] : 0
         let rhsCount = rhsExpert < expertUseCount.count ? expertUseCount[rhsExpert] : 0
@@ -1132,8 +1051,7 @@ public final class PreadExpertStreamer: @unchecked Sendable {
     /// cache slots, so an incorrect prediction cannot evict an authoritative
     /// expert. Demand work is always scheduled at higher priority.
     public func beginPrefetch(experts: [Int],
-                              destinations: [UnsafeMutableRawPointer],
-                              ioPolicy: Int32 = 0) throws
+                              destinations: [UnsafeMutableRawPointer]) throws
         -> ExpertLoadOperation {
         guard experts.count == destinations.count else {
             throw ModelError.internalInconsistency(
@@ -1151,8 +1069,7 @@ public final class PreadExpertStreamer: @unchecked Sendable {
             operation.markInFlight()
             do {
                 if let boundedReader {
-                    try boundedReader.fetch(offsets: offsets, into: safeDestinations.values,
-                                            ioPolicy: ioPolicy)
+                    try boundedReader.fetch(offsets: offsets, into: safeDestinations.values)
                 } else {
                     for (offset, destination) in zip(offsets, safeDestinations.values) {
                         try readFull(into: destination, fileOffset: offset,

@@ -64,16 +64,6 @@ int tinytitan_expert_reader_fetch_offsets(tinytitan_expert_reader *reader,
                                      void *const *destinations,
                                      size_t count);
 
-/// As `tinytitan_expert_reader_fetch_offsets`, with the reads issued under a
-/// disk I/O policy (an IOPOL_* value from <sys/resource.h>, e.g.
-/// IOPOL_UTILITY or IOPOL_THROTTLE; 0 keeps the default tier): for
-/// speculative reads that should yield to demand reads.
-int tinytitan_expert_reader_fetch_offsets_tier(tinytitan_expert_reader *reader,
-                                          const uint64_t *offsets,
-                                          void *const *destinations,
-                                          size_t count,
-                                          int io_policy);
-
 /// Threads actually in use, after clamping.
 int tinytitan_expert_reader_threads(const tinytitan_expert_reader *reader);
 

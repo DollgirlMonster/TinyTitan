@@ -119,27 +119,18 @@ public final class ParallelExpertReader: @unchecked Sendable {
     ///
     /// The streamer's regions carry a per-layer base and a container offset, so an
     /// expert index alone would address the wrong layer.
-    /// `ioPolicy`: 0 for the default disk tier, or an IOPOL_* value
-    /// (IOPOL_STANDARD, IOPOL_UTILITY, IOPOL_THROTTLE) for a lower one.
     public func fetch(offsets: [UInt64],
-                      into destinations: [UnsafeMutableRawPointer],
-                      ioPolicy: Int32 = 0) throws {
+                      into destinations: [UnsafeMutableRawPointer]) throws {
         precondition(offsets.count == destinations.count,
                      "offsets and destinations must be the same length")
         guard !offsets.isEmpty else { return }
         let status = destinations.withUnsafeBufferPointer { dst in
             dst.withMemoryRebound(to: UnsafeMutableRawPointer?.self) { rebound in
                 offsets.withUnsafeBufferPointer { offs in
-                    ioPolicy != 0
-                        ? tinytitan_expert_reader_fetch_offsets_tier(handle,
-                                                                 offs.baseAddress,
-                                                                 rebound.baseAddress,
-                                                                 offsets.count,
-                                                                 ioPolicy)
-                        : tinytitan_expert_reader_fetch_offsets(handle,
-                                                            offs.baseAddress,
-                                                            rebound.baseAddress,
-                                                            offsets.count)
+                    tinytitan_expert_reader_fetch_offsets(handle,
+                                                          offs.baseAddress,
+                                                          rebound.baseAddress,
+                                                          offsets.count)
                 }
             }
         }

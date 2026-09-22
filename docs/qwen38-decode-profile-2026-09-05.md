@@ -1,5 +1,17 @@
 # Qwen3.8-Flash-Next 4-bit decode: measured profile and optimization plan
 
+> **Superseded in part, 2026-09-22.** The opt-in switches this document records
+> are no longer in the engine. Each was measured on the current build and turned
+> out a wash or a loss, so all of them were deleted rather than left as knobs:
+> `TINYTITAN_EXPERT_CACHE_POLICY` (lru, aging-lfu, decayed),
+> `TINYTITAN_CACHE_DECAY_HALFLIFE`, `TINYTITAN_EXPERT_CACHE_LAYOUT` (the pooled
+> layout), `TINYTITAN_EARLY_HITS` (with the pooled phase-1 kernel),
+> `TINYTITAN_KEEP_WIRED`, `TINYTITAN_PARALLEL_IO`, `TINYTITAN_PREFETCH_MIN_MARGIN`
+> and `TINYTITAN_PREFETCH_IO_TIER`. What survives from it is the *default* each
+> experiment confirmed: LFU, per-slot buffers, no early hits, the cache wired per
+> the profile row, parallel fills, rank-order prefetch with no margin gate, and
+> the default disk tier.
+>
 > **Superseded in part, 2026-09-21.** The §8 verdict that prefetch cannot work
 > ("loses at every setting", "not viable on this SSD in this I/O path") does not
 > hold on the current engine: with the ring at depth 1 it wins at both prompt

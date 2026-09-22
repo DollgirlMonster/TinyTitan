@@ -200,19 +200,14 @@ public struct Model {
     /// read and written only inside `streamersQueue.sync` / `.async` blocks;
     /// the queue is the lock.
     final class StreamersBox: @unchecked Sendable {
-        /// Overrides the configured slot count for layers opened while set.
-        var concentratedSlotCount: Int?
         var streamers: [PreadExpertStreamer?]
         var layerVerified: [Bool]
         /// True once every opened streamer's slots are wired (see
         /// `setExpertCachePinned`); cleared by any unpin or partial wire.
         var pinnedComplete = false
-        /// Wire each layer as it opens (`profile.keepExpertCacheWired`, which
-        /// already folds in `TINYTITAN_KEEP_WIRED`; see `ExpertCacheWiring`).
+        /// Wire each layer as it opens (`profile.keepExpertCacheWired`, the
+        /// row's own measured value).
         var keepWired = false
-        /// Cache layout for layers opened from now on; nil takes the
-        /// environment's value (see `ModelProfile.earlyExpertHits`).
-        var cacheLayoutOverride: ExpertCacheLayout?
         /// Diagnostic: time spent waiting to enter the serial queue in
         /// `setExpertCachePinned`.
         var pinQueueWaitNanos: UInt64 = 0
@@ -722,15 +717,6 @@ public struct Model {
         }
     }
 
-    /// Slots to give a layer opened from here, overriding the configured
-    /// count. Set only by layer-major prefill, which can afford a large cache
-    /// because it keeps one layer live at a time. Stored on the streamers box
-    /// because `Model` is a value type and the runner holds it by `let`.
-    public var concentratedSlotCount: Int? {
-        get { streamersQueue.sync { streamersBox.concentratedSlotCount } }
-        nonmutating set { streamersQueue.sync { streamersBox.concentratedSlotCount = newValue } }
-    }
-
     /// Drop a layer's expert cache. Safe once that layer's work is finished:
     /// the next use reopens it lazily, which is how it was created.
     public func releaseLayerStreamer(_ L: Int) {
@@ -798,14 +784,7 @@ public struct Model {
         case .pread(let configuredSlotCount):
             slotCount = configuredSlotCount
         }
-        // Layer-major prefill finishes a layer entirely before the next, so
-        // only one layer's cache has to exist at a time. That inverts the
-        // budget: 512 slots for one layer is 1.3 GiB, against 96 slots x 48
-        // layers at 11.9 GiB today -- less memory, and enough to hold a
-        // layer's whole ~512-expert working set instead of thrashing it. The
-        // measured 47,423 reloads against 65,234 misses is that thrashing.
-        let concentratedSlots = streamersBox.concentratedSlotCount
-        let effectiveSlotCount = concentratedSlots ?? slotCount
+        let effectiveSlotCount = slotCount
         let metalStagingPool: MetalExpertStagingPool?
         let metalIOService: MetalExpertIOService?
         if try ExpertIOBackend.environmentValue() == .metal {
@@ -832,13 +811,11 @@ public struct Model {
             metalStagingPool = nil
             metalIOService = nil
         }
-        let layoutOverride = streamersBox.cacheLayoutOverride
         streamersBox.streamers[L] = try PreadExpertStreamer(
             layout: layout,
             device: device,
             slotCount: effectiveSlotCount,
             cachePolicy: expertCachePolicy,
-            cacheLayout: layoutOverride,
             eventCoordinator: expertIOEventCoordinator,
             metalStagingPool: metalStagingPool,
             metalIOService: metalIOService)
@@ -868,12 +845,6 @@ public struct Model {
     /// wired throughout measurably slowed ANE prefill, which has to place
     /// Core ML arenas alongside it. Called at the phase boundaries; cheap and
     /// idempotent, since each streamer skips a state it is already in.
-    /// Open later layers with this cache layout (see
-    /// `ModelProfile.earlyExpertHits`, which needs the pooled one).
-    public func setExpertCacheLayout(_ layout: ExpertCacheLayout) {
-        streamersQueue.sync { streamersBox.cacheLayoutOverride = layout }
-    }
-
     /// Wire layers as they open from now on (see `ModelProfile.keepExpertCacheWired`).
     public func setKeepExpertCacheWired(_ keep: Bool) {
         streamersQueue.sync { streamersBox.keepWired = keep }

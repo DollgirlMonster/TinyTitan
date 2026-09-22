@@ -125,22 +125,11 @@ struct PrefillChunkScratchLayout: Sendable, Equatable {
 }
 
 struct PrefillChunkScratchBuffers {
-    /// The same scratch with a different residual. Everything else is per-pass
-    /// working space and is reused across the band.
-    func withResidual(_ buffer: MTLBuffer) -> PrefillChunkScratchBuffers {
-        var copy = self
-        copy.hidden = buffer
-        return copy
-    }
-
     let layout: PrefillChunkScratchLayout
-    /// `var` only so `withResidual` can substitute it. Layer-major prefill
-    /// keeps one residual per chunk of a band in flight, and every writer of
-    /// the residual -- the embedding prologue, the attention exits, the MoE
-    /// tail -- reaches it through `scratch.hidden`, so substituting here is
-    /// what redirects the whole call tree at once. Passing it as a parameter
-    /// reached only the top of that tree.
-    var hidden: MTLBuffer
+    /// The residual every stage of the chunk reads and writes. Layer-major
+    /// prefill kept one of these per chunk in a band and substituted it here;
+    /// that schedule is gone, so one chunk owns the one buffer.
+    let hidden: MTLBuffer
     let normed: MTLBuffer
     let q: MTLBuffer
     let kStage: MTLBuffer

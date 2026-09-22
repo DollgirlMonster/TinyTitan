@@ -230,9 +230,7 @@ extension RealForwardRunner {
                 nextRouterW = nil
             }
             let next2RouterW: TensorView? =
-                (!denseFFN
-                 && (Self.probe2TraceEnabled || (predictivePrefetch != nil && Self.prefetchAhead == 2))
-                 && L + 2 < cfg.numLayers)
+                (!denseFFN && Self.probe2TraceEnabled && L + 2 < cfg.numLayers)
                 ? try model.router(layer: L + 2) : nil
             let residencyResources = (!denseFFN && decodeExpertExecution == .gpuResidency)
                 ? try model.routedExpertResidency(layer: L) : nil
@@ -303,7 +301,6 @@ extension RealForwardRunner {
                                           layer: L, eps: eps)
             try rotate(&tailCB, role: "glue.entry_mlp")
 
-            var earlyHitsThisLayer = false
             if !denseFFN {
             let routerW = try model.router(layer: L)
             try moe.encodeRouter(commandBuffer: tailCB,
@@ -365,10 +362,6 @@ extension RealForwardRunner {
                     resolvedGenerations: residencyResolvedGenerations,
                     topK: UInt32(cfg.topKExperts),
                     numExperts: UInt32(cfg.numExperts))
-                if profile.earlyExpertHits, moe.supportsEarlyHits,
-                   residencyResources.expertPool != nil {
-                    earlyHitsThisLayer = true
-                }
             }
             }
             attnCB.commit()
@@ -379,33 +372,6 @@ extension RealForwardRunner {
             // Queued before the wait below, not after: the GPU runs the shared
             // MLP while the CPU blocks on tailCB for the routing.
             let overlapCompletionClock = runnerStatsEnabled ? CommandCompletionClock() : nil
-            // Early hits: phase 1 for the GPU-classified resident experts in
-            // its own buffer, queued right behind the tail. The CPU waits on
-            // the tail only, so the plan and the miss reads proceed while the
-            // hits compute -- the same overlap the hit-fixup buffer gives,
-            // minus the CPU round trip before it. Inside the tail buffer it
-            // measured a 13% loss: the wait then covered the hits and the
-            // reads started after them (io_hidden 0%).
-            var earlyHitCB: MTLCommandBuffer?
-            if earlyHitsThisLayer, let residencyResources, let pool = residencyResources.expertPool {
-                guard let cb = ctx.queue.makeCommandBuffer() else {
-                    throw ModelError.residentBufferWrapFailed
-                }
-                try moe.encodeRoutedPhase1EarlyHits(
-                    commandBuffer: cb,
-                    pool: pool,
-                    poolSlotStride: residencyResources.poolSlotStride,
-                    routedOffsets: try model.routedExpertOffsets(layer: L),
-                    x: routedX, acts: moeActs,
-                    hitPositions: residencyHitPositions,
-                    hitCount: residencyHitCount,
-                    resolvedSlots: residencyResolvedSlots,
-                    d: D, f: UInt32(cfg.moeIntermediateSize),
-                    topK: UInt32(cfg.topKExperts))
-                overlapCompletionClock?.track(cb)
-                cb.commit()
-                earlyHitCB = cb
-            }
             let sharedCB = try encodeAndCommitSharedExpert(
                 layer: L,
                 completionClock: overlapCompletionClock)
@@ -460,10 +426,11 @@ extension RealForwardRunner {
                 predictedNextLayer = (0..<cfg.topKExperts).map {
                     min(Int(ptr[$0]), cfg.numExperts - 1)
                 }
-                if prefetchTraceFD >= 0 || Self.prefetchMinMargin > 0 {
-                    // The probe's routing weights: the prefetch gate reads
-                    // them, and the trace records them. Width follows the
-                    // buffer: fp32 at 4 bytes per entry, fp16 otherwise.
+                if prefetchTraceFD >= 0 {
+                    // The probe's routing weights, for the trace only: the
+                    // prefetch gate that used them (TINYTITAN_PREFETCH_MIN_MARGIN)
+                    // measured -4.2% and is gone. Width follows the buffer:
+                    // fp32 at 4 bytes per entry, fp16 otherwise.
                     let k = cfg.topKExperts
                     if prefetchPredictionWeights.length >= k * MemoryLayout<Float>.stride {
                         let w = prefetchPredictionWeights.contents().bindMemory(to: Float.self, capacity: k)
@@ -477,8 +444,7 @@ extension RealForwardRunner {
                 predictedNextLayer = []
             }
             let predictedNext2Layer: [Int]
-            if Self.probe2TraceEnabled || (predictivePrefetch != nil && Self.prefetchAhead == 2),
-               L + 2 < cfg.numLayers {
+            if Self.probe2TraceEnabled, L + 2 < cfg.numLayers {
                 let ptr = prefetchPrediction2Indices.contents().bindMemory(
                     to: UInt32.self, capacity: cfg.topKExperts)
                 predictedNext2Layer = (0..<cfg.topKExperts).map {
@@ -517,9 +483,7 @@ extension RealForwardRunner {
                 waitMark: tWait, waitNanos: waitNanos,
                 previousRoutedMicros: prevRoutedUs,
                 predictedNextLayer: predictedNextLayer,
-                predictedNextLayerWeights: predictedNextLayerWeights,
-                earlyHits: earlyHitsThisLayer,
-                earlyHitCB: earlyHitCB)
+                predictedNextLayerWeights: predictedNextLayerWeights)
             }
         }
         if let pending = pendingRoutedCommand {
@@ -1101,9 +1065,7 @@ extension RealForwardRunner {
         waitNanos: UInt64,
         previousRoutedMicros prevRoutedUs: Double,
         predictedNextLayer: [Int],
-        predictedNextLayerWeights: [Float] = [],
-        earlyHits: Bool = false,
-        earlyHitCB: MTLCommandBuffer? = nil
+        predictedNextLayerWeights: [Float] = []
     ) async throws {
         let D    = UInt32(cfg.hiddenSize)
         let FmoE = UInt32(cfg.moeIntermediateSize)
@@ -1157,8 +1119,7 @@ extension RealForwardRunner {
             }
             : nil
         var transferredExpertLease = false
-        // With early hits the hit buffer already exists and is committed.
-        var phase1HitCB: MTLCommandBuffer? = earlyHits ? earlyHitCB : nil
+        var phase1HitCB: MTLCommandBuffer?
         defer {
             if !transferredExpertLease {
                 // A thrown fetch/encode must not make a hit slot evictable
@@ -1235,15 +1196,6 @@ extension RealForwardRunner {
                     missIndices: plan.misses,
                     hits: &decodeHitSlotsScratch,
                     misses: &decodeMissSlotsScratch)
-                if earlyHits {
-                    // The GPU already computed phase 1 for its hit positions
-                    // (a subset of the CPU's hits, by the guard above). The
-                    // fixup covers everything else: the CPU's misses and any
-                    // position the GPU called a miss that the plan adopted.
-                    decodeHitSlotsScratch.removeAll(keepingCapacity: true)
-                    decodeMissSlotsScratch = gpuMisses.map(UInt32.init)
-                    totalEarlyHitLayers &+= 1
-                }
             } else {
                 DecodeExpertPartition.populate(
                     topK: cfg.topKExperts,
@@ -1332,7 +1284,7 @@ extension RealForwardRunner {
             }
         }
 
-        if let cb = phase1HitCB, cb !== earlyHitCB {
+        if let cb = phase1HitCB {
             overlapCompletionClock?.track(cb)
             cb.commit()
         }
@@ -1411,22 +1363,17 @@ extension RealForwardRunner {
                 }
             }
         }
-        if let predictivePrefetch, L + Self.prefetchAhead < cfg.numLayers {
-            let target = L + Self.prefetchAhead
-            var prediction = Self.prefetchAhead == 2 ? lastPredictedNext2Layer : predictedNextLayer
-            // Expected-value gate (TINYTITAN_PREFETCH_MIN_MARGIN): keep only the
-            // predictions whose probe weight clears the 10th-ranked weight by
-            // the margin. On a weighted trace the probe's non-resident
-            // predictions are 38% precise taken in rank order and 59% at a
-            // margin of 0.02, 67% at 0.03 -- and every wrong read costs SSD
-            // time the demand reads of the next layer are waiting on.
-            if Self.prefetchMinMargin > 0, Self.prefetchAhead == 1,
-               predictedNextLayerWeights.count == prediction.count,
-               let floor = predictedNextLayerWeights.last {
-                prediction = zip(prediction, predictedNextLayerWeights)
-                    .filter { $0.1 - floor >= Self.prefetchMinMargin }
-                    .map(\.0)
-            }
+        if let predictivePrefetch, L + 1 < cfg.numLayers {
+            // The ring is one read a layer, aimed at the next layer, from the
+            // profile's depth. Every alternative allocation measured here lost:
+            // a second rank of the same layer (per-expert operations, -3.3%),
+            // the same read aimed two layers ahead (-2.8%), a second horizon
+            // beside it (-1.4%), the probe-weight margin gate (-4.2%) and a
+            // lower disk tier (-0.6%). Each is recorded in
+            // docs/qwen38-prefetch-predictor-study.md and Lever 5/8 of
+            // benchmark/internal-speeds/v2-qwen38-4bit-telemetry.txt.
+            let target = L + 1
+            let prediction = predictedNextLayer
             let resident = Set(try model.routedExpertResidentIDs(layer: target))
             // The whole ranked prediction goes in; `begin` drops the experts
             // that are already resident or already in flight and then fills
@@ -1492,20 +1439,6 @@ extension RealForwardRunner {
                 activeCount: UInt32(phase1MissSlots.count),
                 ioStatus: ioStatus?.0,
                 ioStatusOffset: ioStatus?.1 ?? 0)
-        } else if earlyHits {
-            // Hits ran in the tail command buffer; only the remainder here.
-            if !phase1MissSlots.isEmpty {
-                writeActiveSlots(phase1MissSlots, into: moeMissActiveSlots)
-                try encodeRoutedPhase1Subset(
-                    routedCB,
-                    argBuf: argBuf,
-                    routedBufs: routedBufs,
-                    activeSlots: moeMissActiveSlots,
-                    activeSlotIndices: phase1MissSlots,
-                    activeCount: UInt32(phase1MissSlots.count),
-                    ioStatus: ioStatus?.0,
-                    ioStatusOffset: ioStatus?.1 ?? 0)
-            }
         } else {
             try encodeRoutedPhase1Full(routedCB,
                                        argBuf: argBuf,

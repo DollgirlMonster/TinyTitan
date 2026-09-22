@@ -1620,7 +1620,7 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                 + "io_completion_to_fixup_ms=%.4f io_host_waits=%llu "
                 + "io_host_waits_avoided=%llu gpu_classified_hits=%llu "
                 + "gpu_classified_misses=%llu gpu_all_hit_layers=%llu "
-                + "prefetch_issued_per_token=%.2f prefetch_adopted_per_token=%.2f early_hit_layers=%llu "
+                + "prefetch_issued_per_token=%.2f prefetch_adopted_per_token=%.2f "
                 + "pre_ms=%.3f pre_release_ms=%.3f pre_pin_ms=%.3f pre_reserve_ms=%.3f "
                 + "embed_ms=%.3f gather_ms=%.3f loop_sample_ms=%.3f "
                 + "loop_progress_ms=%.3f loop_other_ms=%.3f",
@@ -1649,7 +1649,6 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             gpuHits, gpuMisses, gpuAllHit,
             Double(runner.totalPrefetchIssued &- snapshot.prefetchIssued) / Double(tokens),
             Double(runner.totalPrefetchAdopted &- snapshot.prefetchAdopted) / Double(tokens),
-            runner.totalEarlyHitLayers,
             ms(runner.totalPreambleNanos, snapshot.preamble),
             ms(runner.totalPreambleReleaseNanos, snapshot.preambleRelease),
             ms(runner.totalPreamblePinNanos, snapshot.preamblePin),

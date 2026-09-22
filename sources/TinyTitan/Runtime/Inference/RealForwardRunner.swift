@@ -252,17 +252,6 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     /// current residual, trace-only, to measure whether a two-layer-ahead
     /// prediction is accurate enough to widen the prefetch window.
     static let probe2TraceEnabled = ProcessInfo.processInfo.environment["TINYTITAN_PROBE2_TRACE"] == "1"
-    /// TINYTITAN_PREFETCH_AHEAD=2: feed the prefetch ring from the two-layer-ahead
-    /// probe instead of the next-layer one, so each speculative read gets a
-    /// whole extra layer of compute to land in. Measured accuracy of the
-    /// second probe on Qwen 3.8: top-1 85.6% against the first's 90.8%.
-    public internal(set) var totalEarlyHitLayers: UInt64 = 0
-    /// TINYTITAN_PREFETCH_MIN_MARGIN: minimum probe-weight margin over the
-    /// lowest-ranked prediction for a prefetch read to be issued; 0 (default)
-    /// issues in rank order as before. Read once.
-    static let prefetchMinMargin: Float =
-        Float(ProcessInfo.processInfo.environment["TINYTITAN_PREFETCH_MIN_MARGIN"] ?? "") ?? 0
-    static let prefetchAhead: Int = ProcessInfo.processInfo.environment["TINYTITAN_PREFETCH_AHEAD"] == "2" ? 2 : 1
     let prefetchPrediction2Indices: MTLBuffer
     let prefetchPrediction2Weights: MTLBuffer
     var lastPredictedNext2Layer: [Int] = []
@@ -412,20 +401,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         let profile = ModelProfile.resolve(modelID: model.modelID, family: cfg.family,
                                            weightBits: model.routedExpertWeightBits)
         self.profile = profile
-        // Early hits need the GPU residency classifier and the pooled cache
-        // layout. The profile row selects both; TINYTITAN_DECODE_EXPERT_EXECUTION
-        // and TINYTITAN_EXPERT_CACHE_LAYOUT still override, so a probe can pin
-        // either independently.
-        if profile.earlyExpertHits,
-           ProcessInfo.processInfo.environment["TINYTITAN_DECODE_EXPERT_EXECUTION"] == nil {
-            self.decodeExpertExecution = .gpuResidency
-        } else {
-            self.decodeExpertExecution = runtimeConfiguration.decodeExpertExecution
-        }
-        if profile.earlyExpertHits,
-           ProcessInfo.processInfo.environment["TINYTITAN_EXPERT_CACHE_LAYOUT"] == nil {
-            model.setExpertCacheLayout(.pool)
-        }
+        self.decodeExpertExecution = runtimeConfiguration.decodeExpertExecution
         self.expertIOSynchronization = runtimeConfiguration.expertIOSynchronization
         self.expertIOSubmission = runtimeConfiguration.expertIOSubmission
         self.expertIOBackend = try ExpertIOBackend.environmentValue()
@@ -448,19 +424,21 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         // arrive too late to be adopted, which shows up as a *lower* hit rate.
         // Measured on qwen38 4-bit, interleaved against prefetch off:
         // M=1 +12.2% (hit 78.7%), M=2 +6.0% (77.9%), M=4 -9.8% (77.1%).
-        let rawPrefetchTopM = max(1, profile.prefetchDepth)
+        // The depth is the profile's, one everywhere it ships: an env override
+        // for it was measured negative at every value but 1 and has been
+        // removed, so the ring is one read a layer by construction.
+        let ringDepth = max(1, profile.prefetchDepth)
         if !denseFFN {
-            guard (1...cfg.topKExperts).contains(rawPrefetchTopM) else {
+            guard (1...cfg.topKExperts).contains(ringDepth) else {
                 throw ModelError.internalInconsistency(
-                    detail: "TINYTITAN_PREFETCH_TOP_M must be 1...\(cfg.topKExperts)")
+                    detail: "profile prefetch depth \(ringDepth) must be 1...\(cfg.topKExperts)")
             }
         }
         self.predictivePrefetch = rawPrefetchEnabled
             ? try ExpertPrefetchRing(
                 device: context.device,
                 expertStride: model.routedExpertByteStride(layer: 0),
-                slotCount: rawPrefetchTopM * Self.prefetchAhead,
-                ioPolicy: profile.prefetchIOTier)
+                slotCount: ringDepth)
             : nil
         // Track A: the ANE prefill sidecar, opt-in. Only the qwen36 target
         // family qualifies (the one-layer MTP draft has no exported sidecar
@@ -984,9 +962,9 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     }
 
     /// Keep the routed-expert slot cache wired across prefill as well as
-    /// decode. The decision is `profile.keepExpertCacheWired` — the row, with
-    /// `TINYTITAN_KEEP_WIRED` overriding both ways (``ExpertCacheWiring``) — so
-    /// this file holds no second copy of the environment read.
+    /// decode. The decision is `profile.keepExpertCacheWired`, the row's own
+    /// measured value; the tri-state env override that used to force it either
+    /// way measured a wash (-0.37%) and is gone.
     ///
     /// Decode reads the same expert bytes either way -- measured identical,
     /// 9.18 against 9.16 GiB at the same 70.5% hit rate -- but with ANE

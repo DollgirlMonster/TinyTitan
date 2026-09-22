@@ -37,9 +37,8 @@ import Testing
         // supersedes the 2026-09-05 decision to leave it off.
         #expect(q38.prefetchDepth == 1)
         #expect(q38.keepExpertCacheWired)
-        #expect(!q38.earlyExpertHits)
         let q38b = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash, weightBits: 8, environment: [:])
-        #expect(q38b.expertCacheBudgetBytes == Int(9.5 * Double(1 << 30)) && q38b.prefetchIOTier == 0)
+        #expect(q38b.expertCacheBudgetBytes == Int(9.5 * Double(1 << 30)))
         // Inferred from the 4-bit A/B (see the 8-bit row comment), not measured.
         #expect(q38b.prefetchDepth == 1)
         #expect(q38.sampling.temperature == 1.0 && q38.sampling.topP == 0.95)
@@ -47,7 +46,6 @@ import Testing
         let q36 = ModelProfile.resolve(modelID: "qwen3.6-35b-a3b", family: .qwen36, weightBits: 8, environment: [:])
         #expect(q36.expertCacheBudgetBytes == 12 << 30)
         #expect(q36.keepExpertCacheWired)
-        #expect(!q36.earlyExpertHits)
         let q36four = ModelProfile.resolve(modelID: "qwen3.6-35b-a3b", family: .qwen36, weightBits: 4, environment: [:])
         #expect(q36four.expertCacheBudgetBytes == 10 << 30)
         #expect(q36.prefetchDepth == 1)
@@ -89,54 +87,28 @@ import Testing
     }
 
     @Test func environmentOverridesTheTable() {
-        let env = ["TINYTITAN_ROUTER_TOPK_SIMD": "0", "TINYTITAN_HC_FUSED": "1", "TINYTITAN_PREFETCH_IO_TIER": "throttle",
-                   "TINYTITAN_PREDICTIVE_PREFETCH": "1", "TINYTITAN_PREFETCH_TOP_M": "3",
+        let env = ["TINYTITAN_ROUTER_TOPK_SIMD": "0", "TINYTITAN_HC_FUSED": "1",
+                   "TINYTITAN_PREDICTIVE_PREFETCH": "1",
                    "TINYTITAN_QSA_GPU_SELECT": "verify"]
         let p = ModelProfile.resolve(modelID: "qwen3.6-35b-a3b", family: .qwen36, weightBits: 4, environment: env)
         #expect(!p.routerTopKSimd)
         #expect(p.hcFused)
         #expect(p.qsaGPUSelect)
-        #expect(p.prefetchDepth == 3)
-        #expect(p.prefetchIOTier == IOPOL_THROTTLE)
         let off = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash, weightBits: 4,
                                        environment: ["TINYTITAN_PREDICTIVE_PREFETCH": "0"])
         #expect(off.prefetchDepth == 0)
-        let wired = ModelProfile.resolve(modelID: "qwen3.6-35b-a3b", family: .qwen36, weightBits: 4,
-                                         environment: ["TINYTITAN_KEEP_WIRED": "1"])
-        #expect(wired.keepExpertCacheWired)
-        let early = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash,
-                                         weightBits: 4, environment: ["TINYTITAN_EARLY_HITS": "1"])
-        #expect(early.earlyExpertHits)
     }
 
-    @Test func keepWiredTriStateReadsOnlyZeroAndOne() {
-        #expect(ExpertCacheWiring.override(environment: [:]) == nil, "unset names no override")
-        #expect(ExpertCacheWiring.override(environment: ["TINYTITAN_KEEP_WIRED": "1"]) == true)
-        #expect(ExpertCacheWiring.override(environment: ["TINYTITAN_KEEP_WIRED": "0"]) == false)
-        #expect(ExpertCacheWiring.override(environment: ["TINYTITAN_KEEP_WIRED": "true"]) == nil,
-                "only 0 and 1 name an override; anything else falls back to the row")
-        #expect(ExpertCacheWiring.override(environment: ["TINYTITAN_KEEP_WIRED": ""]) == nil)
-    }
-
-    @Test func keepWiredOverrideWorksInBothDirections() {
-        // Every table row that streams experts wires the cache, so before this
-        // `TINYTITAN_KEEP_WIRED=0` was a no-op and the 12 GiB cache could not be
-        // paged out on a 24 GB Mac (TT-008).
-        let rowWires = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash,
-                                            weightBits: 4, environment: [:])
-        #expect(rowWires.keepExpertCacheWired, "the row wires it by default")
-        let forcedOff = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash,
-                                             weightBits: 4, environment: ["TINYTITAN_KEEP_WIRED": "0"])
-        #expect(!forcedOff.keepExpertCacheWired, "0 must beat a row that wires it")
-        let forcedOn = ModelProfile.resolve(modelID: "qwen3.5-4b", family: .qwen35Dense,
-                                            weightBits: 4, environment: ["TINYTITAN_KEEP_WIRED": "1"])
-        #expect(forcedOn.keepExpertCacheWired, "1 must beat a row that does not")
-        let rowLeavesItOff = ModelProfile.resolve(modelID: "qwen3.5-4b", family: .qwen35Dense,
-                                                  weightBits: 4, environment: [:])
-        #expect(!rowLeavesItOff.keepExpertCacheWired)
-        let unrecognised = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash,
-                                                weightBits: 4, environment: ["TINYTITAN_KEEP_WIRED": "yes"])
-        #expect(unrecognised.keepExpertCacheWired, "an unrecognised value is not an override")
+    @Test func theRowDecidesWhetherTheCacheStaysWired() {
+        // The tri-state `TINYTITAN_KEEP_WIRED` override is gone: it measured a
+        // wash on decode (-0.37%) and the row's own value is the decision, so
+        // every streaming row keeps its cache wired and a dense row does not.
+        let streaming = ModelProfile.resolve(modelID: "qwen3.8-flash-next", family: .qwen38flash,
+                                             weightBits: 4, environment: [:])
+        #expect(streaming.keepExpertCacheWired, "the row wires it")
+        let dense = ModelProfile.resolve(modelID: "qwen3.5-4b", family: .qwen35Dense,
+                                         weightBits: 4, environment: [:])
+        #expect(!dense.keepExpertCacheWired, "a dense install has no routed-expert cache")
     }
 
     @Test func summaryNamesTheKeyAndEveryKnob() {

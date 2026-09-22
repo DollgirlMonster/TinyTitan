@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/resource.h>
 
 #define TINYTITAN_IO_MAX_THREADS 16
 
@@ -33,7 +32,6 @@ struct tinytitan_expert_reader {
     size_t next_index;           // claimed by workers
     size_t outstanding;          // published minus completed
     int first_errno;
-    int throttled;               // this batch's disk I/O policy (0 = default tier)
     int shutting_down;
     uint64_t generation;         // so a worker cannot re-run a finished batch
 };
@@ -90,19 +88,9 @@ static void *worker_main(void *arg) {
             ? r->offsets[index]
             : (uint64_t)r->expert_ids[index] * (uint64_t)r->expert_stride;
         void *dst = r->destinations[index];
-        int throttled = r->throttled;
         pthread_mutex_unlock(&r->lock);
 
-        // Speculative batches run on the throttled disk tier so they yield
-        // to demand reads; the policy is per thread, so it is set for the
-        // read and restored after. Demand batches keep the default tier.
-        if (throttled) {
-            setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, throttled);
-        }
         int rc = read_one(fd, dst, r->expert_stride, offset);
-        if (throttled) {
-            setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_DEFAULT);
-        }
 
         pthread_mutex_lock(&r->lock);
         if (rc != 0 && r->first_errno == 0) {
@@ -250,8 +238,7 @@ static int submit_batch(tinytitan_expert_reader *r,
                         const uint32_t *expert_ids,
                         const uint64_t *offsets,
                         void *const *destinations,
-                        size_t count,
-                        int throttled) {
+                        size_t count) {
     pthread_mutex_lock(&r->lock);
     // A caller owns the published pointers until its workers finish and it
     // clears the batch below. Without this predicate a second caller could
@@ -272,7 +259,6 @@ static int submit_batch(tinytitan_expert_reader *r,
     r->next_index = 0;
     r->outstanding = count;
     r->first_errno = 0;
-    r->throttled = throttled;
     r->generation++;
     pthread_cond_broadcast(&r->work_ready);
     while (r->outstanding > 0) {
@@ -299,7 +285,7 @@ int tinytitan_expert_reader_fetch(tinytitan_expert_reader *r,
         return EINVAL;
     }
     if (count == 0) { return 0; }
-    return submit_batch(r, expert_ids, NULL, destinations, count, 0);
+    return submit_batch(r, expert_ids, NULL, destinations, count);
 }
 
 int tinytitan_expert_reader_fetch_offsets(tinytitan_expert_reader *r,
@@ -310,20 +296,9 @@ int tinytitan_expert_reader_fetch_offsets(tinytitan_expert_reader *r,
         return EINVAL;
     }
     if (count == 0) { return 0; }
-    return submit_batch(r, NULL, offsets, destinations, count, 0);
+    return submit_batch(r, NULL, offsets, destinations, count);
 }
 
-int tinytitan_expert_reader_fetch_offsets_tier(tinytitan_expert_reader *r,
-                                          const uint64_t *offsets,
-                                          void *const *destinations,
-                                          size_t count,
-                                          int io_policy) {
-    if (r == NULL || (count > 0 && (offsets == NULL || destinations == NULL))) {
-        return EINVAL;
-    }
-    if (count == 0) { return 0; }
-    return submit_batch(r, NULL, offsets, destinations, count, io_policy);
-}
 
 int tinytitan_expert_reader_threads(const tinytitan_expert_reader *r) {
     return r == NULL ? 0 : r->threads;

@@ -77,13 +77,11 @@ def build_prompt(paragraphs: int) -> str:
 
 
 def run_cli(model: pathlib.Path, prompt: str, max_new: int, ane: bool,
-            messages_file: pathlib.Path, keep_wired: str = "shipped",
+            messages_file: pathlib.Path,
             wire_trace: bool = False) -> dict:
     """One arm at one length: a fresh process, so each run pays its own transient."""
     env = dict(os.environ)
     env["TINYTITAN_PREFILL_ANE"] = "on" if ane else "off"
-    if keep_wired in ("0", "1"):
-        env["TINYTITAN_KEEP_WIRED"] = keep_wired
     if wire_trace:
         env["TINYTITAN_WIRE_TRACE"] = "1"
     proc = subprocess.run(
@@ -146,11 +144,6 @@ def main() -> int:
                              "ANE chunks), 47 is ~4,230 (the cheapest eligible prompt)")
     parser.add_argument("--reps", type=int, default=1,
                         help="gpu/ane/ane/gpu blocks; 1 gives two runs per arm")
-    parser.add_argument("--keep-wired", choices=("shipped", "1", "0"),
-                        default="shipped",
-                        help="TINYTITAN_KEEP_WIRED; the shipped 35B rows pin the "
-                             "cache at allocation, 0 makes it pageable through "
-                             "prefill so the first decode token has to re-fault it")
     parser.add_argument("--wire-trace", action="store_true",
                         help="TINYTITAN_WIRE_TRACE=1, to record the pin/unpin calls")
     parser.add_argument("--label", default="tt007")
@@ -181,15 +174,14 @@ def main() -> int:
 
     rows: list[dict] = []
     print(f"[tt007] {model.name}: prompt {len(prompt)} chars, "
-          f"generations {args.small} and {args.big}, "
-          f"keep_wired={args.keep_wired}"
+          f"generations {args.small} and {args.big}"
           + (", wire trace" if args.wire_trace else ""), flush=True)
     try:
         for rep in range(args.reps):
             for ane in (False, True, True, False):
                 for length in (args.small, args.big):
                     row = run_cli(model, prompt, length, ane, messages_file,
-                                  args.keep_wired, args.wire_trace)
+                                  args.wire_trace)
                     rows.append(row)
                     if row.get("failed"):
                         print(f"[{row['arm']:<3} {length:>4}] FAILED: {row['failed']}", flush=True)
@@ -247,7 +239,7 @@ def main() -> int:
             "model": model.name,
             "small": args.small, "big": args.big,
             "paragraphs": args.paragraphs,
-            "keep_wired": args.keep_wired, "wire_trace": args.wire_trace,
+            "wire_trace": args.wire_trace,
             "gpu_steady_tok_s": gpu_ss, "ane_steady_tok_s": ane_ss,
             "gpu_prefill_s": gpu_prefill, "ane_prefill_s": ane_prefill,
             "rows": rows,

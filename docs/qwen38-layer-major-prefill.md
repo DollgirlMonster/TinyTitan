@@ -1,12 +1,15 @@
 # Design: layer-major prefill for Qwen3.8-Flash-Next
 
-**Status: implemented behind `TINYTITAN_PREFILL_LAYER_MAJOR=1`, default off, and
-measured (2026-09-21) with and without slot concentration. The expert-read
-reduction is real and larger than this design predicted, but the restructure is
-2.7x slower in wall clock, its output diverges from chunk-major, and chunk-major
-already runs prefill at 90% GPU occupancy — so the whole line can win at most
-~10% even if it were free. It is closed; the flag stays off.** The sections below
-are the design as written; the measurements follow the header.
+**Status: removed 2026-09-22. It was implemented behind
+`TINYTITAN_PREFILL_LAYER_MAJOR=1` (default off) and measured (2026-09-21) with and
+without slot concentration. The expert-read reduction is real and larger than this
+design predicted, but the restructure is 2.7x slower in wall clock, its output
+diverges from chunk-major, and chunk-major already runs prefill at 90% GPU
+occupancy — so the whole line could win at most ~10% even if it were free. Closed
+by measurement, it was then deleted from the engine rather than left as a losing
+switch: the flag, its residual-per-chunk plumbing and the concentrated-slot
+override are gone, and chunk-major is the only schedule.** The sections below are
+the design as written; the measurements follow the header.
 
 ## Measured, 2026-09-21: the reads fall 92%, the wall rises 2.7x
 

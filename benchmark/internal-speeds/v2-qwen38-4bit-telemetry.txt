@@ -488,6 +488,28 @@ full.** All arms returned `2087738fce…`; the shipped path is byte-identical an
 unchanged. `TINYTITAN_PREFETCH_PER_EXPERT=1` is still in the tree from Lever 5's
 session and is the one arm of the three that remains runnable.
 
+## Lever 9 — the losing knobs are gone (2026-09-22)
 
+Every switch in Levers 1-8 that measured a wash or a loss has been deleted from
+the engine, not merely left in its losing position. Removed:
 
+| knob | verdict | what was deleted with it |
+| --- | --- | --- |
+| `TINYTITAN_PREFETCH_PER_EXPERT=1` | -2.0% / -3.3% | the per-expert operation path, back to one batch operation |
+| `TINYTITAN_PREFETCH_AHEAD=2` | -2.8% | the two-layer-ahead prefetch feed (the probe-2 trace stays) |
+| `TINYTITAN_PREFETCH_TOP_M` | -6.6% at 2, -9.8% at 4 | the depth override; the profile row's depth is the only source |
+| `TINYTITAN_PREFETCH_MIN_MARGIN` | -4.2% | the expected-value gate |
+| `TINYTITAN_PREFETCH_IO_TIER` | -0.1% / -0.6% | the ring's disk-tier plumbing, the profile tier field and the C `_tier` reader entry point |
+| `TINYTITAN_EXPERT_CACHE_POLICY` | washes | aging-lfu, the decayed score and its half-life (lfu/lru stay as runtime configuration) |
+| `TINYTITAN_CACHE_DECAY_HALFLIFE` | — | the decayed score's bookkeeping |
+| `TINYTITAN_EXPERT_CACHE_LAYOUT` | -0.75% | the pooled layout and its `moe_phase1_gate_up_act_pool_u16load` kernel |
+| `TINYTITAN_EARLY_HITS` | +2.2% (1/2) | the early-hit phase-1 path, its kernel selection and the pool handle |
+| `TINYTITAN_KEEP_WIRED` | -0.37% | the tri-state override; the profile row decides |
+| `TINYTITAN_PARALLEL_IO` | +0.4% (2/3) | the serial fill path; fills are always parallel |
+| `TINYTITAN_PREFILL_LAYER_MAJOR` / `_SLOTS` | 2.7x slower | the whole layer-major schedule, its residual-per-chunk plumbing and the concentrated-slot override |
+
+What remains is the measured optimum of each family, and the only two decode-side
+switches left are on/off controls for wins: `TINYTITAN_PREDICTIVE_PREFETCH` and
+`TINYTITAN_BOUNDED_IO=0` (which is faster but rejected by the RAM decision). The
+shipped path is byte-identical to the one these measurements were taken on.
 

@@ -20,18 +20,7 @@ final class ExpertPrefetchRing: @unchecked Sendable {
     private let lock = NSLock()
     private var slots: [Slot]
 
-    /// Disk I/O policy for the ring's reads (0 = default tier).
-    let ioPolicy: Int32
-
-    /// Submit one storage operation per staged expert instead of one for the
-    /// whole batch, so a slot becomes adoptable as soon as its own read is done.
-    /// Opt-in while it is measured: `TINYTITAN_PREFETCH_PER_EXPERT=1`.
-    let perExpertOperations: Bool
-
-    init(device: MTLDevice, expertStride: Int, slotCount: Int, ioPolicy: Int32 = 0) throws {
-        self.ioPolicy = ioPolicy
-        self.perExpertOperations =
-            ProcessInfo.processInfo.environment["TINYTITAN_PREFETCH_PER_EXPERT"] == "1"
+    init(device: MTLDevice, expertStride: Int, slotCount: Int) throws {
         guard expertStride > 0, slotCount > 0 else {
             throw ModelError.internalInconsistency(detail: "invalid prefetch ring geometry")
         }
@@ -108,43 +97,9 @@ final class ExpertPrefetchRing: @unchecked Sendable {
         }
         lock.unlock()
 
-        if perExpertOperations {
-            // One operation per staged expert. With a single operation shared by
-            // the whole batch, `readyBuffers` can adopt a slot only once *every*
-            // read in the batch has completed, so a slow sibling gates a fast
-            // one: measured at two slots that dropped adoption to 21% of issued
-            // reads (from 55%) and raised device reads, because a prediction that
-            // misses its plan is re-read by the demand miss.
-            var firstError: Error?
-            var issued = 0
-            for item in staged {
-                do {
-                    let operation = try model.beginRoutedExpertPrefetch(
-                        layer: layer, experts: [item.expert], into: [item.buffer],
-                        ioPolicy: ioPolicy)
-                    lock.lock()
-                    slots[item.slot].operation = operation
-                    lock.unlock()
-                    issued += 1
-                } catch {
-                    lock.lock()
-                    slots[item.slot].layer = -1
-                    slots[item.slot].expert = -1
-                    slots[item.slot].operation = nil
-                    lock.unlock()
-                    if firstError == nil { firstError = error }
-                }
-            }
-            lock.lock()
-            issuedReads &+= issued
-            lock.unlock()
-            if let firstError { throw firstError }
-            return
-        }
-
         do {
             let operation = try model.beginRoutedExpertPrefetch(
-                layer: layer, experts: selectedExperts, into: staged.map(\.buffer), ioPolicy: ioPolicy)
+                layer: layer, experts: selectedExperts, into: staged.map(\.buffer))
             lock.lock()
             for item in staged { slots[item.slot].operation = operation }
             issuedReads &+= staged.count
