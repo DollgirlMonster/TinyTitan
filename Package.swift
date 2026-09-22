@@ -50,12 +50,22 @@ let package = Package(
         ),
         // C99 + NEON for the inner loops where Swift's vector types do not
         // lower well. Kept deliberately small: one file, one entry point,
-        // covered by the same tests as the Swift path it replaced. No custom
-        // flags -- -O3 measured the same as SwiftPM's release default (0.675
-        // vs 0.680 ms), so it is not worth the unsafeFlags constraint.
+        // covered by the same tests as the Swift path it replaced.
+        //
+        // `-O2` for these kernels, which is *not* the build system's default:
+        // SwiftPM's `swiftbuild` system compiles every C target at `-Os` in
+        // release (the older native planner used `-O2`), and the difference on
+        // the CPU int8 GEMV is 1.24x -- 2.06 against 1.66 ms per pass, min of
+        // six interleaved rounds an arm, checksum identical
+        // (390266.62). `.unsafeFlags` is the only way to set it, which is why
+        // this package cannot be consumed as a dependency; TinyTitan is an
+        // application package and nothing depends on it. Raising Swift to
+        // `-O3` was tried and rejected for the same constraint, having measured
+        // the same as the release default (0.675 vs 0.680 ms).
         .target(
             name: "TinyTitanKernelsC",
             path: "sources/TinyTitanKernelsC",
+            cSettings: [.unsafeFlags(["-O2"])],
             swiftSettings: tinytitanLanguageStandard
         ),
         .target(

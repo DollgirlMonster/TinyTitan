@@ -9,8 +9,9 @@
 # project's flags defines neither `__ARM_FEATURE_BF16` nor
 # `__ARM_FEATURE_MATMUL_INT8`, where `-mcpu=apple-m3` defines both).
 #
-# The SwiftPM `swiftbuild` system also compiles every C target with `-Os`, not
-# `-O2`; this script passes `-O2` back for them.
+# The C `-O2` that matters for the kernels is a package default now
+# (`Package.swift` sets it for `TinyTitanKernelsC`, because `swiftbuild`
+# otherwise compiles C at `-Os`); this script only adds the CPU selection on top.
 #
 #   tools/build-native.sh                 # detect this Mac's CPU
 #   tools/build-native.sh --cpu apple-m3  # name it explicitly
@@ -18,7 +19,10 @@
 #
 # The artifact is **not portable**: it may use instructions an older core does
 # not have (M3 adds BF16/I8MM over M1; M4 adds more). For a portable release use
-# plain `swift build -c release`, which is what tools/release.sh does.
+# plain `swift build -c release`, which is what tools/release.sh does. Measured
+# 2026-09-22: the CPU selection itself is worth about 1% on the CPU GEMV, inside
+# the noise -- the 1.24x the first native build showed came from the C `-O2`,
+# which is a package default now.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -52,18 +56,17 @@ fi
 
 # Swift names the CPU with the driver's hidden `-target-cpu` (it takes a value,
 # so it needs two -Xswiftc arguments; `-mcpu` is a clang-frontend flag and swiftc
-# rejects it: "Driver threw unknown argument: '-mcpu=apple-m3'"). C gets `-mcpu`
-# and `-O2` in place of the build system's `-Os`. No fast-math: these are the
-# paths whose floats a golden baseline pins.
+# rejects it: "Driver threw unknown argument: '-mcpu=apple-m3'"). C takes
+# `-mcpu`. No fast-math: these are the paths whose floats a golden baseline pins.
 SWIFT_FLAGS=(-Xswiftc -target-cpu -Xswiftc "${CPU}")
-CLANG_FLAGS=(-Xcc "-mcpu=${CPU}" -Xcc -O2)
+CLANG_FLAGS=(-Xcc "-mcpu=${CPU}")
 # The `[@]+` guards are the project's bash-3.2 rule: with `set -u`, expanding an
 # empty array is an error on the system bash, so the lint gate requires the guard
 # even where the arrays are never empty.
 COMMAND=(swift build -c release "${SWIFT_FLAGS[@]+"${SWIFT_FLAGS[@]}"}" \
   "${CLANG_FLAGS[@]+"${CLANG_FLAGS[@]}"}")
 
-echo "flags: -mcpu=${CPU} for Swift and C, -O2 for C (portable default is apple-m1)"
+echo "flags: CPU ${CPU} for Swift and C (portable default is apple-m1; C is -O2 in both)"
 if (( DRY_RUN )); then
   printf 'command:'; printf ' %q' "${COMMAND[@]+"${COMMAND[@]}"}"; echo
   exit 0

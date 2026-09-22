@@ -83,14 +83,18 @@ swift run -c release TinyTitanCLI \
 That is the **portable** build and what `tools/release.sh` ships: the target is
 `arm64-apple-macos26.0` with no CPU flag, so the codegen baseline is clang's
 default for the triple — **apple-m1** — and an M3's BF16/I8MM go unused.
-`tools/build-native.sh` builds the same configuration tuned for this Mac's own
-core (`-target-cpu apple-mN` for Swift, `-mcpu` for C) and gives the C targets
-`-O2`, which SwiftPM's `swiftbuild` system otherwise uses `-Os` for. Measured
-2026-09-22 on the M3: `-O2` alone is worth **1.24x** on the CPU int8 GEMV
-(checksum-identical), while `-mcpu=apple-m3` adds about 1%, inside the noise —
-the flag that matters is the C optimization level. The native artifact is **not
-portable** (it may use this core's instructions), so never ship it from
-`release.sh` or hand it to another Mac.
+
+The C kernels are built `-O2`: `Package.swift` sets it for `TinyTitanKernelsC`
+with `.unsafeFlags`, because SwiftPM's `swiftbuild` system otherwise compiles C
+at `-Os` in release. Measured 2026-09-22 on the M3, interleaved, six rounds an
+arm, checksum unchanged: 2.35 -> 1.94 ms per pass on the CPU int8 GEMV, **1.21x**
+(1.24x in the first, quieter run). `tools/build-native.sh` adds the CPU tuning on
+top (`-target-cpu apple-mN` for Swift, `-mcpu` for C); that part measured about
+1%, inside the noise, because the kernel is float-based rather than an integer
+dot product. The native artifact is **not portable** — it may use this core's
+instructions — so never ship it from `release.sh` or hand it to another Mac. The
+`.unsafeFlags` is also why this package cannot be consumed as a dependency; it is
+an application package and nothing depends on it.
 
 ## Models
 
