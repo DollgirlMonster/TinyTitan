@@ -80,6 +80,18 @@ swift run -c release TinyTitanCLI \
   --max-new 64
 ```
 
+That is the **portable** build and what `tools/release.sh` ships: the target is
+`arm64-apple-macos26.0` with no CPU flag, so the codegen baseline is clang's
+default for the triple — **apple-m1** — and an M3's BF16/I8MM go unused.
+`tools/build-native.sh` builds the same configuration tuned for this Mac's own
+core (`-target-cpu apple-mN` for Swift, `-mcpu` for C) and gives the C targets
+`-O2`, which SwiftPM's `swiftbuild` system otherwise uses `-Os` for. Measured
+2026-09-22 on the M3: `-O2` alone is worth **1.24x** on the CPU int8 GEMV
+(checksum-identical), while `-mcpu=apple-m3` adds about 1%, inside the noise —
+the flag that matters is the C optimization level. The native artifact is **not
+portable** (it may use this core's instructions), so never ship it from
+`release.sh` or hand it to another Mac.
+
 ## Models
 
 **Installing a model is a separate, operator-requested job** — never run it to
