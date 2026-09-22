@@ -263,6 +263,21 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     static let prefetchMinMargin: Float =
         Float(ProcessInfo.processInfo.environment["TINYTITAN_PREFETCH_MIN_MARGIN"] ?? "") ?? 0
     static let prefetchAhead: Int = ProcessInfo.processInfo.environment["TINYTITAN_PREFETCH_AHEAD"] == "2" ? 2 : 1
+    /// TINYTITAN_PREFETCH_MIXED_HORIZON=1: with a ring of two or more slots,
+    /// spend the second read on L+2's first non-resident prediction instead of
+    /// L+1's. The two are about as precise (0.462 against 0.450 on the qwen38
+    /// trace) but the far read has a whole extra layer to land in, which is
+    /// where the two-slot arm's adoption went: it staged 76.2 reads a token and
+    /// adopted 26.0 of the 40 its own ranking offered.
+    ///
+    /// Measured 2026-09-22: it loses anyway. Issued 58.7 and adopted 24.8 a
+    /// token against the shipped 42.7 and 23.3, with io_ms rising 95.6 -> 96.8
+    /// while demand bytes fall 315.0 -> 311.0 MiB -- the extra speculative read
+    /// is charged against the demand reads rather than hidden. The shipped path
+    /// is unchanged; see docs/qwen38-prefetch-predictor-study.md round 2.
+    /// Needs `TINYTITAN_PREFETCH_TOP_M>=2`; a one-slot ring stages nothing extra.
+    static let prefetchMixedHorizon: Bool =
+        ProcessInfo.processInfo.environment["TINYTITAN_PREFETCH_MIXED_HORIZON"] == "1"
     let prefetchPrediction2Indices: MTLBuffer
     let prefetchPrediction2Weights: MTLBuffer
     var lastPredictedNext2Layer: [Int] = []

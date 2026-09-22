@@ -231,7 +231,9 @@ extension RealForwardRunner {
             }
             let next2RouterW: TensorView? =
                 (!denseFFN
-                 && (Self.probe2TraceEnabled || (predictivePrefetch != nil && Self.prefetchAhead == 2))
+                 && (Self.probe2TraceEnabled
+                     || (predictivePrefetch != nil
+                         && (Self.prefetchAhead == 2 || Self.prefetchMixedHorizon)))
                  && L + 2 < cfg.numLayers)
                 ? try model.router(layer: L + 2) : nil
             let residencyResources = (!denseFFN && decodeExpertExecution == .gpuResidency)
@@ -477,7 +479,9 @@ extension RealForwardRunner {
                 predictedNextLayer = []
             }
             let predictedNext2Layer: [Int]
-            if Self.probe2TraceEnabled || (predictivePrefetch != nil && Self.prefetchAhead == 2),
+            if Self.probe2TraceEnabled
+                || (predictivePrefetch != nil
+                    && (Self.prefetchAhead == 2 || Self.prefetchMixedHorizon)),
                L + 2 < cfg.numLayers {
                 let ptr = prefetchPrediction2Indices.contents().bindMemory(
                     to: UInt32.self, capacity: cfg.topKExperts)
@@ -1428,21 +1432,55 @@ extension RealForwardRunner {
                     .map(\.0)
             }
             let resident = Set(try model.routedExpertResidentIDs(layer: target))
-            // The whole ranked prediction goes in; `begin` drops the experts
-            // that are already resident or already in flight and then fills
-            // whatever ring slots are free, in rank order.
-            //
-            // Truncating to top-M here first (v4.3) spent the budget before
-            // the residency filter ran. About 85% of the top-M predictions are
-            // already cached, so the filter starved the ring instead of aiming
-            // it: on a 191-position qwen38 trace, top-4 issued 0.94 reads per
-            // layer and covered 23% of the demand misses, where filtering
-            // first issues 2.59 and covers 46%. The ring size stays the cap on
-            // reads in flight; only the order of cap and filter changed.
-            try predictivePrefetch.begin(
-                model: model, layer: target,
-                experts: prediction,
-                resident: resident, currentLayer: L)
+            if Self.prefetchMixedHorizon {
+                // One read per horizon, each the *first non-resident* expert in
+                // its own rank order -- the same read the shipped path stages
+                // for L+1, plus L+2's. Taking `prediction.prefix(1)` instead
+                // would stage nothing on the majority of layers: the probe's
+                // rank-1 is usually already cached, and the shipped path only
+                // issues 42.7 reads a token (0.89 per layer) because it passes
+                // the whole list and lets the residency filter walk down it.
+                // Measured: prefix(1) at both horizons issued 14.6 a token and
+                // lost 9.7% (4.543 -> 4.101).
+                //
+                // The point of the split: L+1's rank-2 is about as precise as
+                // L+2's first non-resident (0.450 against 0.462 on the trace)
+                // but arrives with half the headroom, and the two-slot arm
+                // adopted only 26.0 of the 40 its ranking offered. The far read
+                // has a whole extra layer to land in, which is why the ahead=2
+                // arm adopted 19.0 of a possible 19.8.
+                if let near = prediction.first(where: { !resident.contains($0) }) {
+                    try predictivePrefetch.begin(
+                        model: model, layer: target,
+                        experts: [near], resident: resident, currentLayer: L)
+                }
+                if L + 2 < cfg.numLayers, !lastPredictedNext2Layer.isEmpty {
+                    let farTarget = L + 2
+                    let farResident = Set(try model.routedExpertResidentIDs(layer: farTarget))
+                    if let far = lastPredictedNext2Layer.first(where: { !farResident.contains($0) }) {
+                        try predictivePrefetch.begin(
+                            model: model, layer: farTarget,
+                            experts: [far], resident: farResident, currentLayer: L)
+                    }
+                }
+            } else {
+                // The whole ranked prediction goes in; `begin` drops the experts
+                // that are already resident or already in flight and then fills
+                // whatever ring slots are free, in rank order.
+                //
+                // Truncating to top-M here first (v4.3) spent the budget before
+                // the residency filter ran. About 85% of the top-M predictions
+                // are already cached, so the filter starved the ring instead of
+                // aiming it: on a 191-position qwen38 trace, top-4 issued 0.94
+                // reads per layer and covered 23% of the demand misses, where
+                // filtering first issues 2.59 and covers 46%. The ring size
+                // stays the cap on reads in flight; only the order of cap and
+                // filter changed.
+                try predictivePrefetch.begin(
+                    model: model, layer: target,
+                    experts: prediction,
+                    resident: resident, currentLayer: L)
+            }
         }
         decodeRoutedBufsScratch.removeAll(keepingCapacity: true)
         decodeRoutedOffsetsScratch.removeAll(keepingCapacity: true)
