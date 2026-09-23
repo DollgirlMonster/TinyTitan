@@ -202,15 +202,36 @@ install_one() {
         # Qwen's own bf16 release, quantized one shard at a time by
         # tools/prepare_qwen38.py (a 360 GB fetch per width), then repacked.
         [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
+        # A mirror: HF_ENDPOINT is the Hub's own variable, and the converter
+        # fetches the checkpoint and its small JSON files from it when set.
+        local endpoint_arg=""
+        if [[ -n "${HF_ENDPOINT:-}" ]]; then endpoint_arg="--endpoint=${HF_ENDPOINT}"; fi
         if [[ ! -f ".build/qwen38-affine-${width}bit/model.safetensors.index.json" ]]; then
           echo "converting $name -> .build/qwen38-affine-${width}bit"
+          # A run killed mid-conversion resumes: finished output shards are kept
+          # and the checkpoint shards they came from are not fetched again.
           "$python" tools/prepare_qwen38.py --bits "$width" \
               --output ".build/qwen38-affine-${width}bit" \
-              --work .build/qwen38-shards || return 1
+              --work .build/qwen38-shards ${endpoint_arg:+"$endpoint_arg"} || return 1
+        fi
+        # `--share-ngram-table` hardlinks the 102 GB table from the staging
+        # snapshot into the install, which only works on one filesystem. With
+        # TINYTITAN_MODELS_DIR on another volume, leave the flag off so the
+        # repack copies it and its own disk-space check is the one that applies.
+        local share_arg=""
+        mkdir -p "$MODELS" || return 1
+        local staging_device models_device
+        staging_device="$(stat -f '%d' ".build/qwen38-affine-${width}bit" 2>/dev/null || echo)"
+        models_device="$(stat -f '%d' "$MODELS" 2>/dev/null || echo)"
+        if [[ -n "$staging_device" && "$staging_device" == "$models_device" ]]; then
+          share_arg="--share-ngram-table"
+        else
+          echo "note: staging and $MODELS are on different filesystems;"
+          echo "      ngram_table.bin will be copied rather than hardlinked"
         fi
         echo "installing $name -> models/$dir"
         "$BIN" --input-snapshot ".build/qwen38-affine-${width}bit" \
-            --model-id qwen3.8-flash-next --output "$MODELS/$dir"
+            --model-id qwen3.8-flash-next ${share_arg:+"$share_arg"} --output "$MODELS/$dir"
         ;;
       convert_qwen38_mtp)
         # The draft head's 31 tensors, range-fetched from Qwen's original by

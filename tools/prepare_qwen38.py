@@ -40,13 +40,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import math
 import os
+import shutil
 import struct
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from queue import Queue
 
@@ -61,7 +64,25 @@ except ImportError as exc:  # pragma: no cover - environment, not logic
              "    -m pip install safetensors numpy ml_dtypes\n"
              "  (or point TINYTITAN_PYTHON at another Python 3.10+)")
 REPO = "Qwen/Qwen3.8-Flash-Next"
-BASE = f"https://huggingface.co/{REPO}/resolve/main"
+# `HF_ENDPOINT` (the Hub's own variable) and `--endpoint` point every fetch at a
+# mirror. The path below the host is the Hub's -- `/<repo>/resolve/main/<file>`
+# for weights and `/<repo>/raw/main/<file>` for the small JSON ones -- so a
+# mirror that serves that layout works unchanged, and no provider-specific code
+# is needed for one.
+HF_ENDPOINT = os.environ.get("HF_ENDPOINT", "https://huggingface.co").rstrip("/")
+BASE = f"{HF_ENDPOINT}/{REPO}/resolve/main"
+
+
+def raw_url(remote: str) -> str:
+    """The mirror's URL for one of the repo's small text files."""
+    return f"{HF_ENDPOINT}/{REPO}/raw/main/{remote}"
+
+
+def endpoint_base(endpoint: str) -> str:
+    """The weights base URL for a Hub endpoint or mirror."""
+    return f"{endpoint.rstrip('/')}/{REPO}/resolve/main"
+
+
 GROUP_SIZE = 64
 BITS_4, BITS_8 = 4, 8
 # indexer_n_heads * indexer_head_dim from the config; the remainder of
@@ -373,26 +394,68 @@ def quant_bits(name: str, width: int = BITS_4) -> int | None:
     return width                           # attention / sharedExpert / routedExpert
 
 
-def outputs_for(name: str, shape: list[int]) -> list[tuple[str, list[int]]]:
+def output_names_for(name: str) -> list[str]:
+    """The tensor names `convert_shard` writes for one checkpoint tensor.
+
+    Shapes are `outputs_for`'s business; this is the name half, shared with the
+    resume check so a shard is judged converted by the same rule that wrote it.
+    """
     new = rename(name)
     if new.endswith(".mlp.experts.gate_up_proj"):
         stem = new[: -len("experts.gate_up_proj")] + "switch_mlp."
-        experts, fused, hidden = shape
-        return [(stem + "gate_proj.weight", [experts, fused // 2, hidden]),
-                (stem + "up_proj.weight", [experts, fused // 2, hidden])]
+        return [stem + "gate_proj.weight", stem + "up_proj.weight"]
     if new.endswith(".mlp.experts.down_proj"):
         stem = new[: -len("experts.down_proj")] + "switch_mlp."
-        return [(stem + "down_proj.weight", list(shape))]
+        return [stem + "down_proj.weight"]
     if new.endswith(".self_attn.indexer.index_qk_proj.weight"):
         # Fused query and key in the checkpoint, separate in the runtime.
         # [640, 2560] is 4 heads x 128 of query followed by 1 kv head x 128 of
         # key, which the config's indexer_n_heads/indexer_kv_heads confirm.
         stem = new[: -len("index_qk_proj.weight")]
+        return [stem + "index_q_proj.weight", stem + "index_k_proj.weight"]
+    return [new]
+
+
+def outputs_for(name: str, shape: list[int]) -> list[tuple[str, list[int]]]:
+    names = output_names_for(name)
+    new = rename(name)
+    if new.endswith(".mlp.experts.gate_up_proj"):
+        experts, fused, hidden = shape
+        return [(names[0], [experts, fused // 2, hidden]),
+                (names[1], [experts, fused // 2, hidden])]
+    if new.endswith(".mlp.experts.down_proj"):
+        return [(names[0], list(shape))]
+    if new.endswith(".self_attn.indexer.index_qk_proj.weight"):
         rows, hidden = shape
         q = INDEXER_QUERY_ROWS
-        return [(stem + "index_q_proj.weight", [q, hidden]),
-                (stem + "index_k_proj.weight", [rows - q, hidden])]
-    return [(new, list(shape))]
+        return [(names[0], [q, hidden]), (names[1], [rows - q, hidden])]
+    return [(names[0], list(shape))]
+
+
+def checkpoint_shard_is_converted(names: list[str], index: dict[str, str],
+                                 width: int) -> bool:
+    """Whether every tensor this checkpoint shard would produce is already in
+    `index` (the tensors a previous run's output shards hold).
+
+    Mirrors `convert_shard`: skipped families produce nothing, an unquantised
+    tensor is stored under its own name, and a quantised one carries the
+    `.weight`/`.scales`/`.biases` triple under its stem.
+    """
+    wrote_anything = False
+    for name in names:
+        if is_multimodal(name) or is_ngram(name) or is_ple_buffer(name):
+            continue
+        for out_name in output_names_for(name):
+            wrote_anything = True
+            if quant_bits(out_name, width) is None:
+                if out_name not in index:
+                    return False
+                continue
+            stem = out_name[: -len(".weight")]
+            for suffix in (".weight", ".scales", ".biases"):
+                if stem + suffix not in index:
+                    return False
+    return wrote_anything
 
 
 
@@ -429,26 +492,122 @@ def write_config(config: dict, out: Path, tensor_names, width: int) -> dict:
 
 
 def fetch_header(shard: str) -> dict:
+    """One shard's safetensors header, by two ranged reads.
+
+    A server that ignores `Range` answers both reads with the whole file, which
+    turns the second one into a JSON parse over binary payload. That is worth a
+    clear error rather than a confusing one: a mirror has to serve ranges for
+    this tool at all, and the first read's length is how that is detected.
+    """
     url = f"{BASE}/{shard}"
     raw = subprocess.run(["curl", "-sfL", "--max-time", "60", "-r", "0-7", url],
                          capture_output=True, check=True).stdout
+    if len(raw) != 8:
+        raise RuntimeError(
+            f"{url}: asked for 8 bytes and got {len(raw)}; the endpoint does not "
+            "honour range requests, and this converter reads shard headers and "
+            "resumes partial downloads with them")
     size = struct.unpack("<Q", raw[:8])[0]
     body = subprocess.run(["curl", "-sfL", "--max-time", "180", "-r", f"8-{8 + size - 1}", url],
                           capture_output=True, check=True).stdout
+    if len(body) != size:
+        raise RuntimeError(
+            f"{url}: asked for the {size}-byte header and got {len(body)}; the "
+            "endpoint does not honour range requests")
     return json.loads(body)
 
 
+# One shard is up to ~2 GB; 20 minutes with no byte moving is a dead connection,
+# not a slow one, and without a cap the retry loop below can never fire.
+DOWNLOAD_TIMEOUT_SECONDS = 1200
+# Six attempts, doubling from five seconds: ~5 s, 10, 20, 40, 80, 120. The Hub
+# already retries inside curl; this is for the failures that outlast that (a
+# dropped connection mid-shard, a mirror that answers a range request with 200).
+DOWNLOAD_ATTEMPTS = 6
+
+
 def download(shard: str, work: Path) -> Path:
-    """Fetch one shard, resuming a partial file rather than restarting it."""
+    """Fetch one shard, resuming a partial file rather than restarting it.
+
+    A resume that the endpoint will not serve is not retried as a resume: curl
+    reports exit 33 when a server answers a range request without honouring it,
+    and that answer will never change, so the partial file is dropped and the
+    shard is fetched from the start. Without that, one interrupted download on
+    such an endpoint is permanently stuck (measured against ModelScope's file
+    API: `-C -` exits 33, and an open-ended `-r 100-` returns a 4 KiB chunk with
+    status 200 instead of the remainder).
+    """
     dest = work / shard
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["curl", "-fL", "--retry", "5", "--retry-delay", "5",
-                    "--retry-all-errors", "-C", "-", "--silent", "--show-error",
-                    "-o", str(dest), f"{BASE}/{shard}"], check=True)
-    return dest
+    delay = 5
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        url = f"{BASE}/{shard}"
+        result = subprocess.run([
+            "curl", "-fL", "--retry", "3", "--retry-delay", "3",
+            "--retry-connrefused", "--retry-all-errors", "-C", "-",
+            "--max-time", str(DOWNLOAD_TIMEOUT_SECONDS),
+            "--silent", "--show-error", "-o", str(dest), url])
+        if result.returncode == 0 and dest.exists() and dest.stat().st_size > 0:
+            return dest
+        if result.returncode == 33 and dest.exists():
+            print(f"    {shard}: the endpoint will not serve a range request; "
+                  "downloading it from the start", file=sys.stderr, flush=True)
+            dest.unlink()
+        print(f"    [download {attempt}/{DOWNLOAD_ATTEMPTS}] {shard} failed "
+              f"(curl {result.returncode}); retrying in {delay}s",
+              file=sys.stderr, flush=True)
+        time.sleep(delay)
+        delay = min(delay * 2, 120)
+    raise RuntimeError(
+        f"failed to download {shard} after {DOWNLOAD_ATTEMPTS} attempts")
 
 
 # --- conversion ------------------------------------------------------------
+
+
+def read_shard_header(path: Path) -> dict | None:
+    """The safetensors header of `path`, or None when it is not a whole shard.
+
+    A safetensors file is `8-byte header length | JSON header | payload`. A
+    process killed during the write leaves a file whose header parses while the
+    payload is short, so the declared offsets are checked against the file size:
+    trusting the header alone is how a resume decides a truncated shard is
+    finished, keeps it, and ships a snapshot whose index points at bytes that
+    are not there. Anything unreadable is reported as "not a shard" rather than
+    raised -- the caller's move is to drop the file and convert its tensors
+    again, which is always safe.
+    """
+    try:
+        size = path.stat().st_size
+        if size < 8:
+            return None
+        with path.open("rb") as handle:
+            header_len = struct.unpack("<Q", handle.read(8))[0]
+            if header_len == 0 or header_len > size - 8:
+                return None
+            payload = handle.read(header_len)
+    except OSError:
+        return None
+    if len(payload) != header_len:
+        return None
+    try:
+        header = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(header, dict):
+        return None
+    end = 0
+    for key, meta in header.items():
+        if key == "__metadata__":
+            continue
+        offsets = meta.get("data_offsets") if isinstance(meta, dict) else None
+        if not (isinstance(offsets, list) and len(offsets) == 2):
+            return None
+        try:
+            end = max(end, int(offsets[1]))
+        except (TypeError, ValueError):
+            return None
+    return header if size == 8 + header_len + end else None
 
 
 class OutputWriter:
@@ -462,6 +621,43 @@ class OutputWriter:
         self.index: dict[str, str] = {}
         self.total = 0
         self.shard_no = 0
+        self.discarded = 0
+        self._resume()
+
+    def _resume(self) -> None:
+        """Adopt the shards a previous run left behind.
+
+        The run this exists for is one that died mid-conversion: its output
+        shards are finished files numbered from 1, and the checkpoint shards
+        they came from can be skipped. A shard that is not whole (a kill during
+        its write) is deleted instead of adopted, so its tensors are converted
+        again; a leftover `*.partial` from an interrupted flush is removed the
+        same way.
+        """
+        for partial in sorted(self.out.glob("model-*.safetensors.partial")):
+            partial.unlink()
+        adopted = 0
+        for shard_path in sorted(self.out.glob("model-[0-9][0-9][0-9][0-9][0-9].safetensors")):
+            header = read_shard_header(shard_path)
+            if header is None:
+                print(f"  discarding an incomplete output shard: {shard_path.name}",
+                      flush=True)
+                shard_path.unlink()
+                self.discarded += 1
+                continue
+            self.shard_no = max(self.shard_no, int(shard_path.stem.split("-")[1]))
+            for key, meta in header.items():
+                if key == "__metadata__":
+                    continue
+                self.index[key] = shard_path.name
+                offsets = meta["data_offsets"]
+                self.total += offsets[1] - offsets[0]
+            adopted += 1
+        if adopted or self.discarded:
+            print(f"  resuming from {adopted} output shards "
+                  f"({self.shard_no:05d} last, {self.total / 1e9:.2f} GB, "
+                  f"{len(self.index)} tensors); {self.discarded} discarded",
+                  flush=True)
 
     def add(self, name: str, value: np.ndarray) -> None:
         self.block[name] = value
@@ -475,7 +671,12 @@ class OutputWriter:
             return
         self.shard_no += 1
         name = f"model-{self.shard_no:05d}.safetensors"
-        save_file(self.block, str(self.out / name))
+        # Written beside the destination and renamed into place: a kill during
+        # the write then leaves `*.partial`, which `_resume` deletes, instead of
+        # a file that looks like a finished shard.
+        partial = self.out / f"{name}.partial"
+        save_file(self.block, str(partial))
+        os.replace(partial, self.out / name)
         for key in self.block:
             self.index[key] = name
         print(f"    wrote {name} ({self.bytes / 1e9:.2f} GB, {len(self.block)} tensors)",
@@ -552,7 +753,14 @@ class NgramTable:
         self.reused = reuse is not None
         self.skipped = 0
         if reuse is None:
-            self.handle = self.path.open("wb")
+            # Written beside the destination and renamed in `finish`: the table
+            # is 102 GB and takes minutes, so a kill during it must not leave a
+            # file at the final name that a later run reuses (or, worse, that an
+            # installed model already hardlinks to this inode).
+            self.temporary = self.path.parent / (self.path.name + ".partial")
+            if self.temporary.exists():
+                self.temporary.unlink()
+            self.handle = self.temporary.open("wb")
             return
         # Hardlink, not copy and not symlink. Both directories then hold a
         # reference to one inode: deleting either leaves the other intact,
@@ -566,9 +774,28 @@ class NgramTable:
                 f"{reuse}: {actual} bytes, expected {expected_bytes} "
                 f"({expected_rows} rows x {dim} x fp16). A table of the wrong "
                 "size is a different model's, or a truncated copy.")
+        # A reuse that resolves to the table already at the destination -- the
+        # automatic reuse of a table a previous run finished here, or
+        # `--reuse-ngram-table` aimed at this same output -- has nothing to
+        # link: unlinking the destination first would delete the 102 GB source
+        # and then fail to link what is no longer there.
+        if self.path.resolve() == reuse.resolve():
+            return
         if self.path.exists():
             self.path.unlink()
-        os.link(reuse, self.path)
+        try:
+            os.link(reuse, self.path)
+        except OSError as exc:
+            if exc.errno != errno.EXDEV:
+                raise
+            # A hardlink cannot cross filesystems -- staging on one volume and
+            # the install on another is a normal layout (`TINYTITAN_MODELS_DIR`
+            # on an external disk). Reusing the table is still what the caller
+            # asked for, so copy it: that is the 102 GB the flag exists to save,
+            # but a copy is correct where a link is impossible.
+            print(f"  {reuse} is on another filesystem; copying the table "
+                  f"({expected_bytes / 1e9:.1f} GB) instead of hardlinking it")
+            shutil.copyfile(reuse, self.path)
 
     @staticmethod
     def index_of(name: str) -> int:
@@ -620,6 +847,9 @@ class NgramTable:
         if self.rows != self.expected_rows:
             raise ValueError(f"n-gram table has {self.rows} rows, "
                              f"expected {self.expected_rows}")
+        # Published only once it is whole: a run that dies earlier leaves
+        # `ngram_table.bin.partial`, which the next run deletes and rebuilds.
+        os.replace(self.temporary, self.path)
 
 
 # --- driver ----------------------------------------------------------------
@@ -641,7 +871,7 @@ TOKENIZER_FILES = (
 def fetch_tokenizer(out: Path) -> None:
     """Copy the tokenizer beside the weights, so the snapshot stands alone."""
     for name, required in TOKENIZER_FILES:
-        url = f"https://huggingface.co/{REPO}/resolve/main/{name}"
+        url = f"{BASE}/{name}"
         result = subprocess.run(["curl", "-sfL", "--max-time", "300", url],
                                 capture_output=True)
         if result.returncode != 0 or not result.stdout:
@@ -689,6 +919,43 @@ REUSE_CONSTANT_KEYS = ("layer_multipliers", "ngram_heads_offsets",
                        "heads_per_ngram", "ple_head_dim")
 
 
+def read_json_file(path: Path) -> dict | None:
+    """The JSON object in `path`, or None when it is absent or unreadable."""
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def constants_match(previous: dict | None, constants: dict) -> bool:
+    """Whether a previous run's constants can address this build's table."""
+    if previous is None:
+        return False
+    return all(previous.get(key) == constants.get(key)
+               for key in REUSE_CONSTANT_KEYS)
+
+
+def reusable_local_table(out: Path, expected_bytes: int,
+                         previous_constants: dict | None,
+                         constants: dict) -> Path | None:
+    """The table a previous run finished in `out`, or None.
+
+    Three things have to hold: the file is there, it is exactly the size this
+    build's constants address (`padded x ple_head_dim x fp16`), and the
+    constants beside it are this build's -- a table read under different
+    constants produces garbage n-gram ids rather than an error.
+    """
+    table = out / "ngram_table.bin"
+    if not table.exists():
+        return None
+    if table.stat().st_size != expected_bytes:
+        return None
+    if not constants_match(previous_constants, constants):
+        return None
+    return out
+
+
 def reusable_table_path(reuse: Path, constants: dict) -> Path:
     """The table to hardlink for `--reuse-ngram-table`, or SystemExit.
 
@@ -732,21 +999,32 @@ def main() -> int:
                          "same model cannot differ in it.")
     ap.add_argument("--index", type=Path)
     ap.add_argument("--config", type=Path)
+    ap.add_argument("--endpoint",
+                    default=os.environ.get("HF_ENDPOINT", "https://huggingface.co"),
+                    help="Hub endpoint or mirror, e.g. https://hf-mirror.com "
+                         "(default: HF_ENDPOINT or https://huggingface.co). The "
+                         "mirror must serve the Hub's layout: "
+                         "/<repo>/resolve/main/<file> for weights and "
+                         "/<repo>/raw/main/<file> for the small JSON files")
     args = ap.parse_args()
+
+    global HF_ENDPOINT, BASE
+    HF_ENDPOINT = args.endpoint.rstrip("/")
+    BASE = endpoint_base(HF_ENDPOINT)
 
     def fetch_json(path: Path | None, remote: str) -> dict:
         if path and path.exists():
             return json.loads(path.read_text())
-        url = f"https://huggingface.co/{REPO}/raw/main/{remote}"
-        return json.loads(subprocess.run(["curl", "-sfL", url],
-                                         capture_output=True, check=True).stdout)
+        return json.loads(subprocess.run(
+            ["curl", "-sfL", "--max-time", "60", raw_url(remote)],
+            capture_output=True, check=True).stdout)
 
     index = fetch_json(args.index, "model.safetensors.index.json")
     if args.rewrite_config:
         snap = args.rewrite_config
         names = json.loads((snap / "model.safetensors.index.json").read_text())["weight_map"]
         cfg = json.loads(subprocess.run(
-            ["curl", "-sfL", f"https://huggingface.co/{REPO}/raw/main/config.json"],
+            ["curl", "-sfL", "--max-time", "60", raw_url("config.json")],
             capture_output=True, check=True).stdout) if not (snap / "config.json").exists() \
             else json.loads((snap / "config.json").read_text())
         cfg.pop("quantization", None)
@@ -759,6 +1037,17 @@ def main() -> int:
         plan(index, args.bits)
         return 0
 
+    # A finished snapshot is not a resume target: `finish` renames its shards to
+    # the N-of-M form and writes the index, so converting into that directory
+    # again would lay a second generation of shards beside the first and orphan
+    # the older one. The installer skips this case; refuse it here as well.
+    if (args.output / "model.safetensors.index.json").exists():
+        raise SystemExit(
+            f"{args.output} already holds a finished snapshot "
+            "(model.safetensors.index.json is present). Converting into it would "
+            "leave two generations of shards behind; delete the directory or "
+            "point --output at a new one.")
+
     config = fetch_json(args.config, "config.json")
     text_config = config["text_config"]
     work = args.work or (args.output.parent / "qwen38-shards")
@@ -766,14 +1055,36 @@ def main() -> int:
     args.output.mkdir(parents=True, exist_ok=True)
 
     constants = ple_constants(text_config)
+    # Read before overwriting: a run that died after writing the table left the
+    # constants that built it, and a table reused under different constants
+    # yields garbage n-gram ids rather than an error.
+    previous_constants = read_json_file(args.output / "ple_constants.json")
     (args.output / "ple_constants.json").write_text(json.dumps(constants, indent=1))
     rows = sum(constants["ngram_heads_vocab_sizes"])
     divisor = text_config.get("make_ngram_vocab_size_divisible_by", 128)
     padded = math.ceil(rows / divisor) * divisor
+    table_bytes = padded * constants["ple_head_dim"] * 2
 
     wm = index["weight_map"]
     shards = sorted(set(wm.values()))
+    by_shard: dict[str, list[str]] = {}
+    for name, shard in wm.items():
+        by_shard.setdefault(shard, []).append(name)
+
     writer = OutputWriter(args.output)
+
+    if args.reuse_ngram_table is None:
+        # A previous run may have finished the table before the weights.
+        found = reusable_local_table(args.output, table_bytes,
+                                     previous_constants, constants)
+        if found is not None:
+            print(f"reusing the completed ngram_table.bin already here "
+                  f"({table_bytes / 1e9:.1f} GB)", flush=True)
+            args.reuse_ngram_table = found
+        elif (args.output / "ngram_table.bin").exists():
+            print("ignoring the ngram_table.bin already here (wrong size for "
+                  "this build's constants, or a constants mismatch); it will "
+                  "be rebuilt", flush=True)
 
     reuse = (None if args.reuse_ngram_table is None
              else reusable_table_path(args.reuse_ngram_table, constants))
@@ -784,15 +1095,23 @@ def main() -> int:
         # Skip the shards that carry nothing else. Two of the 131 hold n-gram
         # rows alongside ordinary tensors and are still fetched; convert_shard
         # already ignores the n-gram names inside them.
-        by_shard: dict[str, list[str]] = {}
-        for name, shard in wm.items():
-            by_shard.setdefault(shard, []).append(name)
         skippable = {shard for shard, names in by_shard.items()
                      if all(is_ngram(n) for n in names)}
         shards = [s for s in shards if s not in skippable]
         print(f"reusing n-gram table: {reuse}")
-        print(f"  hardlinked, {padded * constants['ple_head_dim'] * 2 / 1e9:.1f} GB not written")
+        print(f"  linked, {table_bytes / 1e9:.1f} GB not written")
         print(f"  {len(skippable)} of {len(by_shard)} checkpoint shards not fetched")
+
+    if writer.index:
+        # The shards a previous run finished are converted already; the
+        # checkpoint sources of those can be skipped. This is the resume.
+        converted = {s for s in shards
+                     if checkpoint_shard_is_converted(by_shard[s], writer.index,
+                                                      args.bits)}
+        if converted:
+            shards = [s for s in shards if s not in converted]
+            print(f"  {len(converted)} checkpoint shards already converted; "
+                  f"{len(shards)} left to fetch and convert", flush=True)
 
     # Fetch shard N+1 while shard N converts.
     queue: Queue = Queue(maxsize=1)
