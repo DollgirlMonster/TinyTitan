@@ -86,15 +86,24 @@ default for the triple — **apple-m1** — and an M3's BF16/I8MM go unused.
 
 The C kernels are built `-O2`: `Package.swift` sets it for `TinyTitanKernelsC`
 with `.unsafeFlags`, because SwiftPM's `swiftbuild` system otherwise compiles C
-at `-Os` in release. Measured 2026-09-22 on the M3, interleaved, six rounds an
-arm, checksum unchanged: 2.35 -> 1.94 ms per pass on the CPU int8 GEMV, **1.21x**
-(1.24x in the first, quieter run). `tools/build-native.sh` adds the CPU tuning on
-top (`-target-cpu apple-mN` for Swift, `-mcpu` for C); that part measured about
-1%, inside the noise, because the kernel is float-based rather than an integer
-dot product. The native artifact is **not portable** — it may use this core's
-instructions — so never ship it from `release.sh` or hand it to another Mac. The
-`.unsafeFlags` is also why this package cannot be consumed as a dependency; it is
-an application package and nothing depends on it.
+at `-Os` in release. That is the measured win — 2.35 -> 1.94 ms per pass on the
+CPU int8 GEMV, six interleaved rounds, checksum unchanged, **1.21x** (1.24x in a
+quieter run), and the internal-speeds re-record confirms it costs nothing else
+(decode 4.653 against 4.538, prefill +6.5%).
+
+Naming this Mac's CPU as well (`-target-cpu apple-mN` for Swift, `-mcpu` for C)
+measured about 1%, inside the noise, because the kernel is float-based rather than
+an integer dot product — so there is **no native-build script**; the flags are
+here for anyone who wants them on a machine they will not ship from:
+
+```bash
+swift build -c release -Xswiftc -target-cpu -Xswiftc apple-m3 -Xcc -mcpu=apple-m3
+```
+
+That artifact is not portable (it may use this core's instructions), so never ship
+it from `release.sh` or hand it to another Mac. The `.unsafeFlags` is also why
+this package cannot be consumed as a dependency; it is an application package and
+nothing depends on it.
 
 ## Models
 
