@@ -57,6 +57,20 @@ jobs:
         # Checks the compiler cannot express. Runs before the suite so a style
         # regression fails in seconds rather than after a full test run.
         run: tools/lint.sh
+      - name: Converter gates (synthetic checkpoint, fault injection)
+        # `tools/prepare_qwen38.py` converts a 360 GB checkpoint. The unit suite
+        # pins its pieces; the end-to-end suite runs `main()` against a
+        # synthetic one served from 127.0.0.1 (real curl downloads, injected
+        # transport failures, a killed process, a table copied across a disk
+        # image) and requires every recovery to produce the clean-run snapshot.
+        # A venv because the runner does not carry the converter's three
+        # dependencies. No real shard is ever fetched.
+        run: |
+          python3 -m venv /tmp/tt-converter
+          /tmp/tt-converter/bin/pip install --quiet --disable-pip-version-check \
+            numpy safetensors ml_dtypes
+          cd benchmark
+          /tmp/tt-converter/bin/python -m unittest test_prepare_qwen38 test_qwen38_resume_e2e
       - name: Run serial tests
         # `swift test` implicitly performs its own DEBUG build, which also
         # produces the `.build/debug/TinyTitanRepack` binary that RepackCLITests

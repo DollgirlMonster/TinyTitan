@@ -524,6 +524,11 @@ DOWNLOAD_TIMEOUT_SECONDS = 1200
 # already retries inside curl; this is for the failures that outlast that (a
 # dropped connection mid-shard, a mirror that answers a range request with 200).
 DOWNLOAD_ATTEMPTS = 6
+# curl's own retry loop, inside one `download()` attempt. Constants rather than
+# literals so the test suite can put them at 0 and let a fault reach the loop
+# above, which is the layer that decides how a shard is resumed.
+CURL_RETRY_ATTEMPTS = 3
+CURL_RETRY_DELAY_SECONDS = 3
 
 
 def download(shard: str, work: Path) -> Path:
@@ -543,7 +548,8 @@ def download(shard: str, work: Path) -> Path:
     for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
         url = f"{BASE}/{shard}"
         result = subprocess.run([
-            "curl", "-fL", "--retry", "3", "--retry-delay", "3",
+            "curl", "-fL", "--retry", str(CURL_RETRY_ATTEMPTS),
+            "--retry-delay", str(CURL_RETRY_DELAY_SECONDS),
             "--retry-connrefused", "--retry-all-errors", "-C", "-",
             "--max-time", str(DOWNLOAD_TIMEOUT_SECONDS),
             "--silent", "--show-error", "-o", str(dest), url])
@@ -636,7 +642,7 @@ class OutputWriter:
         """
         for partial in sorted(self.out.glob("model-*.safetensors.partial")):
             partial.unlink()
-        adopted = 0
+        survivors: list[tuple[Path, dict]] = []
         for shard_path in sorted(self.out.glob("model-[0-9][0-9][0-9][0-9][0-9].safetensors")):
             header = read_shard_header(shard_path)
             if header is None:
@@ -645,21 +651,37 @@ class OutputWriter:
                 shard_path.unlink()
                 self.discarded += 1
                 continue
-            self.shard_no = max(self.shard_no, int(shard_path.stem.split("-")[1]))
+            survivors.append((shard_path, header))
+        # A discarded shard leaves a hole in the 1..N numbering that `finish`
+        # renames over (it walks 1..shard_no), so the survivors are compacted
+        # into a contiguous run before anything else happens. Numbers only move
+        # down, and each destination was just vacated by the shard before it, so
+        # no rename can collide.
+        for number, (shard_path, header) in enumerate(survivors, start=1):
+            target = self.out / f"model-{number:05d}.safetensors"
+            if shard_path != target:
+                os.replace(shard_path, target)
             for key, meta in header.items():
                 if key == "__metadata__":
                     continue
-                self.index[key] = shard_path.name
+                self.index[key] = target.name
                 offsets = meta["data_offsets"]
                 self.total += offsets[1] - offsets[0]
-            adopted += 1
-        if adopted or self.discarded:
-            print(f"  resuming from {adopted} output shards "
+        self.shard_no = len(survivors)
+        if survivors or self.discarded:
+            print(f"  resuming from {len(survivors)} output shards "
                   f"({self.shard_no:05d} last, {self.total / 1e9:.2f} GB, "
                   f"{len(self.index)} tensors); {self.discarded} discarded",
                   flush=True)
 
     def add(self, name: str, value: np.ndarray) -> None:
+        if name in self.index:
+            # Adopted from a previous run. Its checkpoint shard is converted
+            # again when not every tensor of that shard was adopted, so the
+            # ones that were must be dropped here -- writing them twice puts a
+            # duplicate in the snapshot and counts its bytes twice in the
+            # index's total_size.
+            return
         self.block[name] = value
         self.bytes += value.nbytes
         self.total += value.nbytes
@@ -1047,6 +1069,20 @@ def main() -> int:
             "(model.safetensors.index.json is present). Converting into it would "
             "leave two generations of shards behind; delete the directory or "
             "point --output at a new one.")
+    # The same hazard one step earlier: `finish` renames the shards before it
+    # writes the index, so a process killed (or a disk that filled) between the
+    # two leaves finished N-of-M shards and no index. Nothing adopts those --
+    # `_resume` looks for the un-renamed form -- so a run into that directory
+    # would convert everything again and leave the finished generation orphaned
+    # beside the new one, which for a real snapshot is hundreds of GB.
+    renamed = sorted(args.output.glob("model-[0-9]*-of-[0-9]*.safetensors"))
+    if renamed:
+        raise SystemExit(
+            f"{args.output} holds {len(renamed)} finished output shards but no "
+            "model.safetensors.index.json: a run stopped between finishing its "
+            "shards and writing the index. Converting into it again would "
+            "orphan those shards beside a second generation of the same "
+            "tensors; delete the directory or point --output at a new one.")
 
     config = fetch_json(args.config, "config.json")
     text_config = config["text_config"]
@@ -1070,6 +1106,23 @@ def main() -> int:
     by_shard: dict[str, list[str]] = {}
     for name, shard in wm.items():
         by_shard.setdefault(shard, []).append(name)
+
+    # A resume adopts output shards without looking inside them, and a
+    # safetensors file does not record the quantization width it was written
+    # at, so a run at a different --bits would mix two widths in one snapshot
+    # and the index would not say so. The marker is what makes that refusal
+    # possible; a run from before the marker existed has none and is assumed to
+    # match, which is the migration case the resume path exists for.
+    marker = args.output / "conversion.json"
+    adoptable = list(args.output.glob("model-[0-9][0-9][0-9][0-9][0-9].safetensors"))
+    previous_bits = read_json_file(marker)
+    if adoptable and previous_bits is not None and previous_bits.get("bits") != args.bits:
+        raise SystemExit(
+            f"{args.output} holds a partial {previous_bits.get('bits')}-bit "
+            f"conversion and this run is {args.bits}-bit. Adopting those shards "
+            "would put two widths in one snapshot without recording it; delete "
+            "the directory or point --output at a new one.")
+    marker.write_text(json.dumps({"bits": args.bits}, indent=1))
 
     writer = OutputWriter(args.output)
 

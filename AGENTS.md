@@ -186,6 +186,21 @@ Ornith 1.5 4-bit. It counts as a model run: apply the preconditions above first.
 baseline is valid for one (machine, build, model) triple; re-capture only for a
 deliberate numerics change, never to make a mismatch go away.
 
+The converter's gate is two python suites, run together:
+
+    cd benchmark && python3 -m unittest test_prepare_qwen38 test_qwen38_resume_e2e
+
+`test_prepare_qwen38` pins the pieces (shard validation, the constants gate, the
+retry loop) in a second. `test_qwen38_resume_e2e` runs `main()` end to end against a
+synthetic checkpoint served from 127.0.0.1 — real `curl` downloads into a scratch
+directory with transfers dropped, truncated, stalled, 404'd and range-refused, a real
+`SIGKILL` mid-conversion, a truncated adopted shard, a table reused in place or
+copied across a mounted disk image — and asserts that every recovery ends with the
+same snapshot a clean run produces. It never fetches a real shard, so it is safe in
+CI and takes about half a minute. Run both after any change to the converter, the
+resume path, the n-gram table or the download loop; CI runs them too, in a venv
+because the runner does not carry `numpy`, `safetensors` or `ml_dtypes`.
+
 **Verification uses only the models already installed under `models/`.** `models/`
 is deliberately kept smaller than the full supported set to save disk, so a golden
 target with no install there is *reported as not checked* — by `release.sh` and in
