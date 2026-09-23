@@ -572,3 +572,57 @@ runtime plus ~10,000 tokens and the full 262,144-token window would add 12 GiB.
 The estimate is a short-request estimate; a long context is what takes it past
 the target, and the server prints the same floor either way.
 
+### Lever 10 addendum — the medium prompt, on an idle machine
+
+The table above is the 7-token prompt. Re-run 2026-09-23 on an idle machine (load
+2.9) with a **198-token medium prompt**, two interleaved rounds each, the same
+binary (`f277d5cf…`, `-O2` default), 256 new tokens, temperature 0:
+
+| `--ram` | plan (server's own line) | peak RSS | prefill | decode | swap |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 8G | cache 3.96G / 32 slots / estimate 7.68G | 8,057 / 8,057 MiB | 14.7 / 14.5 s | 3.336 / 3.581 tok/s | flat |
+| 10G | cache 5.94G / 48 slots / estimate 9.66G | 10,098 / 10,098 MiB | 14.6 / 14.4 s | 3.968 / 3.974 tok/s | flat |
+
+Peak RSS is **identical round to round** — the busy-machine run had it drifting
+(7,624 then 8,057; 9,658 then 9,912) because pages were moving — and lands
+0.19-0.20 GiB above the estimate at both targets: 7.87 GiB against a 7.68 estimate
+at 8G, 9.86 against 9.66 at 10G. Both answers are byte-identical
+(`04b0edcece`, 1,400 characters), so the budget moves the schedule only. 48 slots
+is 11-19% faster than 32 on this prompt.
+
+The same arms run while the Mac was busy (load 6.5, Roblox and Chrome resident)
+gave 2.95-3.12 and 3.54-3.64 tok/s with prefill at 17.5-18.1 s, and the 10G arm
+grew swap by 1.36 GB; the idle run never grew swap. Load depresses the rates by
+about 15% and perturbs the peak, not the plan.
+
+## Lever 11 — the `-O2` default re-recorded, and the CPU-GEMV question settled
+
+`tools/internal-speeds.py --record --label v2-qwen38-4bit-o2` on the idle machine
+(load 2.5) against the previous record of this install (`ce85df5`). The point of
+the re-record was the CPU GEMV: the same build measured 45.7 GB/s while the Mac
+was at load 5-6, against 51.4 in the record.
+
+| metric | baseline `ce85df5` | now `d1552b1` | delta |
+| --- | ---: | ---: | ---: |
+| cpu int8 GEMV best | 51.4 GB/s | **50.6 GB/s** | -1.6% |
+| gpu qkv_gemv | 77.1 GB/s | 73.9 GB/s | -4.2% |
+| gpu gdn_inproj | 74.8 GB/s | 78.3 GB/s | +4.7% |
+| gpu routed_moe | 38.4 GB/s | 56.1 GB/s | +46.1% |
+| decode | 4.538 tok/s | **4.653 tok/s** | +2.5% |
+| prefill | 2.662 tok/s | 2.834 tok/s | +6.5% |
+| TTFT | 2.630 s | 2.470 s | -6.1% |
+| quality keyword coverage | 0.667 | 0.667 | 0% |
+
+- **The CPU-GEMV "gap" was the machine, not the build.** On an idle Mac the
+  current `-O2` build is within 1.6% of the record, which is the record's own
+  scatter; the 45.7 reading was taken at load 5-6 and should not be used.
+- **The `-O2` default does not cost anything anywhere else**: decode +2.5%,
+  prefill +6.5%, TTFT -6.1%, quality identical.
+- **`gpu.routed_moe` at +46% is not claimed as a kernel win.** This file already
+  records that counter as schedule-sensitive (Lever 2: "46.3 -> 38.4 is a schedule
+  artefact"), and nothing in this build touched that kernel; the baseline was
+  recorded without a load reading, so the honest statement is that the counter
+  needs a dedicated interleaved A/B before any of the 46% is believed.
+
+Record: `benchmark/internal-speeds/v2-qwen38-4bit-o2.json`.
+
