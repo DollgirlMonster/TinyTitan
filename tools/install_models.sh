@@ -17,6 +17,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # install from the release tarball keeps its binaries in `~/.tinytitan/bin`.
 BIN="${TINYTITAN_BIN_DIR:-$ROOT/.build/release}/TinyTitanRepack"
 MODELS="${TINYTITAN_MODELS_DIR:-$ROOT/models}"
+# Where a download and its conversion are staged, and where the converted
+# snapshot is kept until the install exists. It must be absolute and independent
+# of the caller's working directory: every staging path below used to be a bare
+# `.build/...`, so a factory-new install launched from the user's home staged
+# tens to hundreds of GB in `~/.build` — outside the install root, and outside
+# the two directories the installer says removing uninstalls everything. Found
+# and fixed 2026-09-24; `TINYTITAN_WORK_DIR` moves it to another volume.
+WORK="${TINYTITAN_WORK_DIR:-$ROOT/.build}"
 
 # The install menu's list of models, labels and sizes comes from the shared
 # catalogue so this file and the installer cannot disagree about what exists.
@@ -206,13 +214,13 @@ install_one() {
         # fetches the checkpoint and its small JSON files from it when set.
         local endpoint_arg=""
         if [[ -n "${HF_ENDPOINT:-}" ]]; then endpoint_arg="--endpoint=${HF_ENDPOINT}"; fi
-        if [[ ! -f ".build/qwen38-affine-${width}bit/model.safetensors.index.json" ]]; then
-          echo "converting $name -> .build/qwen38-affine-${width}bit"
+        if [[ ! -f "$WORK/qwen38-affine-${width}bit/model.safetensors.index.json" ]]; then
+          echo "converting $name -> $WORK/qwen38-affine-${width}bit"
           # A run killed mid-conversion resumes: finished output shards are kept
           # and the checkpoint shards they came from are not fetched again.
           "$python" tools/prepare_qwen38.py --bits "$width" \
-              --output ".build/qwen38-affine-${width}bit" \
-              --work .build/qwen38-shards ${endpoint_arg:+"$endpoint_arg"} || return 1
+              --output "$WORK/qwen38-affine-${width}bit" \
+              --work "$WORK/qwen38-shards" ${endpoint_arg:+"$endpoint_arg"} || return 1
         fi
         # `--share-ngram-table` hardlinks the 102 GB table from the staging
         # snapshot into the install, which only works on one filesystem. With
@@ -221,7 +229,7 @@ install_one() {
         local share_arg=""
         mkdir -p "$MODELS" || return 1
         local staging_device models_device
-        staging_device="$(stat -f '%d' ".build/qwen38-affine-${width}bit" 2>/dev/null || echo)"
+        staging_device="$(stat -f '%d' "$WORK/qwen38-affine-${width}bit" 2>/dev/null || echo)"
         models_device="$(stat -f '%d' "$MODELS" 2>/dev/null || echo)"
         if [[ -n "$staging_device" && "$staging_device" == "$models_device" ]]; then
           share_arg="--share-ngram-table"
@@ -230,40 +238,40 @@ install_one() {
           echo "      ngram_table.bin will be copied rather than hardlinked"
         fi
         echo "installing $name -> models/$dir"
-        "$BIN" --input-snapshot ".build/qwen38-affine-${width}bit" \
+        "$BIN" --input-snapshot "$WORK/qwen38-affine-${width}bit" \
             --model-id qwen3.8-flash-next ${share_arg:+"$share_arg"} --output "$MODELS/$dir"
         ;;
       convert_qwen38_mtp)
         # The draft head's 31 tensors, range-fetched from Qwen's original by
         # tools/prepare_qwen38_mtp.py, then imported as a draft-head sidecar.
         [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
-        if [[ ! -f ".build/qwen38-mtp-affine/model.safetensors.index.json" ]]; then
-          echo "converting $name -> .build/qwen38-mtp-affine"
+        if [[ ! -f "$WORK/qwen38-mtp-affine/model.safetensors.index.json" ]]; then
+          echo "converting $name -> $WORK/qwen38-mtp-affine"
           "$python" tools/prepare_qwen38_mtp.py --bits "$width" \
-              --output .build/qwen38-mtp-affine || return 1
+              --output "$WORK/qwen38-mtp-affine" || return 1
         fi
         echo "installing $name -> models/$dir"
-        "$BIN" --input-snapshot .build/qwen38-mtp-affine --draft-head \
+        "$BIN" --input-snapshot "$WORK/qwen38-mtp-affine" --draft-head \
             --model-id qwen3.8-flash-next-4bit --output "$MODELS/$dir"
         ;;
       convert_qwen36_mtp)
         # Qwen3.6's draft head: 19 tensors of the `mtp.*` namespace in two
         # shards of Qwen's original, converted as a qwen3_5_mtp sidecar.
         [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
-        if [[ ! -f ".build/qwen36-mtp-affine/model.safetensors.index.json" ]]; then
-          echo "converting $name -> .build/qwen36-mtp-affine"
+        if [[ ! -f "$WORK/qwen36-mtp-affine/model.safetensors.index.json" ]]; then
+          echo "converting $name -> $WORK/qwen36-mtp-affine"
           "$python" tools/prepare_agentworld.py --model qwen36 --draft-head --bits "$width" \
-              --output .build/qwen36-mtp-affine --work .build/qwen36-mtp-shards || return 1
+              --output "$WORK/qwen36-mtp-affine" --work "$WORK/qwen36-mtp-shards" || return 1
         fi
         echo "installing $name -> models/$dir"
-        "$BIN" --input-snapshot .build/qwen36-mtp-affine \
+        "$BIN" --input-snapshot "$WORK/qwen36-mtp-affine" \
             --model-id qwen3.6-35b-a3b-mtp-4bit --output "$MODELS/$dir"
         ;;
       convert_qwen35moe)
         # Qwen's own bf16 release, quantized one shard at a time by
         # tools/prepare_agentworld.py (about 70 GB fetched, at most two
         # shards on disk), then repacked. `--bits 4 8` writes *both* widths
-        # from that one download, to `.build/<preset>-affine-{4,8}bit`, so
+        # from that one download, to `$WORK/<preset>-affine-{4,8}bit`, so
         # neither width may be thrown away: the snapshot is kept until both
         # installs exist, and the other width then costs no fetch at all.
         [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
@@ -278,17 +286,17 @@ install_one() {
         # paired `-8bit` form this script writes, or the plain directory an
         # earlier manual `--bits 8` run leaves behind. Without this second
         # check a model already converted by hand re-downloads 70 GB.
-        local snap=".build/${preset}-affine-${width}bit"
+        local snap="$WORK/${preset}-affine-${width}bit"
         if [[ ! -f "$snap/model.safetensors.index.json" \
-              && "$width" == 8 && -f ".build/${preset}-affine/model.safetensors.index.json" ]]; then
-          snap=".build/${preset}-affine"
+              && "$width" == 8 && -f "$WORK/${preset}-affine/model.safetensors.index.json" ]]; then
+          snap="$WORK/${preset}-affine"
         fi
         if [[ ! -f "$snap/model.safetensors.index.json" ]]; then
-          echo "converting $preset -> .build/${preset}-affine-{4,8}bit"
+          echo "converting $preset -> $WORK/${preset}-affine-{4,8}bit"
           "$python" tools/prepare_agentworld.py --model "$preset" --bits 4 8 \
-              --output ".build/${preset}-affine" \
-              --work ".build/${preset}-shards" || return 1
-          snap=".build/${preset}-affine-${width}bit"
+              --output "$WORK/${preset}-affine" \
+              --work "$WORK/${preset}-shards" || return 1
+          snap="$WORK/${preset}-affine-${width}bit"
         fi
         echo "installing $name -> models/$dir"
         "$BIN" --input-snapshot "$snap" \
@@ -299,7 +307,7 @@ install_one() {
         # tools/prepare_ornith_mtp.py verifies that shard against its pinned
         # revision and converts it.
         [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
-        local src=.build/ornith-mtp-src rev=e4dfb35a93d4b6822a811a7676f3488514abe7e2
+        local src="$WORK/ornith-mtp-src" rev=e4dfb35a93d4b6822a811a7676f3488514abe7e2
         local base="https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/resolve/$rev"
         mkdir -p "$src"
         # A file is trusted only at the size the server reports; a partial
@@ -312,22 +320,22 @@ install_one() {
             curl -fL --retry 20 --retry-delay 15 --retry-all-errors -C - -o "$src/$f" "$base/$f" || return 1
           fi
         done
-        if [[ ! -f ".build/ornith-mtp-affine/model.safetensors.index.json" ]]; then
-          echo "converting $name -> .build/ornith-mtp-affine"
+        if [[ ! -f "$WORK/ornith-mtp-affine/model.safetensors.index.json" ]]; then
+          echo "converting $name -> $WORK/ornith-mtp-affine"
           "$python" tools/prepare_ornith_mtp.py --bits "$width" \
               --source-shard "$src/model-00016-of-00016.safetensors" \
               --source-config "$src/config.json" --source-index "$src/model.safetensors.index.json" \
-              --output .build/ornith-mtp-affine || return 1
+              --output "$WORK/ornith-mtp-affine" || return 1
         fi
         echo "installing $name -> models/$dir"
-        "$BIN" --input-snapshot .build/ornith-mtp-affine \
+        "$BIN" --input-snapshot "$WORK/ornith-mtp-affine" \
             --model-id ornith-1.5-35b-a3b-mtp-4bit --output "$MODELS/$dir"
         ;;
       convert_qwen35)
         # The dense Qwen 3.5 models, from Qwen's own bf16 release. One
         # download yields both widths, so the other width installs without a
         # second fetch: only the converted *staging* directory is per-width,
-        # the source shards in .build/<preset>-shards are shared.
+        # the source shards in $WORK/<preset>-shards are shared.
         #
         # Convert, then repack, then drop the staging directory. The snapshot
         # the converter writes is an intermediate, not the install: every
@@ -350,7 +358,7 @@ install_one() {
         # The 9B checkpoint is the vision-language build; the converter drops
         # the model.visual.* tower and writes the text model, so the install
         # is text-only like every other model here.
-        local stage=".build/qwen35-${size_key}-affine-${width}bit"
+        local stage="$WORK/qwen35-${size_key}-affine-${width}bit"
         if [[ ! -f "$stage/config.json" ]]; then
           if [[ -f "$MODELS/$dir/config.json" ]]; then
             # A legacy snapshot: move it into the converter's staging area
@@ -363,7 +371,7 @@ install_one() {
             echo "converting Qwen 3.5 ${size_key} ${width}-bit -> $stage"
             "$python" tools/prepare_qwen35.py --size "$size_key" --bits "$width" \
                 --output "$stage" \
-                --work ".build/${preset}-shards" || return 1
+                --work "$WORK/${preset}-shards" || return 1
           fi
         fi
         # The receipt is bound to the absolute output path below, and it is
