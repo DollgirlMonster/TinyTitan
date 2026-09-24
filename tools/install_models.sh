@@ -461,7 +461,14 @@ choose_model() {
   done
   echo
   printf 'Choice [1-%d] (Enter for %s): ' "$count" "$default_label"
-  read -r reply || reply=""
+  # An EOF is not an answer. Treating it as "Enter" started the recommended
+  # 36.9 GB download for a caller that never chose anything (found 2026-09-24 by
+  # closing stdin on `--choose`); only a real empty line takes the default.
+  if ! read -r reply; then
+    echo
+    echo "No answer given; nothing was installed." >&2
+    return 2
+  fi
   reply="${reply:-1}"
   if [[ ! "$reply" =~ ^[0-9]+$ ]] || (( reply < 1 || reply > count )); then
     echo "not a choice: $reply" >&2
