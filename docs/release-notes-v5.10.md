@@ -144,14 +144,47 @@ byte-identical to a clean run. They run in CI.
 ### Performance
 
 Measured on this commit for this release against the 5.9 record
-(`benchmark/internal-speeds/v5.10.json`).
+(`benchmark/internal-speeds/v5.10.json`), on an otherwise idle 24 GiB M3:
+
+- **GPU** QKV GEMV **67.4 GB/s** (+6.1%), routed MoE **41.4 GB/s** (−5.0%), GDN
+  in-projection **76.8 GB/s** (+13.1%);
+- **CPU** int8 affine GEMV **54.7 GB/s** (+15.2%);
+- **generation** prefill **25.9 tok/s** (+7.4%), decode **26.1 tok/s** (+4.2%),
+  effective decode **70.7 GB/s** (+4.3%), first token **0.27 s** (−6.9%);
+- **ANE prefill 50.1 tok/s** (+3.5%);
+- the greedy response is **byte-identical to 5.9** (`quality.response_sha256`
+  unchanged), and so are coverage (0.417) and trigram repetition (0.0958) — no
+  arithmetic moved.
 
 ### Verification
 
-Measured on this commit by the release dry run. Nine golden targets are **not
-checked**, because their install is not under `models/` and nothing may be fetched
-to change that: `ornith-8`, `ornith-4`, `qwen38-8`, `agentworld-4`,
-`agentworld-8`, `katcoder-4`, `katcoder-8`, `qwen35-2b-4`, `qwen35-2b-8`.
+Measured on this commit by the release dry run:
+
+- six lint gates clean, **2,030 functions** scanned, the shell gate over 20
+  scripts on bash 3.2.57;
+- **1,491 tests in 223 suites**, all passing;
+- **7 golden baselines byte-identical** — qwen36-4, qwen36-8, qwen38-4,
+  qwen35-4b-4, qwen35-4b-8, qwen35-9b-4, qwen35-9b-8;
+- a clean scratch release build with the compiler-warning scan clean, and the
+  archive staged and packaged from that tree;
+- the engine's speeds recorded against the 5.9 baseline and committed, every
+  metric inside the gate, with the quality proxy and the greedy response
+  unchanged from 5.9.
+
+**One measurement artefact is recorded rather than hidden.** The first run of
+the speed record read routed MoE at **37.1 GB/s** against 43.6 (−14.9%, past the
+gate) while the machine still carried background work (two Chrome helpers at
+35–55%, `mediaanalysisd` spiking to 165%, load average ≈5.8); the re-run read
+**41.4 GB/s** (−5.0%). That counter has ranged **36.8–56.1 GB/s** across the
+stored records and this file already treats it as schedule-sensitive (an earlier
++46% swing was called an artefact), nothing in this release touches the MoE
+kernel, and the goldens are byte-identical — so the low first run is the
+measurement and not the code, and the committed record is the re-run as it read.
+
+**Nine golden targets are not checked**, because their install is not under
+`models/` and nothing may be fetched to change that: `ornith-8`, `ornith-4`,
+`qwen38-8`, `agentworld-4`, `agentworld-8`, `katcoder-4`, `katcoder-8`,
+`qwen35-2b-4`, `qwen35-2b-8`.
 
 ### Checksum
 
