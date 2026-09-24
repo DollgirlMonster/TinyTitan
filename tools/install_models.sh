@@ -38,6 +38,238 @@ source "$ROOT/tools/tinytitan_models.sh"
 # shellcheck source=tools/lib/python.sh
 source "$ROOT/tools/lib/python.sh"
 
+# --- disk space and staging hygiene -----------------------------------------
+#
+# Two rules make an install predictable on a machine that is somebody's only
+# disk. A download is refused before it starts if it cannot finish, and staging
+# is removed as soon as it can no longer save work — a converted snapshot exists
+# so the *second* width of a model costs no fetch, so it is kept exactly until
+# that width is installed, and draft-head staging is never reusable at all.
+
+# Free GB on the volume holding <path>, or empty when df cannot say.
+free_gb() {
+  local path="$1" available
+  mkdir -p "$path" 2>/dev/null || true
+  available="$(df -g "$path" 2>/dev/null | awk 'NR==2 {print $4}')"
+  [[ "$available" =~ ^[0-9]+$ ]] && printf '%s' "$available"
+}
+
+# The catalogue's installed size for a row, in GB. May be fractional.
+choice_gb() {
+  local want="$1" row key _label _bits gb
+  for row in "${TINYTITAN_MODEL_CHOICES[@]+"${TINYTITAN_MODEL_CHOICES[@]}"}"; do
+    IFS='|' read -r key _label _bits gb _ <<<"$row"
+    [[ "$key" == "$want" ]] && { printf '%s' "$gb"; return 0; }
+  done
+}
+
+# Refuse when `path` cannot hold `need` GB. Empty `need` means "do not check",
+# and an unreadable df means the same: this never invents a limit it cannot
+# justify.
+require_gb() {
+  local label="$1" path="$2" need="$3" available
+  [[ -n "$need" ]] || return 0
+  available="$(free_gb "$path")"
+  [[ -n "$available" ]] || return 0
+  if awk -v a="$available" -v n="$need" 'BEGIN { exit !(a < n) }'; then
+    printf '  %s holds %s GB but about %s GB is needed there.\n' "$label" "$available" "$need" >&2
+    return 1
+  fi
+}
+
+# The paths under $WORK that this tool owns. Deliberately a narrow pattern rather
+# than "everything in $WORK": a checkout keeps its release build, benchmark
+# results and scratch checkouts there too, and measuring those as "staging" made
+# `clean` claim 12 GB it had nothing to do with.
+staging_paths() {
+  local dir
+  for dir in "$WORK"/*-affine* "$WORK"/*-shards "$WORK"/qwen38-mtp-affine "$WORK"/ornith-mtp-src; do
+    [[ -e "$dir" ]] && printf '%s\n' "$dir"
+  done
+}
+
+# A KB count as a person reads it: MB below a gigabyte, GB above. Storage here
+# spans three orders of magnitude, and "0 GB" or "1 GB" for a few megabytes is a
+# number that teaches the reader to distrust the rest.
+human_kb() {
+  local kb="$1"
+  if (( kb < 1048576 )); then
+    printf '%s MB' "$(( (kb + 1023) / 1024 ))"
+  else
+    printf '%s GB' "$(( (kb + 1048575) / 1048576 ))"
+  fi
+}
+
+# Total KB of staging, printed as a number only (empty when there is none), so
+# callers can both compare and display it.
+staging_kb() {
+  local dir kb total=0
+  while IFS= read -r dir; do
+    kb="$(du -sk "$dir" 2>/dev/null | awk 'NR==1 {print $1}')"
+    [[ "$kb" =~ ^[0-9]+$ ]] && total=$(( total + kb ))
+  done < <(staging_paths)
+  (( total > 0 )) || return 0
+  printf '%s' "$total"
+}
+
+# The staging size as text ("12 GB", "850 MB"), or empty when there is none.
+staging_size() {
+  local kb
+  kb="$(staging_kb)"
+  [[ -n "$kb" ]] && human_kb "$kb"
+}
+
+# The staging paths, comma-separated, for a hint that says what is kept.
+staging_names() {
+  local dir names=()
+  while IFS= read -r dir; do names+=("${dir#"$WORK"/}"); done < <(staging_paths)
+  (( ${#names[@]} > 0 )) && printf '%s' "$(IFS=', '; printf '%s' "${names[*]+"${names[*]}"}")"
+}
+
+# The install directory of the row that shares this row's download, if any.
+# Paired MoE widths share one conversion, the two Qwen3.8 widths share their
+# shard directory, and the dense Qwen 3.5 sizes share theirs. A draft head
+# shares nothing. This decides whether staging is still worth keeping.
+row_sibling_dir() {
+  local name="$1" row _n dir _w source preset sibling other base row2 n2 d2
+  for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
+    IFS='|' read -r _n dir _w source preset sibling <<<"$row"
+    [[ "$_n" == "$name" ]] || continue
+    case "$source" in
+      convert_qwen35moe) other="$sibling" ;;
+      convert|convert_qwen35)
+        base="${name%-8bit}"
+        if [[ "$name" == *-8bit ]]; then other="$base"; else other="${base}-8bit"; fi ;;
+      *) return 0 ;;
+    esac
+    [[ -n "$other" ]] || return 0
+    for row2 in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
+      IFS='|' read -r n2 d2 _ _ _ _ <<<"$row2"
+      [[ "$n2" == "$other" ]] && { printf '%s' "$d2"; return 0; }
+    done
+    return 0
+  done
+}
+
+# The staging one catalogue row owns, as `reuse:<path>` (a sibling width can
+# still use it) or `drop:<path>` (nobody can).
+row_staging_dirs() {
+  local name="$1" row _n _dir _w source preset
+  for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
+    IFS='|' read -r _n _dir _w source preset _ <<<"$row"
+    [[ "$_n" == "$name" ]] || continue
+    case "$source" in
+      convert_qwen38_mtp)  printf 'drop:%s\n' "$WORK/qwen38-mtp-affine" ;;
+      convert_qwen36_mtp)  printf 'drop:%s\n' "$WORK/qwen36-mtp-affine" ;;
+      prepare_ornith_mtp)  printf 'drop:%s\n' "$WORK/ornith-mtp-affine" "$WORK/ornith-mtp-src" ;;
+      convert)             printf 'drop:%s\n' "$WORK/qwen38-affine-${_w}bit"
+                           printf 'reuse:%s\n' "$WORK/qwen38-shards" ;;
+      # Both MoE widths are quantized into the same pair of snapshots by one
+      # run, so every one of these is what the *other* width would consume.
+      convert_qwen35moe)   printf 'reuse:%s\n' "$WORK/${preset}-affine-4bit" "$WORK/${preset}-affine-8bit" \
+                                              "$WORK/${preset}-affine" "$WORK/${preset}-shards" ;;
+      convert_qwen35)      printf 'drop:%s\n' "$WORK/${_n%-8bit}-affine-${_w}bit"
+                           printf 'reuse:%s\n' "$WORK/${_n%-8bit}-shards" ;;
+    esac
+    return 0
+  done
+}
+
+# The install directory one catalogue row would fill.
+row_install_dir() {
+  local name="$1" row _n dir
+  for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
+    IFS='|' read -r _n dir _ <<<"$row"
+    [[ "$_n" == "$name" ]] && { printf '%s' "$dir"; return 0; }
+  done
+}
+
+# Remove staging that cannot save a future download, and say what happened.
+#
+# `mode` "keep" is the normal install path: staging is left alone while any row
+# that would consume it is still missing, and the hint says what is kept and how
+# to reclaim it. `mode` "reap" is the explicit `clean` command: the same rules,
+# silently, for every row. Nothing is removed on a guess — a shared snapshot goes
+# only when every width that reuses it is installed, and a per-width one goes
+# once its own width is.
+cleanup_staging() {
+  local name="$1" mode="${2:-keep}" dir kind freed=0 removed=()
+  local -a victims=() kept=()
+  local sibling own_dir
+  sibling="$(row_sibling_dir "$name")"
+  own_dir="$(row_install_dir "$name")"
+  while IFS=: read -r kind dir; do
+    [[ -n "$dir" && -e "$dir" ]] || continue
+    if [[ "$kind" == reuse ]]; then
+      # Kept while either consumer is still uninstalled.
+      if [[ -n "$own_dir" && ! -d "$MODELS/$own_dir" ]] \
+         || { [[ -n "$sibling" ]] && [[ ! -d "$MODELS/$sibling" ]]; }; then
+        kept+=("$dir")
+        continue
+      fi
+    elif [[ -n "$own_dir" && ! -d "$MODELS/$own_dir" ]]; then
+      # Per-width staging (a snapshot, a draft head's source): worth keeping
+      # until this row itself is installed, then it is only wasted disk.
+      kept+=("$dir")
+      continue
+    fi
+    victims+=("$dir")
+  done < <(row_staging_dirs "$name")
+
+  # Remove each one, counting what it held before it went. The list needs no
+  # de-duplication: `row_staging_dirs` names each path once per row.
+  for dir in "${victims[@]+"${victims[@]}"}"; do
+    local before
+    before="$(du -sk "$dir" 2>/dev/null | awk 'NR==1 {print $1}')"
+    rm -rf "$dir"
+    freed=$(( freed + ${before:-0} ))
+    removed+=("${dir#"$WORK"/}")
+  done
+  if (( ${#removed[@]} > 0 )); then
+    printf '  staging cleaned (%s freed): %s\n' \
+      "$(human_kb "$freed")" "$(IFS=', '; printf '%s' "${removed[*]+"${removed[*]}"}")"
+  fi
+
+  # Only the install path explains itself; `clean` has its own summary.
+  if [[ "$mode" == "keep" && ${#kept[@]} -gt 0 ]]; then
+    local kept_kb=0 kept_paths=()
+    for dir in "${kept[@]+"${kept[@]}"}"; do
+      kept_paths+=("${dir#"$WORK"/}")
+      local size
+      size="$(du -sk "$dir" 2>/dev/null | awk 'NR==1 {print $1}')"
+      kept_kb=$(( kept_kb + ${size:-0} ))
+    done
+    printf '  kept %s of staging (%s) so the other width needs no download;\n' \
+      "$(human_kb "$kept_kb")" "$(IFS=', '; printf '%s' "${kept_paths[*]+"${kept_paths[*]}"}")"
+    printf '  reclaim it when you have the widths you want:  %s clean\n' "$0"
+  fi
+  return 0
+}
+
+# The explicit `clean`: the rules above for every model, plus empty shard
+# directories, then a summary of what is still staged and why. Safe at any time:
+# it only touches this script's own staging.
+cmd_clean() {
+  echo "Cleaning install staging under $WORK"
+  local row name dir
+  for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
+    IFS='|' read -r name _ <<<"$row"
+    cleanup_staging "$name" reap
+  done
+  for dir in "$WORK"/*-shards; do
+    [[ -d "$dir" && -z "$(ls -A "$dir" 2>/dev/null)" ]] && rmdir "$dir" 2>/dev/null
+  done
+  local staged
+  staged="$(staging_size)"
+  if [[ -n "$staged" ]]; then
+    echo "  still staged: $staged — $(staging_names)"
+    echo "  kept for a width you have not installed yet; it goes automatically once"
+    echo "  both widths of that model are installed"
+  else
+    echo "  nothing left staged"
+  fi
+}
+
 # name|install directory|width|source[|preset[|both-widths-directory]]
 #
 # The last two fields only appear on rows whose source is `convert_qwen35moe`.
@@ -72,6 +304,35 @@ CATALOGUE=(
 
 usage() {
   cat <<'USAGE'
+Commands
+
+  tools/install_models.sh                 what is installed, and what staging is kept
+  tools/install_models.sh --choose        the install menu (the one real choice)
+  tools/install_models.sh <name>          install one width
+  tools/install_models.sh <name> both     4-bit and 8-bit from one download
+  tools/install_models.sh --all-4bit      every 4-bit model
+  tools/install_models.sh --all-8bit      every 8-bit model
+  tools/install_models.sh clean           drop staging that cannot be reused
+
+Where things go
+
+  Models install to $TINYTITAN_MODELS_DIR (the installer sets
+  ~/.tinytitan/models; a checkout uses <repo>/models), one directory per row
+  with its verified-install.json receipt. A download and its conversion are
+  staged under $TINYTITAN_WORK_DIR (default <tools>/../.build) — for an
+  installed copy that is ~/.tinytitan/src/.build.
+
+  Staging is kept only while it can save a download: the converted snapshot is
+  what makes the *other* width of the same model free, so it lives until that
+  width is installed and is removed automatically at that point. Draft-head
+  staging has no second consumer and goes as soon as the install exists.
+  `clean` applies those rules to everything at once and says what is left.
+
+  A download is refused before it starts when the staging volume or the models
+  volume cannot hold it, naming both numbers and both ways out (free space, or
+  TINYTITAN_WORK_DIR on another volume). TINYTITAN_SKIP_DISK_CHECK=1 starts
+  anyway. A resumed conversion does not need the room again.
+
 Coverage
 
   Ornith 1.5 35B-A3B        4-bit, 8-bit, MTP draft
@@ -125,10 +386,18 @@ status() {
     printf '%-20s %-8s %-10s %s\n' "$name" "${width}-bit" "$state" "$source"
   done
   echo
+  local staged
+  staged="$(staging_size)"
+  if [[ -n "$staged" ]]; then
+    echo "staging: $staged under $WORK — $(staging_names)"
+    echo "  a converted snapshot is kept until the other width is installed, so the"
+    echo "  second width needs no download; it is removed automatically at that point"
+  fi
   echo "tools/install_models.sh --choose        the install menu: pick a model"
   echo "tools/install_models.sh <name>          install one width"
   echo "tools/install_models.sh <name> both     4-bit and 8-bit from one download"
-  echo "tools/install_models.sh --help          sources and disk sizes"
+  echo "tools/install_models.sh clean           drop staging that cannot be reused"
+  echo "tools/install_models.sh --help          sources, disk sizes and env vars"
 }
 
 # Does `TinyTitanRepack --model <key>` stream this one itself?
@@ -191,9 +460,43 @@ install_one() {
         echo "$name is an affine snapshot; repacking it as .gturbo"
       else
         echo "$name is already installed at models/$dir"
+        cleanup_staging "$name" keep
         return 0
       fi
     fi
+
+    # --- can this download finish? -----------------------------------------
+    # The converted snapshot and the install exist at the same time, so each
+    # destination has to hold a copy: the catalogue's size for the install, a
+    # quarter more on the staging volume for the quantized snapshot's overhead,
+    # and a flat 12 GB for the shard stream, the manifest and the receipt. A
+    # snapshot that is already on disk is not fetched again, so it is not
+    # counted twice. An unreadable df is not a limit: require_gb says nothing
+    # then, which is the same rule the runtime's own guard follows.
+    if [[ "${TINYTITAN_SKIP_DISK_CHECK:-0}" != "1" ]]; then
+      local size_gb="" snap_exists=0 install_exists=0 probe work_ok=1 models_ok=1
+      size_gb="$(choice_gb "$name")"
+      if [[ -n "$size_gb" ]]; then
+        while IFS=: read -r _kind probe; do
+          [[ -n "$probe" && -e "$probe" ]] && snap_exists=1
+        done < <(row_staging_dirs "$name")
+        [[ -d "$MODELS/$dir" ]] && install_exists=1
+        require_gb "the staging volume ($WORK)" "$WORK" \
+          "$(awk -v s="$size_gb" -v have="$snap_exists" 'BEGIN { printf "%d", have ? 2 : s * 1.25 + 12 }')" \
+          || work_ok=0
+        require_gb "the models volume ($MODELS)" "$MODELS" \
+          "$(awk -v s="$size_gb" -v have="$install_exists" 'BEGIN { printf "%d", have ? 2 : s + 3 }')" \
+          || models_ok=0
+        if (( ! work_ok || ! models_ok )); then
+          echo "  Not starting $name: there is not enough room to finish it." >&2
+          echo "  Free space, or stage on another volume:" >&2
+          echo "      TINYTITAN_WORK_DIR=/Volumes/scratch/tt $0 $name" >&2
+          echo "  (TINYTITAN_SKIP_DISK_CHECK=1 starts anyway, at your own risk.)" >&2
+          return 1
+        fi
+      fi
+    fi
+
     case "$source" in
       repack)
         [[ -x "$BIN" ]] || { echo "build TinyTitanRepack first: swift build -c release" >&2; return 1; }
@@ -410,6 +713,9 @@ EOF
         return 1
         ;;
     esac
+    # Installed. Drop whatever staging can no longer save a download, and say
+    # what is kept and why — a snapshot a second width will reuse, or nothing.
+    cleanup_staging "$name" keep
     return 0
   done
   [[ "$found" == 1 ]] || { echo "unknown model: $want" >&2; status >&2; return 2; }
@@ -490,6 +796,7 @@ choose_model() {
 case "${1:-}" in
   "")            status ;;
   --help|-h)     usage ;;
+  clean)         cmd_clean ;;
   # The install menu: one numbered list, default first, then install the pick.
   --choose|--menu)
                  if [[ ! -t 0 ]]; then

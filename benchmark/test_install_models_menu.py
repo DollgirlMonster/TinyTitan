@@ -20,9 +20,12 @@ the script. Nothing here touches the network or `models/`.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -105,6 +108,130 @@ class StagingPathTests(unittest.TestCase):
     def test_relative_staging_paths_are_not_quoted_in_a_command(self) -> None:
         # Belt and braces for a future edit that reintroduces the old spelling.
         self.assertIsNone(re.search(r'"\.build/(?!release)', self.script))
+
+
+class DiskSpaceAndCleanupTests(unittest.TestCase):
+    """A download starts only if it can finish; staging leaves when it cannot help.
+
+    Everything runs against temp volumes with a stubbed `df`, a stubbed repack
+    binary and `/usr/bin/true` as the interpreter, so no test here can fetch a
+    byte. The stub repack prints `FAKE-REPACK …`, which is how a test sees that
+    an install would have started.
+    """
+
+    ORNITH_4 = "ornith-1.5_35B_A3B_4Bit"
+    ORNITH_8 = "ornith-1.5_35B_A3B_8Bit"
+
+    def setUp(self) -> None:
+        self.root = pathlib.Path(tempfile.mkdtemp(prefix="tt-install-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.work = self.root / "work"
+        self.models = self.root / "models"
+        self.bin = self.root / "bin"
+        for path in (self.work, self.models, self.bin):
+            path.mkdir(parents=True)
+        repack = self.bin / "TinyTitanRepack"
+        repack.write_text('#!/bin/sh\necho "FAKE-REPACK $*"\n')
+        repack.chmod(0o755)
+        self.df_dir = self.root / "dfbin"
+        self.df_dir.mkdir()
+
+    def stub_df(self, available_gb: int) -> None:
+        df = self.df_dir / "df"
+        df.write_text(f'#!/bin/sh\necho "Filesystem 1G-blocks Used Available Capacity Mounted on"\n'
+                      f'echo "/dev/test 10000 1 {available_gb} 1% /"\n')
+        df.chmod(0o755)
+
+    def run_tool(self, *args: str, available_gb: int | None = None):
+        env = dict(os.environ,
+                   TINYTITAN_WORK_DIR=str(self.work),
+                   TINYTITAN_MODELS_DIR=str(self.models),
+                   TINYTITAN_BIN_DIR=str(self.bin),
+                   TINYTITAN_PYTHON="/usr/bin/true")
+        if available_gb is not None:
+            self.stub_df(available_gb)
+            env["PATH"] = f"{self.df_dir}:{env['PATH']}"
+        return subprocess.run(["bash", str(SCRIPT), *args], env=env,
+                              capture_output=True, text=True, timeout=120)
+
+    def install(self, name: str) -> None:
+        (self.models / name).mkdir(parents=True, exist_ok=True)
+
+    def stage(self, relative: str, megabytes: int) -> pathlib.Path:
+        path = self.work / relative
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "blob").write_bytes(b"x" * (megabytes * 1024))
+        return path
+
+    def test_a_short_volume_refuses_before_the_download_starts(self) -> None:
+        result = self.run_tool("ornith15", available_gb=3)
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("but about", output)
+        self.assertIn("Not starting ornith15", output)
+        self.assertIn("TINYTITAN_WORK_DIR", output)
+        self.assertNotIn("FAKE-REPACK", output)
+        self.assertFalse((self.models / self.ORNITH_4).exists())
+
+    def test_enough_space_lets_the_install_proceed(self) -> None:
+        result = self.run_tool("ornith15", available_gb=9999)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn("installing ornith15", output)
+        self.assertIn("FAKE-REPACK", output)
+
+    def test_the_precheck_can_be_skipped_explicitly(self) -> None:
+        env = dict(os.environ,
+                   TINYTITAN_WORK_DIR=str(self.work), TINYTITAN_MODELS_DIR=str(self.models),
+                   TINYTITAN_BIN_DIR=str(self.bin), TINYTITAN_PYTHON="/usr/bin/true",
+                   TINYTITAN_SKIP_DISK_CHECK="1")
+        self.stub_df(3)
+        env["PATH"] = f"{self.df_dir}:{env['PATH']}"
+        result = subprocess.run(["bash", str(SCRIPT), "ornith15"], env=env,
+                                capture_output=True, text=True, timeout=120)
+        self.assertIn("FAKE-REPACK", result.stdout + result.stderr)
+
+    def test_staging_for_a_missing_width_is_kept_and_explained(self) -> None:
+        self.install(self.ORNITH_4)
+        snapshot = self.stage("ornith15-affine-4bit", 1)
+        result = self.run_tool("ornith15")
+        output = result.stdout + result.stderr
+        self.assertTrue(snapshot.exists(), "the reusable snapshot was removed")
+        self.assertIn("kept", output)
+        self.assertIn("clean", output)
+
+    def test_staging_goes_once_both_widths_are_installed(self) -> None:
+        for name in (self.ORNITH_4, self.ORNITH_8):
+            self.install(name)
+        snapshot = self.stage("ornith15-affine-4bit", 1)
+        result = self.run_tool("ornith15")
+        self.assertFalse(snapshot.exists())
+        self.assertIn("staging cleaned", result.stdout + result.stderr)
+
+    def test_draft_head_staging_is_removed_immediately(self) -> None:
+        # Nothing reuses a draft head's source shard, installed or not.
+        self.install("ornith-1.5_35B_A3B_MTP_4Bit")
+        source = self.stage("ornith-mtp-src", 1)
+        result = self.run_tool("ornith15-mtp")
+        self.assertFalse(source.exists())
+        self.assertIn("staging cleaned", result.stdout + result.stderr)
+
+    def test_clean_keeps_staging_an_uninstalled_width_still_needs(self) -> None:
+        self.install(self.ORNITH_4)
+        snapshot = self.stage("ornith15-affine-4bit", 1)
+        result = self.run_tool("clean")
+        self.assertTrue(snapshot.exists())
+        self.assertIn("still staged", result.stdout + result.stderr)
+
+        self.install(self.ORNITH_8)
+        result = self.run_tool("clean")
+        self.assertFalse(snapshot.exists())
+        self.assertIn("nothing left staged", result.stdout + result.stderr)
+
+    def test_status_shows_what_is_staged(self) -> None:
+        self.stage("ornith15-affine-4bit", 1)
+        result = self.run_tool()
+        self.assertIn("staging:", result.stdout)
 
 
 if __name__ == "__main__":

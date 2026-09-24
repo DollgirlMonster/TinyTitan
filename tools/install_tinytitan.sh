@@ -433,6 +433,14 @@ if ! installed_any; then
   echo "     Install one, then start the server:"
   echo "       $TOOLS_PATH/install_models.sh $MODEL"
   echo "       ~/.local/bin/tinytitan"
+else
+  # Staging is cleaned as widths complete; what is left is a converted snapshot
+  # a second width would reuse, which is worth its disk only if that width is
+  # still wanted. One command reclaims the rest, and `status` shows the size.
+  echo
+  echo "     Conversion staging is removed automatically once both widths of a"
+  echo "     model are installed. Reclaim the rest whenever you like:"
+  echo "       $TOOLS_PATH/install_models.sh clean"
 fi
 
 # The chat window. Offered only once a model is on disk: the whole point is a
