@@ -131,7 +131,8 @@ pipeline sees only the answer. Nothing installed yet? Start with
   provider config to the model the server advertises. It asks what to launch
   from one list of every installed model and quantization (GPU and CPU), the
   thinking level that model supports, and an optional RAM target for the server
-  process (4/8/16/32 GB; anything over 30% of the Mac's physical memory is
+  process (any whole GB from 4 up — the interactive question offers 4, 8, 16 or
+  32; anything over 30% of the Mac's physical memory is
   warned about in red and used anyway, and the default is the install's own
   measured profile, which the runtime holds to a third of physical memory).
   It serves on `127.0.0.1:8080` by default — the launcher asks for the port,

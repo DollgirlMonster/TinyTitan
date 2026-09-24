@@ -23,7 +23,8 @@
 #              (minimal, low, medium, high, xhigh, max). The dense Qwen 3.5
 #              models define the binary thinking switch, so their levels are
 #              exactly off|on -- off for a direct answer, on to reason first.
-#   <ram>      resident-memory target for the server: 4, 8, 16 or 32 (GB).
+#   <ram>      resident-memory target for the server in GB: any whole number
+#              from 4 up (the interactive question offers 4, 8, 16 or 32).
 #              Anything over 30% of this Mac's physical memory is warned about
 #              in red and used anyway. Omit it to use the install's own measured
 #              profile, whose cache budget the runtime holds to a third of
@@ -48,11 +49,13 @@
 #   --mode <fast|full>       fast strips CLI boilerplate; full keeps tools
 #   --answers <default|concise>
 #   --thinking <level>
-#   --ram <4|8|16|32>   resident-memory target for the server in GB (GPU
-#              models only); the expert cache gets what is left after the
-#              resident weights and the runtime. 4 GB is the floor (the weights
-#              plus a minimum cache are ~4.7 GB on the 125B install); over 30% of
-#              this Mac's physical memory is warned about, not refused
+#   --ram <n>   resident-memory target for the server in GB (GPU models only),
+#              any whole number from 4 up -- the menu offers 4, 8, 16 and 32, and
+#              the benchmark harnesses pass others (9, for instance). The expert
+#              cache gets what is left after the resident weights and the runtime.
+#              4 GB is the floor (the weights plus a minimum cache are ~4.7 GB on
+#              the 125B install); over 30% of this Mac's physical memory is
+#              warned about, not refused
 #   --context <n|native|max> native 262144, or 524288/1048576 with --yarn
 #   --kv <4|8|16>   KV-cache precision (default 8)
 #   --yarn          enable YaRN context scaling
