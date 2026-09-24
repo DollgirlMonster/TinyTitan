@@ -12,7 +12,18 @@
 #   * our `dsh` is installed into a private npm prefix and is never put on PATH;
 #   * DSH_HOME points at our own home, so profiles, sessions, settings and the
 #     plugin copy live there and the user's ~/.dsh is never read or written;
-#   * pnpm's store is redirected into the same private root;
+#   * pnpm's store and pnpm's own home (`~/Library/pnpm` on macOS) are redirected
+#     into the same private root;
+#   * npm is told to keep its cache, its logs and its user config there too.
+#     `--prefix` moves where packages are unpacked, not where npm writes: without
+#     this, every install left `~/.npm/_cacache` and `~/.npm/_logs` in the user's
+#     home and read their `~/.npmrc` (measured 2026-09-24, fixed here);
+#   * the harness runs with a private `XDG_CACHE_HOME` and `XDG_STATE_HOME`, so a
+#     tool the agent runs cannot drop a cache into the user's home either.
+#     `HOME`, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are deliberately left alone:
+#     the agent works inside the user's repositories, so it must be able to
+#     *read* their git identity and their `gh`/registry credentials. Isolation is
+#     about what this bundle writes, not about blinding the tools it drives;
 #   * the browser UI binds 7788 (TINYTITAN_DSH_PORT), not DSH's default 3080,
 #     and steps up to the next free port if 7788 is already taken. A port held
 #     by an earlier run of *this* install is stopped and reused; a port held by
@@ -97,6 +108,25 @@ DSH_BIN_DIR="$DSH_ROOT/bin"
 SMOKE_DIR="$DSH_ROOT/smoke"
 SMOKE_BROWSERS="$DSH_ROOT/browsers"
 VERSION_MARKER="$DSH_ROOT/.dsh-version"
+# npm's cache, log directory and user config. `--prefix` moves where packages
+# are *unpacked*, not where npm keeps its cache: measured on 2026-09-24, an
+# `npm install --prefix <private>` still wrote `~/.npm/_cacache` and
+# `~/.npm/_logs`, and read the user's `~/.npmrc` — exactly the writes an
+# isolated bundle promises not to make. Everything the bundle installs now uses
+# these; the user's npm setup is neither read nor written.
+DSH_NPM_CACHE="$DSH_ROOT/npm-cache"
+DSH_NPMRC="$DSH_ROOT/npmrc"
+# Caches and state only. HOME, XDG_CONFIG_HOME and XDG_DATA_HOME are left as the
+# user's on purpose: the agent works inside their repositories, so it needs
+# their git identity and their `gh`/registry credentials to read. Isolation is
+# about what the bundle *writes*, not about blinding the tools it drives.
+DSH_XDG_CACHE="$DSH_ROOT/xdg-cache"
+DSH_XDG_STATE="$DSH_ROOT/xdg-state"
+# pnpm's own home. `--store-dir` moves the store, but pnpm still ensures
+# `~/Library/pnpm` exists on macOS (measured 2026-09-24 in a factory-new HOME:
+# an empty directory, but created in the user's home all the same). PNPM_HOME
+# moves that too.
+DSH_PNPM_HOME="$DSH_ROOT/pnpm-home"
 
 DRY_RUN=0
 [[ "${TINYTITAN_DSH_DRY_RUN:-0}" == "1" ]] && DRY_RUN=1
@@ -168,6 +198,26 @@ tool_path() {
   printf '%s' "${node_dir:+$node_dir:}$DSH_BIN_DIR:$DSH_PREFIX/node_modules/.bin:$PATH"
 }
 
+# Create the private npm cache, config and XDG cache/state before anything
+# invokes npm, pnpm or the harness. Idempotent, and cheap enough to call at each
+# entry point that might write.
+private_env() {
+  # A dry run must not create anything, not even these: the plan is printed and
+  # the filesystem is left exactly as it was.
+  if (( DRY_RUN )); then
+    echo "  would create the private npm, pnpm and XDG caches under $DSH_ROOT"
+    return 0
+  fi
+  mkdir -p "$DSH_NPM_CACHE" "$DSH_XDG_CACHE" "$DSH_XDG_STATE" "$DSH_PNPM_HOME"
+  if [[ ! -f "$DSH_NPMRC" ]]; then
+    {
+      echo "# TinyTitan's private npm config, written by tools/dsh_local.sh."
+      echo "# The user's own ~/.npmrc is deliberately not read: a pinned install"
+      echo "# must not depend on their registry, proxy or prefix settings."
+    } > "$DSH_NPMRC"
+  fi
+}
+
 # --- node -------------------------------------------------------------------
 
 # Fetch Node into our own root. Only reached when the Mac has no node at all,
@@ -214,11 +264,14 @@ install_dsh() {
 
   local npm; npm="$(npm_bin)"
   [[ -n "$npm" ]] || die "no npm available (neither the Mac's nor ours)."
+  private_env
 
   say "Installing the pinned DeepSeek Harness $DSH_VERSION"
   echo "  Into $DSH_PREFIX. Your own dsh and ~/.dsh are not touched."
   run "install @deepseek-ai/dsh@$DSH_VERSION" \
     env PATH="$(tool_path)" \
+    npm_config_cache="$DSH_NPM_CACHE" \
+    npm_config_userconfig="$DSH_NPMRC" \
     "$npm" install --prefix "$DSH_PREFIX" --no-fund --no-audit \
     "@deepseek-ai/dsh@$DSH_VERSION"
   (( DRY_RUN )) && return 0
@@ -255,8 +308,11 @@ install_pnpm() {
   local mjs="$DSH_PREFIX/node_modules/pnpm/bin/pnpm.mjs"
   if [[ ! -f "$mjs" ]]; then
     local npm; npm="$(npm_bin)"
+    private_env
     run "install pnpm@$PNPM_VERSION (private)" \
       env PATH="$(tool_path)" \
+      npm_config_cache="$DSH_NPM_CACHE" \
+      npm_config_userconfig="$DSH_NPMRC" \
       "$npm" install --prefix "$DSH_PREFIX" --no-fund --no-audit "pnpm@$PNPM_VERSION"
     (( DRY_RUN )) && return 0
   fi
@@ -361,6 +417,7 @@ PY
 # is how a plugin edit reaches the private home.
 install_plugin() {
   [[ -d "$PLUGIN_DIR" ]] || die "plugin not found at $PLUGIN_DIR"
+  private_env
   say "Installing the TinyTitan plugin into the private profile"
   # `--store-dir` is passed straight through to pnpm, and it is the only lever
   # that works: pnpm ignores `npm_config_store_dir` and `PNPM_STORE_DIR`, and a
@@ -369,6 +426,11 @@ install_plugin() {
   run "add dsh-tinytitan from the checkout" \
     env DSH_HOME="$DSH_HOME_DIR" \
         PATH="$(tool_path)" \
+        npm_config_cache="$DSH_NPM_CACHE" \
+        npm_config_userconfig="$DSH_NPMRC" \
+        XDG_CACHE_HOME="$DSH_XDG_CACHE" \
+        XDG_STATE_HOME="$DSH_XDG_STATE" \
+        PNPM_HOME="$DSH_PNPM_HOME" \
         "$(dsh_bin)" plugin --profile web add --store-dir "$DSH_STORE" "file:$PLUGIN_DIR"
   (( DRY_RUN )) && return 0
   [[ -e "$DSH_HOME_DIR/profiles/web/node_modules/dsh-tinytitan" ]] \
@@ -629,11 +691,19 @@ cmd_web() {
   # driving the real page, not by reading the code: `ensure` writes the route
   # once, and this is what stops the boot-time refresh from undoing it.
   # DSH opens the default browser itself and prints the tokenised URL.
+  # Caches go to the private root; config does not, because the agent works in
+  # the user's repositories and needs their git identity and `gh`/registry
+  # credentials *readable*. Writing is what isolation is about.
+  private_env
   exec env DSH_HOME="$DSH_HOME_DIR" \
            TINYTITAN_PORT="$SERVER_PORT" \
            TINYTITAN_REASONING="$REASONING" \
            TINYTITAN_REPO="$REPO_ROOT" \
            TINYTITAN_MODELS_DIR="$REPO_ROOT/models" \
+           XDG_CACHE_HOME="$DSH_XDG_CACHE" \
+           XDG_STATE_HOME="$DSH_XDG_STATE" \
+           PNPM_HOME="$DSH_PNPM_HOME" \
+           npm_config_cache="$DSH_NPM_CACHE" \
            PATH="$(tool_path)" \
            "$(dsh_bin)" web --port "$port" "${open[@]+"${open[@]}"}" "$@"
 }
@@ -649,7 +719,10 @@ cmd_port() { resolve_port "$DSH_PORT"; }
 ensure_smoke_deps() {
   if [[ ! -x "$SMOKE_DIR/node_modules/.bin/playwright" ]]; then
     say "Installing Playwright into the private root (one time)"
+    private_env
     run "install playwright" env PATH="$(tool_path)" \
+      npm_config_cache="$DSH_NPM_CACHE" \
+      npm_config_userconfig="$DSH_NPMRC" \
       "$(npm_bin)" install --prefix "$SMOKE_DIR" --no-fund --no-audit playwright
     (( DRY_RUN )) || ok "Playwright installed"
   fi

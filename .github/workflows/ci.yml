@@ -71,6 +71,15 @@ jobs:
             numpy safetensors ml_dtypes
           cd benchmark
           /tmp/tt-converter/bin/python -m unittest test_prepare_qwen38 test_qwen38_resume_e2e
+      - name: Install-isolation gates (the private DSH bundle and the installer)
+        # The installer and `tools/dsh_local.sh` promise a factory-new Mac stays
+        # untouched: one private root, no PATH or shell-rc edit, and npm, pnpm and
+        # the XDG caches redirected into it. These tests pin that contract —
+        # static checks plus a dry run that must write nothing — and need no
+        # dependencies beyond the runner's python3.
+        run: |
+          cd benchmark
+          python3 -m unittest test_dsh_isolation
       - name: Run serial tests
         # `swift test` implicitly performs its own DEBUG build, which also
         # produces the `.build/debug/TinyTitanRepack` binary that RepackCLITests
