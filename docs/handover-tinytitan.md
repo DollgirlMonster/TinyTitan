@@ -1,22 +1,22 @@
-# Handover: after release 5.9, the engine and its loopback server
+# Handover: after release 5.10, the engine and its loopback server
 
 **Paste this into the next session:**
 
 > Continue the TinyTitan work in this checkout. Read `AGENTS.md`, then
-> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.9 is cut and
-> published** (`v5.9` → `4d0c225`; `tinytitan-5.9-macos-arm64.tar.gz`, 15,437,857
-> bytes, sha256 `2c9a6657a5516dcb754837542b20f95122a02370be10dc983c1e581a4030f8d7`,
-> 2026-09-20) and **`main` sits one commit past it** — this brief; the release notes
-> are `docs/release-notes-v5.9.md`. The product is the engine plus its loopback
+> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.10 is cut and
+> published** (`v5.10` → `a89255e`; `tinytitan-5.10-macos-arm64.tar.gz`, 15,367,433
+> bytes, sha256 `1a505ac7e7faae36d8547925dd56781deb365491de0584603383a2f9360d48fe`,
+> 2026-09-24) and **`main` sits one commit past it** — this brief; the release notes
+> are `docs/release-notes-v5.10.md`. The product is the engine plus its loopback
 > server — the Mac app is gone — and `tools/install_tinytitan.sh` downloads a built
-> release instead of compiling one. The twelve installs under `models/` have
+> release instead of compiling one. The eight installs under `models/` have
 > receipts **valid for this folder**, because a rename invalidates them; re-issue
 > with `--verify-install` if the folder moves again. **Verification uses only the
 > installs already under `models/`** — never download, convert, repack or re-install
 > a model to make a gate pass, and never fetch one of the installs the operator
 > deleted. Report measurements, not assurances.
 
-This is the only current brief; the 5.8 handover it replaces is superseded. The
+This is the only current brief; the 5.9 handover it replaces is superseded. The
 traps that one named still bite and are folded in below.
 
 > **The product shape changed: the GUI is gone.** The Mac app, the out-of-process
@@ -63,18 +63,29 @@ traps that one named still bite and are folded in below.
 | --- | --- |
 | Repository | `Pummelchen/TinyTitan` (renamed 2026-09-14; the old URL redirects) |
 | Checkout folder | `~/Downloads/TinyTitan` — **renamed from `~/Downloads/NVMAI`**, which invalidated every receipt and `.build`'s debug half |
-| `main` | level with `origin/main`, one commit past `v5.9` (this brief); the release commit is `4d0c225` |
-| Release | **5.9 published** 2026-09-20 — `tinytitan-5.9-macos-arm64.tar.gz`, 15,437,857 bytes, sha256 `2c9a6657…` with its `.sha256` beside it |
-| Models | **12 installs, 488 GB**; every receipt bound to this path, so all load |
-| Goldens stored | 16; **11 checked** here (qwen38-125b-4bit, agentworld-{4,8}, qwen36-{4,8}, qwen35-{2b,4b,9b}-{4,8}); the five with no install — `ornith-{4,8}`, `qwen38-8`, `katcoder-{4,8}` — are reported *not checked* and named in the notes |
-| `.build` | release rebuilt for 5.9; a clean scratch release build is part of each dry run |
+| `main` | level with `origin/main`, one commit past `v5.10` (this brief); the release commit is `a89255e` |
+| Release | **5.10 published** 2026-09-24 — `tinytitan-5.10-macos-arm64.tar.gz`, 15,367,433 bytes, sha256 `1a505ac7…` with its `.sha256` beside it |
+| Models | **8 installs, 244 GB**; every receipt bound to this path, so all load |
+| Goldens stored | 16; **7 checked** here (qwen38-125b-4bit, qwen36-{4,8}, qwen35-{4b,9b}-{4,8}); the nine with no install — `ornith-{4,8}`, `qwen38-8`, `agentworld-{4,8}`, `katcoder-{4,8}`, `qwen35-2b-{4,8}` — are reported *not checked* and named in the notes |
+| `.build` | release rebuilt for 5.10; a clean scratch release build is part of each dry run |
 | Wiki | `.qwen/wiki`, remote `TinyTitan.wiki.git`, level with `origin/master` |
 | DeepSeek Harness | pinned `0.1.6-alpha.2` and **enforced**; both plugins refuse any other version; the global harness runs the gate, the private one is refreshed but idle until its next start |
-| CI | every `main` push runs both jobs including `thread-sanitizer`; the 5.9 push is the run to watch (`gh run list`) |
+| CI | every `main` push runs both jobs including `thread-sanitizer`; the 5.10 push is the run to watch (`gh run list`) |
 
 ## What has landed
 
-- **5.9** (`4d0c225`) — an install whose manifest names the GDN
+- **5.10** (`a89255e`) — `--ram` is a target for the whole server process rather
+  than the expert cache alone (4 GB floor, printed estimate; `--ram 8` now buys 32
+  slots and `--ram 12` reproduces the old 64), Qwen3.8's two sampling rows are
+  implemented (`--presence-penalty`, the row chosen from the request's thinking
+  mode), the C kernels compile at `-O2`, the expert-cache ceiling is a third of
+  physical memory, twelve decode switches that measured a wash or a loss are gone,
+  and converting Qwen3.8 resumes and works through mirrors
+  (`docs/release-notes-v5.10.md`). Gates: six lint gates clean (2,030 functions,
+  20 scripts), **1,491 tests in 223 suites**, 7 goldens byte-identical, a
+  warning-free scratch build, and a 4B speed record with every metric inside the
+  gate — `gpu.routed_moe` read low on the first run under residual background load
+  and both values are in the notes.
   `in_proj_a`/`in_proj_b` pair at the attention slot's own width loads and serves
   again (issue #16, a qwen38flash 4-bit install); the ten master prompts are
   runnable end to end, with a client's own summary as the baseline memory has to
@@ -149,10 +160,10 @@ on other people:
   numbers must be in the notes, so the sequence is: commit prep → tag → dry run →
   fill in `### Verification` → commit → `git tag -f` → `git push --force origin
   vX.Y` → `--publish`. `--publish` re-runs every gate and rebuilds the archive,
-  so **the published digest and size are never the dry run's** (5.9: 15,437,771
-  bytes dry, 15,437,857 published; 5.8: 15,436,743 dry, 15,436,730 published;
-  5.5: 26,093,424 dry, 26,094,346 published) — that is what the placeholders are
-  for.
+  so **the published digest and size are never the dry run's** (5.10: 15,367,456
+  bytes dry, 15,367,433 published; 5.9: 15,437,771 dry, 15,437,857 published;
+  5.8: 15,436,743 dry, 15,436,730 published; 5.5: 26,093,424 dry, 26,094,346
+  published) — that is what the placeholders are for.
 - **A fire-and-forget registration can race the observer that awaits it.** The
   T7 schedule closure in `MemoryService` handed the question to an unstructured
   `Task { await hinter.register(…) }` and returned, so `waitForRetrievalHints()`
@@ -164,7 +175,12 @@ on other people:
 - **The synthetic kernel metrics swing with the machine, not the code.** QKV GEMV
   and GDN in-projection have read 55.4–78.6 and 66.8–77.4 GB/s across the
   v5.5–v5.8 records on this machine, and 5.9 measured 63.5/67.9 while macOS's
-  `dasd` held a core at ~95% and Chrome was active. The speed gate compares
+  `dasd` held a core at ~95% and Chrome was active. 5.10 hit the same on
+  `gpu.routed_moe`: **37.1 GB/s against 43.6** on the first run with Chrome
+  helpers and `mediaanalysisd` still active, **41.4** on the re-run — and that
+  counter has ranged 36.8–56.1 across the stored records. One re-run, with both
+  values and the reason in `### Verification`, is the treatment; a search for the
+  best of many is not. The speed gate compares
   against the previous release's record, which can be the series' high-water
   mark. Cross-check the generation metrics and the greedy response hash (an
   unchanged hash means no arithmetic moved), then record both values and the
