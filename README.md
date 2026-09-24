@@ -130,10 +130,10 @@ pipeline sees only the answer. Nothing installed yet? Start with
   Claude Code, Qwen Code, OpenCode or the Zed editor — wiring that client's
   provider config to the model the server advertises. It asks what to launch
   from one list of every installed model and quantization (GPU and CPU), the
-  thinking level that model supports, and an optional RAM limit for the expert
-  cache (1/2/4/8/16/32 GB; anything over 30% of the Mac's physical memory is
+  thinking level that model supports, and an optional RAM target for the server
+  process (4/8/16/32 GB; anything over 30% of the Mac's physical memory is
   warned about in red and used anyway, and the default is the install's own
-  measured profile, which the runtime holds to half of physical memory).
+  measured profile, which the runtime holds to a third of physical memory).
   It serves on `127.0.0.1:8080` by default — the launcher asks for the port,
   and `--port` or `TINYTITAN_PORT` sets it — and every other
   installed model stays available by name through the API; the server switches
@@ -190,14 +190,17 @@ tools/server_launcher.sh --client zed --model qwen38 --bits 4 --ram 8
 ### Special Features
 
 - **Bounded expert RAM:** The resident expert cache is sized per family from
-  the model's own expert stride and clamped to half of physical memory, so a
-  smaller Mac is not handed a budget tuned on a larger one. It is wired, so it
-  cannot be paged out and everything else the Mac is running has to fit beside
-  it: the launcher recommends **30% of physical memory** and warns in red above
-  it — swapping, a less stable system and slower tokens — but a larger `--ram`
-  is your call and is passed on, and the server's own `--ram-budget` takes
-  exactly what it is given. Model state, KV cache, and runtime scratch use
-  additional memory.
+  the model's own expert stride and clamped to a third of physical memory, so a
+  smaller Mac is not handed a budget tuned on a larger one. `--ram` names a
+  target for the whole server process, not the cache: the runtime subtracts the
+  weight file and a measured ~0.5 GB runtime reserve, then steps down the slot
+  ladder to the largest cache that fits, so an 8 GB target lands at about a 4 GB
+  cache (32 slots) on the 125B install. It is wired, so it cannot be paged out
+  and everything else the Mac is running has to fit beside it: the launcher
+  recommends **30% of physical memory** and warns in red above it — swapping, a
+  less stable system and slower tokens — but a larger target is your call and is
+  passed on. The target covers the resident weights, the runtime floor and the
+  cache for a short request; a long context's KV grows on top of it.
 - **Long context:** Native RoPE supports up to 262K tokens, while optional YaRN
   extends the context to 512K or 1M tokens.
 - **Compressed KV cache:** Live attention state can use 16-bit, 8-bit, or 4-bit
