@@ -114,13 +114,13 @@ import Foundation
         var text = ""
         for _ in 0..<16 {
             guard let next = allowed(constraint.allowedMask()).min(), next != 10 else { break }
-            text += String(decoding: Self.table.bytes(of: next), as: UTF8.self)
+            text += Self.table.bytes(of: next).lossyUTF8String
             #expect(constraint.observe(next))
         }
         #expect(text == #"{"a":1}"#)
         #expect(constraint.isComplete)
         let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8))
-        #expect(parsed as? [String: Any] != nil)
+        #expect(parsed is [String: Any])
     }
 
     /// The same walk with a schema that constrains a value and a nested array,
@@ -150,7 +150,7 @@ import Foundation
         for _ in 0..<64 {
             let mask = constraint.allowedMask()
             guard let next = allowed(mask).min(), next != 44 else { break }
-            text += String(decoding: table.bytes(of: next), as: UTF8.self)
+            text += table.bytes(of: next).lossyUTF8String
             #expect(constraint.observe(next))
         }
         #expect(constraint.isComplete)

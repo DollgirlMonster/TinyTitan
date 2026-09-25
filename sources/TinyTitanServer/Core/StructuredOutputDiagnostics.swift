@@ -2,14 +2,14 @@ import CryptoKit
 import Foundation
 import TinyTitan
 
-/// Structured-output failure reporting, split out of `ServerInference.swift`.
-///
-/// These four types are how a request that could not be satisfied as structured
-/// output explains itself: the failure kind, its cause, and a diagnostics record
-/// carrying SHA-256 hashes of the token sequences involved so two runs can be
-/// compared forensically. They are pure values — no backend state, no prompt or
-/// tokenizer access — which is why they live in their own file rather than
-/// inside a 1,900-line one.
+// Structured-output failure reporting, split out of `ServerInference.swift`.
+//
+// These four types are how a request that could not be satisfied as structured
+// output explains itself: the failure kind, its cause, and a diagnostics record
+// carrying SHA-256 hashes of the token sequences involved so two runs can be
+// compared forensically. They are pure values — no backend state, no prompt or
+// tokenizer access — which is why they live in their own file rather than
+// inside a 1,900-line one.
 
 // MARK: - Structured output diagnostics
 

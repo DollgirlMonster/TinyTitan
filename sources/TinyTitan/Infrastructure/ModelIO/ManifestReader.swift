@@ -336,8 +336,8 @@ public enum ManifestReader {
                   expected.hiddenSize == ArchConfig.qwen36_35B_A3B.hiddenSize {
             throw ModelError.indexCorrupt(detail: "manifest.quant is required for the production architecture")
         }
-        for f in requiredFiles {
-            if m.files[f] == nil { throw ModelError.missingFile(name: f) }
+        for f in requiredFiles where m.files[f] == nil {
+            throw ModelError.missingFile(name: f)
         }
         // Validate that all expected layer files are listed in the manifest.
         // Accept both `layer_0.bin` and `layer_00.bin` naming conventions.

@@ -54,7 +54,13 @@ jobs:
             https://github.com/google/osv-scanner/releases/download/v2.6.0/osv-scanner_darwin_arm64
           chmod +x /tmp/osv-scanner
           echo "/tmp" >> "$GITHUB_PATH"
-          brew install swiftlint
+          # Pinned, not `brew install swiftlint`: `tools/lint.sh`'s swiftlint
+          # gate fails when the installed version differs from SWIFTLINT_PIN, and
+          # the rule set moves between releases.
+          curl -fsSL -o /tmp/swiftlint.zip \
+            https://github.com/realm/SwiftLint/releases/download/0.65.1/portable_swiftlint.zip
+          unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint-0.65.1
+          echo "/tmp/swiftlint-0.65.1" >> "$GITHUB_PATH"
 
       - name: Plugin tests (harness-version pins)
         run: |
@@ -73,7 +79,7 @@ jobs:
             exit 1
           fi
 
-      - name: Production gates (all eight)
+      - name: Production gates (all nine)
         run: tools/lint.sh
 
       - name: Full suite with coverage

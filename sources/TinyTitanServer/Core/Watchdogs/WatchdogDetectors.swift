@@ -268,6 +268,6 @@ public enum PingPongWatchdog {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(arguments) else { return "?" }
-        return String(decoding: data, as: UTF8.self)
+        return data.lossyUTF8String
     }
 }

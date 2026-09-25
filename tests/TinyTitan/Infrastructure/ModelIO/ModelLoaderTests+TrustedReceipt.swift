@@ -115,7 +115,7 @@ extension ModelLoaderTests {
     defer { try? FileManager.default.removeItem(at: dir) }
     try Self.writeVerifiedInstallReceipt(directoryURL: dir)
     try Self.mutateReceipt(directoryURL: dir) { root in
-      var files = root["files"] as! [String: Any]
+      var files = try #require(root["files"] as? [String: Any])
       files["unexpected.bin"] = ["size": 0, "sha256": String(repeating: "0", count: 64)]
       root["files"] = files
     }
@@ -137,7 +137,7 @@ extension ModelLoaderTests {
     defer { try? FileManager.default.removeItem(at: dir) }
     try Self.writeVerifiedInstallReceipt(directoryURL: dir)
     try Self.mutateReceipt(directoryURL: dir) { root in
-      var files = root["files"] as! [String: Any]
+      var files = try #require(root["files"] as? [String: Any])
       files.removeValue(forKey: "packed_experts/layer_00.bin")
       root["files"] = files
     }
@@ -163,8 +163,8 @@ extension ModelLoaderTests {
     try Self.writeVerifiedInstallReceipt(directoryURL: dir)
     try Self.mutateReceipt(directoryURL: dir) { root in
       root["manifestSha256"] = String(repeating: "0", count: 64)
-      var files = root["files"] as! [String: Any]
-      var manifest = files["manifest.json"] as! [String: Any]
+      var files = try #require(root["files"] as? [String: Any])
+      var manifest = try #require(files["manifest.json"] as? [String: Any])
       manifest["sha256"] = String(repeating: "0", count: 64)
       files["manifest.json"] = manifest
       root["files"] = files

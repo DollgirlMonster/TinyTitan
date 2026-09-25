@@ -336,7 +336,7 @@ extension ServerHTTPHandler {
         guard let data = try? JSONSerialization.data(withJSONObject: object) else {
             return nil
         }
-        return Self.sseFrame("data: " + String(decoding: data, as: UTF8.self))
+        return Self.sseFrame("data: " + data.lossyUTF8String)
     }
 
     func failStream(outbox: SSEOutbox,
@@ -558,7 +558,7 @@ extension ServerHTTPHandler {
 
     static func errorFrame(_ envelope: OpenAIErrorEnvelope) -> Data? {
         guard let data = try? JSONEncoder().encode(envelope) else { return nil }
-        return sseFrame("data: " + String(decoding: data, as: UTF8.self))
+        return sseFrame("data: " + data.lossyUTF8String)
     }
 
     func usageObject(_ usage: OpenAIUsage) -> [String: Any] {

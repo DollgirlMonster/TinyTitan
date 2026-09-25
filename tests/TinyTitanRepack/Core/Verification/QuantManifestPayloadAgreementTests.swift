@@ -63,7 +63,7 @@ import TinyTitanFormat
         let router = try #require(quant["language_model.model.layers.0.mlp.gate"]
                                     as? [String: Any])
         #expect(router["weightBits"] as? Int == 8)
-        #expect(quant["router"] as? [String: Any] != nil)
+        #expect(quant["router"] is [String: Any])
     }
 
     /// A freshly repacked synthetic install must pass `--verify-install`.

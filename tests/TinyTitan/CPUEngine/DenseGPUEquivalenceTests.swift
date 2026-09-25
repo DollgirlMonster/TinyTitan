@@ -1,6 +1,8 @@
 import Foundation
 import Testing
 
+@testable import TinyTitan
+
 /// The GPU engine against the CPU engine on a dense Qwen 3.5 install.
 ///
 /// The CPU engine is this family's oracle: it was written against the numpy
@@ -50,7 +52,7 @@ struct DenseGPUEquivalenceTests {
         try process.run()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        let output = String(decoding: data, as: UTF8.self)
+        let output = data.lossyUTF8String
         // A non-zero exit is a failure of the engine, not of the expectation,
         // so it is reported with the output that explains it.
         try #require(process.terminationStatus == 0,

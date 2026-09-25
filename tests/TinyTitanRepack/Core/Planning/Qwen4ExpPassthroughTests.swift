@@ -16,10 +16,10 @@ struct Qwen4ExpPassthroughTests {
     }
 
     @Test("The hash constants are required; the 102 GB table is not")
-    func requiredness() {
+    func requiredness() throws {
         let flash = RepackPlanner.passthroughRequirements(family: .qwen38flash)
-        let constants = try! #require(flash.first { $0.name == "ple_constants.json" })
-        let table = try! #require(flash.first { $0.name == "ngram_table.bin" })
+        let constants = try #require(flash.first { $0.name == "ple_constants.json" })
+        let table = try #require(flash.first { $0.name == "ngram_table.bin" })
         // Without the constants the n-gram ids cannot be computed at all.
         #expect(constants.required)
         // The table is optional so the backbone can be installed first; the

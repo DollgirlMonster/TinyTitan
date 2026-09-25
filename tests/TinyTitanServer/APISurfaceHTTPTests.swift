@@ -157,7 +157,7 @@ struct ResponsesAPIHTTPTests {
             let content = try #require(output[0]["content"] as? [[String: Any]])
             #expect(content[0]["type"] as? String == "output_text")
             #expect(content[0]["text"] as? String == "hello")
-            #expect(content[0]["logprobs"] as? [Any] != nil)
+            #expect(content[0]["logprobs"] is [Any])
             let usage = try #require(object["usage"] as? [String: Any])
             #expect(usage["input_tokens"] as? Int == 12)
             #expect((usage["input_tokens_details"] as? [String: Any])?["cached_tokens"] as? Int == 4)
@@ -176,7 +176,7 @@ struct ResponsesAPIHTTPTests {
             {"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"stream":true}
             """)
             #expect(response.statusCode == 200)
-            let text = String(decoding: data, as: UTF8.self)
+            let text = data.lossyUTF8String
             #expect(!text.contains("[DONE]"))
             #expect(!text.contains("response.content_part.delta"))
             let events = try sseEvents(text)
@@ -196,7 +196,7 @@ struct ResponsesAPIHTTPTests {
             #expect(delta["item_id"] as? String == (events[2].object["item"] as? [String: Any])?["id"] as? String)
             #expect(delta["output_index"] as? Int == 0)
             #expect(delta["content_index"] as? Int == 0)
-            #expect(delta["logprobs"] as? [Any] != nil)
+            #expect(delta["logprobs"] is [Any])
             let done = events[6].object
             #expect(done["text"] as? String == "hello")
             let completed = try #require(events.last?.object["response"] as? [String: Any])
@@ -211,7 +211,7 @@ struct ResponsesAPIHTTPTests {
             {"model":"test-model","input":"read a","stream":true,
              "tools":[{"type":"function","name":"read","parameters":{"type":"object","properties":{"path":{"type":"string"}}},"strict":true}]}
             """)
-            let events = try sseEvents(String(decoding: data, as: UTF8.self))
+            let events = try sseEvents(data.lossyUTF8String)
             let types = events.compactMap { $0.object["type"] as? String }
             #expect(types.contains("response.function_call_arguments.delta"))
             let doneIndex = try #require(types.firstIndex(of: "response.function_call_arguments.done"))
@@ -243,7 +243,7 @@ struct ResponsesAPIHTTPTests {
             #expect((object["incomplete_details"] as? [String: Any])?["reason"] as? String == "max_output_tokens")
             let (stream, _) = try await post(port, "/v1/responses",
                                              #"{"model":"test-model","input":"hi","stream":true}"#)
-            let events = try sseEvents(String(decoding: stream, as: UTF8.self))
+            let events = try sseEvents(stream.lossyUTF8String)
             #expect(events.last?.object["type"] as? String == "response.incomplete")
         }
     }
@@ -277,7 +277,7 @@ struct ResponsesAPIHTTPTests {
 
             let (cancel, cancelStatus) = try await call(port, "POST", "/v1/responses/\(firstID)/cancel")
             #expect(cancelStatus.statusCode == 400)
-            #expect(String(decoding: cancel, as: UTF8.self).contains("background"))
+            #expect(cancel.lossyUTF8String.contains("background"))
 
             let (deleted, _) = try await call(port, "DELETE", "/v1/responses/\(firstID)")
             #expect(try json(deleted)["deleted"] as? Bool == true)
@@ -350,7 +350,7 @@ struct ResponsesAPIHTTPTests {
         try await withServer(FailingBackend()) { port in
             let (data, _) = try await post(port, "/v1/responses",
                                            #"{"model":"test-model","input":"x","stream":true}"#)
-            let text = String(decoding: data, as: UTF8.self)
+            let text = data.lossyUTF8String
             #expect(!text.contains("[DONE]"))
             let events = try sseEvents(text)
             let last = try #require(events.last?.object)
@@ -405,7 +405,7 @@ struct AnthropicMessagesHTTPTests {
             """, headers: version)
             #expect(response.statusCode == 200)
             #expect(response.value(forHTTPHeaderField: "content-type")?.hasPrefix("text/event-stream") == true)
-            let text = String(decoding: data, as: UTF8.self)
+            let text = data.lossyUTF8String
             #expect(!text.contains("[DONE]"))
             let events = try sseEvents(text)
             let types = events.compactMap { $0.object["type"] as? String }
@@ -435,7 +435,7 @@ struct AnthropicMessagesHTTPTests {
              "tools":[{"name":"read","input_schema":{"type":"object","properties":{"path":{"type":"string"}}}}],
              "messages":[{"role":"user","content":"read a"}]}
             """, headers: version)
-            let events = try sseEvents(String(decoding: data, as: UTF8.self))
+            let events = try sseEvents(data.lossyUTF8String)
             let types = events.compactMap { $0.object["type"] as? String }
             #expect(types == ["message_start", "content_block_start", "content_block_delta",
                               "content_block_stop", "content_block_start", "content_block_delta",
@@ -497,7 +497,7 @@ struct AnthropicMessagesHTTPTests {
             let (data, _) = try await post(port, "/v1/messages", """
             {"model":"test-model","max_tokens":8,"stream":true,"messages":[{"role":"user","content":"hi"}]}
             """, headers: version)
-            let events = try sseEvents(String(decoding: data, as: UTF8.self))
+            let events = try sseEvents(data.lossyUTF8String)
             let last = try #require(events.last)
             #expect(last.name == "error")
             #expect(last.object["type"] as? String == "error")

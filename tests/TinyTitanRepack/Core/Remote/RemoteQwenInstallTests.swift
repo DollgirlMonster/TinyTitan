@@ -49,8 +49,9 @@ extension RemotePayloadCopyTests {
     // The manifest carries the qwen36 family extension fields.
     let manifestData = try Data(contentsOf: URL(fileURLWithPath:
       (remoteOutput as NSString).appendingPathComponent("manifest.json")))
-    let manifest = try JSONSerialization.jsonObject(with: manifestData) as! [String: Any]
-    let arch = manifest["arch"] as! [String: Any]
+    let manifest = try #require(
+      try JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+    let arch = try #require(manifest["arch"] as? [String: Any])
     #expect(arch["family"] as? String == "qwen36")
     #expect(arch["attnOutputGate"] as? Bool == true)
     #expect(arch["attentionScale"] as? Double == 0.125)
@@ -68,7 +69,7 @@ extension RemotePayloadCopyTests {
     #expect(arch["tieWordEmbeddings"] as? Bool == false)
     #expect(arch["hiddenActivation"] as? String == "silu")
 
-    let quant = manifest["quant"] as! [String: [String: Any]]
+    let quant = try #require(manifest["quant"] as? [String: [String: Any]])
     #expect(quant["embedding"]?["weightBits"] as? Int == 4)
     #expect(quant["attention"]?["weightBits"] as? Int == 4)
     #expect(quant["router"]?["weightBits"] as? Int == 8)
@@ -129,9 +130,9 @@ extension RemotePayloadCopyTests {
     #expect(result.downloadedThisRunBytes < result.remoteBytesToDownload)
     let manifestPath = (output as NSString).appendingPathComponent("manifest.json")
     #expect(FileManager.default.fileExists(atPath: manifestPath))
-    let manifest = try JSONSerialization.jsonObject(
-      with: Data(contentsOf: URL(fileURLWithPath: manifestPath))) as! [String: Any]
-    let arch = manifest["arch"] as! [String: Any]
+    let manifest = try #require(try JSONSerialization.jsonObject(
+      with: Data(contentsOf: URL(fileURLWithPath: manifestPath))) as? [String: Any])
+    let arch = try #require(manifest["arch"] as? [String: Any])
     #expect(arch["family"] as? String == "qwen36")
   }
 }

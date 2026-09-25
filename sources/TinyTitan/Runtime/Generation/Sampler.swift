@@ -93,7 +93,7 @@ public struct GenerationConfig: Sendable {
     /// non-zero value is refused by `validate` until the filter is implemented.
     public var minP: Float = GenerationDefaults.minP
     public var repetitionPenalty: Float = 1.0
-    public var seed: UInt64? = nil         // nil = nondeterministic
+    public var seed: UInt64?             // nil = nondeterministic
     public var stopStrings: [String] = []
     public var extraStopTokens: Set<Int32> = []
     /// A grammar the sampled tokens must stay inside, when the request asked
@@ -103,7 +103,7 @@ public struct GenerationConfig: Sendable {
     ///
     /// The constraint is stateful and is advanced by the decode loop, once per
     /// generated token; see `JSONConstraint`.
-    public var constraint: JSONConstraint? = nil
+    public var constraint: JSONConstraint?
 
     public init(maxNewTokens: Int = 256,
                 temperature: Float = GenerationDefaults.temperature,

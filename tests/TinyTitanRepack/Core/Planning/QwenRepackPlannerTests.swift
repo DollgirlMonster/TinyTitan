@@ -359,8 +359,9 @@ struct QwenRepackPlannerTests {
             bitWidths: GTurboJSON.QuantBitWidths(
                 embedding: 4, attention: 4, router: 8,
                 sharedExpert: 8, routedExpert: 4))
-        let obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-        let archDict = obj["arch"] as! [String: Any]
+        let obj = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let archDict = try #require(obj["arch"] as? [String: Any])
         // Family extension fields are always present for the Qwen families
         // and must round-trip the values `ArchInfo.load` derived.
         #expect(archDict["family"] as? String == "qwen36")

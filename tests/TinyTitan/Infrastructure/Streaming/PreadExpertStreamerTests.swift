@@ -4,10 +4,10 @@ import Darwin
 import Metal
 @testable import TinyTitan
 
-/// Unit tests for the synchronous `pread` backend: round-trip correctness,
-/// exact file-byte reads, the short-read failure path,
-/// and round-robin slot reuse. No real model weights — a synthetic layer file
-/// of tagged expert blobs.
+// Unit tests for the synchronous `pread` backend: round-trip correctness,
+// exact file-byte reads, the short-read failure path,
+// and round-robin slot reuse. No real model weights — a synthetic layer file
+// of tagged expert blobs.
 // Every test writes and reads the same synthetic layer path; the suite
 // cannot run in parallel with itself.
 @Suite(.serialized) struct PreadExpertStreamerTests {

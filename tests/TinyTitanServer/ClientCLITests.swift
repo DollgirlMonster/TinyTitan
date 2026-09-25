@@ -61,7 +61,7 @@ private func run(_ executable: String, _ arguments: [String],
     }
     if process.isRunning { process.terminate() }
     let data = await reader.value
-    return (String(decoding: data, as: UTF8.self), process.terminationStatus)
+    return (data.lossyUTF8String, process.terminationStatus)
 }
 
 @Suite("Coding CLIs against the server", .serialized)

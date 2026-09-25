@@ -81,6 +81,14 @@ identifier_name:
   # "should start with a lowercase character". The character set and the length
   # window still apply.
   validates_start_with_lowercase: off
+  # Underscores are deliberate in exactly six places and none of them is a
+  # typo: the arch and catalogue constants mirror the model names they describe
+  # (`qwen36_35B_A3B`, `qwen36_8bit`, `ornith15_8bit`), `where_` escapes the
+  # keyword, and `_responseModelID`/`_activeTask` are the lock-backed storage
+  # behind their computed properties in HTTPServerHandler. The length window,
+  # the character set and the casing checks still apply, so a name with a
+  # character outside letters/digits/underscore is still caught.
+  allowed_symbols: "_"
 
 type_name:
   # Types keep a real name; only the length window is widened to match the

@@ -53,6 +53,6 @@ import TinyTitanValidationSupport
     func mismatchedLengthsTrap() async {
         // Documentation-only: this would precondition-fail. We can't catch
         // preconditions in Swift Testing, but we record the contract here.
-        let _ = (RmsNormRef.apply, "precondition on x.count == weight.count")
+        _ = (RmsNormRef.apply, "precondition on x.count == weight.count")
     }
 }

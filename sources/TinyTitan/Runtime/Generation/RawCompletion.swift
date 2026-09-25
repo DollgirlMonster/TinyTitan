@@ -200,10 +200,13 @@ public func runRawCompletion(producer: any LogitProducer,
     // keeps the chunked fast path, so the single-sequence behaviour is unchanged.
     let prefillMode: PrefillRuntimeConfig.Mode = prefillConfig.mode
     switch prefillMode {
-    case .chunked where producer is any ChunkedPrefillRunner:
-        // lint:allow-force the `where` clause one line above is the guard; a
-        // producer without the conformance falls through to plain `.chunked`.
-        let chunked = producer as! any ChunkedPrefillRunner
+    case .chunked:
+        // A producer without the conformance cannot run chunked prefill at all,
+        // which is an unsupported configuration rather than a crash.
+        guard let chunked = producer as? any ChunkedPrefillRunner else {
+            throw PrefillError.chunkedUnsupported(
+                PrefillError.chunkedRequiresChunkedRunnerReason)
+        }
         let mode: PrefillOutputMode = fusedGreedy ? .greedyIfAvailable : .logits
         let result = try await chunked.prefillChunked(tokens: prefillTokens,
                                                       startPosition: position,
@@ -224,9 +227,6 @@ public func runRawCompletion(producer: any LogitProducer,
         position = result.newPosition
         prefillSeed = result.seed
         history.append(contentsOf: prefillTokens)
-    case .chunked:
-        throw PrefillError.chunkedUnsupported(
-            PrefillError.chunkedRequiresChunkedRunnerReason)
     case .off:
         for t in prefillTokens {
             try Task.checkCancellation()

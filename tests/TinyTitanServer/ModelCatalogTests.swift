@@ -134,7 +134,7 @@ struct ModelCatalogTests {
         let pipe = Pipe()
         catalog.reportSkipped(to: pipe.fileHandleForWriting)
         try pipe.fileHandleForWriting.close()
-        let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let text = pipe.fileHandleForReading.readDataToEndOfFile().lossyUTF8String
         #expect(text.hasPrefix("catalog: skipped 1 of 2 directories"))
         #expect(text.contains("gguf: neither manifest.json"))
     }
@@ -189,7 +189,7 @@ struct ModelCatalogTests {
                                kind: .gpu(.qwen36), quant: 8, path: URL(fileURLWithPath: "/abs/path"),
                                sampling: GenerationDefaults.house, sizeBytes: 36_200_000_000),
         ])
-        let text = String(decoding: try catalog.jsonData(), as: UTF8.self)
+        let text = try catalog.jsonData().lossyUTF8String
         #expect(text == #"{"models":[{"id":"qwen3.6-35b-a3b_8-Bit","name":"Qwen 3.6 35B-A3B","family":"qwen36","quant":8,"backend":"gpu","engines":"gpu","path":"/abs/path","thinking":["off","on"],"sampling":{"temperature":0.6,"top_p":0.95,"top_k":20},"size_gb":36.2}]}"#)
     }
 

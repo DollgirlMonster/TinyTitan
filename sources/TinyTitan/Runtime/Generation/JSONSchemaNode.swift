@@ -204,11 +204,10 @@ public indirect enum JSONSchemaNode: Sendable, Hashable {
     /// compiler refuses everywhere else.
     static func refuseStructureBesideLiteral(_ keywords: [String: JSONValue],
                                              at path: String) throws {
-        for structural in ["properties", "required", "additionalProperties", "items"] {
-            if keywords[structural] != nil {
-                throw JSONSchemaCompileError.unsupported(
-                    keyword: "\(structural) beside enum/const", at: path)
-            }
+        for structural in ["properties", "required", "additionalProperties", "items"]
+        where keywords[structural] != nil {
+            throw JSONSchemaCompileError.unsupported(
+                keyword: "\(structural) beside enum/const", at: path)
         }
     }
 

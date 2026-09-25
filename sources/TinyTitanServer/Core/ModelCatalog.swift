@@ -417,7 +417,7 @@ public struct ModelCatalog: Sendable {
     private static func quoted(_ value: String) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
-        return String(decoding: try encoder.encode(value), as: UTF8.self)
+        return try encoder.encode(value).lossyUTF8String
     }
 
     /// Float 0.6 widens to 0.6000000238; a launcher showing the defaults

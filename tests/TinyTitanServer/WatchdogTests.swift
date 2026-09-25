@@ -320,12 +320,18 @@ import Testing
     // MARK: ping-pong
 
     private func message(callingTool name: String, arguments: String) -> GFTokenizer.Message {
-        let value = try! JSONDecoder().decode(JSONValue.self, from: Data(arguments.utf8))
+        // The arguments here are literals written by this file. A decode failure
+        // is a fixture typo, reported as a test issue so the suite keeps running
+        // (and this test fails) instead of taking the process down.
+        let decoded = try? JSONDecoder().decode(JSONValue.self, from: Data(arguments.utf8))
+        if decoded == nil {
+            Issue.record("tool-call arguments did not decode: \(arguments)")
+        }
         return GFTokenizer.Message(
             role: .assistant,
             content: nil,
             toolCalls: [GFTokenizer.HistoricalToolCall(
-                id: UUID().uuidString, name: name, arguments: value)])
+                id: UUID().uuidString, name: name, arguments: decoded ?? .null)])
     }
 
     @Test func pingPongFiresOnTheSameCallThreeTimes() {

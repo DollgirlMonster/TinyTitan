@@ -140,7 +140,7 @@ public final class KVCacheManager {
 
         // Linear-attention layers keep no per-token K/V rows; they share one
         // page-sized placeholder so the parallel arrays stay non-optional.
-        var linearPlaceholder: MTLBuffer? = nil
+        var linearPlaceholder: MTLBuffer?
 
         for layer in 0..<config.numLayers {
             let maskValue = config.fullAttentionLayerMask[layer]

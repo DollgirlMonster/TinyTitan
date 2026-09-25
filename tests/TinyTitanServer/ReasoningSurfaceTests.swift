@@ -49,7 +49,7 @@ private struct SSEEvent {
 }
 
 private func sseEvents(_ data: Data) throws -> [SSEEvent] {
-    try String(decoding: data, as: UTF8.self).components(separatedBy: "\n\n").compactMap { block in
+    try data.lossyUTF8String.components(separatedBy: "\n\n").compactMap { block in
         var name: String?
         var payload: String?
         for line in block.split(separator: "\n") {
@@ -137,7 +137,7 @@ struct ChatReasoningTests {
             let message = try #require(choices[0]["message"] as? [String: Any])
             #expect(message.keys.sorted() == ["content", "role"])
             let (stream, _) = try await post(port, "/v1/chat/completions", body + #","stream":true}"#)
-            #expect(!String(decoding: stream, as: UTF8.self).contains("reasoning"))
+            #expect(!stream.lossyUTF8String.contains("reasoning"))
         }
     }
 
@@ -324,7 +324,7 @@ struct ResponsesReasoningTests {
             #expect(output.map { $0["type"] as? String } == ["message"])
             let (stream, _) = try await post(port, "/v1/responses",
                                              #"{"model":"test-model","input":"hi","stream":true}"#)
-            #expect(!String(decoding: stream, as: UTF8.self).contains("reasoning_summary"))
+            #expect(!stream.lossyUTF8String.contains("reasoning_summary"))
         }
     }
 }

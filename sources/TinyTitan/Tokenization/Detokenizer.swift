@@ -166,7 +166,7 @@ public struct GFDetokenizer {
     mutating func drain(final: Bool) -> String {
         let boundary = final ? pendingBytes.count : Self.incompleteSuffixStart(pendingBytes)
         guard boundary > 0 else { return "" }
-        let result = String(decoding: pendingBytes[..<boundary], as: UTF8.self)
+        let result = pendingBytes[..<boundary].lossyUTF8String
         pendingBytes.removeFirst(boundary)
         return result
     }

@@ -70,7 +70,7 @@ public enum AttentionRef {
             // the output row stays zero rather than indexing into nothing.
             guard !scores.isEmpty else { continue }
             var mx = scores[0]
-            for s in scores { if s > mx { mx = s } }
+            for s in scores where s > mx { mx = s }
             var negMax = -mx
             scores.withUnsafeMutableBufferPointer { psBuffer in
                 guard let ps = psBuffer.baseAddress else { return }

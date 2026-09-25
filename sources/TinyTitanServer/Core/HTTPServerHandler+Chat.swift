@@ -198,7 +198,7 @@ extension ServerHTTPHandler {
         guard let data = try? JSONSerialization.data(withJSONObject: object) else {
             return nil
         }
-        return Self.sseFrame("event: " + name + "\ndata: " + String(decoding: data, as: UTF8.self))
+        return Self.sseFrame("event: " + name + "\ndata: " + data.lossyUTF8String)
     }
 
     /// The frames that end a stream after a failure, in the surface's shape:
@@ -222,7 +222,7 @@ extension ServerHTTPHandler {
                 type: envelope.error.type == "server_error" ? "api_error" : envelope.error.type,
                 message: envelope.error.message, requestID: requestID)
             guard let data = try? JSONEncoder().encode(detail) else { return [] }
-            return [sseFrame("event: error\ndata: " + String(decoding: data, as: UTF8.self))]
+            return [sseFrame("event: error\ndata: " + data.lossyUTF8String)]
         }
     }
 

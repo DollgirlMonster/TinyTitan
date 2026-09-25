@@ -13,6 +13,7 @@
 #   arch-path           no hardcoded SwiftPM triple in a build path (see below)
 #   shell-portability   scripts run on the system bash (3.2), not just the dev one
 #   shell-lint          shellcheck warnings-as-errors over every script, pinned version
+#   swiftlint           SwiftLint violations-as-errors under the committed config
 #   python              ruff check + ruff format --check under pyproject.toml,
 #                       with the pinned ruff version
 #
@@ -610,8 +611,44 @@ check_shellcheck() {
   return 0
 }
 
+# --- swiftlint --------------------------------------------------------------
+# The committed `.swiftlint.yml` is the Swift standard here: the safety rules
+# (force_unwrapping, implicitly_unwrapped_optional) are on and had to reach zero
+# before this gate could be wired, layout is delegated to swift-format and
+# size/complexity to the ratchet above, and every remaining decision is
+# justified in the config itself. `--strict` promotes every warning to a
+# failure. The pinned version matters because the rule set changes between
+# releases.
+SWIFTLINT_PIN="0.65.1"
+
+check_swiftlint() {
+  echo "== swiftlint: violations are errors under the committed config (pinned $SWIFTLINT_PIN) =="
+  if ! command -v swiftlint >/dev/null 2>&1; then
+    echo "  FAIL: swiftlint is not installed; this gate needs the pinned version:"
+    echo "        brew install swiftlint  (or the $SWIFTLINT_PIN release binary)"
+    status=1
+    return 1
+  fi
+  local version
+  version="$(swiftlint version)"
+  if [ "$version" != "$SWIFTLINT_PIN" ]; then
+    echo "  FAIL: swiftlint $version is installed, this gate pins $SWIFTLINT_PIN"
+    status=1
+    return 1
+  fi
+  local output
+  if ! output="$(cd "$ROOT" && swiftlint lint --strict --no-cache --quiet 2>&1)"; then
+    printf '%s\n' "$output" | sed "s|$ROOT/||" | head -30
+    echo "  FAIL: swiftlint found violations (fix them; an exclusion needs a written reason)"
+    status=1
+    return 1
+  fi
+  echo "  ok (swiftlint $version, --strict clean)"
+  return 0
+}
+
 case "$want" in
-  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_shellcheck; check_python ;;
+  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_shellcheck; check_swiftlint; check_python ;;
   force-cast)  check_force_cast ;;
   func-length) check_func_length ;;
   sendable)    check_unchecked_sendable ;;
@@ -619,8 +656,9 @@ case "$want" in
   arch-path)   check_arch_path ;;
   shell)       check_shell_portability ;;
   shellcheck)  check_shellcheck ;;
+  swiftlint)   check_swiftlint ;;
   python)      check_python ;;
-  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|shellcheck|python)" >&2; exit 2 ;;
+  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|shellcheck|swiftlint|python)" >&2; exit 2 ;;
 esac
 
 exit $status

@@ -70,17 +70,6 @@ struct PrefillChunkSpan: Sendable, Equatable {
     let tokenCount: Int
     let startPosition: Int
     let completedCount: Int
-
-    init(tokenOffset: Int,
-                tokenCount: Int,
-                startPosition: Int,
-                completedCount: Int) {
-        self.tokenOffset = tokenOffset
-        self.tokenCount = tokenCount
-        self.startPosition = startPosition
-        self.completedCount = completedCount
-    }
-
 }
 
 enum PrefillChunkPlanner {

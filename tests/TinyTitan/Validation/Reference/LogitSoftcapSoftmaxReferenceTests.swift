@@ -12,7 +12,7 @@ import TinyTitanValidationSupport
             capped[i] = softcap * Foundation.tanh(x[i] / softcap)
         }
         var mx = -Float.infinity
-        for v in capped { if v > mx { mx = v } }
+        for v in capped where v > mx { mx = v }
         var es = [Float](repeating: 0, count: v)
         var sum: Float = 0
         for i in 0..<v {

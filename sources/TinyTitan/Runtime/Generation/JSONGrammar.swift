@@ -446,7 +446,7 @@ public struct JSONGrammar: Hashable, Sendable {
         guard byte >= 0x20 else { return false }
         if byte == 0x22 {
             guard role == .key else { return finishValue() }
-            return finishKey(String(decoding: keyBytes, as: UTF8.self))
+            return finishKey(keyBytes.lossyUTF8String)
         }
         if role == .key { keyBytes.append(byte) }
         return true
@@ -482,7 +482,7 @@ public struct JSONGrammar: Hashable, Sendable {
             state = .unicode(remaining - 1, role)
             return true
         }
-        if role == .key, let scalar = UInt32(String(decoding: unicodeDigits, as: UTF8.self), radix: 16),
+        if role == .key, let scalar = UInt32(unicodeDigits.lossyUTF8String, radix: 16),
            let unicode = Unicode.Scalar(scalar) {
             keyBytes.append(contentsOf: Array(String(Character(unicode)).utf8))
         }

@@ -143,7 +143,7 @@ struct ReasoningControlTests {
             #expect(level.displayName == level.rawValue)
         }
         let data = try JSONEncoder().encode([ReasoningLevel.xhigh])
-        #expect(String(decoding: data, as: UTF8.self) == "[\"xhigh\"]")
+        #expect(data.lossyUTF8String == "[\"xhigh\"]")
         let error = ReasoningLevelError.unsupported(
             family: "qwen38flash", level: .high, supported: [.off, .xhigh])
         #expect(error.description.contains("off, extra high"))

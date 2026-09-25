@@ -2,7 +2,7 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**21 tasks — done 16, open 5, blocked 0.**
+**21 tasks — done 17, open 4, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -16,8 +16,8 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | DONE | mac-mini-m3 (primary) |
 | AUD-017 | S2 | A | Python tooling/CI | `pyproject.toml; .github/workflows/ci.yml; tools/lint.sh` | Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned | DONE | mac-mini-m3 (primary) |
 | AUD-019 | S2 | A | Swift | `sources/ (171 sites, 44 files)` | force_unwrapping in sources: 171 sites that crashed instead of failing | DONE | mac-mini-m3 (primary) |
-| AUD-020 | S2 | A | Swift | `sources/ + tests/ + benchmark/` | 98 remaining SwiftLint findings across 12 rules (data/string conversion, casts, type checking, style) | OPEN | mac-mini-m3 (primary) |
-| AUD-021 | S2 | C | Tests | `tests/ (136) + benchmark/ (3)` | force_unwrapping in test fixtures: 139 sites that crash the test process | OPEN | mac-mini-m3 (primary) |
+| AUD-020 | S2 | A | Swift | `sources/ + tests/ + benchmark/` | 96 remaining SwiftLint findings across 11 rules (data/string conversion, casts, type checking, style) | OPEN | mac-mini-m3 (primary) |
+| AUD-021 | S2 | C | Tests | `tests/ (136 sites) + benchmark/ (3 sites)` | force_unwrapping in test fixtures: 139 sites that crash the test process | DONE | mac-mini-m3 (primary) |
 | AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
 | AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | DONE | mac-mini-m3 (primary) |
 | AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | DONE | mac-mini-m3 (primary) |
@@ -69,8 +69,8 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - location: `repo root`
 - discovered by: swiftlint 0.65.1 lint --strict --reporter json
 - evidence (before): No .swiftlint.yml. Default run over the repo reports 168,918 findings, of which 164,440 are vendored code under .build/ (SwiftPM checkouts) and 4,478 are project code: sources/ 2,788 (identifier_name 1,185, vertical_parameter_alignment 632, function_parameter_count 155, function_body_length 139, comma 122, trailing_comma 96, cyclomatic_complexity 71, line_length 71, file_length 52, colon 50, type_body_length 39, large_tuple 37), tests/ 1,660 (identifier_name 976, trailing_comma 307, force_cast 18, optional_data_string_conversion 32, ...), other 30. .build/ must be excluded as build output; the remainder needs a committed config and a sweep.
-- fix: Committed `.swiftlint.yml`: safety opt-ins on (force_unwrapping, implicitly_unwrapped_optional), layout delegated to swift-format, size/complexity delegated to tools/lint.sh's ratchet, identifier_name configured for the numerical vocabulary (min_length 1, validates_start_with_lowercase off) — each with its reason and measured counts in the file. Gate wiring is deliberately held until the tree is clean: `tools/lint.sh` gains `swiftlint --strict` when AUD-019/AUD-020 reach zero.
-- evidence (after): `swiftlint lint --strict --no-cache --reporter json` -> 488 findings in 13 rules, down from 4,479 in 33 (168,918 including .build). The remaining findings are enumerated as AUD-019 (force_unwrapping 390) and AUD-020 (98 across 12 rules). Config committed in 68a6945. The Phase E workflow also runs `swiftlint lint --strict` with the committed config, so the standard is enforced from the independent host as well.
+- fix: Committed `.swiftlint.yml`: safety opt-ins on (force_unwrapping, implicitly_unwrapped_optional), layout delegated to swift-format, size/complexity delegated to tools/lint.sh's ratchet, identifier_name configured for the numerical vocabulary (min_length 1, validates_start_with_lowercase off) — each with its reason and measured counts in the file. AUD-019 and AUD-021 are closed, so the safety half of the tree is clean; the gate wiring waits only on AUD-020's 96 findings.
+- evidence (after): `swiftlint lint --strict --no-cache --reporter json` -> 4,479 default findings in 33 rules drop to **96 in 11 rules** (168,918 including .build). force_unwrapping and implicitly_unwrapped_optional are at zero (AUD-019 production, AUD-021 tests/benchmark); the remaining 96 are AUD-020. Config committed in 68a6945. The Phase E workflow already runs `swiftlint lint --strict` with the committed config, so the standard is enforced from the independent host as well; the `tools/lint.sh` gate is the last piece and lands with AUD-005's closure.
 - commit: 68a6945 (config; gate pending)
 - blocked: —
 
@@ -140,12 +140,12 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - commit: 51aef05 d2ba27e c9669b3 80d696f
 - blocked: —
 
-### AUD-020 — 98 remaining SwiftLint findings across 12 rules (data/string conversion, casts, type checking, style)
+### AUD-020 — 96 remaining SwiftLint findings across 11 rules (data/string conversion, casts, type checking, style)
 
 - severity **S2**, tier A, project Swift, status **OPEN**
 - location: `sources/ + tests/ + benchmark/`
 - discovered by: AUD-005
-- evidence (before): optional_data_string_conversion 43, force_cast 19, prefer_type_checking 6, identifier_name 6, force_try 5, for_where 5, static_over_final_class 4, orphaned_doc_comment 3, implicit_optional_initialization 3, non_optional_string_data_conversion 2, redundant_discardable_let 1, unneeded_synthesized_initializer 1. Absorbs AUD-008.
+- evidence (before): Measured 2026-09-25 after AUD-021 closed: optional_data_string_conversion 43, force_cast 19, prefer_type_checking 6, identifier_name 6, force_try 5, for_where 5, static_over_final_class 4, orphaned_doc_comment 3, implicit_optional_initialization 3, redundant_discardable_let 1, unneeded_synthesized_initializer 1. (The original row said 98 across 12 rules including non_optional_string_data_conversion 2, which batch 5/6 had already fixed.) Absorbs AUD-008.
 - fix: —
 - evidence (after): —
 - commit: —
@@ -153,13 +153,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-021 — force_unwrapping in test fixtures: 139 sites that crash the test process
 
-- severity **S2**, tier C, project Tests, status **OPEN**
-- location: `tests/ (136) + benchmark/ (3)`
+- severity **S2**, tier C, project Tests, status **DONE**
+- location: `tests/ (136 sites) + benchmark/ (3 sites)`
 - discovered by: AUD-019's scope split (the same rule, different tiers)
 - evidence (before): 136 sites in 53 test files plus 3 in benchmark/. Dominant shapes: `…queue.makeCommandBuffer()!` (done), `baseAddress!` inside `withUnsafe…` closures (~41), `device.makeBuffer(…)!` in test helpers (~22), `URL(string:)!`/`URLRequest` fixtures (~18), `.encode(…).first!` (done), HTTP `headerFields: nil)!` (7), and kernel-call pointer arguments. Batch 5 (eab2a5a) converted the 76 unambiguous ones to `try #require(…)`.
-- fix: —
-- evidence (after): —
-- commit: eab2a5a (batch 5; open)
+- fix: Batches 5-8, each reviewed and followed by the full suite: batch 5 (eab2a5a) converted the 76 unambiguous sites (`makeCommandBuffer`, `.first!`, `data(using:)`) to `try #require`; batch 6 (1514796) added tests/TinyTitanServer/TestSupport.swift (`localURL`/`localRequest`/`requireFixture`) for 21 server URL fixtures and bound the Int8AffineGEMV buffers in-closure; batch 7 (f35f44f) gave FakeHFURLProtocol a `respond` helper that reports `URLError(.badServerResponse)` and made the allocation helpers in the kernel tests throwing; batch 8 (e2415ed) finished the pointer arguments, the optional fixtures and the benchmark script. Two bulk regex attempts were reverted before committing (they produced invalid syntax through `context.device` and cascaded `try` through non-throwing helpers), which is why every batch is hand-reviewed and ends with `swift test`.
+- evidence (after): tests force_unwrapping 136 -> **0**, benchmark 3 -> **0**, tree 235 -> 96 findings (all 96 now belong to AUD-020). `swift build --build-tests` clean under warnings-as-errors; `swift test --no-parallel` 1,493 tests in 223 suites passed after every batch; `swiftc -typecheck benchmark/cpu_draft_bench.swift` clean. Rule blind spot measured and swept: SwiftLint's force_unwrapping does not flag a force unwrap nested inside another call's argument list (probe: `URLRequest(url: URL(string: "...")!)`), so a hand scan for postfix `!` over sources/, tests/ and benchmark/ was run; the only remaining `!` characters are inside string literals.
+- commit: eab2a5a 1514796 f35f44f e2415ed
 - blocked: —
 
 ### AUD-004 — No committed swift-format config

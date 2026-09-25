@@ -112,9 +112,9 @@ extension ModelLoaderTests {
     let dir = try Self.writeToySynthetic()
     defer { try? FileManager.default.removeItem(at: dir) }
     let manifestURL = dir.appendingPathComponent("manifest.json")
-    var root =
+    var root = try #require(
       try JSONSerialization.jsonObject(
-        with: Data(contentsOf: manifestURL)) as! [String: Any]
+        with: Data(contentsOf: manifestURL)) as? [String: Any])
     root["expertStride"] = 1024
     let data = try JSONSerialization.data(withJSONObject: root)
     try data.write(to: manifestURL)

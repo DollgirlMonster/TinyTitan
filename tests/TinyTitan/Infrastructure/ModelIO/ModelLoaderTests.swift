@@ -504,8 +504,8 @@ import Metal
         let manifest = try ManifestReader.load(directoryURL: dir, expecting: .qwenToy())
         let manifestURL = dir.appendingPathComponent("manifest.json")
         let manifestSha = try Sha256Verifier.hashFile(at: manifestURL)
-        let manifestSize = try FileManager.default
-            .attributesOfItem(atPath: manifestURL.path)[.size] as! NSNumber
+        let manifestSize = try #require(try FileManager.default
+            .attributesOfItem(atPath: manifestURL.path)[.size] as? NSNumber)
         var receiptFiles = manifest.files.mapValues {
             VerifiedInstallReceipt.FileEntry(size: $0.size, sha256: $0.sha256)
         }
@@ -529,8 +529,8 @@ import Metal
     static func mutateReceipt(directoryURL dir: URL,
                                       transform: (inout [String: Any]) throws -> Void) throws {
         let receiptURL = dir.appendingPathComponent(VerifiedInstallReceiptReader.fileName)
-        var root = try JSONSerialization.jsonObject(
-            with: Data(contentsOf: receiptURL)) as! [String: Any]
+        var root = try #require(try JSONSerialization.jsonObject(
+            with: Data(contentsOf: receiptURL)) as? [String: Any])
         try transform(&root)
         let data = try JSONSerialization.data(withJSONObject: root,
                                               options: [.sortedKeys, .withoutEscapingSlashes])

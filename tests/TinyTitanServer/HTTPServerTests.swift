@@ -204,11 +204,11 @@ struct HTTPServerTests {
 
         let health = try await URLSession.shared.data(
             from: try localURL(port: port, "/health")).0
-        #expect(String(decoding: health, as: UTF8.self).contains(#""status":"ok""#))
+        #expect(health.lossyUTF8String.contains(#""status":"ok""#))
 
         let models = try await URLSession.shared.data(
             from: try localURL(port: port, "/v1/models")).0
-        #expect(String(decoding: models, as: UTF8.self).contains("test-model"))
+        #expect(models.lossyUTF8String.contains("test-model"))
 
         var request = URLRequest(
             url: try localURL(port: port, "/v1/chat/completions"))
@@ -270,7 +270,7 @@ struct HTTPServerTests {
         let status = (response as? HTTPURLResponse)?.statusCode
         #expect(status == 429,
                 "a pre-admission rejection must carry a status line; got \(status.map(String.init) ?? "no HTTP response")")
-        #expect(String(decoding: data, as: UTF8.self).contains("queue_full"))
+        #expect(data.lossyUTF8String.contains("queue_full"))
 
         _ = try? await active.value
         _ = try? await queued.value
@@ -301,7 +301,7 @@ struct HTTPServerTests {
         }
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 431)
-        #expect(String(decoding: data, as: UTF8.self)
+        #expect(data.lossyUTF8String
                     .contains("request_headers_too_large"))
 
         try await server.shutdown()
@@ -331,7 +331,7 @@ struct HTTPServerTests {
                                 count: TinyTitanHTTPServer.maximumBodyBytes + 4096)
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 413)
-        #expect(String(decoding: data, as: UTF8.self).contains("request_too_large"))
+        #expect(data.lossyUTF8String.contains("request_too_large"))
 
         try await server.shutdown()
     }
@@ -353,7 +353,7 @@ struct HTTPServerTests {
         """#.utf8)
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
-        let text = String(decoding: data, as: UTF8.self)
+        let text = data.lossyUTF8String
         #expect(text.contains(#""role":"assistant""#))
         #expect(text.contains(#""content":"hello""#))
         #expect(text.contains(#""finish_reason":"stop""#))
@@ -380,7 +380,7 @@ struct HTTPServerTests {
         """#.utf8)
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 404)
-        #expect(String(decoding: data, as: UTF8.self).contains("model_not_found"))
+        #expect(data.lossyUTF8String.contains("model_not_found"))
 
         try await server.shutdown()
     }
@@ -401,7 +401,7 @@ struct HTTPServerTests {
         {"model":"test-model","messages":[{"role":"user","content":"hi"}],"stream":true}
         """#.utf8)
         let data = try await URLSession.shared.data(for: request).0
-        #expect(String(decoding: data, as: UTF8.self).contains(": ping\n\n"))
+        #expect(data.lossyUTF8String.contains(": ping\n\n"))
 
         try await server.shutdown()
     }
@@ -421,8 +421,7 @@ struct HTTPServerTests {
         {"model":"test-model","messages":[{"role":"user","content":"read both"}],
          "stream":true}
         """#.utf8)
-        let text = String(decoding: try await URLSession.shared.data(for: request).0,
-                          as: UTF8.self)
+        let text = try await URLSession.shared.data(for: request).0.lossyUTF8String
         #expect(text.contains(#""index":0"#))
         #expect(text.contains(#""index":1"#))
         #expect(text.contains(#""finish_reason":"tool_calls""#))
@@ -468,9 +467,7 @@ struct HTTPServerTests {
         request.httpBody = Data(#"""
         {"model":"test-model","messages":[{"role":"user","content":"read"}],"stream":true}
         """#.utf8)
-        let stream = String(
-            decoding: try await URLSession.shared.data(for: request).0,
-            as: UTF8.self)
+        let stream = try await URLSession.shared.data(for: request).0.lossyUTF8String
         #expect(stream.contains(#""content":"I will read it.""#))
         #expect(stream.contains(#""tool_calls""#))
         #expect(stream.contains(#""finish_reason":"tool_calls""#))
@@ -763,8 +760,7 @@ struct HTTPServerTests {
         {"model":"test-model","messages":[{"role":"user","content":"fail"}],
          "stream":true}
         """#.utf8)
-        let text = String(decoding: try await URLSession.shared.data(for: request).0,
-                          as: UTF8.self)
+        let text = try await URLSession.shared.data(for: request).0.lossyUTF8String
 
         // The partial content arrived, then the error envelope...
         #expect(text.contains(#""content":"partial""#))
@@ -935,7 +931,7 @@ private func readAvailable(socket: Int32, timeoutMilliseconds: Int32) throws -> 
         result.append(contentsOf: buffer.prefix(count))
         descriptor.revents = 0
     }
-    return String(decoding: result, as: UTF8.self)
+    return result.lossyUTF8String
 }
 
 private func readUntil(

@@ -93,6 +93,6 @@ public indirect enum JSONValue: Codable, Equatable, Sendable {
     public func encoded(sortedKeys: Bool = true) throws -> String {
         let encoder = JSONEncoder()
         if sortedKeys { encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes] }
-        return String(decoding: try encoder.encode(self), as: UTF8.self)
+        return try encoder.encode(self).lossyUTF8String
     }
 }

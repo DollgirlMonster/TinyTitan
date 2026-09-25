@@ -9,7 +9,7 @@ import Testing
 struct Qwen4ExpArchInfoTests {
     /// The load-bearing subset of the real config. Layer types alternate
     /// 3 linear : 1 full, which is what `full_attention_interval: 4` means.
-    private static func configJSON(overrides: [String: Any] = [:]) -> Data {
+    private static func configJSON(overrides: [String: Any] = [:]) throws -> Data {
         var layerTypes: [String] = []
         for i in 0..<48 {
             layerTypes.append((i + 1) % 4 == 0 ? "full_attention" : "linear_attention")
@@ -43,7 +43,7 @@ struct Qwen4ExpArchInfoTests {
             "text_config": text,
             "quantization": ["group_size": 64, "bits": 4, "mode": "affine"],
         ]
-        return try! JSONSerialization.data(withJSONObject: root)
+        return try JSONSerialization.data(withJSONObject: root)
     }
 
     private static func load(_ data: Data) throws -> ArchInfo {

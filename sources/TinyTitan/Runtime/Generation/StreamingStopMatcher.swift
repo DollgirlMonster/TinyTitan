@@ -50,11 +50,10 @@ public struct StreamingStopMatcher: Sendable {
         for stop in stops {
             let stopUTF8 = stop.utf8
             let maximum = min(textUTF8.count, max(stopUTF8.count - 1, 0))
-            for length in stride(from: maximum, through: 1, by: -1) {
-                if textUTF8.suffix(length).elementsEqual(stopUTF8.prefix(length)) {
-                    best = max(best, length)
-                    break
-                }
+            for length in stride(from: maximum, through: 1, by: -1)
+            where textUTF8.suffix(length).elementsEqual(stopUTF8.prefix(length)) {
+                best = max(best, length)
+                break
             }
         }
         return best

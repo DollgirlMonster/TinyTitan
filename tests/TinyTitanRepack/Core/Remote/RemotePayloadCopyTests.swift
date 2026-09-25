@@ -12,11 +12,11 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var etagOverrides: [String: String] = [:]
     nonisolated(unsafe) static var xetHashOverrides: [String: String] = [:]
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "hf.test"
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 
@@ -255,8 +255,9 @@ func assertRemoteTokenizerFilesRecorded(outputDir: String,
 
     let manifestData = try Data(contentsOf: URL(fileURLWithPath:
         (outputDir as NSString).appendingPathComponent("manifest.json")))
-    let manifest = try JSONSerialization.jsonObject(with: manifestData) as! [String: Any]
-    let manifestFiles = manifest["files"] as! [String: Any]
+    let manifest = try #require(
+        try JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+    let manifestFiles = try #require(manifest["files"] as? [String: Any])
     #expect(manifestFiles["tokenizer/config.json"] != nil)
     #expect(manifestFiles["tokenizer/tokenizer.json"] != nil)
     #expect(manifestFiles["tokenizer/tokenizer_config.json"] != nil)
@@ -265,8 +266,9 @@ func assertRemoteTokenizerFilesRecorded(outputDir: String,
 
     let receiptData = try Data(contentsOf: URL(fileURLWithPath:
         (outputDir as NSString).appendingPathComponent(VerifiedInstallReceiptWriter.fileName)))
-    let receipt = try JSONSerialization.jsonObject(with: receiptData) as! [String: Any]
-    let receiptFiles = receipt["files"] as! [String: Any]
+    let receipt = try #require(
+        try JSONSerialization.jsonObject(with: receiptData) as? [String: Any])
+    let receiptFiles = try #require(receipt["files"] as? [String: Any])
     #expect(receiptFiles["tokenizer/config.json"] != nil)
     #expect(receiptFiles["tokenizer/tokenizer.json"] != nil)
     #expect(receiptFiles["tokenizer/tokenizer_config.json"] != nil)

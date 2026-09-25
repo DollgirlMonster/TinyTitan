@@ -541,7 +541,7 @@ enum DenseModelError: Error, CustomStringConvertible {
             record["prompt_tokens"] = ids.count
             record["completion_tokens"] = produced.count
             let encoded = try JSONSerialization.data(withJSONObject: record)
-            results.append(String(decoding: encoded, as: UTF8.self))
+            results.append(encoded.lossyUTF8String)
             if (index + 1) % 10 == 0 {
                 FileHandle.standardError.write(Data("  \(index + 1)/\(lines.count)\n".utf8))
             }

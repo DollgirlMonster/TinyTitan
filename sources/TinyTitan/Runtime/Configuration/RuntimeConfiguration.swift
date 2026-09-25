@@ -492,7 +492,11 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     public static var production: RuntimeConfiguration {
         // lint:allow-force every default is a compile-time constant on the
         // allowed lists, so the validating init cannot throw here;
-        // RuntimeConfigurationTests pins that.
+        // RuntimeConfigurationTests pins that. The SwiftLint disable below
+        // restates that audited reason for the second gate rather than waiving
+        // it silently: there is no non-trapping fallback, because any
+        // fallback value would ship a configuration no caller asked for.
+        // swiftlint:disable:next force_try
         try! RuntimeConfiguration()
     }
 
