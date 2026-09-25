@@ -39,7 +39,7 @@ def main() -> int:
             print(f"   OPEN  {task['id']} [{task['severity']}/{task['tier']}] {task['title']}")
     for task in blocked:
         reason = task.get("blocked_reason") or "(no reason recorded)"
-        print(f"   BLOCKED {task['id']} owner={task.get('blocked_owner', '?')}: {reason}")
+        print(f"   BLOCKED {task['id']}: {reason}")
 
     if args.report:
         return 0
