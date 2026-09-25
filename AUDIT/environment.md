@@ -24,7 +24,7 @@ remote host.
 | Swift | swiftlint | 0.65.1 | Homebrew | linter (to be run with `--strict`) |
 | Swift/C | clang (Apple) | Xcode 27.0 toolchain | — | C compiler for the strict-C99 gate |
 | Python | python3 | 3.14.7 | system | scripts |
-| Python | ruff | 0.16.7 | Homebrew | formatter + linter (`--fix`) |
+| Python | ruff | 0.16.7 | Homebrew (local), `python3 -m pip install --user ruff==0.16.7` in CI | formatter + linter (`--fix`); pinned by `tools/lint.sh`'s RUFF_PIN and installed by `.github/workflows/ci.yml` |
 | Python | pip-audit | missing | — | required only if a requirements/lock file exists; none does (AUDIT/baseline.md) |
 | JavaScript | node | v26.8.2 | system | plugin tests |
 | JavaScript | npm | 12.0.2 | system | — |
@@ -49,7 +49,7 @@ lock file exists for the Python scripts; recorded in the baseline).
 | Swift | warnings-as-errors | **no** | a probe with an unused-value warning built with exit 0 (AUD-002) |
 | Swift | swift-format config, SwiftLint `--strict` config | **no** | no config committed (AUD-004, AUD-005) |
 | C | strict C99 + hardening warnings + -Werror | **no** | `cSettings` carries only `-O2` (AUD-003); the code itself is clean under the full flag set |
-| Python | Ruff with B/E722/S101/PT, formatter | **no config** | rules exist in ruff 0.16.7 and are proven to fire (AUDIT/tool-coverage.md), but nothing pins them (AUD-006) |
+| Python | Ruff with B/E722/S101/PT, formatter | **yes after AUD-006** | `pyproject.toml` pins the rule families and target; `tools/lint.sh python` runs `ruff check .` + `ruff format --check .` with RUFF_PIN 0.16.7 and FAILS if ruff is missing or a different version; CI installs that exact version. PT009/PT027 are excluded with the reason in the config (unittest suite) |
 
 A standard with "no" above is not enforced and is carried as an open ledger task;
 none of them was relaxed to make anything compile.

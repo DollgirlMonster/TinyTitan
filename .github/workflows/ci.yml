@@ -28,6 +28,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install the pinned Python linter
+        # `tools/lint.sh python` needs the exact pinned ruff and FAILS rather
+        # than skipping when it is missing, so CI installs it here. The version
+        # is the one in the gate's RUFF_PIN and in AUDIT/environment.md.
+        run: |
+          python3 -m pip install --user --disable-pip-version-check --quiet ruff==0.16.7
+          echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
       - name: Plugin tests (harness-version pins)
         # The cheapest gate, and independent of the Swift build: the plugin
         # suites run in about a second together. dsh-tinytitan asserts the one

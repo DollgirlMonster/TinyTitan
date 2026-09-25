@@ -28,6 +28,7 @@ and records what it said. Scratch files live in `/tmp` and are not committed.
 | T4 | Swift force casts | swiftlint (default rules) | — | **covered**: the repo scan reports 18 `force_cast` in `tests/` (AUD-008) |
 | T5 | Dependency CVEs, Swift | osv-scanner 2.6.0 | real scan of `Package.resolved` | **covered**: found the three swift-nio advisories (AUD-001) |
 | T6 | Undefined names | ruff F821 | real scan | **covered**: found `pathlib` undefined in `tinytitan_mtp_phases.py` (AUD-007) |
+| T7 | The Python gate is wired, not merely configured | `tools/lint.sh python` (ruff 0.16.7, pinned) | `benchmark/ZZAuditRuffGateProbe.py` with a bare `except:` (temporary file) | **covered**: the gate printed `E722 Do not use bare 'except'` and exited 1; removing the file exited 0. The gate also fails when ruff is absent or is a different version, so it cannot silently skip. |
 
 ## Notes
 

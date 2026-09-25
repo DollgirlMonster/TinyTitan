@@ -12,6 +12,8 @@
 #   converter           routed experts must land at their own index
 #   arch-path           no hardcoded SwiftPM triple in a build path (see below)
 #   shell-portability   scripts run on the system bash (3.2), not just the dev one
+#   python              ruff check + ruff format --check under pyproject.toml,
+#                       with the pinned ruff version
 #
 # Opting out of force-cast: put `lint:allow-force <reason>` in a comment on
 # the line immediately above. The reason is mandatory and is what a reviewer
@@ -492,15 +494,56 @@ check_shell_portability() {
   return $failed
 }
 
+# --- python -----------------------------------------------------------------
+# Ruff is the Python standard: the rules and the format are pinned in the
+# repository's pyproject.toml. A missing or different ruff FAILS rather than
+# skipping — a gate that quietly does nothing is the failure mode this check
+# exists to prevent.
+RUFF_PIN="0.16.7"
+
+check_python() {
+  echo "== python: ruff check + ruff format --check (pinned $RUFF_PIN) =="
+  if ! command -v ruff >/dev/null 2>&1; then
+    echo "  FAIL: ruff is not installed; this gate needs the pinned version:"
+    echo "        pipx install ruff==$RUFF_PIN   (or: python3 -m pip install --user ruff==$RUFF_PIN)"
+    status=1
+    return 1
+  fi
+  local version
+  version="$(ruff --version | awk '{print $2}')"
+  if [ "$version" != "$RUFF_PIN" ]; then
+    echo "  FAIL: ruff $version is installed, this gate pins $RUFF_PIN"
+    echo "        pipx install --force ruff==$RUFF_PIN"
+    status=1
+    return 1
+  fi
+  local output
+  if ! output="$(cd "$ROOT" && ruff check . 2>&1)"; then
+    printf '%s\n' "$output" | tail -25
+    echo "  FAIL: ruff check (fix: ruff check --fix .)"
+    status=1
+    return 1
+  fi
+  if ! output="$(cd "$ROOT" && ruff format --check . 2>&1)"; then
+    printf '%s\n' "$output" | tail -10
+    echo "  FAIL: ruff format --check (fix: ruff format .)"
+    status=1
+    return 1
+  fi
+  echo "  ok (ruff $version, check and format clean)"
+  return 0
+}
+
 case "$want" in
-  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability ;;
+  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_python ;;
   force-cast)  check_force_cast ;;
   func-length) check_func_length ;;
   sendable)    check_unchecked_sendable ;;
   converter)   check_converter_expert_order ;;
   arch-path)   check_arch_path ;;
   shell)       check_shell_portability ;;
-  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell)" >&2; exit 2 ;;
+  python)      check_python ;;
+  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|python)" >&2; exit 2 ;;
 esac
 
 exit $status
