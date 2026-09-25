@@ -2,21 +2,21 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**21 tasks — done 17, open 4, blocked 0.**
+**21 tasks — done 19, open 2, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | DONE | mac-mini-m3 (primary) |
 | AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | DONE | mac-mini-m3 (primary) |
 | AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | DONE | mac-mini-m3 (primary) |
-| AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | PROGRESS | mac-mini-m3 (primary) |
+| AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | DONE | mac-mini-m3 (primary) |
 | AUD-006 | S2 | C | benchmark/tools Python | `repo root (no ruff config)` | No pinned Ruff config; 386 findings under the default rule set | DONE | mac-mini-m3 (primary) |
 | AUD-007 | S2 | C | benchmark | `benchmark/tinytitan_mtp_phases.py:77,130` | Undefined name `pathlib` (F821) used in annotations; module never imports it | DONE | mac-mini-m3 (primary) |
 | AUD-012 | S2 | B | plugins | `plugins/dsh-tinytitan, plugins/dsh-lan-manager` | JavaScript packages have no formatter, linter or lockfile | OPEN | mac-mini-m3 (primary) |
 | AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | DONE | mac-mini-m3 (primary) |
 | AUD-017 | S2 | A | Python tooling/CI | `pyproject.toml; .github/workflows/ci.yml; tools/lint.sh` | Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned | DONE | mac-mini-m3 (primary) |
 | AUD-019 | S2 | A | Swift | `sources/ (171 sites, 44 files)` | force_unwrapping in sources: 171 sites that crashed instead of failing | DONE | mac-mini-m3 (primary) |
-| AUD-020 | S2 | A | Swift | `sources/ + tests/ + benchmark/` | 96 remaining SwiftLint findings across 11 rules (data/string conversion, casts, type checking, style) | OPEN | mac-mini-m3 (primary) |
+| AUD-020 | S2 | A | Swift | `sources/ + tests/ + benchmark/` | 96 remaining SwiftLint findings across 11 rules (data/string conversion, casts, type checking, style) | DONE | mac-mini-m3 (primary) |
 | AUD-021 | S2 | C | Tests | `tests/ (136 sites) + benchmark/ (3 sites)` | force_unwrapping in test fixtures: 139 sites that crash the test process | DONE | mac-mini-m3 (primary) |
 | AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
 | AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | DONE | mac-mini-m3 (primary) |
@@ -65,13 +65,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-005 — No committed SwiftLint config run with --strict
 
-- severity **S2**, tier B, project build, status **PROGRESS**
+- severity **S2**, tier B, project build, status **DONE**
 - location: `repo root`
 - discovered by: swiftlint 0.65.1 lint --strict --reporter json
 - evidence (before): No .swiftlint.yml. Default run over the repo reports 168,918 findings, of which 164,440 are vendored code under .build/ (SwiftPM checkouts) and 4,478 are project code: sources/ 2,788 (identifier_name 1,185, vertical_parameter_alignment 632, function_parameter_count 155, function_body_length 139, comma 122, trailing_comma 96, cyclomatic_complexity 71, line_length 71, file_length 52, colon 50, type_body_length 39, large_tuple 37), tests/ 1,660 (identifier_name 976, trailing_comma 307, force_cast 18, optional_data_string_conversion 32, ...), other 30. .build/ must be excluded as build output; the remainder needs a committed config and a sweep.
-- fix: Committed `.swiftlint.yml`: safety opt-ins on (force_unwrapping, implicitly_unwrapped_optional), layout delegated to swift-format, size/complexity delegated to tools/lint.sh's ratchet, identifier_name configured for the numerical vocabulary (min_length 1, validates_start_with_lowercase off) — each with its reason and measured counts in the file. AUD-019 and AUD-021 are closed, so the safety half of the tree is clean; the gate wiring waits only on AUD-020's 96 findings.
-- evidence (after): `swiftlint lint --strict --no-cache --reporter json` -> 4,479 default findings in 33 rules drop to **96 in 11 rules** (168,918 including .build). force_unwrapping and implicitly_unwrapped_optional are at zero (AUD-019 production, AUD-021 tests/benchmark); the remaining 96 are AUD-020. Config committed in 68a6945. The Phase E workflow already runs `swiftlint lint --strict` with the committed config, so the standard is enforced from the independent host as well; the `tools/lint.sh` gate is the last piece and lands with AUD-005's closure.
-- commit: 68a6945 (config; gate pending)
+- fix: Committed `.swiftlint.yml`: safety opt-ins on (force_unwrapping, implicitly_unwrapped_optional), layout delegated to swift-format, size/complexity delegated to tools/lint.sh's ratchet, identifier_name configured for the numerical vocabulary (min_length 1, validates_start_with_lowercase off, allowed_symbols "_") — each with its reason and measured counts in the file. The gate is wired: `tools/lint.sh` gains `check_swiftlint` as its ninth gate with SWIFTLINT_PIN 0.65.1, failing when swiftlint is missing or a different version, and both CI workflows install that pinned release binary instead of `brew install swiftlint` (Homebrew cannot pin, and the rule set moves between releases).
+- evidence (after): `swiftlint lint --strict --no-cache --reporter json` -> **0 findings in 464 files**, from 4,479 default findings in 33 rules (168,918 including .build): AUD-019 (production force_unwrapping), AUD-021 (tests/benchmark force_unwrapping) and AUD-020 (96 findings in 11 rules) all closed into this config. `tools/lint.sh` runs it as the ninth gate, and AUDIT/tool-coverage.md L3/T10 records the probe: a temporary `value!` in sources/ made the gate fail with `error: Force Unwrapping Violation` and exit 1, and removing it exited 0. The Phase E workflow also runs `swiftlint lint --strict` with the committed config, so the standard is enforced from the independent host as well.
+- commit: 68a6945 (config) 8ebfdac (gate + pinned CI install)
 - blocked: —
 
 ### AUD-006 — No pinned Ruff config; 386 findings under the default rule set
@@ -142,13 +142,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-020 — 96 remaining SwiftLint findings across 11 rules (data/string conversion, casts, type checking, style)
 
-- severity **S2**, tier A, project Swift, status **OPEN**
+- severity **S2**, tier A, project Swift, status **DONE**
 - location: `sources/ + tests/ + benchmark/`
 - discovered by: AUD-005
 - evidence (before): Measured 2026-09-25 after AUD-021 closed: optional_data_string_conversion 43, force_cast 19, prefer_type_checking 6, identifier_name 6, force_try 5, for_where 5, static_over_final_class 4, orphaned_doc_comment 3, implicit_optional_initialization 3, redundant_discardable_let 1, unneeded_synthesized_initializer 1. (The original row said 98 across 12 rules including non_optional_string_data_conversion 2, which batch 5/6 had already fixed.) Absorbs AUD-008.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Fixed in four reviewed groups rather than one sweep. (1) Style/idiom, 29 findings: prefer_type_checking (`as? T != nil` -> `is T`), for_where (loop-level `if` becomes a `where` clause, including the JSONGrammar and StreamingStopMatcher parser loops), implicit_optional_initialization (drop `= nil`), orphaned_doc_comment (three file-level `///` blocks become `//`; the maxQHeads note moves above its doc comment), static_over_final_class (`override static func` in the two final URLProtocol stubs), redundant_discardable_let, unneeded_synthesized_initializer (PrefillChunkSpan's explicit init was exactly the memberwise one), and identifier_name via `allowed_symbols: "_"` added to the existing documented rule-set decision (the six names are the model constants `qwen36_35B_A3B`/`qwen36_8bit`/`ornith15_8bit`, the lock-backed storage `_responseModelID`/`_activeTask`, and `where_`). (2) force_cast, 19: RawCompletion's `.chunked where producer is any ChunkedPrefillRunner` case and its fallback merge into one `.chunked` case with `guard let chunked = producer as? any ChunkedPrefillRunner` (also removing the lint:allow-force marker it needed); the 18 test sites are `try #require(... as? T)`. (3) force_try, 5: configJSON and the Repack CLI helpers became throwing, requiredness uses `try #require`, WatchdogTests.message reports a bad fixture with Issue.record instead of trapping, and RuntimeConfiguration.production keeps its audited `try!` under a `swiftlint:disable:next force_try` that restates the lint:allow-force reason (no non-trapping fallback would avoid shipping an unrequested configuration). (4) optional_data_string_conversion, 43: deliberately NOT followed. The failable `String(bytes:encoding:)` the rule prefers would either change streaming behavior — GFDetokenizer.drain documents that a scalar split across chunk boundaries must become U+FFFD, and the JSON byte parser repairs the same way — or add an unreachable nil branch where the bytes come from the server's own encoders and SSE frames. `sources/TinyTitan/Tokenization/UTF8Text.swift` names the intent once (`Collection<UInt8>.lossyUTF8String`) with the rationale and a single documented suppression; all 43 call sites read the intent from the name. The two places that decode a subprocess's own output use `try #require(String(bytes:encoding:))` instead.
+- evidence (after): `swiftlint lint --strict --no-cache` -> **0 violations in 464 files** (from 96 in 11 rules). `tools/lint.sh` -> all nine gates ok (the swiftlint gate is AUD-005). `swift test --no-parallel` -> 1,493 tests in 223 suites passed, 0 issues; `swift build --build-tests` warning-free. Gate proof in AUDIT/tool-coverage.md L3/T10: a temporary source file with `value!` failed `tools/lint.sh swiftlint` with the force_unwrapping error and exited 1; removing it returned the tree to clean.
+- commit: 8ebfdac
 - blocked: —
 
 ### AUD-021 — force_unwrapping in test fixtures: 139 sites that crash the test process
