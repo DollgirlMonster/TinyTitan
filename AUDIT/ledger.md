@@ -2,7 +2,7 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**20 tasks — done 15, open 5, blocked 0.**
+**21 tasks — done 16, open 5, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -15,8 +15,9 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-012 | S2 | B | plugins | `plugins/dsh-tinytitan, plugins/dsh-lan-manager` | JavaScript packages have no formatter, linter or lockfile | OPEN | mac-mini-m3 (primary) |
 | AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | DONE | mac-mini-m3 (primary) |
 | AUD-017 | S2 | A | Python tooling/CI | `pyproject.toml; .github/workflows/ci.yml; tools/lint.sh` | Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned | DONE | mac-mini-m3 (primary) |
-| AUD-019 | S2 | A | Swift | `sources/ (70), tests/ (317), benchmark/ (3)` | force_unwrapping: 390 sites that crash instead of failing | OPEN | mac-mini-m3 (primary) |
+| AUD-019 | S2 | A | Swift | `sources/ (171 sites, 44 files)` | force_unwrapping in sources: 171 sites that crashed instead of failing | DONE | mac-mini-m3 (primary) |
 | AUD-020 | S2 | A | Swift | `sources/ + tests/ + benchmark/` | 98 remaining SwiftLint findings across 12 rules (data/string conversion, casts, type checking, style) | OPEN | mac-mini-m3 (primary) |
+| AUD-021 | S2 | C | Tests | `tests/ (136) + benchmark/ (3)` | force_unwrapping in test fixtures: 139 sites that crash the test process | OPEN | mac-mini-m3 (primary) |
 | AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
 | AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | DONE | mac-mini-m3 (primary) |
 | AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | DONE | mac-mini-m3 (primary) |
@@ -128,15 +129,15 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - commit: 29e7ab2
 - blocked: —
 
-### AUD-019 — force_unwrapping: 390 sites that crash instead of failing
+### AUD-019 — force_unwrapping in sources: 171 sites that crashed instead of failing
 
-- severity **S2**, tier A, project Swift, status **OPEN**
-- location: `sources/ (70), tests/ (317), benchmark/ (3)`
+- severity **S2**, tier A, project Swift, status **DONE**
+- location: `sources/ (171 sites, 44 files)`
 - discovered by: AUD-005 (force_unwrapping enabled)
 - evidence (before): 390 force unwraps under the committed config: **171 in sources/** (production: 44 files), 216 in tests/, 3 in benchmark/. Clusters: `MTLCommandQueue.makeCommandBuffer()!`, `MTLDevice.makeBuffer(...)!`, `views.q!/qNorm!` optional tensor views, `elementwise!` optional kernel bundles, `tokenizer.encode(...).first!`, `UnsafeMutableRawPointer.baseAddress!` in vDSP/IO paths, `streamersBox.streamers[layer]!`, dictionary lookups, and URL literals in tests. (The first ledger entry said 70/317/3 — that bucketing was wrong; the corrected counts are from a path-prefix match.)
-- fix: Batch 1 (51aef05, 45 sites): validation references return the empty result for empty input; the lazy routed-expert streamer lookups go through a throwing `openStreamer(for:)`. Batch 2 (d2ba27e, 45 sites): `requireElementwise()`, `LayerPrefillQKVViews.require(_:_:)`, and guarded buffers in Sha256Verifier, ResidentWriter, both SourceByteProviders, RemoteStreamingRepacker, LocalSnapshotLoader. Batch 3 (c9669b3, 52 sites): BenchHarnessError + throwing makeBuffer/requireCommandBuffer in the Metal harnesses; CPUQwen35 binds its buffers and per-layer weights with thrown errors; runner accessors requireAffine/requireOnesPerExpertScale/requireSharedScalarGateBuffer/requireBF16ScalarGate/requireInt8ScalarGate/requireBuffer/requireTensorView; dictionary defaults in Diagnostics; ContextAssembler/ServerMemory `?? []`; RawCompletion/MetalExpertReader named errors; GTurboDirectoryAccess and Journal guards. 248 remain: 29 sources, 216 tests, 3 benchmark.
-- evidence (after): `swift build` clean (warnings-as-errors) after each batch; `swift test --no-parallel` 1,493 tests in 223 suites passed after batch 3; sources force_unwrapping 171 -> 29, tree 488 -> 344 (`swiftlint lint --strict --no-cache`). Closure-invariant note for round 7: no task was closed and none was added, so the open count held at 5 while AUD-019's finding count fell by 142 (488 -> 344 tree-wide). The work was a batch inside one task; no closure was manufactured by splitting the task or by reordering the S3 sweeps, and the doubt is recorded here rather than papered over. The formatter sweep (AUD-004) is deliberately sequenced after AUD-019/AUD-020 so the two diffs do not entangle.
-- commit: 51aef05 d2ba27e c9669b3 (open)
+- fix: Scope change, noted here and carried by the new AUD-021: the original row covered all 390 sites. This task now covers the production half, which is complete. Batch 1 (51aef05, 45), batch 2 (d2ba27e, 45), batch 3 (c9669b3, 52), batch 4 (80d696f, 29) — checked accessors (`openStreamer`, `requireElementwise`, `LayerPrefillQKVViews.require`, `requireAffine`, `requireOnesPerExpertScale`, `requireTensorView`, `requireBuffer`, `requireBF16ScalarGate`, `requireInt8ScalarGate`, `BenchHarnessError`), throwing CPUQwen35 gemv/project, guarded base addresses and `?? []`/dictionary defaults where that is the honest fix. The test-side remainder (136 sites at the split) moved to AUD-021.
+- evidence (after): sources force_unwrapping 171 -> **0**; tree 488 -> 235. `swift build`/`--build-tests` clean under warnings-as-errors; `swift test --no-parallel` 1,493 tests in 223 suites passed after every batch.
+- commit: 51aef05 d2ba27e c9669b3 80d696f
 - blocked: —
 
 ### AUD-020 — 98 remaining SwiftLint findings across 12 rules (data/string conversion, casts, type checking, style)
@@ -148,6 +149,17 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: —
 - evidence (after): —
 - commit: —
+- blocked: —
+
+### AUD-021 — force_unwrapping in test fixtures: 139 sites that crash the test process
+
+- severity **S2**, tier C, project Tests, status **OPEN**
+- location: `tests/ (136) + benchmark/ (3)`
+- discovered by: AUD-019's scope split (the same rule, different tiers)
+- evidence (before): 136 sites in 53 test files plus 3 in benchmark/. Dominant shapes: `…queue.makeCommandBuffer()!` (done), `baseAddress!` inside `withUnsafe…` closures (~41), `device.makeBuffer(…)!` in test helpers (~22), `URL(string:)!`/`URLRequest` fixtures (~18), `.encode(…).first!` (done), HTTP `headerFields: nil)!` (7), and kernel-call pointer arguments. Batch 5 (eab2a5a) converted the 76 unambiguous ones to `try #require(…)`.
+- fix: —
+- evidence (after): —
+- commit: eab2a5a (batch 5; open)
 - blocked: —
 
 ### AUD-004 — No committed swift-format config
