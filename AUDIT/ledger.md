@@ -2,11 +2,11 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**14 tasks — done 0, open 14, blocked 0.**
+**15 tasks — done 1, open 14, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | OPEN | mac-mini-m3 (primary) |
+| AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | DONE | mac-mini-m3 (primary) |
 | AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | OPEN | mac-mini-m3 (primary) |
 | AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | OPEN | mac-mini-m3 (primary) |
 | AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | OPEN | mac-mini-m3 (primary) |
@@ -20,18 +20,19 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-010 | S3 | C | tools | `tools/*.sh (14 shellcheck warnings)` | shellcheck reports 14 warnings across the shell tools | OPEN | mac-mini-m3 (primary) |
 | AUD-011 | S3 | C | plugins | `plugins/*/package.json` | Secret scan reports 3 false positives; no gitleaks config | OPEN | mac-mini-m3 (primary) |
 | AUD-014 | S3 | B | tests | `tests/ (no coverage run)` | No coverage measurement exists in the baseline | OPEN | mac-mini-m3 (primary) |
+| AUD-015 | S3 | B | CI | `.github/workflows/ci.yml:27,28,135; codeql.yml:51,54,94` | CI actions are pinned by mutable major tag, and checkouts disagree (v4 vs v7) | OPEN | mac-mini-m3 (primary) |
 
 ## Detail
 
 ### AUD-001 — swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0
 
-- severity **S1**, tier A, project TinyTitanServer, status **OPEN**
+- severity **S1**, tier A, project TinyTitanServer, status **DONE**
 - location: `Package.swift:55 (swift-nio exact 2.99.0)`
 - discovered by: osv-scanner 2.6.0 scan source -L Package.resolved
 - evidence (before): 3 findings: GHSA-rj37-6j9x-74q6 (8.7, NIOHTTP1 accepts unbounded HTTP/1 header blocks -> remote DoS), GHSA-r3rc-9hpw-54v9 (8.3, ByteBuffer index/length UInt32 overflow -> out-of-bounds write), GHSA-cq87-8r7h-962v (6.3, CRLF injection in outbound request URI). All fixed in 2.100.0. The server serves HTTP/1 through NIOHTTP1, so the DoS advisory is on a reachable path.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Pin swift-nio at 2.100.0 (the advisory fix version); Package.resolved re-resolved, only swift-nio changed.
+- evidence (after): osv-scanner: 'No issues found' (was 3). swift test --no-parallel: 1,493 tests in 223 suites passed, exit 0; the only build warnings are the pre-existing CompactionTests.swift:328 one; Swift 6 mode/strict concurrency unchanged (AUDIT/tool-coverage.md).
+- commit: 6786b6b
 - blocked: —
 
 ### AUD-002 — Swift warnings-as-errors is not enforced by the build config
@@ -172,6 +173,17 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - location: `tests/ (no coverage run)`
 - discovered by: baseline §3 requires coverage %
 - evidence (before): swift test is run without --enable-code-coverage in CI and release.sh; no coverage report is committed, so L6's coverage-gap and threshold checks have no yardstick.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-015 — CI actions are pinned by mutable major tag, and checkouts disagree (v4 vs v7)
+
+- severity **S3**, tier B, project CI, status **OPEN**
+- location: `.github/workflows/ci.yml:27,28,135; codeql.yml:51,54,94`
+- discovered by: L0 repository pass
+- evidence (before): actions/checkout@v4 and actions/setup-node@v4 in ci.yml, actions/checkout@v7 and codeql-action/{init,analyze}@v4 in codeql.yml. Major-tag pins are mutable by the action owner; the two workflows also use different checkout majors.
 - fix: —
 - evidence (after): —
 - commit: —
