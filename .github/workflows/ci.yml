@@ -140,7 +140,12 @@ jobs:
           failures = 0
           checked = 0
           Dir.glob(File.join(root, '**', '*.md')).sort.each do |file|
-            next if file.include?('/.build/') || file.include?('/.qwen/')
+            # Build output, the model store and installed dependencies are not
+            # project docs. `node_modules` matters now that the JS toolchain is
+            # installed before this step: a vendored package README is full of
+            # links that are relative to its own repo, not to this one.
+            next if file.include?('/.build/') || file.include?('/.qwen/') ||
+                    file.include?('/node_modules/')
             dir = File.dirname(file)
             File.readlines(file).each_with_index do |line, index|
               line.scan(/\[[^\]]*\]\(([^)]+)\)/) do |match|
