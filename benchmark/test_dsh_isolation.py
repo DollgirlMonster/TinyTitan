@@ -122,6 +122,64 @@ class PrivateHarnessIsolationTests(unittest.TestCase):
             shutil.rmtree(home, ignore_errors=True)
 
 
+class ModelsDirectoryTests(unittest.TestCase):
+    """The models directory the harness is handed follows the layout.
+
+    `dsh_route.sh` resolves the installed layout when `TINYTITAN_MODELS_DIR` is
+    unset, but `dsh_local.sh` always exports it, so a hard-coded `<repo>/models`
+    wins over that fallback — and on an installed copy `<repo>` is `<root>/src`,
+    where no models are. Measured 2026-09-25 in a simulated install: the plugin's
+    boot-time route refresh then dies with "no catalog (it lists no installed
+    models)" while a correct `<root>/models` writes the route.
+    """
+
+    def install_layout(self) -> pathlib.Path:
+        root = pathlib.Path(tempfile.mkdtemp(prefix="tt-models-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        tools = root / "src" / "tools"
+        tools.mkdir(parents=True)
+        shutil.copy2(DSH_LOCAL, tools / "dsh_local.sh")
+        (root / "bin").mkdir()
+        (root / "models").mkdir()
+        return root
+
+    def paths(self, script: pathlib.Path, home: pathlib.Path,
+              environment: dict[str, str] | None = None) -> dict[str, str]:
+        env = {"PATH": os.environ["PATH"], "HOME": str(home)}
+        if environment:
+            env.update(environment)
+        result = subprocess.run(["bash", str(script), "paths"], env=env,
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+        return dict(line.split(None, 1) for line in result.stdout.splitlines() if line.strip())
+
+    def test_an_installed_copy_reads_the_models_beside_bin(self) -> None:
+        root = self.install_layout()
+        paths = self.paths(root / "src" / "tools" / "dsh_local.sh", root)
+        self.assertEqual(paths["models"], str(root / "models"))
+
+    def test_a_checkout_still_reads_its_own_models(self) -> None:
+        paths = self.paths(DSH_LOCAL, ROOT)
+        self.assertEqual(paths["models"], str(ROOT / "models"))
+
+    def test_an_explicit_directory_still_wins(self) -> None:
+        root = self.install_layout()
+        paths = self.paths(root / "src" / "tools" / "dsh_local.sh", root,
+                           {"TINYTITAN_MODELS_DIR": "/tmp/chosen-models"})
+        self.assertEqual(paths["models"], "/tmp/chosen-models")
+
+    def test_the_harness_launch_exports_the_resolved_directory(self) -> None:
+        # The regression shape: the export must be the resolved value, never
+        # `$REPO_ROOT/models`, which is what an installed copy does not have.
+        script = DSH_LOCAL.read_text()
+        self.assertNotIn('TINYTITAN_MODELS_DIR="$REPO_ROOT/models"', script)
+        launches = [c for c in logical_lines(script)
+                    if re.search(r"\bweb --", c) and "TINYTITAN_MODELS_DIR=" in c]
+        self.assertEqual(len(launches), 2, "expected the web and smoke launches")
+        for launch in launches:
+            self.assertIn('TINYTITAN_MODELS_DIR="$MODELS_DIR"', launch)
+
+
 class InstallerIsolationTests(unittest.TestCase):
     """The installer owns one root and two launcher scripts — nothing else."""
 

@@ -66,6 +66,24 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLUGIN_DIR="$REPO_ROOT/plugins/dsh-tinytitan"
 
+# Where the installed models are. A checkout keeps them in `<repo>/models`; an
+# install from the release tarball keeps them one level above the tools
+# (`<root>/models`, beside `bin/` and `src/`). `dsh_route.sh` resolves the same
+# way when the variable is unset, but this script always exports it, so the
+# wrong value here wins over that fallback: on an installed copy the exported
+# `<repo>/models` is `<root>/src/models`, which holds no models, and the
+# plugin's boot-time route refresh then dies with "no catalog (it lists no
+# installed models)". Measured in a simulated install on 2026-09-25.
+if [[ -n "${TINYTITAN_MODELS_DIR:-}" ]]; then
+  MODELS_DIR="$TINYTITAN_MODELS_DIR"
+elif [[ -d "$REPO_ROOT/models" ]]; then
+  MODELS_DIR="$REPO_ROOT/models"
+elif [[ -d "$REPO_ROOT/../models" ]]; then
+  MODELS_DIR="$(cd "$REPO_ROOT/.." && pwd)/models"
+else
+  MODELS_DIR="$REPO_ROOT/models"
+fi
+
 # Pinned on purpose; see the header. 0.1.6-alpha.2 is the version the plugin was
 # tested against — verified live, not assumed: `tools/dsh_local.sh ensure`
 # completes against it, the plugin mounts on its web server, and `/dsh-lan/*`
@@ -607,6 +625,7 @@ cmd_paths() {
   printf '%-14s %s\n' port "$DSH_PORT"
   printf '%-14s %s\n' version "$DSH_VERSION"
   printf '%-14s %s\n' plugin "$PLUGIN_DIR"
+  printf '%-14s %s\n' models "$MODELS_DIR"
 }
 
 cmd_status() {
@@ -702,7 +721,7 @@ cmd_web() {
            TINYTITAN_PORT="$SERVER_PORT" \
            TINYTITAN_REASONING="$REASONING" \
            TINYTITAN_REPO="$REPO_ROOT" \
-           TINYTITAN_MODELS_DIR="$REPO_ROOT/models" \
+           TINYTITAN_MODELS_DIR="$MODELS_DIR" \
            XDG_CACHE_HOME="$DSH_XDG_CACHE" \
            XDG_STATE_HOME="$DSH_XDG_STATE" \
            PNPM_HOME="$DSH_PNPM_HOME" \
@@ -778,7 +797,7 @@ cmd_smoke() {
       TINYTITAN_PORT="$SERVER_PORT" \
       TINYTITAN_REASONING="$REASONING" \
       TINYTITAN_REPO="$REPO_ROOT" \
-      TINYTITAN_MODELS_DIR="$REPO_ROOT/models" \
+      TINYTITAN_MODELS_DIR="$MODELS_DIR" \
       PATH="$(tool_path)" \
       "$(dsh_bin)" web --no-open --port "$port" >"$SMOKE_WEB_LOG" 2>&1 &
   SMOKE_WEB_PID=$!
