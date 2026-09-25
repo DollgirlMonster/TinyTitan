@@ -122,7 +122,14 @@ jobs:
           swiftlint lint --strict --quiet --no-cache
 
       - name: Python suite
+        # The suite imports numpy/safetensors/ml_dtypes (and one test asserts the
+        # "already holds a finished snapshot" refusal rather than a missing-deps
+        # message), so the verification host installs the pinned set first. Without
+        # this the step failed on a missing module while the other 147 tests
+        # skipped, which masked the ledger gate behind it (AUD-026).
         run: |
+          python3 -m pip install --user --disable-pip-version-check --quiet \
+            -r benchmark/requirements.txt
           cd benchmark
           python3 -m unittest discover -s . -p "test_*.py"
 

@@ -25,7 +25,7 @@ remote host.
 | Swift/C | clang (Apple) | Xcode 27.0 toolchain | — | C compiler for the strict-C99 gate |
 | Python | python3 | 3.14.7 locally; **CI pinned to 3.13** (`actions/setup-python@v5`); the code floor is 3.13 | system locally, GitHub action in CI | the scripts; `tools/lint.sh python` parses every file at the floor so a 3.14-only construct cannot land (AUD-017) |
 | Python | ruff | 0.16.7 | Homebrew (local), `python3 -m pip install --user ruff==0.16.7` in CI | formatter + linter (`--fix`); pinned by `tools/lint.sh`'s RUFF_PIN and installed by `.github/workflows/ci.yml` |
-| Python | pip-audit | missing | — | required only if a requirements/lock file exists; none does (AUDIT/baseline.md) |
+| Python | pip-audit | 2.10.1 | throwaway venv on the primary host (`python3 -m venv /tmp/tt-audit-tools && /tmp/tt-audit-tools/bin/pip install pip-audit`) | dependency/CVE scan of `benchmark/requirements.txt` (numpy 2.5.3, safetensors 0.8.0, ml_dtypes 0.6.0); result: **No known vulnerabilities found** (AUD-026) |
 | JavaScript | node | v26.8.2 locally; **CI pinned to 22** (`actions/setup-node@49933ea`) | system locally, GitHub action in CI | the plugin packages declare `engines.node >=22`; `tools/lint.sh javascript` fails below that floor |
 | JavaScript | npm | 12.0.2 | system | `npm ci` from each package's committed `package-lock.json` |
 | JavaScript | eslint | 10.11.0 (with `@eslint/js` 10.0.1, `globals` 17.12.0) | per-package devDependency, exact-pinned, installed with `npm ci` | linter (`tools/lint.sh javascript`, ESLINT_PIN) |
@@ -36,12 +36,12 @@ remote host.
 | shell | shellcheck | 0.11.0 | Homebrew locally; the pinned release binary in CI | linter; `tools/lint.sh shellcheck` pins SHELLCHECK_PIN and fails on a version mismatch |
 | shell | shfmt | present | Homebrew | shell formatter (not yet wired) |
 
-Not installed, and why: `pip-audit` (no requirements or lock file exists for the
-Python scripts; recorded in the baseline). `shfmt` is present but not wired as a
-gate — shellcheck plus the portability check cover the scripts' correctness, and
-the formatter would be churn for 20 shell files with no reproducibility gain.
-`eslint`/`prettier` are no longer in this list: AUD-012 pinned them per package
-and wired them as the `javascript` gate.
+Not installed, and why: `shfmt` is present but not wired as a gate — shellcheck
+plus the portability check cover the scripts' correctness, and the formatter
+would be churn for 20 shell files with no reproducibility gain. `eslint`/
+`prettier` are pinned per package (AUD-012) and `pip-audit` is installed into a
+throwaway venv when a Python lock file exists (AUD-026); neither is in this list
+anymore.
 
 ## Language standards actually in force
 
@@ -73,4 +73,7 @@ shellcheck -S warning tools/*.sh
 tools/lint.sh                       # all ten gates, the same command CI runs
 (cd plugins/dsh-tinytitan && npm ci && npm run lint && npm run format:check && npm test)
 (cd plugins/dsh-lan-manager && npm ci && npm run lint && npm run format:check && npm test)
+python3 -m venv /tmp/tt-audit-tools && /tmp/tt-audit-tools/bin/pip install pip-audit
+/tmp/tt-audit-tools/bin/pip-audit -r benchmark/requirements.txt
+xcrun swift-format lint --strict --recursive sources tests benchmark Package.swift
 ```

@@ -112,7 +112,7 @@ jobs:
         run: |
           python3 -m venv /tmp/tt-converter
           /tmp/tt-converter/bin/pip install --quiet --disable-pip-version-check \
-            numpy safetensors ml_dtypes
+            -r benchmark/requirements.txt
           cd benchmark
           /tmp/tt-converter/bin/python -m unittest test_prepare_qwen38 test_qwen38_resume_e2e
       - name: Installer gates (private DSH isolation, model-menu answers)

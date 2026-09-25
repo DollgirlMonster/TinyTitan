@@ -1,0 +1,10 @@
+# The three dependencies the benchmark suite and tools/prepare_qwen38.py import.
+#
+# Pinned to the versions the audit's baseline ran them under (299 tests, 52
+# skipped) and that the Phase E host installs before the suite. Both CI
+# workflows install from this file, so the converter gate and the verification
+# suite resolve the same set; `pip-audit -r benchmark/requirements.txt` is run
+# against it (AUDIT/environment.md).
+numpy==2.5.3
+safetensors==0.8.0
+ml_dtypes==0.6.0
