@@ -2,27 +2,30 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**17 tasks — done 8, open 9, blocked 0.**
+**20 tasks — done 13, open 7, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | DONE | mac-mini-m3 (primary) |
 | AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | DONE | mac-mini-m3 (primary) |
 | AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | DONE | mac-mini-m3 (primary) |
-| AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | OPEN | mac-mini-m3 (primary) |
+| AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | PROGRESS | mac-mini-m3 (primary) |
 | AUD-006 | S2 | C | benchmark/tools Python | `repo root (no ruff config)` | No pinned Ruff config; 386 findings under the default rule set | DONE | mac-mini-m3 (primary) |
 | AUD-007 | S2 | C | benchmark | `benchmark/tinytitan_mtp_phases.py:77,130` | Undefined name `pathlib` (F821) used in annotations; module never imports it | DONE | mac-mini-m3 (primary) |
 | AUD-012 | S2 | B | plugins | `plugins/dsh-tinytitan, plugins/dsh-lan-manager` | JavaScript packages have no formatter, linter or lockfile | OPEN | mac-mini-m3 (primary) |
 | AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | OPEN | mac-mini-m3 (primary) |
 | AUD-017 | S2 | A | Python tooling/CI | `pyproject.toml; .github/workflows/ci.yml; tools/lint.sh` | Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned | DONE | mac-mini-m3 (primary) |
+| AUD-019 | S2 | A | Swift | `sources/ (70), tests/ (317), benchmark/ (3)` | force_unwrapping: 390 sites that crash instead of failing | OPEN | mac-mini-m3 (primary) |
+| AUD-020 | S2 | A | Swift | `sources/ + tests/ + benchmark/` | 98 remaining SwiftLint findings across 12 rules (data/string conversion, casts, type checking, style) | OPEN | mac-mini-m3 (primary) |
 | AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
-| AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | OPEN | mac-mini-m3 (primary) |
+| AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | DONE | mac-mini-m3 (primary) |
 | AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | DONE | mac-mini-m3 (primary) |
 | AUD-010 | S3 | C | tools | `tools/*.sh (14 shellcheck warnings)` | shellcheck reports 14 warnings across the shell tools | OPEN | mac-mini-m3 (primary) |
-| AUD-011 | S3 | C | plugins | `plugins/*/package.json` | Secret scan reports 3 false positives; no gitleaks config | OPEN | mac-mini-m3 (primary) |
-| AUD-014 | S3 | B | tests | `tests/ (no coverage run)` | No coverage measurement exists in the baseline | OPEN | mac-mini-m3 (primary) |
-| AUD-015 | S3 | B | CI | `.github/workflows/ci.yml:27,28,135; codeql.yml:51,54,94` | CI actions are pinned by mutable major tag, and checkouts disagree (v4 vs v7) | OPEN | mac-mini-m3 (primary) |
+| AUD-011 | S3 | C | plugins | `plugins/*/package.json` | Secret scan reports 3 false positives; no gitleaks config | DONE | mac-mini-m3 (primary) |
+| AUD-014 | S3 | B | tests | `tests/ (no coverage run)` | No coverage measurement exists in the baseline | DONE | mac-mini-m3 (primary) |
+| AUD-015 | S3 | B | CI | `.github/workflows/ci.yml:27,28,135; codeql.yml:51,54,94` | CI actions are pinned by mutable major tag, and checkouts disagree (v4 vs v7) | DONE | mac-mini-m3 (primary) |
 | AUD-016 | S3 | C | tests | `tests/TinyTitanFleet/DashboardTests.swift:88,105,108` | Warnings surfaced by warnings-as-errors: redundant #require on an optional and an unused shadowed binding | DONE | mac-mini-m3 (primary) |
+| AUD-018 | S3 | B | build | `.swiftlint.yml` | SwiftLint rule-set decision: what is enforced, configured, or delegated, and why | DONE | mac-mini-m3 (primary) |
 
 ## Detail
 
@@ -61,13 +64,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-005 — No committed SwiftLint config run with --strict
 
-- severity **S2**, tier B, project build, status **OPEN**
+- severity **S2**, tier B, project build, status **PROGRESS**
 - location: `repo root`
 - discovered by: swiftlint 0.65.1 lint --strict --reporter json
 - evidence (before): No .swiftlint.yml. Default run over the repo reports 168,918 findings, of which 164,440 are vendored code under .build/ (SwiftPM checkouts) and 4,478 are project code: sources/ 2,788 (identifier_name 1,185, vertical_parameter_alignment 632, function_parameter_count 155, function_body_length 139, comma 122, trailing_comma 96, cyclomatic_complexity 71, line_length 71, file_length 52, colon 50, type_body_length 39, large_tuple 37), tests/ 1,660 (identifier_name 976, trailing_comma 307, force_cast 18, optional_data_string_conversion 32, ...), other 30. .build/ must be excluded as build output; the remainder needs a committed config and a sweep.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Committed `.swiftlint.yml`: safety opt-ins on (force_unwrapping, implicitly_unwrapped_optional), layout delegated to swift-format, size/complexity delegated to tools/lint.sh's ratchet, identifier_name configured for the numerical vocabulary (min_length 1, validates_start_with_lowercase off) — each with its reason and measured counts in the file. Gate wiring is deliberately held until the tree is clean: `tools/lint.sh` gains `swiftlint --strict` when AUD-019/AUD-020 reach zero.
+- evidence (after): `swiftlint lint --strict --no-cache --reporter json` -> 488 findings in 13 rules, down from 4,479 in 33 (168,918 including .build). The remaining findings are enumerated as AUD-019 (force_unwrapping 390) and AUD-020 (98 across 12 rules). Config committed in 68a6945.
+- commit: 68a6945 (config; gate pending)
 - blocked: —
 
 ### AUD-006 — No pinned Ruff config; 386 findings under the default rule set
@@ -125,6 +128,28 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - commit: 29e7ab2
 - blocked: —
 
+### AUD-019 — force_unwrapping: 390 sites that crash instead of failing
+
+- severity **S2**, tier A, project Swift, status **OPEN**
+- location: `sources/ (70), tests/ (317), benchmark/ (3)`
+- discovered by: AUD-005 (force_unwrapping enabled)
+- evidence (before): 390 force unwraps under the committed config: 70 in sources/ (production), 317 in tests/, 3 in benchmark/. Reasons include `MTLCommandQueue.makeCommandBuffer()!`, `URL(string: literal)!`, `tokenizer.encode(...).first!`, `UnsafeMutableRawPointer.baseAddress!` and dictionary lookups.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-020 — 98 remaining SwiftLint findings across 12 rules (data/string conversion, casts, type checking, style)
+
+- severity **S2**, tier A, project Swift, status **OPEN**
+- location: `sources/ + tests/ + benchmark/`
+- discovered by: AUD-005
+- evidence (before): optional_data_string_conversion 43, force_cast 19, prefer_type_checking 6, identifier_name 6, force_try 5, for_where 5, static_over_final_class 4, orphaned_doc_comment 3, implicit_optional_initialization 3, non_optional_string_data_conversion 2, redundant_discardable_let 1, unneeded_synthesized_initializer 1. Absorbs AUD-008.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
 ### AUD-004 — No committed swift-format config
 
 - severity **S3**, tier B, project build, status **OPEN**
@@ -138,13 +163,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-008 — SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions
 
-- severity **S3**, tier C, project tests, status **OPEN**
+- severity **S3**, tier C, project tests, status **DONE**
 - location: `tests/ (18 force_cast, 32 optional_data_string_conversion)`
 - discovered by: swiftlint lint --strict (AUD-005)
 - evidence (before): force_cast 18 and optional_data_string_conversion 32 in tests/; the repo's own tools/lint.sh bans force casts in sources/ only, so tests are outside that gate.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Scope folded into AUD-020 (explicit note here per §0): the force_cast and optional_data_string_conversion instances SwiftLint reports are fixed together with the other default-rule findings in that task, because they are the same sweep over the same files.
+- evidence (after): Tracked by AUD-020; no separate commit. Original counts: force_cast 18+1, optional_data_string_conversion 43.
+- commit: n/a (folded into AUD-020)
 - blocked: —
 
 ### AUD-009 — Swift test warning: result of `contains` is unused inside #expect
@@ -171,35 +196,35 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-011 — Secret scan reports 3 false positives; no gitleaks config
 
-- severity **S3**, tier C, project plugins, status **OPEN**
+- severity **S3**, tier C, project plugins, status **DONE**
 - location: `plugins/*/package.json`
 - discovered by: gitleaks 8.30.1 detect --log-opts=--all
 - evidence (before): 1035 commits scanned, 3 findings, all false positives of generic-api-key: tests/TinyTitanMemory/MemoryRetrievalTests.swift:124 (a memory key string), tests/NVMAIServer/MemoryConsolidationTests.swift:358 (historical path, JSON key), benchmark/nvmai_profile.py:17 (historical, a model identifier). No live-looking credential found anywhere in history.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: `.gitleaks.toml`: default ruleset kept, the three benign identifiers allowlisted by exact secret value.
+- evidence (after): Full-history scan with the config: 1049 commits scanned, `no leaks found` (was 3). Control: a synthetic PAT in a scratch repo is still caught with the config in place (`WRN leaks found: 1`).
+- commit: 10ebbc0
 - blocked: —
 
 ### AUD-014 — No coverage measurement exists in the baseline
 
-- severity **S3**, tier B, project tests, status **OPEN**
+- severity **S3**, tier B, project tests, status **DONE**
 - location: `tests/ (no coverage run)`
 - discovered by: baseline §3 requires coverage %
 - evidence (before): swift test is run without --enable-code-coverage in CI and release.sh; no coverage report is committed, so L6's coverage-gap and threshold checks have no yardstick.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Coverage measured with `swift test --no-parallel --enable-code-coverage`, profraw merged with llvm-profdata, reported per test bundle over sources/.
+- evidence (after): Line coverage over sources/ (tests and .build excluded): TinyTitanServerTests 77.89% (40,515 lines, 8,957 missed), TinyTitanTests 76.61%, TinyTitanRepackTests 81.19%, TinyTitanMemoryTests 92.92%, ContinuityCoreTests 93.55%, TinyTitanFleetTests 77.40%. The server bundle links the whole package, so 77.89% is the whole-repo figure recorded in AUDIT/baseline.md. The three app-suite bundles (TinyTitanAppCore/DecodeService/MacPresentation) produced no coverage report and belong to the removed GUI's test targets.
+- commit: none (measurement)
 - blocked: —
 
 ### AUD-015 — CI actions are pinned by mutable major tag, and checkouts disagree (v4 vs v7)
 
-- severity **S3**, tier B, project CI, status **OPEN**
+- severity **S3**, tier B, project CI, status **DONE**
 - location: `.github/workflows/ci.yml:27,28,135; codeql.yml:51,54,94`
 - discovered by: L0 repository pass
 - evidence (before): actions/checkout@v4 and actions/setup-node@v4 in ci.yml, actions/checkout@v7 and codeql-action/{init,analyze}@v4 in codeql.yml. Major-tag pins are mutable by the action owner; the two workflows also use different checkout majors.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: All CI actions pinned to full commit SHAs, and the two workflows now share one checkout pin (were v4 vs v7).
+- evidence (after): `grep -n 'uses:' .github/workflows/*.yml` shows 7 SHA-pinned steps: checkout 3d3c42e (v7), setup-node 49933ea (v4), setup-python a26af69 (v5), codeql-action 2892aa5 (v4).
+- commit: cb21c4c
 - blocked: —
 
 ### AUD-016 — Warnings surfaced by warnings-as-errors: redundant #require on an optional and an unused shadowed binding
@@ -211,5 +236,16 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: Read `selectedLine` directly; replaced the presence check with `#expect(frame.selectedLine != nil)` and kept the same bounds and content assertions.
 - evidence (after): `swift build --build-tests` clean (0 warnings); `swift test --no-parallel` 1,493 tests / 223 suites passed.
 - commit: 4ba3973
+- blocked: —
+
+### AUD-018 — SwiftLint rule-set decision: what is enforced, configured, or delegated, and why
+
+- severity **S3**, tier B, project build, status **DONE**
+- location: `.swiftlint.yml`
+- discovered by: AUD-005
+- evidence (before): No SwiftLint configuration existed; the defaults produced 4,479 project findings, of which identifier_name (2,182) and vertical_parameter_alignment (675) dominated.
+- fix: Rules delegated to swift-format (layout, 16 rules) and to tools/lint.sh's function-length ratchet (size/complexity, 7 rules), each with its reason and measured count in the config; identifier_name configured for the numerical vocabulary; safety rules turned on. No rule was disabled silently and no path was excluded except build output and the model store.
+- evidence (after): 488 findings remain under the config and are tracked by AUD-019/AUD-020; the config carries the reasoning for every rule it changes.
+- commit: 68a6945
 - blocked: —
 

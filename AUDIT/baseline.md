@@ -29,14 +29,14 @@ tests/TinyTitanServer/CompactionTests.swift:328:96: warning: result of call to '
 | Swift tests under TSan | memory targets green (1 + 59 + 162 + 24 tests) | `swift test --sanitize=thread --filter Memory` |
 | Python benchmark suite | **299 passed, 52 skipped, 0 failures** | `cd benchmark && python3 -m unittest discover -p "test_*.py"` |
 | Plugin tests | dsh-tinytitan 66 (65 pass, 1 skip), dsh-lan-manager 107 pass | CI "Plugin tests (harness-version pins)" |
-| Coverage | **not measured** | — (see AUD-014) |
+| Coverage (line, sources/ only) | **77.89%** — TinyTitanServerTests bundle (links the whole package; 40,515 lines, 8,957 missed). Per module: ContinuityCoreTests 93.55%, TinyTitanMemoryTests 92.92%, TinyTitanRepackTests 81.19%, TinyTitanFleetTests 77.40%, TinyTitanTests 76.61% | `swift test --no-parallel --enable-code-coverage`, then `llvm-profdata merge` + `llvm-cov report -ignore-filename-regex='(\.build/\|/tests/)'` (AUD-014) |
 
 ## Linters / analysers
 
 | Tool | Scope | Baseline |
 | --- | --- | --- |
-| `tools/lint.sh` (6 gates) | repo | clean: force-cast, func-length (2,031 functions, 0 new), unchecked-sendable, converter-expert-order, arch-path, shell-portability (20 scripts, bash 3.2.57) |
-| swiftlint 0.65.1 `--strict` (no config) | repo | 168,918 total; `.build/` vendored 164,440; **project: sources 2,788, tests 1,660, other 30** (AUD-005) |
+| `tools/lint.sh` (7 gates) | repo | clean: force-cast, func-length (2,031 functions, 0 new), unchecked-sendable, converter-expert-order, arch-path, shell-portability (20 scripts, bash 3.2.57), **python** (ruff 0.16.7 check+format, parses at py313) |
+| swiftlint 0.65.1 `--strict` (committed config) | repo | **488 findings in 13 rules** (from 4,479/33 under the defaults): force_unwrapping 390, optional_data_string_conversion 43, force_cast 19, prefer_type_checking 6, identifier_name 6, force_try 5, for_where 5, static_over_final_class 4, orphaned_doc_comment 3, implicit_optional_initialization 3, non_optional_string_data_conversion 2, redundant_discardable_let 1, unneeded_synthesized_initializer 1 → AUD-019, AUD-020; the gate is wired once they are zero (AUD-005) |
 | swift-format 603.0.0 | repo | no config committed (AUD-004) |
 | ruff 0.16.7 check | benchmark, tools | **386** findings (131 auto-fixable); includes F821 x4, F841 x6, DTZ005 x8, S110 x1, PLW1508 x4 (AUD-006) |
 | ruff format --check | benchmark, tools | 104 of 108 files would be reformatted |
@@ -60,7 +60,10 @@ applicable at baseline.
 `gitleaks 8.30.1 detect --log-opts="--all"`: 1,035 commits, ~14.3 MB scanned,
 **3 findings, all confirmed false positives** (memory-key strings and a model
 identifier matched by `generic-api-key`); no live-looking credential in any
-commit → AUD-011 (config/suppression), and no S0 security finding from this pass.
+commit. `.gitleaks.toml` now allowlists those three by exact value, keeping every
+rule and every path in scope: a re-run scans 1,049 commits and reports
+`no leaks found`, and a synthetic PAT in a scratch repository is still caught
+(AUD-011, proof T2/T3). No S0 security finding from this pass.
 
 ## Repository hygiene (L0, first pass)
 
