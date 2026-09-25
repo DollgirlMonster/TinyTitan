@@ -22,8 +22,9 @@ TERMINAL = {"DONE", "BLOCKED"}
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--report", action="store_true",
-                        help="print the report and exit 0 whatever the state")
+    parser.add_argument(
+        "--report", action="store_true", help="print the report and exit 0 whatever the state"
+    )
     args = parser.parse_args()
 
     data = json.loads(LEDGER.read_text(encoding="utf-8"))
@@ -32,8 +33,7 @@ def main() -> int:
     blocked = [t for t in tasks if t["status"] == "BLOCKED"]
     open_tasks = [t for t in tasks if t["status"] not in TERMINAL]
 
-    print(f"== {len(tasks)} tasks | done:{len(done)} open:{len(open_tasks)} "
-          f"blocked:{len(blocked)}")
+    print(f"== {len(tasks)} tasks | done:{len(done)} open:{len(open_tasks)} blocked:{len(blocked)}")
     for task in tasks:
         if task["status"] not in TERMINAL:
             print(f"   OPEN  {task['id']} [{task['severity']}/{task['tier']}] {task['title']}")
@@ -44,8 +44,10 @@ def main() -> int:
     if args.report:
         return 0
     if open_tasks:
-        print(f"\nFAIL: {len(open_tasks)} task(s) are not DONE or BLOCKED; Phase E cannot pass.",
-              file=sys.stderr)
+        print(
+            f"\nFAIL: {len(open_tasks)} task(s) are not DONE or BLOCKED; Phase E cannot pass.",
+            file=sys.stderr,
+        )
         return 1
     if any(not task.get("blocked_reason") for task in blocked):
         print("\nFAIL: a BLOCKED task has no recorded reason.", file=sys.stderr)
