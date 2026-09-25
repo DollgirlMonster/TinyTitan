@@ -34,13 +34,16 @@ private actor HostTransport: FleetTransport {
     }
 
     func setFailNext(_ value: Bool) { failNext = value }
+    func setInventory(_ key: String, _ body: String) { inventories[key] = body }
     func count() -> Int { requested.count }
     func clear() { requested.removeAll() }
 }
 
-private func inventory(self name: String, id: String, address: String,
-                       workspaces: String = "[]", sessions: String = "[]",
-                       peers: String = "[]") -> String {
+private func inventory(
+    self name: String, id: String, address: String,
+    workspaces: String = "[]", sessions: String = "[]",
+    peers: String = "[]"
+) -> String {
     """
     { "ok": true, "group": "tinytitan-lan",
       "self": { "id": "\(id)", "name": "\(name)", "port": 3080, "addresses": ["\(address)"], "dshVersion": "0.1.5-rc.2" },
@@ -48,8 +51,10 @@ private func inventory(self name: String, id: String, address: String,
     """
 }
 
-private func peer(id: String, name: String, address: String,
-                  workspaces: String = "[]", sessions: String = "[]") -> String {
+private func peer(
+    id: String, name: String, address: String,
+    workspaces: String = "[]", sessions: String = "[]"
+) -> String {
     """
     { "id": "\(id)", "address": "\(address)", "port": 3080, "name": "\(name)",
       "source": "tailscale", "dshVersion": "0.1.5-rc.2", "lastSeen": 1758100000000,
@@ -63,14 +68,19 @@ private func hosts() -> [String: String] {
     [
         "127.0.0.1:3080": inventory(
             self: "macbook-ab", id: "macbook-ab:3080", address: "127.0.0.1",
-            workspaces: #"[{ "id": "w-ab", "path": "/Users/me/Project", "title": "Project", "sessionCount": 1, "hiddenSessionCount": 0, "sessionIds": ["s-ab"] }]"#,
-            sessions: #"[{ "sessionId": "s-ab", "workspaceId": "w-ab", "workspaceTitle": "Project", "title": "local", "turns": 1 }]"#,
-            peers: "[\(peer(id: "100.114.69.128:3080", name: "Node3", address: "100.114.69.128", sessions: #"[{ "sessionId": "stale", "title": "a cached view" }]"#))]"
+            workspaces:
+                #"[{ "id": "w-ab", "path": "/Users/me/Project", "title": "Project", "sessionCount": 1, "hiddenSessionCount": 0, "sessionIds": ["s-ab"] }]"#,
+            sessions:
+                #"[{ "sessionId": "s-ab", "workspaceId": "w-ab", "workspaceTitle": "Project", "title": "local", "turns": 1 }]"#,
+            peers:
+                "[\(peer(id: "100.114.69.128:3080", name: "Node3", address: "100.114.69.128", sessions: #"[{ "sessionId": "stale", "title": "a cached view" }]"#))]"
         ),
         "100.114.69.128:3080": inventory(
             self: "Node3", id: "Node3.local:3080", address: "100.114.69.128",
-            workspaces: #"[{ "id": "w-n3", "path": "/Users/node3/TT_Test", "title": "TT_Test", "sessionCount": 1, "hiddenSessionCount": 0, "sessionIds": ["s-n3"] }]"#,
-            sessions: #"[{ "sessionId": "s-n3", "workspaceId": "w-n3", "workspaceTitle": "TT_Test", "title": "fresh", "turns": 9 }]"#,
+            workspaces:
+                #"[{ "id": "w-n3", "path": "/Users/node3/TT_Test", "title": "TT_Test", "sessionCount": 1, "hiddenSessionCount": 0, "sessionIds": ["s-n3"] }]"#,
+            sessions:
+                #"[{ "sessionId": "s-n3", "workspaceId": "w-n3", "workspaceTitle": "TT_Test", "title": "fresh", "turns": 9 }]"#,
             peers: "[\(peer(id: "100.101.5.9:3080", name: "fra-dc-01", address: "100.101.5.9"))]"
         ),
     ]
@@ -89,31 +99,49 @@ private func makeScanner(_ transport: HostTransport, interval: Int = 30) -> Flee
     @Test func aMemberIsNotListedTwiceUnderItsTwoIdentities() {
         // The seed calls it 100.114.69.128:3080; the machine calls itself
         // Node3.local:3080. Keyed by id, that is two Macs.
-        let seed = FleetGroup(group: "g", nodes: [
-            FleetNode(id: "100.114.69.128:3080", name: "Node3", host: "100.114.69.128", port: 3080,
-                      isSelf: false, source: "tailscale", addresses: ["100.114.69.128"], dshVersion: "0.1.5-rc.2",
-                      sessions: [FleetSession(sessionId: "stale", title: "a cached view")]),
-        ])
-        let direct = FleetGroup(group: "g", nodes: [
-            FleetNode(id: "Node3.local:3080", name: "Node3", host: "100.114.69.128", port: 3080,
-                      isSelf: true, source: "local", addresses: ["100.114.69.128"], dshVersion: "0.1.5-rc.2",
-                      sessions: [FleetSession(sessionId: "s-n3", title: "fresh", turns: 9)]),
-        ])
+        let seed = FleetGroup(
+            group: "g",
+            nodes: [
+                FleetNode(
+                    id: "100.114.69.128:3080", name: "Node3", host: "100.114.69.128", port: 3080,
+                    isSelf: false, source: "tailscale", addresses: ["100.114.69.128"],
+                    dshVersion: "0.1.5-rc.2",
+                    sessions: [FleetSession(sessionId: "stale", title: "a cached view")])
+            ])
+        let direct = FleetGroup(
+            group: "g",
+            nodes: [
+                FleetNode(
+                    id: "Node3.local:3080", name: "Node3", host: "100.114.69.128", port: 3080,
+                    isSelf: true, source: "local", addresses: ["100.114.69.128"],
+                    dshVersion: "0.1.5-rc.2",
+                    sessions: [FleetSession(sessionId: "s-n3", title: "fresh", turns: 9)])
+            ])
         let merged = FleetScanner.merge(seed: seed, reports: [direct])
         #expect(merged.nodes.count == 1, "one machine, not two")
-        #expect(merged.nodes[0].sessions.map(\.sessionId) == ["s-n3"], "the member's own answer wins over the cache")
+        #expect(
+            merged.nodes[0].sessions.map(\.sessionId) == ["s-n3"],
+            "the member's own answer wins over the cache")
     }
 
     @Test func aMemberOnlyOnePeerKnowsStillAppears() {
-        let seed = FleetGroup(group: "g", nodes: [
-            FleetNode(id: "a:3080", name: "A", host: "10.0.0.1", port: 3080, isSelf: true),
-        ])
-        let report = FleetGroup(group: "g", nodes: [
-            FleetNode(id: "b:3080", name: "B", host: "10.0.0.2", port: 3080, isSelf: true),
-            FleetNode(id: "c:3080", name: "C", host: "10.0.0.3", port: 3080, isSelf: false, source: "gossip:b"),
-        ])
+        let seed = FleetGroup(
+            group: "g",
+            nodes: [
+                FleetNode(id: "a:3080", name: "A", host: "10.0.0.1", port: 3080, isSelf: true)
+            ])
+        let report = FleetGroup(
+            group: "g",
+            nodes: [
+                FleetNode(id: "b:3080", name: "B", host: "10.0.0.2", port: 3080, isSelf: true),
+                FleetNode(
+                    id: "c:3080", name: "C", host: "10.0.0.3", port: 3080, isSelf: false,
+                    source: "gossip:b"),
+            ])
         let merged = FleetScanner.merge(seed: seed, reports: [report])
-        #expect(merged.nodes.map(\.name) == ["A", "B", "C"], "discovery reaches what the seed has not learned")
+        #expect(
+            merged.nodes.map(\.name) == ["A", "B", "C"],
+            "discovery reaches what the seed has not learned")
     }
 }
 
@@ -131,23 +159,43 @@ private func makeScanner(_ transport: HostTransport, interval: Int = 30) -> Flee
         // The seed, Node3 once, and fra-dc-01 which only Node3 knew about.
         #expect(snapshot.group.nodes.map(\.name).sorted() == ["Node3", "fra-dc-01", "macbook-ab"])
         let done = await transport.requested
-        #expect(done.contains("100.114.69.128:3080/dsh-lan/inventory"), "members are asked directly")
+        #expect(
+            done.contains("100.114.69.128:3080/dsh-lan/inventory"), "members are asked directly")
     }
 
     @Test func aSecondScanReportsWhatJoined() async throws {
-        let transport = HostTransport(inventories: hosts())
+        // One host first: the group has to grow before there is news to report.
+        let transport = HostTransport(inventories: [
+            "127.0.0.1:3080": inventory(
+                self: "macbook-ab", id: "macbook-ab:3080", address: "127.0.0.1")
+        ])
         let scanner = makeScanner(transport)
 
-        // First scan against a fleet of one, so the next one has news.
-        let lonely = HostTransport(inventories: ["127.0.0.1:3080": inventory(self: "macbook-ab", id: "macbook-ab:3080", address: "127.0.0.1")])
-        let firstScanner = makeScanner(lonely)
-        await firstScanner.scanNow()
-        #expect(await firstScanner.current().group.nodes.count == 1)
         await scanner.scanNow()
-        #expect(await scanner.current().newMembers.isEmpty == false || true) // first scan of *this* scanner is not "new"
+        // The first scan is a baseline: with no previous view to compare
+        // against, nothing can be new yet.
+        #expect(await scanner.current().group.nodes.map(\.name) == ["macbook-ab"])
+        #expect(await scanner.current().newMembers.isEmpty)
+
+        // Node3 joins: the seed now names it as a peer, and answers itself.
+        await transport.setInventory(
+            "127.0.0.1:3080",
+            inventory(
+                self: "macbook-ab", id: "macbook-ab:3080", address: "127.0.0.1",
+                peers:
+                    "[\(peer(id: "100.114.69.128:3080", name: "Node3", address: "100.114.69.128"))]"
+            ))
+        await transport.setInventory(
+            "100.114.69.128:3080",
+            inventory(self: "Node3", id: "Node3.local:3080", address: "100.114.69.128"))
 
         await scanner.scanNow()
-        #expect(await scanner.current().newMembers.isEmpty, "nothing joined between two identical scans")
+        #expect(await scanner.current().newMembers == ["Node3"])
+
+        await scanner.scanNow()
+        #expect(
+            await scanner.current().newMembers.isEmpty, "nothing joined between two identical scans"
+        )
     }
 
     @Test func anUnreachableSeedKeepsTheLastGoodViewAndSaysSo() async throws {
@@ -168,13 +216,17 @@ private func makeScanner(_ transport: HostTransport, interval: Int = 30) -> Flee
     @Test func aMemberThatDoesNotAnswerIsLeftAsTheSeedDescribedIt() async throws {
         // Only the seed answers: Node3's own read 404s, so the seed's cached view
         // of it is what remains.
-        let transport = HostTransport(inventories: ["127.0.0.1:3080": hosts()["127.0.0.1:3080"] ?? ""])
+        let transport = HostTransport(inventories: [
+            "127.0.0.1:3080": hosts()["127.0.0.1:3080"] ?? ""
+        ])
         let scanner = makeScanner(transport)
         await scanner.scanNow()
         let snapshot = await scanner.current()
         #expect(snapshot.answered == 1)
         #expect(snapshot.polled == 2)
-        #expect(snapshot.group.nodes.contains { $0.name == "Node3" }, "the cached view survives a silent member")
+        #expect(
+            snapshot.group.nodes.contains { $0.name == "Node3" },
+            "the cached view survives a silent member")
     }
 }
 
@@ -188,7 +240,10 @@ private func makeScanner(_ transport: HostTransport, interval: Int = 30) -> Flee
             runner: FleetRunner(client: FleetClient(token: "k", transport: transport)),
             seed: FleetTarget(host: "127.0.0.1", port: 3080),
             intervalSeconds: 2,
-            sleep: { _ in await ticks.bump(); await Task.yield() }
+            sleep: { _ in
+                await ticks.bump()
+                await Task.yield()
+            }
         )
         await scanner.start()
         try await Task.sleep(for: .milliseconds(150))
@@ -205,8 +260,9 @@ private func makeScanner(_ transport: HostTransport, interval: Int = 30) -> Flee
             runner: FleetRunner(client: FleetClient(token: "k", transport: transport)),
             seed: FleetTarget(host: "127.0.0.1", port: 3080)
         )
-        #expect(await scanner.current().intervalSeconds == 30,
-                "the plugin discovers every 60 s; the manager polls at half that")
+        #expect(
+            await scanner.current().intervalSeconds == 30,
+            "the plugin discovers every 60 s; the manager polls at half that")
     }
 
     @Test func requestScanDoesNotBlockAndStillHappens() async throws {
@@ -244,8 +300,11 @@ private func makeScanner(_ transport: HostTransport, interval: Int = 30) -> Flee
 
 /// A group with one member, for the brand assertions.
 private func sampleGroupFixture() -> FleetGroup {
-    FleetGroup(group: "tinytitan-lan", nodes: [
-        FleetNode(id: "me:3080", name: "macbook-ab", host: "127.0.0.1", port: 3080, isSelf: true,
-                  source: "local", addresses: [], dshVersion: "0.1.5-rc.2"),
-    ])
+    FleetGroup(
+        group: "tinytitan-lan",
+        nodes: [
+            FleetNode(
+                id: "me:3080", name: "macbook-ab", host: "127.0.0.1", port: 3080, isSelf: true,
+                source: "local", addresses: [], dshVersion: "0.1.5-rc.2")
+        ])
 }
