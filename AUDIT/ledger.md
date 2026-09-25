@@ -2,16 +2,16 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**15 tasks — done 1, open 14, blocked 0.**
+**15 tasks — done 3, open 12, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | DONE | mac-mini-m3 (primary) |
 | AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | OPEN | mac-mini-m3 (primary) |
-| AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | OPEN | mac-mini-m3 (primary) |
+| AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | DONE | mac-mini-m3 (primary) |
 | AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | OPEN | mac-mini-m3 (primary) |
 | AUD-006 | S2 | C | benchmark/tools Python | `repo root (no ruff config)` | No pinned Ruff config; 386 findings under the default rule set | OPEN | mac-mini-m3 (primary) |
-| AUD-007 | S2 | C | benchmark | `benchmark/tinytitan_mtp_phases.py:77,130` | Undefined name `pathlib` (F821) used in annotations; module never imports it | OPEN | mac-mini-m3 (primary) |
+| AUD-007 | S2 | C | benchmark | `benchmark/tinytitan_mtp_phases.py:77,130` | Undefined name `pathlib` (F821) used in annotations; module never imports it | DONE | mac-mini-m3 (primary) |
 | AUD-012 | S2 | B | plugins | `plugins/dsh-tinytitan, plugins/dsh-lan-manager` | JavaScript packages have no formatter, linter or lockfile | OPEN | mac-mini-m3 (primary) |
 | AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | OPEN | mac-mini-m3 (primary) |
 | AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
@@ -48,13 +48,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-003 — C target does not enforce strict C99 or the hardening warning set
 
-- severity **S2**, tier B, project build, status **OPEN**
+- severity **S2**, tier B, project build, status **DONE**
 - location: `Package.swift:68 (TinyTitanKernelsC cSettings)`
 - discovered by: language-standard proof (AUDIT/tool-coverage.md)
 - evidence (before): cSettings carries only `.unsafeFlags(["-O2"])`; no -std=c99, -pedantic-errors or warning flags, and no -Werror. All three C files compile clean under the full set (clang -std=c99 -pedantic-errors -Wall -Wextra -Wshadow -Wconversion -Wsign-conversion -Wcast-qual -Wwrite-strings -Wformat=2 -Wstrict-prototypes -Wmissing-prototypes -Werror), so the fix is additive.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: cLanguageStandard .c99 on the package + full hardening warning set and -Werror in TinyTitanKernelsC cSettings.
+- evidence (after): Probe with an implicit declaration fails the build (ISO C99 error) and -Werror,-Wmissing-prototypes fires; real C files build clean; `swift build --verbose` shows -std=c99 -pedantic-errors -Werror; `swift test --no-parallel` 1,493 tests / 223 suites passed, exit 0.
+- commit: e89637e
 - blocked: —
 
 ### AUD-005 — No committed SwiftLint config run with --strict
@@ -81,13 +81,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-007 — Undefined name `pathlib` (F821) used in annotations; module never imports it
 
-- severity **S2**, tier C, project benchmark, status **OPEN**
+- severity **S2**, tier C, project benchmark, status **DONE**
 - location: `benchmark/tinytitan_mtp_phases.py:77,130`
 - discovered by: ruff check --select F821
 - evidence (before): `target: pathlib.Path, sidecar: pathlib.Path` in launch() and one_run() with no `import pathlib`. `from __future__ import annotations` makes the annotations lazy strings, so the script runs today, but any annotation evaluation (typing.get_type_hints, a tool, a future refactor) raises NameError.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Added `import pathlib` to benchmark/tinytitan_mtp_phases.py.
+- evidence (after): `ruff check --select F821 benchmark/tinytitan_mtp_phases.py` -> All checks passed (was 4); `python3 -m py_compile` clean.
+- commit: fa2ec9a
 - blocked: —
 
 ### AUD-012 — JavaScript packages have no formatter, linter or lockfile
