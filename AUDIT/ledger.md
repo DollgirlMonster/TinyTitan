@@ -2,7 +2,7 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**21 tasks — done 19, open 2, blocked 0.**
+**22 tasks — done 21, open 1, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -12,7 +12,7 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | DONE | mac-mini-m3 (primary) |
 | AUD-006 | S2 | C | benchmark/tools Python | `repo root (no ruff config)` | No pinned Ruff config; 386 findings under the default rule set | DONE | mac-mini-m3 (primary) |
 | AUD-007 | S2 | C | benchmark | `benchmark/tinytitan_mtp_phases.py:77,130` | Undefined name `pathlib` (F821) used in annotations; module never imports it | DONE | mac-mini-m3 (primary) |
-| AUD-012 | S2 | B | plugins | `plugins/dsh-tinytitan, plugins/dsh-lan-manager` | JavaScript packages have no formatter, linter or lockfile | OPEN | mac-mini-m3 (primary) |
+| AUD-012 | S2 | B | plugins | `plugins/dsh-tinytitan, plugins/dsh-lan-manager` | JavaScript packages have no formatter, linter or lockfile | DONE | mac-mini-m3 (primary) |
 | AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | DONE | mac-mini-m3 (primary) |
 | AUD-017 | S2 | A | Python tooling/CI | `pyproject.toml; .github/workflows/ci.yml; tools/lint.sh` | Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned | DONE | mac-mini-m3 (primary) |
 | AUD-019 | S2 | A | Swift | `sources/ (171 sites, 44 files)` | force_unwrapping in sources: 171 sites that crashed instead of failing | DONE | mac-mini-m3 (primary) |
@@ -27,6 +27,7 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-015 | S3 | B | CI | `.github/workflows/ci.yml:27,28,135; codeql.yml:51,54,94` | CI actions are pinned by mutable major tag, and checkouts disagree (v4 vs v7) | DONE | mac-mini-m3 (primary) |
 | AUD-016 | S3 | C | tests | `tests/TinyTitanFleet/DashboardTests.swift:88,105,108` | Warnings surfaced by warnings-as-errors: redundant #require on an optional and an unused shadowed binding | DONE | mac-mini-m3 (primary) |
 | AUD-018 | S3 | B | build | `.swiftlint.yml` | SwiftLint rule-set decision: what is enforced, configured, or delegated, and why | DONE | mac-mini-m3 (primary) |
+| AUD-022 | S3 | B | JS plugins | `plugins/dsh-tinytitan/src/catalog-scan.js; plugins/dsh-lan-manager/src/{api,index,peers}.js; tests in both packages` | 10 ESLint findings in the plugin packages, found by the newly wired linter | DONE | mac-mini-m3 (primary) |
 
 ## Detail
 
@@ -98,13 +99,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-012 — JavaScript packages have no formatter, linter or lockfile
 
-- severity **S2**, tier B, project plugins, status **OPEN**
+- severity **S2**, tier B, project plugins, status **DONE**
 - location: `plugins/dsh-tinytitan, plugins/dsh-lan-manager`
 - discovered by: tool inventory + package.json read
 - evidence (before): eslint and prettier are not installed anywhere in the tree; neither package has a lint/format script, a config, or a lockfile. Both declare zero runtime dependencies (`dependencies: None`), so npm audit has nothing to scan today, but nothing pins that state.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Each plugin package now owns a pinned toolchain: eslint 10.11.0 with @eslint/js 10.0.1 and globals 17.12.0, and prettier 3.9.9, exact-pinned in devDependencies and locked in a committed package-lock.json (`rm -rf node_modules && npm ci` verified to reproduce both versions in both packages). `eslint.config.js` is a flat config over `js.configs.recommended` plus eqeqeq, no-var, prefer-const, no-throw-literal, no-return-await, require-atomic-updates, and no-unused-vars with `ignoreRestSiblings` (PeerTable.list drops `gossip` by destructuring - the documented idiom for omitting a field - and every other unused binding is still an error). `.prettierrc.json` fixes printWidth 100, double quotes, semicolons and trailing commas; `.prettierignore` keeps test/fixtures/ out because that fixture mirrors a shipped harness preset. npm scripts add lint/format/format:check, and the formatter sweep is applied. The gate is `tools/lint.sh javascript` (tenth gate): it fails when a package has no toolchain, a different eslint/prettier version, Node below the declared engines.node >=22 floor, an eslint finding, or formatting drift - it never skips. Both CI workflows install the toolchain with `npm ci` before the gates.
+- evidence (after): `tools/lint.sh` -> all ten gates ok; `tools/lint.sh javascript` -> both packages clean, with a temporary `var probe = 1` / `probe == "1"` file making it exit 1 (AUDIT/tool-coverage.md T11). `eslint .` and `prettier --check .` clean in both packages; `npm audit` -> 0 vulnerabilities in both (no runtime dependencies at all); plugin suites green (dsh-tinytitan 66 tests / 65 pass / 1 skipped, dsh-lan-manager 107/107). AUDIT/environment.md records the tool versions, pins, install method and the standards actually in force.
+- commit: b24edf0
 - blocked: —
 
 ### AUD-013 — No independent host is available for the Phase E verification
@@ -259,5 +260,16 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: Rules delegated to swift-format (layout, 16 rules) and to tools/lint.sh's function-length ratchet (size/complexity, 7 rules), each with its reason and measured count in the config; identifier_name configured for the numerical vocabulary; safety rules turned on. No rule was disabled silently and no path was excluded except build output and the model store.
 - evidence (after): 488 findings remain under the config and are tracked by AUD-019/AUD-020; the config carries the reasoning for every rule it changes.
 - commit: 68a6945
+- blocked: —
+
+### AUD-022 — 10 ESLint findings in the plugin packages, found by the newly wired linter
+
+- severity **S3**, tier B, project JS plugins, status **DONE**
+- location: `plugins/dsh-tinytitan/src/catalog-scan.js; plugins/dsh-lan-manager/src/{api,index,peers}.js; tests in both packages`
+- discovered by: AUD-012 (eslint 10.11.0 on the committed flat config)
+- evidence (before): The first `eslint .` run reported 10 errors: no-useless-assignment in catalog-scan.js:226 (dead `isDirectory` initializer) and api.js:255 (dead `entries` initializer); no-unused-vars for the unused `DEFAULT_BASE_PATH` import in index.js:29, the `gossip` rest sibling in peers.js:391, and unused parameters in generate.test.js:329, discovery.test.js:108, router.test.js:450; no-regex-spaces in generate.test.js:122 and setup.test.js:77; require-atomic-updates in mount.test.js:54.
+- fix: Two dead initializers removed (`let childStat` / `let entries` assigned in the try, used after it), the unused re-exported-elsewhere import dropped, three unused test bindings and parameters removed, the two regexes written with `{n}` quantifiers (eslint --fix), and mount.test.js's env save/restore moved into a synchronous `restoreEnv` helper so the assignment no longer sits across the `await`. peers.js keeps the rest-sibling idiom and the rule is configured with `ignoreRestSiblings: true` and the reason in the config. Behavior unchanged.
+- evidence (after): `eslint .` clean in both packages; both plugin suites pass (66 tests / 1 skipped; 107 tests); `tools/lint.sh javascript` green and the temporary probe fails it (AUDIT/tool-coverage.md T11).
+- commit: b24edf0
 - blocked: —
 
