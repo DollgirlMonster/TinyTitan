@@ -1,0 +1,179 @@
+# Audit ledger
+
+Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
+
+**14 tasks — done 0, open 14, blocked 0.**
+
+| id | sev | tier | project | location | title | status | host |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | OPEN | mac-mini-m3 (primary) |
+| AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | OPEN | mac-mini-m3 (primary) |
+| AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | OPEN | mac-mini-m3 (primary) |
+| AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | OPEN | mac-mini-m3 (primary) |
+| AUD-006 | S2 | C | benchmark/tools Python | `repo root (no ruff config)` | No pinned Ruff config; 386 findings under the default rule set | OPEN | mac-mini-m3 (primary) |
+| AUD-007 | S2 | C | benchmark | `benchmark/tinytitan_mtp_phases.py:77,130` | Undefined name `pathlib` (F821) used in annotations; module never imports it | OPEN | mac-mini-m3 (primary) |
+| AUD-012 | S2 | B | plugins | `plugins/dsh-tinytitan, plugins/dsh-lan-manager` | JavaScript packages have no formatter, linter or lockfile | OPEN | mac-mini-m3 (primary) |
+| AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | OPEN | mac-mini-m3 (primary) |
+| AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
+| AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | OPEN | mac-mini-m3 (primary) |
+| AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | OPEN | mac-mini-m3 (primary) |
+| AUD-010 | S3 | C | tools | `tools/*.sh (14 shellcheck warnings)` | shellcheck reports 14 warnings across the shell tools | OPEN | mac-mini-m3 (primary) |
+| AUD-011 | S3 | C | plugins | `plugins/*/package.json` | Secret scan reports 3 false positives; no gitleaks config | OPEN | mac-mini-m3 (primary) |
+| AUD-014 | S3 | B | tests | `tests/ (no coverage run)` | No coverage measurement exists in the baseline | OPEN | mac-mini-m3 (primary) |
+
+## Detail
+
+### AUD-001 — swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0
+
+- severity **S1**, tier A, project TinyTitanServer, status **OPEN**
+- location: `Package.swift:55 (swift-nio exact 2.99.0)`
+- discovered by: osv-scanner 2.6.0 scan source -L Package.resolved
+- evidence (before): 3 findings: GHSA-rj37-6j9x-74q6 (8.7, NIOHTTP1 accepts unbounded HTTP/1 header blocks -> remote DoS), GHSA-r3rc-9hpw-54v9 (8.3, ByteBuffer index/length UInt32 overflow -> out-of-bounds write), GHSA-cq87-8r7h-962v (6.3, CRLF injection in outbound request URI). All fixed in 2.100.0. The server serves HTTP/1 through NIOHTTP1, so the DoS advisory is on a reachable path.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-002 — Swift warnings-as-errors is not enforced by the build config
+
+- severity **S2**, tier B, project build, status **OPEN**
+- location: `Package.swift (tinytitanLanguageStandard)`
+- discovered by: language-standard proof (AUDIT/tool-coverage.md)
+- evidence (before): A probe file with `let unusedValue = 41` built successfully: warning `initialization of immutable value 'unusedValue' was never used [#NoUsage]`, exit 0. release.sh scans the build log for warnings, so the release path is covered, but a plain `swift build`/`swift test` does not fail — the standard is not in force.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-003 — C target does not enforce strict C99 or the hardening warning set
+
+- severity **S2**, tier B, project build, status **OPEN**
+- location: `Package.swift:68 (TinyTitanKernelsC cSettings)`
+- discovered by: language-standard proof (AUDIT/tool-coverage.md)
+- evidence (before): cSettings carries only `.unsafeFlags(["-O2"])`; no -std=c99, -pedantic-errors or warning flags, and no -Werror. All three C files compile clean under the full set (clang -std=c99 -pedantic-errors -Wall -Wextra -Wshadow -Wconversion -Wsign-conversion -Wcast-qual -Wwrite-strings -Wformat=2 -Wstrict-prototypes -Wmissing-prototypes -Werror), so the fix is additive.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-005 — No committed SwiftLint config run with --strict
+
+- severity **S2**, tier B, project build, status **OPEN**
+- location: `repo root`
+- discovered by: swiftlint 0.65.1 lint --strict --reporter json
+- evidence (before): No .swiftlint.yml. Default run over the repo reports 168,918 findings, of which 164,440 are vendored code under .build/ (SwiftPM checkouts) and 4,478 are project code: sources/ 2,788 (identifier_name 1,185, vertical_parameter_alignment 632, function_parameter_count 155, function_body_length 139, comma 122, trailing_comma 96, cyclomatic_complexity 71, line_length 71, file_length 52, colon 50, type_body_length 39, large_tuple 37), tests/ 1,660 (identifier_name 976, trailing_comma 307, force_cast 18, optional_data_string_conversion 32, ...), other 30. .build/ must be excluded as build output; the remainder needs a committed config and a sweep.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-006 — No pinned Ruff config; 386 findings under the default rule set
+
+- severity **S2**, tier C, project benchmark/tools Python, status **OPEN**
+- location: `repo root (no ruff config)`
+- discovered by: ruff 0.16.7 check --statistics
+- evidence (before): No pyproject.toml/ruff.toml for the scripts. Default run: 386 findings, 131 auto-fixable; ruff format --check would reformat 104 of 108 files. Includes F821 undefined-name x4, F841 unused-variable x6, DTZ005 datetime-now-without-tzinfo x8, S110 try-except-pass x1, PLW1508 invalid-envvar-default x4. The required rule families (B, E722, S101, PT) are not pinned anywhere.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-007 — Undefined name `pathlib` (F821) used in annotations; module never imports it
+
+- severity **S2**, tier C, project benchmark, status **OPEN**
+- location: `benchmark/tinytitan_mtp_phases.py:77,130`
+- discovered by: ruff check --select F821
+- evidence (before): `target: pathlib.Path, sidecar: pathlib.Path` in launch() and one_run() with no `import pathlib`. `from __future__ import annotations` makes the annotations lazy strings, so the script runs today, but any annotation evaluation (typing.get_type_hints, a tool, a future refactor) raises NameError.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-012 — JavaScript packages have no formatter, linter or lockfile
+
+- severity **S2**, tier B, project plugins, status **OPEN**
+- location: `plugins/dsh-tinytitan, plugins/dsh-lan-manager`
+- discovered by: tool inventory + package.json read
+- evidence (before): eslint and prettier are not installed anywhere in the tree; neither package has a lint/format script, a config, or a lockfile. Both declare zero runtime dependencies (`dependencies: None`), so npm audit has nothing to scan today, but nothing pins that state.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-013 — No independent host is available for the Phase E verification
+
+- severity **S2**, tier A, project process, status **OPEN**
+- location: `AUDIT/environment.md`
+- discovered by: host inventory
+- evidence (before): Phase E requires a fresh clone and a full clean run on one independent host. The only other host reachable from this session is ternak-macbook (macOS 12.7.6), which cannot run the required Swift 6.4 / Xcode 27 toolchain, so it cannot satisfy the Swift language standard; a fresh clone on the same Mac is not an independent host.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-004 — No committed swift-format config
+
+- severity **S3**, tier B, project build, status **OPEN**
+- location: `repo root`
+- discovered by: tool inventory (AUDIT/environment.md)
+- evidence (before): swift-format 603.0.0 is installed but there is no .swift-format or .swift-format.json in the tree, so formatting is not enforceable or reproducible.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-008 — SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions
+
+- severity **S3**, tier C, project tests, status **OPEN**
+- location: `tests/ (18 force_cast, 32 optional_data_string_conversion)`
+- discovered by: swiftlint lint --strict (AUD-005)
+- evidence (before): force_cast 18 and optional_data_string_conversion 32 in tests/; the repo's own tools/lint.sh bans force casts in sources/ only, so tests are outside that gate.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-009 — Swift test warning: result of `contains` is unused inside #expect
+
+- severity **S3**, tier C, project tests, status **OPEN**
+- location: `tests/TinyTitanServer/CompactionTests.swift:328`
+- discovered by: swift test build log
+- evidence (before): `warning: result of call to 'contains' is unused [#NoUsage]` when building TinyTitanServerTests; it blocks AUD-002 (warnings-as-errors) for the test targets.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-010 — shellcheck reports 14 warnings across the shell tools
+
+- severity **S3**, tier C, project tools, status **OPEN**
+- location: `tools/*.sh (14 shellcheck warnings)`
+- discovered by: shellcheck 0.11.0 -S warning tools/*.sh
+- evidence (before): SC2034 x9 (unused variable), SC2115 x2, SC2088 x2, SC2194, SC2164, SC2155, SC2120. No shellcheck config or gate in tools/lint.sh.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-011 — Secret scan reports 3 false positives; no gitleaks config
+
+- severity **S3**, tier C, project plugins, status **OPEN**
+- location: `plugins/*/package.json`
+- discovered by: gitleaks 8.30.1 detect --log-opts=--all
+- evidence (before): 1035 commits scanned, 3 findings, all false positives of generic-api-key: tests/TinyTitanMemory/MemoryRetrievalTests.swift:124 (a memory key string), tests/NVMAIServer/MemoryConsolidationTests.swift:358 (historical path, JSON key), benchmark/nvmai_profile.py:17 (historical, a model identifier). No live-looking credential found anywhere in history.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
+### AUD-014 — No coverage measurement exists in the baseline
+
+- severity **S3**, tier B, project tests, status **OPEN**
+- location: `tests/ (no coverage run)`
+- discovered by: baseline §3 requires coverage %
+- evidence (before): swift test is run without --enable-code-coverage in CI and release.sh; no coverage report is committed, so L6's coverage-gap and threshold checks have no yardstick.
+- fix: —
+- evidence (after): —
+- commit: —
+- blocked: —
+
