@@ -126,7 +126,7 @@ extension RealForwardRunner {
             }
             return
         }
-        try elementwise!.encodeResidualAdd(commandBuffer: commandBuffer,
+        try requireElementwise().encodeResidualAdd(commandBuffer: commandBuffer,
                                            hidden: hidden,
                                            delta: delta,
                                            count: cfg.hiddenSize)
@@ -221,7 +221,7 @@ extension RealForwardRunner {
                                    project: prefillGateProjection)
             return
         }
-        try elementwise!.encodeResidualAdd(commandBuffer: commandBuffer,
+        try requireElementwise().encodeResidualAdd(commandBuffer: commandBuffer,
                                            hidden: hidden,
                                            delta: delta,
                                            count: tokens * cfg.hiddenSize)

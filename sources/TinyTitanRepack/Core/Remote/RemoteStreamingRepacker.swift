@@ -639,19 +639,24 @@ public final class RemoteStreamingRepacker {
             byteCount: min(WriterCore.tileBytes, max(1, expectedIndex.count)),
             alignment: 16_384)
         defer { scratch.deallocate() }
+        guard let scratchBase = scratch.baseAddress else {
+            throw RepackError.configurationInvalid(
+                detail: "the comparison scratch buffer could not be allocated")
+        }
         return try expectedIndex.withUnsafeBytes { expected in
+            guard let expectedBase = expected.baseAddress else { return false }
             var offset = 0
             while offset < expected.count {
                 let count = min(scratch.count, expected.count - offset)
                 try Posix.preadAll(
                     fd: descriptor,
                     path: plan.resident.path,
-                    buf: scratch.baseAddress!,
+                    buf: scratchBase,
                     count: count,
                     offset: UInt64(offset))
                 guard memcmp(
-                    scratch.baseAddress!,
-                    expected.baseAddress!.advanced(by: offset),
+                    scratchBase,
+                    expectedBase.advanced(by: offset),
                     count) == 0 else { return false }
                 offset += count
             }

@@ -166,7 +166,7 @@ extension RealForwardRunner {
         // token embedding. The embed kernel wrote stream 0; replicate it.
         if cfg.hyperConnections.enabled {
             _ = try runSync { cb in
-                try elementwise!.encodeHCBroadcast(
+                try requireElementwise().encodeHCBroadcast(
                     commandBuffer: cb, streams: hidden,
                     dim: cfg.hiddenSize,
                     streamCount: cfg.hyperConnections.count)
@@ -1033,7 +1033,7 @@ extension RealForwardRunner {
                                  x: routedX,
                                  y: sharedScalarGateBuf!,
                                  n: D)
-            try elementwise!.encodeSigmoidScalarMul(commandBuffer: sharedCB,
+            try requireElementwise().encodeSigmoidScalarMul(commandBuffer: sharedCB,
                                                 y: h1Buf,
                                                 gate: sharedScalarGateBuf!,
                                                 count: cfg.hiddenSize)

@@ -177,6 +177,18 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
 
     // Qwen 3.6 kernels. Nil on architectures that never dispatch them.
     let elementwise: Elementwise?
+
+    /// The elementwise kernel bundle, or a thrown error when this model's
+    /// profile did not create one. Call sites that need it used to force
+    /// unwrap the optional, so a profile mismatch crashed instead of failing.
+    func requireElementwise() throws -> Elementwise {
+        guard let elementwise else {
+            throw ModelError.internalInconsistency(
+                detail: "elementwise kernels are required by this path but the model profile "
+                    + "did not enable them")
+        }
+        return elementwise
+    }
     /// The Gated Residual, for families that carry one. Owns its own scratch,
     /// so a family without hyper-connections allocates nothing.
     /// Set by `TINYTITAN_ACT_DUMP`; nil disables every dump call site.

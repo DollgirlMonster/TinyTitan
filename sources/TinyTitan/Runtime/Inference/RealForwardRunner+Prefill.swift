@@ -339,7 +339,7 @@ extension RealForwardRunner {
                           size: t * D * MemoryLayout<Float16>.stride)
                 blit.endEncoding()
                 if hyperConnection != nil {
-                    try elementwise!.encodeHCExpand(
+                    try requireElementwise().encodeHCExpand(
                         commandBuffer: cb,
                         source: scratch.normed, destination: scratch.hidden,
                         dim: D, streamCount: residualStreamCount, tokens: t)
@@ -364,7 +364,7 @@ extension RealForwardRunner {
                                     outScale: embedOutScale,
                                     vocab: UInt32(cfg.vocabSize))
                 if hyperConnection != nil {
-                    try elementwise!.encodeHCExpand(
+                    try requireElementwise().encodeHCExpand(
                         commandBuffer: cb,
                         source: scratch.normed, destination: scratch.hidden,
                         dim: D, streamCount: residualStreamCount, tokens: t)
@@ -460,6 +460,20 @@ extension RealForwardRunner {
         let linALog: TensorView?
         let linDtBias: TensorView?
         let linNorm: TensorView?
+
+        /// The view for a weight this path requires, or a thrown error naming it.
+        ///
+        /// A softmax-attention layer must carry q/k/v/o and the two norms; the
+        /// call sites used to force-unwrap them, so a profile or family
+        /// mismatch crashed the process instead of naming the missing weight.
+        func require(_ view: TensorView?, _ name: String) throws -> TensorView {
+            guard let view else {
+                throw ModelError.internalInconsistency(
+                    detail: "full-attention prefill requires the \(name) weights, "
+                        + "which this layer does not carry")
+            }
+            return view
+        }
     }
 
     /// `weightBits` is the *role's* width, not the attention slot's: the dense
@@ -902,7 +916,7 @@ extension RealForwardRunner {
         guard let tailCB = ctx.queue.makeCommandBuffer() else {
             throw ModelError.residentBufferWrapFailed
         }
-        try elementwise!.encodeResidualAdd(commandBuffer: tailCB,
+        try requireElementwise().encodeResidualAdd(commandBuffer: tailCB,
                                            hidden: scratch.hidden,
                                            delta: scratch.h1,
                                            count: t * D)
@@ -1080,7 +1094,7 @@ extension RealForwardRunner {
                             n: UInt32(D))
                     }
                     for row in 0..<t {
-                        try elementwise!.encodeSigmoidScalarMul(
+                        try requireElementwise().encodeSigmoidScalarMul(
                             commandBuffer: sharedCB,
                             y: scratch.h1,
                             yOffset: row * D * halfBytes,
@@ -1263,7 +1277,7 @@ extension RealForwardRunner {
                     // the two MLP branches are summed first and written once.
                     // Adding them separately would apply the inject gate
                     // twice.
-                    try elementwise!.encodeResidualAdd(commandBuffer: tailCB,
+                    try requireElementwise().encodeResidualAdd(commandBuffer: tailCB,
                                                    hidden: scratch.h2,
                                                    delta: scratch.h1,
                                                    count: t * D)
@@ -1275,11 +1289,11 @@ extension RealForwardRunner {
                 } else {
                     // Plain pre-norm tail: hidden += gated shared branch
                     // + routed branch.
-                    try elementwise!.encodeResidualAdd(commandBuffer: tailCB,
+                    try requireElementwise().encodeResidualAdd(commandBuffer: tailCB,
                                                    hidden: scratch.hidden,
                                                    delta: scratch.h1,
                                                    count: t * D)
-                    try elementwise!.encodeResidualAdd(commandBuffer: tailCB,
+                    try requireElementwise().encodeResidualAdd(commandBuffer: tailCB,
                                                    hidden: scratch.hidden,
                                                    delta: scratch.h2,
                                                    count: t * D)

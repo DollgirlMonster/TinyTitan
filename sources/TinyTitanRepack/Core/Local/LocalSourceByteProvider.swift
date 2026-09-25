@@ -131,6 +131,12 @@ final class LocalSourceByteProvider: SourceByteProvider {
                            size: UInt64,
                            scratch: UnsafeMutableRawBufferPointer,
                            audit: RepackAudit) throws {
+        // `scratch` is the caller's tile buffer; without storage there is no
+        // destination for a read, so this is refused rather than trapping.
+        guard let scratchBase = scratch.baseAddress else {
+            throw RepackError.configurationInvalid(
+                detail: "the copy scratch buffer has no storage")
+        }
         var remaining = size
         var source = sourceOffset
         var destination = destinationOffset
@@ -139,12 +145,12 @@ final class LocalSourceByteProvider: SourceByteProvider {
             let count = min(Int(remaining), scratch.count)
             try Posix.preadAll(fd: sourceDescriptor,
                                path: sourcePath,
-                               buf: scratch.baseAddress!,
+                               buf: scratchBase,
                                count: count,
                                offset: source)
             try Posix.pwriteAll(fd: destinationDescriptor,
                                 path: destinationPath,
-                                buf: scratch.baseAddress!,
+                                buf: scratchBase,
                                 count: count,
                                 offset: destination)
             audit.recordTile(bytes: count)

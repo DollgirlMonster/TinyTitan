@@ -95,9 +95,10 @@ enum LocalSnapshotLoader {
         }
         var prefix = [UInt8](repeating: 0, count: 8)
         try prefix.withUnsafeMutableBytes { bytes in
+            guard let base = bytes.baseAddress else { return }
             try Posix.preadAll(fd: descriptor,
                                path: path,
-                               buf: bytes.baseAddress!,
+                               buf: base,
                                count: 8,
                                offset: 0)
         }

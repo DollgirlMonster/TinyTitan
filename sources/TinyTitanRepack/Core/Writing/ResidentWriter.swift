@@ -51,22 +51,29 @@ enum ResidentWriter {
                                                             alignment: 16_384)
         defer { idxBuf.deallocate() }
         idxBuf.initializeMemory(as: UInt8.self, repeating: 0)
-        GTurboBinary.writeIndexHeader(into: idxBuf.baseAddress!,
+        // The allocation is `idxBytes > 0` bytes, so this cannot be nil; the
+        // guard turns an impossible state into a named error instead of a trap.
+        guard let idxBase = idxBuf.baseAddress else {
+            throw RepackError.configurationInvalid(
+                detail: "the resident index buffer could not be allocated")
+        }
+        GTurboBinary.writeIndexHeader(into: idxBase,
                                       indexSize: plan.indexSize,
                                       residentSize: plan.residentSize,
                                       entryCount: UInt64(plan.entries.count))
         let entriesBase = 24
         let stringTableBase = entriesBase + plan.entries.count * GTurboBinary.indexEntryBytes
         for i in 0..<plan.entries.count {
-            let dst = idxBuf.baseAddress!.advanced(by: entriesBase + i * GTurboBinary.indexEntryBytes)
+            let dst = idxBase.advanced(by: entriesBase + i * GTurboBinary.indexEntryBytes)
             let nameOff = UInt32(stringTableBase) + plan.stringTableOffsets[i]
             GTurboBinary.writeIndexEntry(into: dst, entry: plan.entries[i], nameOffset: nameOff)
         }
         plan.stringTable.withUnsafeBufferPointer { src in
-            let dst = idxBuf.baseAddress!.advanced(by: stringTableBase)
-            memcpy(dst, src.baseAddress!, src.count)
+            guard let srcBase = src.baseAddress else { return }
+            let dst = idxBase.advanced(by: stringTableBase)
+            memcpy(dst, srcBase, src.count)
         }
-        return Data(bytes: idxBuf.baseAddress!, count: idxBytes)
+        return Data(bytes: idxBase, count: idxBytes)
     }
 
     private static func writeIndex(plan: ResidentFilePlan,

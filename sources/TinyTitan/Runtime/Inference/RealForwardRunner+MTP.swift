@@ -589,7 +589,7 @@ extension RealForwardRunner {
                     n: UInt32(D))
             }
             for row in 0..<t {
-                try elementwise!.encodeSigmoidScalarMul(
+                try requireElementwise().encodeSigmoidScalarMul(
                     commandBuffer: sharedCB,
                     y: scratch.h1,
                     yOffset: row * D * halfBytes,
@@ -715,7 +715,7 @@ extension RealForwardRunner {
                                           tokens: t)
         } else {
             for row in 0..<t {
-                try elementwise!.encodeResidualAdd(commandBuffer: routedCB,
+                try requireElementwise().encodeResidualAdd(commandBuffer: routedCB,
                                                hidden: scratch.hidden,
                                                hiddenOffset: row * D * halfBytes,
                                                delta: verifyPairY[row],

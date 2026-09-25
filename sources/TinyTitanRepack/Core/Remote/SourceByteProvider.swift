@@ -159,6 +159,10 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
         defer {
             if suppliedScratch == nil { scratch.deallocate() }
         }
+        guard let scratchBase = scratch.baseAddress else {
+            throw RepackError.configurationInvalid(
+                detail: "the write scratch buffer could not be allocated")
+        }
 
         var digest = DestinationDigest(copy: copy)
         for destination in copy.destinations {
@@ -178,7 +182,7 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
                 try Posix.preadAll(
                     fd: descriptor,
                     path: destination.destinationPath,
-                    buf: scratch.baseAddress!,
+                    buf: scratchBase,
                     count: count,
                     offset: offset)
                 digest.append(UnsafeRawBufferPointer(
@@ -202,6 +206,12 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
         scratch: UnsafeMutableRawBufferPointer,
         audit: RepackAudit
     ) throws {
+        // `scratch` is the caller's tile buffer; without storage there is no
+        // destination for a read, so this is refused rather than trapping.
+        guard let scratchBase = scratch.baseAddress else {
+            throw RepackError.configurationInvalid(
+                detail: "the copy scratch buffer has no storage")
+        }
         var remaining = size
         var source = sourceOffset
         var destination = destinationOffset
@@ -211,13 +221,13 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
             try Posix.preadAll(
                 fd: sourceFD,
                 path: sourcePath,
-                buf: scratch.baseAddress!,
+                buf: scratchBase,
                 count: count,
                 offset: source)
             try Posix.pwriteAll(
                 fd: destinationFD,
                 path: destinationPath,
-                buf: scratch.baseAddress!,
+                buf: scratchBase,
                 count: count,
                 offset: destination)
             audit.recordTile(bytes: count)
