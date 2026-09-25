@@ -64,7 +64,7 @@ private func sseEvents(_ data: Data) throws -> [SSEEvent] {
 }
 
 private func post(_ port: Int, _ path: String, _ json: String) async throws -> (Data, Int) {
-    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+    var request = URLRequest(url: try localURL(port: port, path))
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "content-type")
     request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")

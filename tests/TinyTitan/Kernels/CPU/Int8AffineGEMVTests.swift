@@ -40,10 +40,16 @@ import Foundation
                 biases.withUnsafeBufferPointer { b in
                     x.withUnsafeBufferPointer { xp in
                         out.withUnsafeMutableBufferPointer { o in
+                            // The arrays are non-empty by construction; an empty
+                            // one would leave the output untouched rather than
+                            // trapping inside the kernel call.
+                            guard let wBase = w.baseAddress, let sBase = s.baseAddress,
+                                  let bBase = b.baseAddress, let xpBase = xp.baseAddress,
+                                  let oBase = o.baseAddress else { return }
                             Int8AffineGEMV.apply(
-                                weights: w.baseAddress!, scales: s.baseAddress!,
-                                biases: b.baseAddress!, x: xp.baseAddress!,
-                                rows: rowValues.count, n: n, out: o.baseAddress!)
+                                weights: wBase, scales: sBase,
+                                biases: bBase, x: xpBase,
+                                rows: rowValues.count, n: n, out: oBase)
                         }
                     }
                 }
@@ -147,16 +153,22 @@ import Foundation
             scales.withUnsafeBufferPointer { s in
                 biases.withUnsafeBufferPointer { b in
                     x.withUnsafeBufferPointer { xp in
+                        guard let wBase = w.baseAddress, let sBase = s.baseAddress,
+                              let bBase = b.baseAddress, let xpBase = xp.baseAddress else {
+                            return
+                        }
                         one.withUnsafeMutableBufferPointer { o in
-                            Int8AffineGEMV.apply(weights: w.baseAddress!, scales: s.baseAddress!,
-                                           biases: b.baseAddress!, x: xp.baseAddress!,
-                                           rows: rowValues.count, n: n, out: o.baseAddress!)
+                            guard let oBase = o.baseAddress else { return }
+                            Int8AffineGEMV.apply(weights: wBase, scales: sBase,
+                                           biases: bBase, x: xpBase,
+                                           rows: rowValues.count, n: n, out: oBase)
                         }
                         many.withUnsafeMutableBufferPointer { o in
+                            guard let oBase = o.baseAddress else { return }
                             Int8AffineGEMV.threaded(
-                                weights: w.baseAddress!, scales: s.baseAddress!,
-                                biases: b.baseAddress!, x: xp.baseAddress!,
-                                rows: rowValues.count, n: n, out: o.baseAddress!)
+                                weights: wBase, scales: sBase,
+                                biases: bBase, x: xpBase,
+                                rows: rowValues.count, n: n, out: oBase)
                         }
                     }
                 }

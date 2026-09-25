@@ -203,15 +203,15 @@ struct HTTPServerTests {
         let port = try #require(channel.localAddress?.port)
 
         let health = try await URLSession.shared.data(
-            from: URL(string: "http://127.0.0.1:\(port)/health")!).0
+            from: try localURL(port: port, "/health")).0
         #expect(String(decoding: health, as: UTF8.self).contains(#""status":"ok""#))
 
         let models = try await URLSession.shared.data(
-            from: URL(string: "http://127.0.0.1:\(port)/v1/models")!).0
+            from: try localURL(port: port, "/v1/models")).0
         #expect(String(decoding: models, as: UTF8.self).contains("test-model"))
 
         var request = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+            url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = Data(#"""
@@ -248,9 +248,9 @@ struct HTTPServerTests {
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
 
-        func streamingRequest() -> URLRequest {
+        func streamingRequest() throws -> URLRequest {
             var request = URLRequest(
-                url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+                url: try localURL(port: port, "/v1/chat/completions"))
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "content-type")
             request.httpBody = Data(#"""
@@ -293,7 +293,7 @@ struct HTTPServerTests {
         let port = try #require(channel.localAddress?.port)
 
         var request = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/models")!)
+            url: try localURL(port: port, "/v1/models"))
         // One more than the limit, so the count alone trips it (the byte total is
         // only ~1.4 KiB, well under the other bound).
         for index in 0...TinyTitanHTTPServer.maximumRequestHeaderFields {
@@ -324,7 +324,7 @@ struct HTTPServerTests {
         let port = try #require(channel.localAddress?.port)
 
         var request = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+            url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = Data(repeating: 0x20,
@@ -344,7 +344,7 @@ struct HTTPServerTests {
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
         var request = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+            url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = Data(#"""
@@ -372,7 +372,7 @@ struct HTTPServerTests {
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
         var request = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+            url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = Data(#"""
@@ -394,7 +394,7 @@ struct HTTPServerTests {
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
         var request = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+            url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = Data(#"""
@@ -414,7 +414,7 @@ struct HTTPServerTests {
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
         var request = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+            url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = Data(#"""
@@ -449,7 +449,7 @@ struct HTTPServerTests {
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
         var request = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+            url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = Data(#"""
@@ -680,7 +680,7 @@ struct HTTPServerTests {
 
         // The first completion loads the model.
         var completion = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+            url: try localURL(port: port, "/v1/chat/completions"))
         completion.httpMethod = "POST"
         completion.setValue("application/json", forHTTPHeaderField: "content-type")
         completion.httpBody = Data(#"""
@@ -692,7 +692,7 @@ struct HTTPServerTests {
 
         // The unload endpoint releases it.
         var unload = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/models/unload")!)
+            url: try localURL(port: port, "/v1/models/unload"))
         unload.httpMethod = "POST"
         let (data, unloadResponse) = try await URLSession.shared.data(for: unload)
         #expect((unloadResponse as? HTTPURLResponse)?.statusCode == 200)
@@ -717,7 +717,7 @@ struct HTTPServerTests {
         let port = try #require(channel.localAddress?.port)
 
         var unload = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/models/unload")!)
+            url: try localURL(port: port, "/v1/models/unload"))
         unload.httpMethod = "POST"
         let (data, response) = try await URLSession.shared.data(for: unload)
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
@@ -737,7 +737,7 @@ struct HTTPServerTests {
         let port = try #require(channel.localAddress?.port)
 
         let (_, response) = try await URLSession.shared.data(
-            from: URL(string: "http://127.0.0.1:\(port)/v1/models/unload")!)
+            from: try localURL(port: port, "/v1/models/unload"))
         #expect((response as? HTTPURLResponse)?.statusCode == 405)
 
         try await server.shutdown()
@@ -756,7 +756,7 @@ struct HTTPServerTests {
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
         var request = URLRequest(
-            url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
+            url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = Data(#"""
@@ -844,7 +844,7 @@ struct HTTPServerTests {
         let port = try #require(channel.localAddress?.port)
 
         func send(_ path: String, body: String, workspace: String?) async throws {
-            var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+            var request = URLRequest(url: try localURL(port: port, path))
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "content-type")
             if let workspace {

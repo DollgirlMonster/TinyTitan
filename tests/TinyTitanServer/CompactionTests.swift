@@ -60,7 +60,7 @@ private actor CompactionBackend: ServerInferenceBackend, PromptTokenCounting {
 
 private func post(_ port: Int, _ path: String,
                   _ json: String) async throws -> (Data, HTTPURLResponse) {
-    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+    var request = URLRequest(url: try localURL(port: port, path))
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "content-type")
     request.httpBody = Data(json.utf8)

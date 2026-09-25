@@ -93,7 +93,7 @@ private func sseEvents(_ text: String) throws -> [SSEEvent] {
 
 private func post(_ port: Int, _ path: String, _ json: String,
                   headers: [String: String] = [:]) async throws -> (Data, HTTPURLResponse) {
-    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+    var request = URLRequest(url: try localURL(port: port, path))
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "content-type")
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
@@ -104,7 +104,7 @@ private func post(_ port: Int, _ path: String, _ json: String,
 
 private func call(_ port: Int, _ method: String, _ path: String,
                   headers: [String: String] = [:]) async throws -> (Data, HTTPURLResponse) {
-    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+    var request = URLRequest(url: try localURL(port: port, path))
     request.httpMethod = method
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
     let (data, response) = try await URLSession.shared.data(for: request)
