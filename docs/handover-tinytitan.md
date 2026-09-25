@@ -1,17 +1,20 @@
-# Handover: after release 5.11, the engine and its loopback server
+# Handover: after release 5.12, the engine and its loopback server
 
 **Paste this into the next session:**
 
 > Continue the TinyTitan work in this checkout. Read `AGENTS.md`, then
-> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.11 is cut and
-> published** (`v5.11` → `6e7cfc3`; `tinytitan-5.11-macos-arm64.tar.gz`, 15,370,253
-> bytes, sha256 `01b86323d99fdac4a5e72607d2ebbca20b6ed7ea3cc6f33f0754a5d78b860ed0`,
+> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.12 is cut and
+> published** (`v5.12` → `fc23691`; `tinytitan-5.12-macos-arm64.tar.gz`, 15,386,068
+> bytes, sha256 `ec93f640f1d49dfac02d129626117d47f38585b616645886e36d1c8a8040b5e0`,
 > 2026-09-25) and **`main` sits one commit past it** — this brief; the release notes
-> are `docs/release-notes-v5.11.md`. The product is the engine plus its loopback
-> server — the Mac app is gone — and `tools/install_tinytitan.sh` downloads a built
-> release instead of compiling one; the browser chat window arrives the same way,
-> from the release tag's source archive, with no registry account on either side.
-> The eight installs under `models/` have
+> are `docs/release-notes-v5.12.md`. 5.12 is the pre-production audit: every force
+> unwrap is gone, every finding it raised is closed in `AUDIT/ledger.json` (28
+> tasks), and `tools/lint.sh` now runs **eleven** pinned gates. The product is the
+> engine plus its loopback server — the Mac app is gone — and
+> `tools/install_tinytitan.sh` downloads a built release instead of compiling one;
+> the browser chat window arrives the same way, from the release tag's source
+> archive, with no registry account on either side. The eight installs under
+> `models/` have
 > receipts **valid for this folder**, because a rename invalidates them; re-issue
 > with `--verify-install` if the folder moves again. **Verification uses only the
 > installs already under `models/`** — never download, convert, repack or re-install
@@ -65,17 +68,32 @@ traps that one named still bite and are folded in below.
 | --- | --- |
 | Repository | `Pummelchen/TinyTitan` (renamed 2026-09-14; the old URL redirects) |
 | Checkout folder | `~/Downloads/TinyTitan` — **renamed from `~/Downloads/NVMAI`**, which invalidated every receipt and `.build`'s debug half |
-| `main` | level with `origin/main`, one commit past `v5.11` (this brief); the release commit is `6e7cfc3` |
-| Release | **5.11 published** 2026-09-25 — `tinytitan-5.11-macos-arm64.tar.gz`, 15,370,253 bytes, sha256 `01b86323…` with its `.sha256` beside it |
+| `main` | level with `origin/main`, one commit past `v5.12` (this brief); the release commit is `fc23691` |
+| Release | **5.12 published** 2026-09-25 — `tinytitan-5.12-macos-arm64.tar.gz`, 15,386,068 bytes, sha256 `ec93f640…` with its `.sha256` beside it |
 | Models | **8 installs, 244 GB**; every receipt bound to this path, so all load |
 | Goldens stored | 16; **7 checked** here (qwen38-125b-4bit, qwen36-{4,8}, qwen35-{4b,9b}-{4,8}); the nine with no install — `ornith-{4,8}`, `qwen38-8`, `agentworld-{4,8}`, `katcoder-{4,8}`, `qwen35-2b-{4,8}` — are reported *not checked* and named in the notes |
-| `.build` | release rebuilt for 5.11; a clean scratch release build is part of each dry run |
-| Wiki | `.qwen/wiki`, remote `TinyTitan.wiki.git`, level with `origin/master` |
+| Audit | `AUDIT/ledger.json` — **28 tasks, all closed**; its findings are what 5.12 fixed, and the eleven gates in `tools/lint.sh` are what it left behind |
+| `.build` | release rebuilt for 5.12; a clean scratch release build is part of each dry run |
+| Wiki | `.qwen/wiki`, remote `TinyTitan.wiki.git`, level with `origin/master` (Changelog carries the 5.12 section) |
 | DeepSeek Harness | pinned `0.1.6-alpha.2` and **enforced**; both plugins refuse any other version; the global harness runs the gate, the private one is refreshed but idle until its next start. The private bundle is isolated down to the caches: npm's cache/logs/user config, pnpm's home and the XDG cache/state all live under `~/.tinytitan/dsh`, so a run adds nothing to `~/.npm`, `~/Library/pnpm`, `~/.cache` or `~/.local/state` (`benchmark/test_dsh_isolation.py` pins it; verified in a simulated factory-new HOME). Since 5.11 the bundle is the delivery — the installer's source archive carries `plugins/`, and the route writer and the launcher both resolve the installed layout (`../bin`, `../models`) instead of a checkout's |
-| CI | every `main` push runs both jobs including `thread-sanitizer`; the 5.11 push is the run to watch (`gh run list`) |
+| CI | every `main` push runs CI (eleven gates, serial tests, thread-sanitizer, converter and installer gates, Markdown links) and CodeQL (Swift, 249 files); the 5.12 push is the run to watch (`gh run list`) |
 
 ## What has landed
 
+- **5.12** (`fc23691`) — the pre-production audit, drained to zero open findings:
+  every force unwrap gone (171 in `sources/`, 139 in tests and benchmarks), the
+  chunked-prefill force cast now the existing `chunkedUnsupported` error, a
+  fleet-scanner test that could never fail made real, Swift SAST (CodeQL) running
+  again after failing before it compiled anything, and the Markdown-link and
+  Python-suite CI regressions closed. `tools/lint.sh` now runs **eleven** pinned
+  gates (SwiftLint `--strict` and swift-format joined it, plus eslint/prettier for
+  the plugin packages with committed lockfiles), the tree is at 0 SwiftLint and 0
+  swift-format findings after a 442-file sweep, and `AUDIT/ledger.json` carries all
+  28 findings with their evidence. Verification: eleven gates clean, **1,493 tests
+  in 223 suites**, 7 goldens byte-identical, a warning-free clean scratch build,
+  and a 4B speed record whose first pass read prefill low (28.0 → 23.3 tok/s) and
+  whose repeat read the baseline exactly with all thirteen metrics inside the gate
+  — both records and the reason are in `docs/release-notes-v5.12.md`.
 - **5.11** (`6e7cfc3`) — the DSH bundle is the delivery: the installer's source
   archive carries `plugins/`, the bundle is added from there with a `file:`
   install and no registry account exists on either side, the private harness
@@ -227,6 +245,20 @@ on other people:
 - **`release.sh` needs `HEAD` to *be* the tag** and a release build at
   `.build/release/TinyTitanCLI` to exist **before** it starts.
   The golden phase refuses to run beside any model process.
+- **The `xcode-27` runner is an x64 Actions agent on arm64 hardware.** Inside its
+  jobs `uname -m` prints `x86_64` while `swift --version` targets arm64, and
+  `/usr/bin/sandbox-exec` ships only arm64e slices. Anything that injects a native
+  arm64 dylib into spawned processes therefore dies on that binary: CodeQL's tracer
+  failed with `posix_spawn error: Bad CPU type in executable (86)` before compiling
+  a single file, for months, and the workaround is `swift build --disable-sandbox`
+  in `.github/workflows/codeql.yml`. The durable fix is an `osx-arm64` Actions
+  runner; after that the flag can go and the manifest sandbox return. Do not
+  re-diagnose it as a tool bug.
+- **Installing a toolchain can change what a scanner scans.** The first `npm ci` in
+  CI made the Markdown link check read `plugins/*/node_modules/**` and report 461
+  broken links from vendored READMEs. Build output, vendored dependencies and
+  model stores are not project source: exclude them explicitly, and re-run any
+  whole-tree scanner after adding an install step.
 - **Say what a guard actually reads, not what it intends**, and **test a claim
   rather than trusting it** — both defects that reached a release in this project
   were claims broader or more specific than the code.

@@ -50,8 +50,9 @@ reference is the one new artifact.
 - `tools/lint.sh` — all eleven gates, every tool pinned, clean.
 - `swift test --no-parallel` — 1,493 tests in 223 suites; the benchmark suite —
   299 tests; the two plugin suites — 66 (1 skipped) and 107.
-- every installed model that has a golden target, compared against its stored
-  baseline, then a clean scratch release build with the warning scan clean.
+- **7 of the 16 stored golden baselines compared byte-identical** (`qwen36-{4,8}`,
+  `qwen38-4`, `qwen35-{4b,9b}-{4,8}`) — every installed model that has a golden
+  target — then a clean scratch release build, warning scan clean.
 - the internal-speed record (`benchmark/internal-speeds/v5.12.json`, 4B dense):
   one first-pass reading breached the 10% gate — prefill 28.0 → 23.3 tok/s and
   TTFT 0.25 → 0.30 s — and the repeat pass (`v5.12-run2.json`) read 28.0 tok/s
