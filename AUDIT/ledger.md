@@ -2,13 +2,14 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**27 tasks — done 27, open 0, blocked 0.**
+**28 tasks — done 28, open 0, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | DONE | mac-mini-m3 (primary) |
 | AUD-023 | S1 | C | TinyTitanFleet | `tests/TinyTitanFleet/ScannerTests.swift:178 (aSecondScanReportsWhatJoined)` | A fleet-scanner test asserted nothing (`|| true`), so the joined-members path was never covered | DONE | mac-mini-m3 (primary) |
 | AUD-026 | S1 | B | build/CI | `.github/workflows/audit-verification.yml (Python suite step); benchmark/requirements.txt` | The Phase E host could not run the Python suite: three dependencies were never installed | DONE | mac-mini-m3 (primary) |
+| AUD-028 | S1 | B | build/CI | `.github/workflows/codeql.yml` | The Swift SAST scan never ran: CodeQL died before compiling a single file | DONE | mac-mini-m3 (primary) |
 | AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | DONE | mac-mini-m3 (primary) |
 | AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | DONE | mac-mini-m3 (primary) |
 | AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | DONE | mac-mini-m3 (primary) |
@@ -67,6 +68,17 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: Added `benchmark/requirements.txt` pinning the three versions the local baseline runs them under (numpy 2.5.3, safetensors 0.8.0, ml_dtypes 0.6.0; cp313 macOS arm64 wheels verified for the runner's interpreter). The Phase E workflow installs from that file (user-site, into the same 3.13 interpreter the suite runs under) before `unittest discover`, and `ci.yml`'s converter venv installs from the same file instead of a bare package list, so the two cannot drift. With a requirements file present, §1's pip-audit applies: pip-audit 2.10.1 against it reports no known vulnerabilities.
 - evidence (after): The same command that failed on CI passes locally with the pinned set: `Ran 299 tests ... OK (skipped=52)` (vs `failures=1, skipped=147` without the deps). `pip-audit -r benchmark/requirements.txt` -> No known vulnerabilities found. The next Audit verification run is the first one to reach the ledger gate.
 - commit: 1078c77
+- blocked: —
+
+### AUD-028 — The Swift SAST scan never ran: CodeQL died before compiling a single file
+
+- severity **S1**, tier B, project build/CI, status **DONE**
+- location: `.github/workflows/codeql.yml`
+- discovered by: the answer to a direct question about the chronic CodeQL failure; baseline.md already recorded it as 'a known extractor error unrelated to the tree', which turned out to be wrong
+- evidence (before): Every CodeQL run failed at 'Build for extraction' within ~2 minutes with `swift-driver: error: 'tinytitan': posix_spawn error: Bad CPU type in executable (86), ["/usr/bin/sandbox-exec", ...]`, so the repository had no SAST coverage at all - a security check that never finishes reports nothing. Root cause measured from the run log plus the local toolchain: the step's own `uname -m` prints `x86_64` (the `xcode-27` runner's job tree is translated; the x64 Actions runner on arm64 hardware) while `swift --version` reports `Target: arm64-apple-macosx27.0.0`, and `/usr/bin/sandbox-exec` on this toolchain carries only arm64e slices (`lipo -archs` -> `arm64e arm64e.x1`). Under CodeQL's tracer, which injects the arm64 libtrace.dylib into every process, SwiftPM's manifest-sandbox spawn of that arm64e-only binary fails with EBADARCH before a target compiles. Plain `swift build` on the same runner (ci.yml) never spawns it under the tracer, which is why only the CodeQL job died.
+- fix: Two changes on main. (1) `--disable-sandbox` on every extraction build: SwiftPM no longer spawns `sandbox-exec` at all. The manifest sandbox contains a hostile `Package.swift`; this repository's own manifest is reviewed in-tree, and the alternative was no Swift analysis. (2) The first green scan covered 220 of 464 Swift files because only the server's six dependency targets were built, so the validation references, the memory service (persistent state) and the Fleet LAN API (network-facing) - the audit's own Tier A modules - were never compiled or extracted. Four library targets were added: TinyTitanValidationSupport, TinyTitanMemory, TinyTitanFleetCore, TinyTitanCLICore; all four build cleanly locally. The remaining unscanned files are the tests and the thin executable `main.swift` entry points. The durable fix for the sandbox is runner-side: an arm64 Actions runner would make the job tree native and allow the sandbox to be restored.
+- evidence (after): CodeQL run 36140187848 (commit f226863) -> **success**, first green Swift scan ever: 'CodeQL scanned 220 out of 464 Swift files', 1,352,694 extracted AST nodes. CodeQL run 36142996281 (commit 7303e33, with the four targets added) -> **success** in 20m34s: 'CodeQL scanned **249 out of 464** Swift files', 1,433,100 extracted AST nodes, 2 raw diagnostic messages, analysis 1839809590 uploaded with 0 results (a clean scan, not an empty database). Locally `swift build --disable-sandbox` and each added target build cleanly.
+- commit: f226863 7303e33
 - blocked: —
 
 ### AUD-002 — Swift warnings-as-errors is not enforced by the build config
