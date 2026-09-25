@@ -8,8 +8,8 @@ import TinyTitanValidationSupport
 extension RawCompletionLoopTests {
   @Test func stopsOnEOS() async throws {
     let tok = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-    let idA = tok.encode("a", addBOS: false).first!
-    let idB = tok.encode("b", addBOS: false).first!
+    let idA = try #require(tok.encode("a", addBOS: false).first)
+    let idB = try #require(tok.encode("b", addBOS: false).first)
     let (collected, result) = try await runLoop(
       seq: [idA, idB], end: tok.eosID,
       config: GenerationConfig(maxNewTokens: 50, temperature: 0))
@@ -20,7 +20,7 @@ extension RawCompletionLoopTests {
 
   @Test func stopsOnEndOfTurn() async throws {
     let tok = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-    let idA = tok.encode("a", addBOS: false).first!
+    let idA = try #require(tok.encode("a", addBOS: false).first)
     let (_, result) = try await runLoop(
       seq: [idA], end: tok.endOfTurnID,
       config: GenerationConfig(maxNewTokens: 50, temperature: 0))
@@ -29,7 +29,7 @@ extension RawCompletionLoopTests {
 
   @Test func stopsOnMaxTokensAndCountsExactly() async throws {
     let tok = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-    let idA = tok.encode("a", addBOS: false).first!
+    let idA = try #require(tok.encode("a", addBOS: false).first)
     let (collected, result) = try await runLoop(
       seq: [idA, idA], end: idA,
       config: GenerationConfig(maxNewTokens: 5, temperature: 0))
@@ -46,7 +46,7 @@ extension RawCompletionLoopTests {
   /// fails by name on that code.
   @Test func stopsOnToolCallsAfterACompleteCall() async throws {
     let tok = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-    let idA = tok.encode("a", addBOS: false).first!
+    let idA = try #require(tok.encode("a", addBOS: false).first)
     let (_, result) = try await runLoop(
       seq: [idA, tok.toolCallStartID, tok.toolCallEndID], end: tok.endOfTurnID,
       config: GenerationConfig(maxNewTokens: 50, temperature: 0))
@@ -57,7 +57,7 @@ extension RawCompletionLoopTests {
   /// nothing parsed and `.endOfTurn` is the honest reason.
   @Test func anUnterminatedToolCallStaysEndOfTurn() async throws {
     let tok = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-    let idA = tok.encode("a", addBOS: false).first!
+    let idA = try #require(tok.encode("a", addBOS: false).first)
     let (_, result) = try await runLoop(
       seq: [idA, tok.toolCallStartID], end: tok.endOfTurnID,
       config: GenerationConfig(maxNewTokens: 50, temperature: 0))
@@ -93,7 +93,7 @@ extension RawCompletionLoopTests {
 
   @Test func stopsOnStopString() async throws {
     let tok = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-    let idA = tok.encode("a", addBOS: false).first!
+    let idA = try #require(tok.encode("a", addBOS: false).first)
     let textA = tok.decode([idA], skipSpecialTokens: true)
     let (_, result) = try await runLoop(
       seq: [idA, idA], end: idA,

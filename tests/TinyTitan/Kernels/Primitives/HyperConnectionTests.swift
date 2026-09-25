@@ -47,7 +47,7 @@ struct HyperConnectionTests {
               let outBuf = Fp16Buffer.make(ctx.device, count: Self.dim) else {
             Issue.record("alloc failed"); return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeHCMixReduce(commandBuffer: cb, mix: mixBuf,
                                      normed: normBuf, out: outBuf,
                                      dim: Self.dim, streams: Self.streams,
@@ -88,7 +88,7 @@ struct HyperConnectionTests {
               let injBuf = Fp16Buffer.make(ctx.device, halves: inject) else {
             Issue.record("alloc failed"); return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeHCInject(commandBuffer: cb, streams: streamBuf,
                                   blockOut: outBuf, inject: injBuf,
                                   dim: Self.dim, streamCount: Self.streams,
@@ -127,7 +127,7 @@ struct HyperConnectionTests {
             Issue.record("alloc failed"); return
         }
         for _ in 0..<2 {
-            let cb = ctx.queue.makeCommandBuffer()!
+            let cb = try #require(ctx.queue.makeCommandBuffer())
             try kernel.encodeHCInject(commandBuffer: cb, streams: streamBuf,
                                       blockOut: outBuf, inject: injBuf,
                                       dim: dim, streamCount: streams,
@@ -169,7 +169,7 @@ struct HyperConnectionTests {
                   let o = Fp16Buffer.make(ctx.device, count: dim * tokens) else {
                 throw MetalError.bufferAllocationFailed("reduce")
             }
-            let cb = ctx.queue.makeCommandBuffer()!
+            let cb = try #require(ctx.queue.makeCommandBuffer())
             try kernel.encodeHCMixReduce(commandBuffer: cb, mix: m, normed: n,
                                          out: o, dim: dim, streams: streams,
                                          tokens: tokens, inScale: 1)
@@ -194,7 +194,7 @@ struct HyperConnectionTests {
                   let inj = Fp16Buffer.make(ctx.device, halves: injectSlice) else {
                 throw MetalError.bufferAllocationFailed("write")
             }
-            let cb = ctx.queue.makeCommandBuffer()!
+            let cb = try #require(ctx.queue.makeCommandBuffer())
             try kernel.encodeHCInject(commandBuffer: cb, streams: st,
                                       blockOut: bo, inject: inj,
                                       dim: dim, streamCount: streams,
@@ -227,7 +227,7 @@ struct HyperConnectionTests {
               let dst = Fp16Buffer.make(ctx.device, count: dim * streams * rows) else {
             Issue.record("alloc failed"); return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeHCExpand(commandBuffer: cb, source: src, destination: dst,
                                   dim: dim, streamCount: streams, tokens: rows)
         cb.commit(); cb.waitUntilCompleted()
@@ -253,7 +253,7 @@ struct HyperConnectionTests {
               let siluBuf = Fp16Buffer.make(ctx.device, count: values.count) else {
             Issue.record("alloc failed"); return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeSigmoid(commandBuffer: cb, x: xBuf, out: sigBuf,
                                  count: values.count)
         try kernel.encodeSilu(commandBuffer: cb, x: xBuf, out: siluBuf,
@@ -351,7 +351,7 @@ struct HyperConnectionBlockTests {
                                                capacity: hcNormBits.count)
         for i in 0..<hcNormBits.count { np[i] = hcNormBits[i] }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try hc.encodeRead(commandBuffer: cb,
                           streamsBuffer: streamBuf, hcNorm: normBuf,
                           down: .init(weights: dW, scales: dS, biases: dB),

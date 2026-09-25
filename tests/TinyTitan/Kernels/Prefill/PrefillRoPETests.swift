@@ -57,7 +57,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<rows {
             try scalar.encodeDefaultNeox(commandBuffer: cb,
                                      data: ref,
@@ -116,7 +116,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<rows {
             try scalar.encodeProportionalNeox(commandBuffer: cb,
                                           data: ref,

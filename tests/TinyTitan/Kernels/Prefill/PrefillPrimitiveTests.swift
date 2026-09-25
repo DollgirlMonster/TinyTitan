@@ -83,7 +83,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for (row, token) in tokens.enumerated() {
             try scalar.encode(commandBuffer: cb,
                           table: tableBuf,
@@ -192,7 +192,7 @@ import TinyTitanValidationSupport
         for i in 0..<wBits.count { wPtr[i] = wBits[i] }
 
         let rowBytes = dim * MemoryLayout<Float16>.size
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<rows {
             try scalar.encodeBF16W(commandBuffer: cb,
                                x: xBuf,

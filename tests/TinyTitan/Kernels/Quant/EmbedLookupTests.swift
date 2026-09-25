@@ -57,7 +57,7 @@ import TinyTitanValidationSupport
         // a runtime float; the Qwen runtime passes 1.0 (no sqrt scaling).
         let outScale = Float(Sizes.D).squareRoot()
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encode(commandBuffer: cb,
                       table: tableBuf, scales: scalesBuf, biases: biasesBuf,
                       out: outBuf,
@@ -93,7 +93,7 @@ import TinyTitanValidationSupport
             Issue.record("alloc failed"); return
         }
         let token: UInt32 = 2
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encode(commandBuffer: cb,
                       table: tableBuf, scales: scalesBuf, biases: biasesBuf,
                       out: outBuf,

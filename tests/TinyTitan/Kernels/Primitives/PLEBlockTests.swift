@@ -24,7 +24,7 @@ struct PLEBlockTests {
               let ob = Fp16Buffer.make(ctx.device, count: streams) else {
             Issue.record("alloc"); return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try e.encodePLEStreamScore(commandBuffer: cb, key: kb, query: qb,
                                    out: ob, dim: dim, streams: streams)
         cb.commit(); cb.waitUntilCompleted()
@@ -51,7 +51,7 @@ struct PLEBlockTests {
               let ob = Fp16Buffer.make(ctx.device, count: values.count) else {
             Issue.record("alloc"); return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try e.encodePLESignedSqrtGate(commandBuffer: cb, x: xb, out: ob,
                                       count: values.count)
         cb.commit(); cb.waitUntilCompleted()
@@ -82,7 +82,7 @@ struct PLEBlockTests {
               let ob = Fp16Buffer.make(ctx.device, count: dim * streams) else {
             Issue.record("alloc"); return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try e.encodePLEBroadcastScale(commandBuffer: cb, value: vb, gate: gb,
                                       out: ob, dim: dim, streams: streams)
         cb.commit(); cb.waitUntilCompleted()
@@ -126,7 +126,7 @@ struct PLEBlockTests {
                 wb.contents().copyMemory(from: $0.baseAddress!,
                                          byteCount: wBits.count * 2)
             }
-            let cb = ctx.queue.makeCommandBuffer()!
+            let cb = try #require(ctx.queue.makeCommandBuffer())
             try e.encodePLEDilatedConv(commandBuffer: cb, xpad: xb, weight: wb,
                                        out: ob, channels: C, tokens: T,
                                        kernelSize: K, dilation: dil)

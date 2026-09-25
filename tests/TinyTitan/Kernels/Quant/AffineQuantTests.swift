@@ -45,7 +45,7 @@ import TinyTitanValidationSupport
         let b = ctx.device.makeBuffer(bytes: biases, length: biases.count * 2)!
         let x = Fp16Buffer.make(ctx.device, halves: input)!
         let y = Fp16Buffer.make(ctx.device, count: rows)!
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encode(commandBuffer: cb, weights: w, scales: s, biases: b,
                       x: x, y: y, m: UInt32(rows), n: UInt32(columns))
         cb.commit(); cb.waitUntilCompleted()
@@ -68,7 +68,7 @@ import TinyTitanValidationSupport
         let s = ctx.device.makeBuffer(bytes: scales, length: scales.count * 2)!
         let b = ctx.device.makeBuffer(bytes: biases, length: biases.count * 2)!
         let y = Fp16Buffer.make(ctx.device, count: columns)!
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encode(commandBuffer: cb, table: w, scales: s, biases: b,
                       out: y, tokenId: 1, d: UInt32(columns), outScale: 1,
                       vocab: UInt32(rows))

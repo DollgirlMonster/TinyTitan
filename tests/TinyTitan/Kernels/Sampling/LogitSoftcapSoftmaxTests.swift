@@ -200,7 +200,7 @@ import TinyTitanValidationSupport
                 let unit = Float(state >> 40) / Float(1 << 24)
                 src[index] = Float16(unit * 24 - 12)
             }
-            let cb = ctx.queue.makeCommandBuffer()!
+            let cb = try #require(ctx.queue.makeCommandBuffer())
             try single.encode(commandBuffer: cb, logits: logits, probs: a,
                               v: UInt32(vocab), softcap: 0)
             try tiled.encode(commandBuffer: cb, logits: logits, probs: b,

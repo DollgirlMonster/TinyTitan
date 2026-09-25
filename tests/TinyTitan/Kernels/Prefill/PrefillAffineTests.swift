@@ -85,7 +85,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<t {
             try gemv.encode(commandBuffer: cb,
                         weights: wBuf,
@@ -165,7 +165,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<t {
             try gemv.encode(commandBuffer: cb,
                         weights: wBuf,

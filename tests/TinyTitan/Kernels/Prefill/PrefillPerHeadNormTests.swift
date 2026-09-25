@@ -61,7 +61,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<rows {
             try scalar.encodeBF16WPerHead(commandBuffer: cb,
                                       x: ref,
@@ -117,7 +117,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<rows {
             try scalar.encodeNoScalePerHead(commandBuffer: cb,
                                         x: ref,

@@ -115,7 +115,7 @@ import Testing
                   temperature: Float = 1.0,
                   topP: Float,
                   topK: Int = 64) throws -> (current: UInt32, candidate: UInt32) {
-            let cb = context.queue.makeCommandBuffer()!
+            let cb = try #require(context.queue.makeCommandBuffer())
             try current.encode(commandBuffer: cb,
                            probs: probs,
                            outToken: currentOutput,

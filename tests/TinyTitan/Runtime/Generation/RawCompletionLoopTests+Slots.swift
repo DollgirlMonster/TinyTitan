@@ -82,7 +82,7 @@ extension RawCompletionLoopTests {
     @Test func nonZeroSlotUsesSlotAwareChunkedPrefill() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let promptIDs = tokenizer.encode("go", addBOS: true)
         let producer = SlotRecordingProducer(vocabSize: tokenizer.vocabSize,
                                              nextToken: tokenA)
@@ -114,7 +114,7 @@ extension RawCompletionLoopTests {
     @Test func slotZeroKeepsTheChunkedPrefillPath() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let promptIDs = tokenizer.encode("go", addBOS: true)
         let producer = SlotRecordingProducer(vocabSize: tokenizer.vocabSize,
                                              nextToken: tokenA)

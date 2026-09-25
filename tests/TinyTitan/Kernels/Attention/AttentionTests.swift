@@ -75,7 +75,7 @@ import TinyTitanValidationSupport
               let outUnit   = Fp16Buffer.make(ctx.device, count: qCount) else {
             Issue.record("alloc failed"); return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeSWA(commandBuffer: cb,
                          q: qBuf, k: kBuf, v: vBuf, out: outScaled,
                          headDim: UInt32(headDim), numQHeads: UInt32(numQHeads),
@@ -254,7 +254,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeSWA(commandBuffer: cb,
                          q: qBuf,
                          k: kBuf,
@@ -324,7 +324,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeSWA(commandBuffer: cb,
                          q: qBuf,
                          k: kLinearBuf,

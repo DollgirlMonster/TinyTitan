@@ -99,7 +99,7 @@ import TinyTitanValidationSupport
         let upProj   = pack(upPack,   rows: UInt32(Sizes.F), cols: UInt32(Sizes.D))
         let downProj = pack(downPack, rows: UInt32(Sizes.D), cols: UInt32(Sizes.F))
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try wrapper.encode(commandBuffer: cb,
                            x: xBuf, gate: gateProj, up: upProj, down: downProj,
                            y: yBuf,

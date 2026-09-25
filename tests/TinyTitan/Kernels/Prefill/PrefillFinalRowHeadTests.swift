@@ -97,7 +97,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try scalarNorm.encodeBF16W(commandBuffer: cb,
                                x: hiddenBuf,
                                xOffset: selectedRow * rowStride * MemoryLayout<Float16>.size,

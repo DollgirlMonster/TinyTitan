@@ -18,7 +18,7 @@ import TinyTitanFormat
         // string table after the entries, and nameOffset = absolute file
         // offset to the name inside the index region.
         let names = ["embedding.weight", "layer.0.q_proj.weight"]
-        let stringTable = names.joined().data(using: .utf8)!
+        let stringTable = Data(names.joined().utf8)
         let headerBytes = GTurboBinary.indexHeaderBytes
         let entryBytes  = GTurboBinary.indexEntryBytes
         let entriesBase = headerBytes

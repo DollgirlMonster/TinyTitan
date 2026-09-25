@@ -87,7 +87,7 @@ import TinyTitanValidationSupport
             return ([], [])
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<rows {
             let qOffset = row * qStride * MemoryLayout<Float16>.size
             let kvOffset = row * kvStride * MemoryLayout<Float16>.size

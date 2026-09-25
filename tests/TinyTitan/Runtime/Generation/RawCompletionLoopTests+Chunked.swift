@@ -6,7 +6,7 @@ extension RawCompletionLoopTests {
     @Test func chunkedModeRequiresChunkedProducer() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let promptIDs = tokenizer.encode("one two three", addBOS: true)
         let producer = CountingProducer(
             vocabSize: tokenizer.vocabSize,
@@ -37,7 +37,7 @@ extension RawCompletionLoopTests {
     @Test func chunkedModeUsesChunkedRunnerEntryPoint() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let producer = ChunkedTestProducer(vocabSize: tokenizer.vocabSize, firstToken: tokenA)
         let promptIDs = tokenizer.encode("go", addBOS: true)
         let scratch = try RawCompletionScratch(context: context, vocab: tokenizer.vocabSize)
@@ -69,7 +69,7 @@ extension RawCompletionLoopTests {
     @Test func chunkedLogitsSeedProducesFirstToken() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let producer = ChunkedTestProducer(vocabSize: tokenizer.vocabSize, firstToken: tokenA)
         let promptIDs = tokenizer.encode("go", addBOS: true)
         let scratch = try RawCompletionScratch(context: context, vocab: tokenizer.vocabSize)
@@ -98,7 +98,7 @@ extension RawCompletionLoopTests {
     @Test func chunkedPrefillRejectsGreedySeedWhenLogitsRequested() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let producer = ChunkedTestProducer(
             vocabSize: tokenizer.vocabSize,
             firstToken: tokenA,

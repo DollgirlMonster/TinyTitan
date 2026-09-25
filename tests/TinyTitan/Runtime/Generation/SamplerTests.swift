@@ -45,7 +45,7 @@ import TinyTitanValidationSupport
         func draw(_ values: [Float], config: GenerationConfig,
                   position: Int = 0, history: [Int32] = []) throws -> (id: UInt32, path: SamplePath) {
             writeLogits(values)
-            let cmd = ctx.queue.makeCommandBuffer()!
+            let cmd = try #require(ctx.queue.makeCommandBuffer())
             let path = try sampler.sample(commandBuffer: cmd, logits: logits, probs: probs,
                                           history: history, config: config,
                                           position: position, outToken: outToken)

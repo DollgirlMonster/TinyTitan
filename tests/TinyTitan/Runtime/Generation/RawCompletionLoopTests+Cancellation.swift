@@ -9,7 +9,7 @@ extension RawCompletionLoopTests {
   @Test func cancellationPropagatesMidDecode() async throws {
     let ctx = try MetalContext()
     let tok = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-    let idA = tok.encode("a", addBOS: false).first!
+    let idA = try #require(tok.encode("a", addBOS: false).first)
     let producer = ScriptedLogitProducer(
       vocabSize: tok.vocabSize,
       step: automaton([idA, idA], end: idA))

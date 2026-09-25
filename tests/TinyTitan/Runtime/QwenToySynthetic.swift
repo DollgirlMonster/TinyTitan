@@ -145,7 +145,7 @@ enum QwenToySynthetic {
 
         // 2. Serialize the resident index + payload.
         let names = specs.map(\.name)
-        let stringTable = names.joined().data(using: .utf8)!
+        let stringTable = Data(names.joined().utf8)
         let headerBytes = GTurboBinary.indexHeaderBytes
         let entryBytes  = GTurboBinary.indexEntryBytes
         let entriesBase = headerBytes
@@ -512,7 +512,7 @@ enum QwenToySynthetic {
 
         // 2. Serialize the resident index + payload (same layout as write()).
         let names = specs.map(\.name)
-        let stringTable = names.joined().data(using: .utf8)!
+        let stringTable = Data(names.joined().utf8)
         let headerBytes = GTurboBinary.indexHeaderBytes
         let entryBytes  = GTurboBinary.indexEntryBytes
         let entriesBase = headerBytes

@@ -281,7 +281,7 @@ import Metal
         }
 
         let names = specs.map(\.name)
-        let stringTable = names.joined().data(using: .utf8)!
+        let stringTable = Data(names.joined().utf8)
         let headerBytes = GTurboBinary.indexHeaderBytes
         let entryBytes  = GTurboBinary.indexEntryBytes
         let entriesBase = headerBytes

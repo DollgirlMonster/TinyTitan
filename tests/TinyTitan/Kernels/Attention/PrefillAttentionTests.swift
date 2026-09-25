@@ -261,7 +261,7 @@ import TinyTitanValidationSupport
             oTokenStrideElements: UInt32(fixture.oStride),
             scale: fixture.scale)
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try prefill.encodeCausal(commandBuffer: cb,
                              q: qBuf,
                              qOffset: qPrefix * MemoryLayout<Float16>.size,

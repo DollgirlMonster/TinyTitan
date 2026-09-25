@@ -75,7 +75,7 @@ import Testing
         let slots = buffer([UInt32](repeating: 0, count: experts.count))
         let generations = buffer([UInt64](repeating: 0, count: experts.count))
         let resources = streamer.expertResidencyResources()
-        let commandBuffer = context.queue.makeCommandBuffer()!
+        let commandBuffer = try #require(context.queue.makeCommandBuffer())
         try moe.encodeResidencyClassification(
             commandBuffer: commandBuffer,
             topKIndices: topK,

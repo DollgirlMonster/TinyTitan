@@ -43,7 +43,7 @@ import TinyTitanValidationSupport
         let downProj = Self.makeProjection(ctx: ctx, packed: down, rows: Self.d, cols: Self.f)
         let halfBytes = MemoryLayout<Float16>.stride
 
-        let refCB = ctx.queue.makeCommandBuffer()!
+        let refCB = try #require(ctx.queue.makeCommandBuffer())
         try prefill.encodeBlock(commandBuffer: refCB,
                                 x: xBuf,
                                 y: yRef,
@@ -62,7 +62,7 @@ import TinyTitanValidationSupport
         refCB.waitUntilCompleted()
         #expect(refCB.error == nil)
 
-        let splitCB = ctx.queue.makeCommandBuffer()!
+        let splitCB = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<Self.rows {
             try shared.encodePhase1(commandBuffer: splitCB,
                                     x: xBuf,
@@ -122,7 +122,7 @@ import TinyTitanValidationSupport
         let downProj = Self.makeProjection(ctx: ctx, packed: down, rows: Self.d, cols: Self.f)
 
         let halfBytes = MemoryLayout<Float16>.stride
-        let refCB = ctx.queue.makeCommandBuffer()!
+        let refCB = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<Self.rows {
             try scalar.encode(commandBuffer: refCB,
                               x: xBuf,
@@ -146,7 +146,7 @@ import TinyTitanValidationSupport
         refCB.waitUntilCompleted()
         #expect(refCB.error == nil)
 
-        let gotCB = ctx.queue.makeCommandBuffer()!
+        let gotCB = try #require(ctx.queue.makeCommandBuffer())
         try prefill.encodeBlock(commandBuffer: gotCB,
                                 x: xBuf,
                                 y: yGot,
@@ -203,7 +203,7 @@ import TinyTitanValidationSupport
         let downProj = makeProjection(ctx: ctx, packed: down, rows: d, cols: f)
 
         let halfBytes = MemoryLayout<Float16>.stride
-        let refCB = ctx.queue.makeCommandBuffer()!
+        let refCB = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<rows {
             try scalar.encode(commandBuffer: refCB,
                               x: xBuf,
@@ -219,7 +219,7 @@ import TinyTitanValidationSupport
         refCB.waitUntilCompleted()
         #expect(refCB.error == nil)
 
-        let gotCB = ctx.queue.makeCommandBuffer()!
+        let gotCB = try #require(ctx.queue.makeCommandBuffer())
         try prefill.encodeBlock(commandBuffer: gotCB,
                                 x: xBuf,
                                 y: yGot,

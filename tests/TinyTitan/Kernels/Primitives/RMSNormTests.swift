@@ -41,7 +41,7 @@ import TinyTitanValidationSupport
         let wPtr = wBuf.contents().bindMemory(to: UInt16.self, capacity: wBits.count)
         for i in 0..<wBits.count { wPtr[i] = wBits[i] }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeBF16W(commandBuffer: cb, x: xBuf, weight: wBuf, out: yBuf,
                            d: UInt32(d), eps: eps)
         cb.commit(); cb.waitUntilCompleted()
@@ -81,7 +81,7 @@ import TinyTitanValidationSupport
               let yBuf = Fp16Buffer.make(ctx.device, count: d) else {
             Issue.record("alloc failed"); return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeNoScale(commandBuffer: cb, x: xBuf, out: yBuf,
                              d: UInt32(d), eps: eps)
         cb.commit(); cb.waitUntilCompleted()
@@ -144,7 +144,7 @@ import TinyTitanValidationSupport
 
         // Mirror the runner's per-head dispatch loop literally.
         let headBytes = headDim * MemoryLayout<Float16>.size
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for h in 0..<numHeads {
             try kernel.encodeBF16W(commandBuffer: cb,
                                x: xBuf, xOffset: h * headBytes,
@@ -183,7 +183,7 @@ import TinyTitanValidationSupport
         }
 
         let headBytes = headDim * MemoryLayout<Float16>.size
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for h in 0..<numKVL {
             try kernel.encodeNoScale(commandBuffer: cb,
                                  x: xBuf, xOffset: h * headBytes,
@@ -226,7 +226,7 @@ import TinyTitanValidationSupport
         for i in 0..<headDim { wPtr[i] = wBits[i] }
         let headBytes = headDim * MemoryLayout<Float16>.size
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for h in 0..<numHeads {
             try kernel.encodeBF16W(commandBuffer: cb, x: loopOut, xOffset: h * headBytes,
                                weight: wBuf, out: loopOut, outOffset: h * headBytes,
@@ -253,7 +253,7 @@ import TinyTitanValidationSupport
             Issue.record("alloc failed"); return
         }
         let headBytes = headDim * MemoryLayout<Float16>.size
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for h in 0..<numKVL {
             try kernel.encodeNoScale(commandBuffer: cb, x: loopOut, xOffset: h * headBytes,
                                  out: loopOut, outOffset: h * headBytes,
@@ -301,7 +301,7 @@ import TinyTitanValidationSupport
         let wPtr = wBuf.contents().bindMemory(to: UInt16.self, capacity: wBits.count)
         for i in 0..<wBits.count { wPtr[i] = wBits[i] }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeBF16WGrouped(commandBuffer: cb, x: xBuf, weight: wBuf,
                                       out: yBuf, groupDim: UInt32(groupDim),
                                       numGroups: groups, eps: eps)
@@ -358,7 +358,7 @@ import TinyTitanValidationSupport
         let wPtr = wBuf.contents().bindMemory(to: UInt16.self, capacity: wBits.count)
         for i in 0..<wBits.count { wPtr[i] = wBits[i] }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encodeBF16WGrouped(commandBuffer: cb, x: xBuf, weight: wBuf,
                                       out: yBuf, groupDim: UInt32(groupDim),
                                       numGroups: groups, eps: Self.eps)

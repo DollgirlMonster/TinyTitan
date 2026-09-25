@@ -36,7 +36,7 @@ import TinyTitanValidationSupport
         let output = Fp16Buffer.make(context.device, count: Self.dimension)!
         memset(residual.contents(), 0, residual.length)
         let args = kernel.makeRoutedArgumentBuffer(routedBlobs: routed, topK: 8)!
-        let cb = context.queue.makeCommandBuffer()!
+        let cb = try #require(context.queue.makeCommandBuffer())
         try kernel.encodeRoutedPersistentPhase1U16Load(
             commandBuffer: cb, routedArgBuffer: args, routedBlobs: routed,
             routedOffsets: blobs[0].offsets, x: x, acts: acts,
@@ -130,7 +130,7 @@ import TinyTitanValidationSupport
             return
         }
 
-        let fullCommand = context.queue.makeCommandBuffer()!
+        let fullCommand = try #require(context.queue.makeCommandBuffer())
         try kernel.encodeRoutedPersistentPhase1U16Load(
             commandBuffer: fullCommand,
             routedArgBuffer: argumentBuffer,
@@ -157,7 +157,7 @@ import TinyTitanValidationSupport
         fullCommand.waitUntilCompleted()
         #expect(fullCommand.error == nil)
 
-        let splitCommand = context.queue.makeCommandBuffer()!
+        let splitCommand = try #require(context.queue.makeCommandBuffer())
         for (slots, activeSlots) in [([UInt32](0...3), lowSlots),
                                      ([UInt32](4...7), highSlots)] {
             try kernel.encodeRoutedPersistentPhase1SubsetU16Load(
@@ -255,7 +255,7 @@ import TinyTitanValidationSupport
             Issue.record("buffer allocation failed")
             return
         }
-        let command = context.queue.makeCommandBuffer()!
+        let command = try #require(context.queue.makeCommandBuffer())
         try kernel.encodeRoutedPersistentPhase1U16Load(
             commandBuffer: command, routedArgBuffer: argumentBuffer,
             routedBlobs: routedBuffers, routedOffsets: blobs[0].offsets,
