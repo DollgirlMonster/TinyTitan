@@ -134,7 +134,7 @@ def replies() -> list[dict]:
     for path in sorted(LOGS.glob("memory-*/*.json")):
         try:
             records = json.loads(path.read_text())
-        except json.JSONDecodeError, UnicodeDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             continue
         if not isinstance(records, list):
             continue

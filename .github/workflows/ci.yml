@@ -28,6 +28,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          # The Python floor the scripts are written to and that `tools/lint.sh`
+          # verifies by parsing every file at this version. Without this, the
+          # interpreter was "whatever the runner happens to ship".
+          python-version: '3.13'
       - name: Install the pinned Python linter
         # `tools/lint.sh python` needs the exact pinned ruff and FAILS rather
         # than skipping when it is missing, so CI installs it here. The version

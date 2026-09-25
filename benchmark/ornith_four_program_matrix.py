@@ -431,7 +431,7 @@ def wait_ready(port: int, timeout: int = 300) -> None:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=2):
                 return
-        except OSError, urllib.error.URLError:
+        except (OSError, urllib.error.URLError):
             time.sleep(1)
     raise RuntimeError(f"server on port {port} did not become ready")
 

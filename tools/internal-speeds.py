@@ -129,7 +129,7 @@ def model_family(model: str) -> str | None:
     """The manifest's architecture family, or None when it cannot be read."""
     try:
         manifest = json.loads((ROOT / model / "manifest.json").read_text())
-    except OSError, ValueError:
+    except (OSError, ValueError):
         return None
     arch = manifest.get("arch")
     return arch.get("family") if isinstance(arch, dict) else None
@@ -151,7 +151,7 @@ def model_total_bytes(model: str) -> int:
             )
             if total > 0:
                 return total
-    except OSError, ValueError, TypeError:
+    except (OSError, ValueError, TypeError):
         pass
     weights = ROOT / model / "model_weights.bin"
     return weights.stat().st_size if weights.exists() else 0
@@ -515,7 +515,7 @@ def newest_baseline(out: pathlib.Path, model: str, prompt: str) -> str | None:
             continue
         try:
             record = json.loads(path.read_text())
-        except OSError, ValueError:
+        except (OSError, ValueError):
             continue
         recorded = record.get("model") or {}
         if recorded.get("path") == model and recorded.get("prompt") == prompt:

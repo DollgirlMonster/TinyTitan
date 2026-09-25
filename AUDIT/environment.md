@@ -23,7 +23,7 @@ remote host.
 | Swift | swift-format | 603.0.0 | Homebrew (`/opt/homebrew/bin/swift-format`) | formatter |
 | Swift | swiftlint | 0.65.1 | Homebrew | linter (to be run with `--strict`) |
 | Swift/C | clang (Apple) | Xcode 27.0 toolchain | — | C compiler for the strict-C99 gate |
-| Python | python3 | 3.14.7 | system | scripts |
+| Python | python3 | 3.14.7 locally; **CI pinned to 3.13** (`actions/setup-python@v5`); the code floor is 3.13 | system locally, GitHub action in CI | the scripts; `tools/lint.sh python` parses every file at the floor so a 3.14-only construct cannot land (AUD-017) |
 | Python | ruff | 0.16.7 | Homebrew (local), `python3 -m pip install --user ruff==0.16.7` in CI | formatter + linter (`--fix`); pinned by `tools/lint.sh`'s RUFF_PIN and installed by `.github/workflows/ci.yml` |
 | Python | pip-audit | missing | — | required only if a requirements/lock file exists; none does (AUDIT/baseline.md) |
 | JavaScript | node | v26.8.2 | system | plugin tests |

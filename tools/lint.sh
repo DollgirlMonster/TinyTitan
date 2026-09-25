@@ -500,6 +500,9 @@ check_shell_portability() {
 # skipping — a gate that quietly does nothing is the failure mode this check
 # exists to prevent.
 RUFF_PIN="0.16.7"
+# The oldest Python the scripts must run on; pyproject.toml's target-version is
+# the same number, and CI installs this interpreter for the gates.
+PYTHON_FLOOR="3.13"
 
 check_python() {
   echo "== python: ruff check + ruff format --check (pinned $RUFF_PIN) =="
@@ -530,7 +533,38 @@ check_python() {
     status=1
     return 1
   fi
-  echo "  ok (ruff $version, check and format clean)"
+  # The floor is enforced, not trusted: every script must PARSE under the pinned
+  # Python, not merely under whichever interpreter is on this Mac. Ruff's
+  # formatter rewrites to the target version's syntax (targeting 3.14 turned
+  # `except (A, B):` into PEP 758's `except A, B:`, a syntax error on 3.13), so
+  # the check is on the real files with the real floor.
+  if ! output="$(cd "$ROOT" && python3 - "$PYTHON_FLOOR" <<'PY' 2>&1
+import ast, pathlib, sys
+
+floor = tuple(int(part) for part in sys.argv[1].split("."))
+roots = [pathlib.Path("benchmark"), pathlib.Path("tools"), pathlib.Path("docs"),
+         pathlib.Path("AUDIT")]
+bad = []
+for root in roots:
+    for path in sorted(root.rglob("*.py")):
+        if ".build" in path.parts:
+            continue
+        try:
+            ast.parse(path.read_text(encoding="utf-8"), filename=str(path),
+                      feature_version=floor)
+        except SyntaxError as error:
+            bad.append(f"{path}:{error.lineno}: {error.msg}")
+if bad:
+    print("\n".join(bad))
+    sys.exit(1)
+PY
+)"; then
+    printf '%s\n' "$output" | tail -10
+    echo "  FAIL: a script does not parse under Python $PYTHON_FLOOR"
+    status=1
+    return 1
+  fi
+  echo "  ok (ruff $version, check and format clean, parses under $PYTHON_FLOOR)"
   return 0
 }
 

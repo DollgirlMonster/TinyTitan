@@ -255,7 +255,7 @@ def extract(text: str) -> dict:
                 continue
             try:
                 found[name] = float(value)
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 continue
         if found:
             return found

@@ -188,7 +188,7 @@ def resolve_api_model(port, *, timeout=5):
         ids = [row["id"] for row in data.get("data", []) if not row["id"].endswith("-fast")]
         if ids:
             return ids[0]
-    except OSError, ValueError, KeyError:
+    except (OSError, ValueError, KeyError):
         pass
     return DEFAULT_API_MODEL
 

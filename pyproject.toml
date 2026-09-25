@@ -2,7 +2,12 @@
 # Python here is test and glue code: the benchmark harnesses, the converter
 # scripts and the shell-adjacent helpers. One pinned configuration, so a rule
 # cannot be forgotten and a script cannot quietly opt out.
-target-version = "py314"
+# The floor the scripts must run on, and the version CI installs. It is NOT
+# "whatever this Mac has" (3.14.7 locally): targeting 3.14 lets ruff format
+# rewrite `except (A, B):` into PEP 758's `except A, B:`, which is a syntax
+# error on anything older. 3.13 keeps one code image for every supported
+# interpreter.
+target-version = "py313"
 line-length = 100
 # Build output only. Nothing under these is project source: `.build` is SwiftPM's
 # checkout directory (vendored packages) and `models/` is the 244 GB model store.

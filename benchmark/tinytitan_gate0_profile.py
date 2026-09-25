@@ -123,7 +123,7 @@ def idle_gpu_utilization() -> int | None:
             text=True,
             timeout=15,
         ).stdout
-    except OSError, subprocess.SubprocessError:
+    except (OSError, subprocess.SubprocessError):
         return None
     values = [int(m) for m in re.findall(r'"Device Utilization %"=(\d+)', out)]
     return max(values) if values else None
@@ -148,7 +148,7 @@ def machine_load() -> dict:
         out["busy_processes"] = [
             (c, n) for c, n in rows[:8] if c >= 25 and not any(m in n for m in mine)
         ]
-    except OSError, subprocess.SubprocessError:
+    except (OSError, subprocess.SubprocessError):
         out["busy_processes"] = []
     try:
         mp = subprocess.run(
@@ -156,7 +156,7 @@ def machine_load() -> dict:
         ).stdout
         m = re.search(r"free percentage:\s*(\d+)", mp)
         out["free_percent"] = int(m.group(1)) if m else None
-    except OSError, subprocess.SubprocessError:
+    except (OSError, subprocess.SubprocessError):
         out["free_percent"] = None
     try:
         sw = subprocess.run(
@@ -164,7 +164,7 @@ def machine_load() -> dict:
         ).stdout
         m = re.search(r"used\s*=\s*([0-9.]+)M", sw)
         out["swap_used_mb"] = float(m.group(1)) if m else None
-    except OSError, subprocess.SubprocessError:
+    except (OSError, subprocess.SubprocessError):
         out["swap_used_mb"] = None
     return out
 

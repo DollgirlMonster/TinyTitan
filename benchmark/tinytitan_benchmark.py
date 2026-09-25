@@ -69,7 +69,7 @@ def resolve_model_id(port):
         ids = [row["id"] for row in data.get("data", []) if not row["id"].endswith("-fast")]
         if ids:
             MODEL_ID = ids[0]
-    except OSError, ValueError, KeyError:
+    except (OSError, ValueError, KeyError):
         pass
     return MODEL_ID
 
@@ -134,7 +134,7 @@ def verify_response(prompt_capability, response):
         try:
             json.loads(response[response.find("{") : response.rfind("}") + 1])
             return True
-        except ValueError, IndexError:
+        except (ValueError, IndexError):
             return False
     if expected == "Semantic scoring":
         # Summarization prompt: "The server failed because its disk was full."

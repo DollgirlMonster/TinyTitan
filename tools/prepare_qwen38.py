@@ -636,7 +636,7 @@ def read_shard_header(path: Path) -> dict | None:
         return None
     try:
         header = json.loads(payload.decode("utf-8"))
-    except UnicodeDecodeError, json.JSONDecodeError:
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return None
     if not isinstance(header, dict):
         return None
@@ -649,7 +649,7 @@ def read_shard_header(path: Path) -> dict | None:
             return None
         try:
             end = max(end, int(offsets[1]))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return None
     return header if size == 8 + header_len + end else None
 
@@ -1005,7 +1005,7 @@ def read_json_file(path: Path) -> dict | None:
     """The JSON object in `path`, or None when it is absent or unreadable."""
     try:
         value = json.loads(path.read_text())
-    except OSError, json.JSONDecodeError:
+    except (OSError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
 
