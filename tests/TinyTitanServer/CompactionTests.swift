@@ -325,7 +325,13 @@ struct CompactionTests {
             let (_, response) = try await post(port, "/v1/responses", replay)
             #expect(response.statusCode == 200)
             let last = try #require(backend.log.requests.last)
-            #expect((last.messages.first?.content ?? "").contains("Decision: launch Tuesday."))
+            // The message is bound first rather than asserted inline: Testing's
+            // macro expansion of `#expect((a ?? "").contains(b))` emits the
+            // `contains` call as a statement and warns that its result is
+            // unused, which -warnings-as-errors would turn into a build
+            // failure. The assertion itself is unchanged.
+            let replayContent = last.messages.first?.content ?? ""
+            #expect(replayContent.contains("Decision: launch Tuesday."))
             #expect(last.messages.contains { ($0.content ?? "").contains("What did we decide?") })
         }
     }
