@@ -469,6 +469,55 @@ non-tensor constants today.
 
 ## 6. The 4-bit and 8-bit policy
 
+### 6.0 "Convert" and "re-quantize" are two different jobs
+
+They are easy to conflate, and the difference decides both the byte count and
+the amount of kernel work, so it is stated before the policy table.
+
+TinyTitan has exactly **one** weight format today. `dequant_affine.metal` binds
+`kAffineGroupSize = 64` and reads `uint` packed weights plus a `bfloat` scale
+**and a `bfloat` bias** per 64-wide group; its inner loop is
+`fma(scale, q0·x0 + q1·x1, fma(bias, x0 + x1, acc))`. Int4 and int8 share that
+kernel, and `Quantization.swift` records `scheme`, `scaleType`, `biasType` and
+`groupSize` per tensor. There is **no block-scaled FP8 decode and no FP4 E2M1
+decode anywhere in the runtime.**
+
+This checkpoint, however, is stored as FP8 E4M3 with an E8M0 power-of-two
+exponent per 32×32 block, and FP4 E2M1 packed two-per-byte with an E8M0 scale
+per 32 along K (§2). Neither is affine, and neither is a group-of-64 with a
+zero-point bias. So:
+
+| | **Path A — re-quantize** | **Path B — preserve the checkpoint's own quants** |
+| --- | --- | --- |
+| What the converter writes | affine int4/int8, group 64, scale+bias | the checkpoint's FP8 E4M3 + E8M0/32 blocks and packed FP4 E2M1 + E8M0/32, byte-for-byte as published |
+| Are the quants changed? | **Yes** — round-trip through BF16, then affine | **No** — the stored quantized values and scales are the model's own |
+| New runtime work | none beyond this port's non-quant parts; the existing GEMV kernels apply | **new decode/GEMV kernels** per format (block-FP8, packed-FP4), plus manifest `scheme` values and a per-tensor `scaleType` meaning "E8M0 exponent" |
+| Text-only size | ≈ **373 GB** (4-bit) / ≈ **532 GB** (8-bit) | ≈ **510 GB** — the checkpoint's own size, because nothing is re-encoded |
+| Yields the two-width pair? | yes: `…_4-Bit` and `…_8-Bit` | **no** — one install, at the model's own precision |
+| Parity with `inference/` | approximate; the gap mixes TinyTitan bugs with quantization loss | **exact** — same weights the reference reads, so a logit mismatch is a TinyTitan bug |
+| Fidelity ceiling | 4.25 / 8.25 effective bits | 8 bits dense, 4 bits experts, exactly as trained and evaluated |
+
+**Recommendation: Path B for the first build, for verifiability rather than for
+fidelity.** This project's documented worst failure is a silent format
+misread — `docs/gturbo-format.md`'s 8-bit tensors unpacked as 4-bit, where
+"every shape check passes, and the model answers fluently and wrongly". On a
+753 B model whose forward is already four new subsystems, adding an unmeasured
+re-quantization on top makes every debugging session ambiguous: a wrong logit
+could be the indexer, the engram gate, the shared KV publication, or the
+quantizer, and nothing distinguishes them. Preserving the quants removes one
+variable completely and makes the reference comparison meaningful. It also
+presumably answers the request as literally written — "converted but not
+changed in terms of quants" is Path B, and Path A is a re-quantization *to*
+4-bit and 8-bit rather than a conversion *from* something.
+
+The cost of Path B is real and should not be understated: two new weight-decode
+kernels, a manifest extension for non-affine schemes, and the loss of the
+per-width pair. If the intent was the pair — that every TinyTitan model is
+installed at both widths — then Path A is the answer and §6.0's table is the
+price. This is the decision §11 asks the owner to make.
+
+### 6.1 The re-quantized policy (Path A)
+
 TinyTitan's convention is that "k-bit" means the **routed-expert slot** is
 k-bit affine group 64, that every other tensor has a stated per-tensor width,
 and that the manifest records all of it (`docs/gturbo-format.md`, "slots *and*
@@ -503,7 +552,7 @@ separates "the runtime is wrong" from "the quantization is wrong", which is the
 failure mode this project has hit before (`docs/gturbo-format.md`: 8-bit
 tensors unpacked as 4-bit, "the model answers fluently and wrongly").
 
-### 6.1 Group alignment
+### 6.2 Group alignment
 
 `GROUP_SIZE = 64`, so every quantized last dimension must be a multiple of 64.
 The known hazard: `experts.*.w2` is stored `[5120, 1152]` as packed FP4, i.e.
@@ -513,7 +562,7 @@ or regroup explicitly rather than reshape and divide — `prepare_agentworld.py`
 raises `last dimension N is not group-aligned` exactly to catch this, and it
 will.
 
-### 6.2 Effective sizes, and the fact that neither width fits
+### 6.3 Effective sizes, and the fact that neither width fits
 
 Bytes computed from the verified sources: 271.8 B routed-expert weights,
 196.6 B Engram values (plus 100.7 B scale elements), everything else as tabled.
@@ -540,7 +589,7 @@ This is not a tuning problem; it is a storage and staging problem, and it should
 be settled by the operator before any download begins, exactly as
 `adding-a-model.md` insists for a 35B model.
 
-### 6.3 Runtime residency — the harder number
+### 6.4 Runtime residency — the harder number
 
 TinyTitan's GPU path holds a **resident** `model_weights.bin` mapped and streams
 only the routed experts through a bounded cache. Applying that split here:
@@ -562,7 +611,7 @@ regions (`index` + resident payload) and per-layer expert files; adding a third
 is a format change and must go through `GTurboBinary` as the single writer, as
 the format doc requires.
 
-### 6.4 What "4-bit and 8-bit" should mean in the catalog
+### 6.5 What "4-bit and 8-bit" should mean in the catalog
 
 Both builds share the same Engram policy, so the `routedExpert` slot carries the
 width distinction and `ManifestIdentity.weightBits` reads it, giving the API ids
@@ -647,8 +696,10 @@ Each phase has an exit condition; none of them is "it answers".
   `--plan` mode that fetches only `config.json` and the index, classifies every
   tensor into slots, prints the split per width, the bf16 keeps and the output
   size, and refuses on any last dimension that is not group-aligned. Also decide
-  and record the FP8/FP4→affine bridge here, because it determines the runtime
-  work.
+  and record the FP8/FP4→affine bridge here if Path A was chosen, because it
+  determines the runtime work. If Path B was chosen, this phase instead writes
+  the checkpoint's own FP8/FP4 blocks through unchanged, and the new decode
+  kernels move onto the critical path.
 - **Phase 2 — surrogate parity.** §8's synthetic checkpoint through the full
   forward, against the official reference. This is where the real schedule risk
   lives.
@@ -693,13 +744,18 @@ Each phase has an exit condition; none of them is "it answers".
 
 ## 11. Open questions for the owner
 
-1. **Storage.** Neither width fits in 292 GiB free, and peak conversion needs
+1. **Path A or Path B (§6.0).** Does "convert but do not change the quants"
+   mean preserve the checkpoint's FP8/FP4 format (one install, ≈ 510 GB, two new
+   decode kernels), or re-quantize into the affine 4-bit/8-bit pair the rest of
+   the catalog uses (≈ 373 / 532 GB, no new kernels, lossy round-trip)? The
+   document recommends Path B first for verifiability; the pair is lost if so.
+2. **Storage.** Neither width fits in 292 GiB free, and peak conversion needs
    ≈ 1.2 TB. Expand storage, convert on a different host, or descope?
-2. **Which width first** if spacing forces a choice. 4-bit is ≈ 373 GB against
-   8-bit's ≈ 532 GB.
-3. **Engram precision.** The recommendation is native FP8 (203 GB). Halving it
+3. **Which width first** if spacing forces a choice. 4-bit is ≈ 373 GB against
+   8-bit's ≈ 532 GB. (Path B has no widths to choose between.)
+4. **Engram precision.** The recommendation is native FP8 (203 GB). Halving it
    to 105 GB with 4-bit affine is possible and unmeasured; the owner's call.
-4. **Is a ≥ 1 TFLOP-scale model the intended target at all** on 24–128 GB
+5. **Is a ≥ 1 TFLOP-scale model the intended target at all** on 24–128 GB
    machines, given that this model's *resident* core plus Engram is already
    beyond the smaller end even with perfect expert streaming?
 
@@ -738,7 +794,9 @@ Modelled on `adding-a-model.md`, with every box unticked and the blockers named.
 - [ ] Chat template derived from `encoding/` and proven against its tests —
       **blocker for every other item**
 - [ ] Storage and staging settled (≥ 1.2 TB peak, or a different host)
-- [ ] FP8/FP4→affine bridge chosen and recorded (BF16 round-trip vs new kernels)
+- [ ] **Path A or Path B decided (§6.0)** — decide before Phase 1, because it
+      determines whether Phase 6 (decode kernels) is the critical path or is
+      absent entirely
 - [ ] Gating, pinned sha, geometry, rope block, tie-embeddings and EOS ids read
       from the source — **done, §1**
 - [ ] `--plan` classifies every tensor, no last dimension fails group alignment
