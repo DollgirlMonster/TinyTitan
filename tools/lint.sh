@@ -14,6 +14,7 @@
 #   shell-portability   scripts run on the system bash (3.2), not just the dev one
 #   shell-lint          shellcheck warnings-as-errors over every script, pinned version
 #   swiftlint           SwiftLint violations-as-errors under the committed config
+#   javascript          eslint + prettier --check over the plugin packages, pinned
 #   python              ruff check + ruff format --check under pyproject.toml,
 #                       with the pinned ruff version
 #
@@ -647,8 +648,80 @@ check_swiftlint() {
   return 0
 }
 
+# --- javascript -------------------------------------------------------------
+# The two DSH plugin packages are npm packages with no runtime dependencies.
+# ESLint and Prettier are pinned exactly in each package.json and locked in its
+# package-lock.json, so `npm ci` reproduces the toolchain byte-for-byte; this
+# gate FAILS when the installed versions differ from those pins instead of
+# skipping, and it fails when a package has no toolchain installed at all.
+ESLINT_PIN="10.11.0"
+PRETTIER_PIN="3.9.9"
+NODE_FLOOR="22"
+
+check_javascript() {
+  echo "== javascript: eslint + prettier --check over the plugin packages (pinned $ESLINT_PIN/$PRETTIER_PIN) =="
+  if ! command -v node >/dev/null 2>&1; then
+    echo "  FAIL: node is not installed; the plugin packages need Node $NODE_FLOOR or newer"
+    status=1
+    return 1
+  fi
+  local node_version node_major
+  node_version="$(node --version)"
+  node_major="${node_version#v}"
+  node_major="${node_major%%.*}"
+  if [ "$node_major" -lt "$NODE_FLOOR" ]; then
+    echo "  FAIL: node $node_version is installed, the packages declare engines.node >=$NODE_FLOOR"
+    status=1
+    return 1
+  fi
+  local package name eslint prettier version output checked=0
+  for package in "$ROOT"/plugins/dsh-*; do
+    [ -f "$package/package.json" ] || continue
+    name="$(basename "$package")"
+    eslint="$package/node_modules/.bin/eslint"
+    prettier="$package/node_modules/.bin/prettier"
+    if [ ! -x "$eslint" ] || [ ! -x "$prettier" ]; then
+      echo "  FAIL: $name has no installed toolchain; run: (cd ${package#"$ROOT"/} && npm ci)"
+      status=1
+      return 1
+    fi
+    version="$("$eslint" --version | tr -d 'v')"
+    if [ "$version" != "$ESLINT_PIN" ]; then
+      echo "  FAIL: $name has eslint $version, this gate pins $ESLINT_PIN"
+      status=1
+      return 1
+    fi
+    version="$("$prettier" --version)"
+    if [ "$version" != "$PRETTIER_PIN" ]; then
+      echo "  FAIL: $name has prettier $version, this gate pins $PRETTIER_PIN"
+      status=1
+      return 1
+    fi
+    if ! output="$(cd "$package" && "$eslint" . 2>&1)"; then
+      printf '%s\n' "$output" | head -20
+      echo "  FAIL: $name: eslint findings (fix: npm run lint, then npm run format)"
+      status=1
+      return 1
+    fi
+    if ! output="$(cd "$package" && "$prettier" --check . 2>&1)"; then
+      printf '%s\n' "$output" | head -20
+      echo "  FAIL: $name: formatting drift (fix: npm run format)"
+      status=1
+      return 1
+    fi
+    checked=$((checked + 1))
+    echo "  ok: $name (node $node_version, eslint $ESLINT_PIN, prettier $PRETTIER_PIN)"
+  done
+  if [ "$checked" -eq 0 ]; then
+    echo "  FAIL: no plugin package found under plugins/"
+    status=1
+    return 1
+  fi
+  return 0
+}
+
 case "$want" in
-  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_shellcheck; check_swiftlint; check_python ;;
+  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_shellcheck; check_swiftlint; check_javascript; check_python ;;
   force-cast)  check_force_cast ;;
   func-length) check_func_length ;;
   sendable)    check_unchecked_sendable ;;
@@ -657,8 +730,10 @@ case "$want" in
   shell)       check_shell_portability ;;
   shellcheck)  check_shellcheck ;;
   swiftlint)   check_swiftlint ;;
+  javascript)  check_javascript ;;
+  js)          check_javascript ;;
   python)      check_python ;;
-  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|shellcheck|swiftlint|python)" >&2; exit 2 ;;
+  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|shellcheck|swiftlint|javascript|python)" >&2; exit 2 ;;
 esac
 
 exit $status

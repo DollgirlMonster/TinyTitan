@@ -1,7 +1,7 @@
 # `dsh-lan-manager`
 
 A LAN-scoped management API for a DeepSeek Harness (`dsh`) host. It answers the
-question *"what is running on that Mac, and can I drive it from here?"* for a
+question _"what is running on that Mac, and can I drive it from here?"_ for a
 cluster of harness instances, without a GUI and without a third-party gateway.
 
 ```bash
@@ -13,20 +13,20 @@ curl -X POST http://127.0.0.1:3080/dsh-lan/prompt-all \
 
 ## What it does
 
-| # | Capability | Endpoint |
-|---|---|---|
-| 1 | List active workspaces — the ones the web page shows | `GET /dsh-lan/workspaces` |
-| 2 | List the visible sessions of a workspace | `GET /dsh-lan/workspaces/:id/sessions` · `GET /dsh-lan/sessions` |
-| 3 | Prompt one session | `POST /dsh-lan/prompt` |
-| 3a | Prompt **every** active session | `POST /dsh-lan/prompt-all` |
-| 3b | Read a session's messages back — the answers, not just the questions | `GET /dsh-lan/sessions/:id/messages` |
-| 4 | Delete a workspace (archiving its sessions first) | `POST /dsh-lan/workspaces/:id/delete` |
-| 5 | Archive a session | `POST /dsh-lan/sessions/:id/archive` |
-| 6 | Register an existing folder as a workspace | `POST /dsh-lan/workspaces` |
-| 6a | Start a session on a workspace, through the harness's own session controller | `POST /dsh-lan/sessions` |
-| 7 | The group: who else is running, and what they hold | `GET /dsh-lan/peers` · `GET /dsh-lan/peers/:id` |
-| 8 | One aggregate for a manager: this Mac **and** every member | `GET /dsh-lan/inventory` |
-| — | Liveness and the caller's fence verdict | `GET /dsh-lan/health` |
+| #   | Capability                                                                   | Endpoint                                                         |
+| --- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 1   | List active workspaces — the ones the web page shows                         | `GET /dsh-lan/workspaces`                                        |
+| 2   | List the visible sessions of a workspace                                     | `GET /dsh-lan/workspaces/:id/sessions` · `GET /dsh-lan/sessions` |
+| 3   | Prompt one session                                                           | `POST /dsh-lan/prompt`                                           |
+| 3a  | Prompt **every** active session                                              | `POST /dsh-lan/prompt-all`                                       |
+| 3b  | Read a session's messages back — the answers, not just the questions         | `GET /dsh-lan/sessions/:id/messages`                             |
+| 4   | Delete a workspace (archiving its sessions first)                            | `POST /dsh-lan/workspaces/:id/delete`                            |
+| 5   | Archive a session                                                            | `POST /dsh-lan/sessions/:id/archive`                             |
+| 6   | Register an existing folder as a workspace                                   | `POST /dsh-lan/workspaces`                                       |
+| 6a  | Start a session on a workspace, through the harness's own session controller | `POST /dsh-lan/sessions`                                         |
+| 7   | The group: who else is running, and what they hold                           | `GET /dsh-lan/peers` · `GET /dsh-lan/peers/:id`                  |
+| 8   | One aggregate for a manager: this Mac **and** every member                   | `GET /dsh-lan/inventory`                                         |
+| —   | Liveness and the caller's fence verdict                                      | `GET /dsh-lan/health`                                            |
 
 **The group.** Every instance shares one **group key** (a string, default
 `tinytitan-lan`, changeable) and discovers the others without being told where
@@ -42,10 +42,10 @@ validated against the same LAN/Tailscale allowlist the request fence uses before
 anything is dialled, and a member must answer with our group key to be listed.
 
 **Bonjour is browse-only, and on the pinned harness it is idle.** Nothing in this
-project registers `_dsh-lan._tcp`, and registering it would be a *false beacon*
+project registers `_dsh-lan._tcp`, and registering it would be a _false beacon_
 today: Bonjour advertises this host's **LAN** address, where nothing is listening,
-because the harness refuses to bind anything but loopback (see *Reaching it from
-another machine*). A peer that is discovered and then cannot be probed is worse than
+because the harness refuses to bind anything but loopback (see _Reaching it from
+another machine_). A peer that is discovered and then cannot be probed is worse than
 no peer, so the browser stays — it is correct, and it will find a third-party
 advertiser — and registration waits for a reachable bind. The plugin says so in the
 log at every mount.
@@ -198,8 +198,14 @@ The session's message history, which is what makes a fleet audit an audit:
   "returned": 40,
   "truncated": true,
   "messages": [
-    { "id": "m-40", "role": "assistant", "text": "all green", "textTruncated": false,
-      "reasoningChars": 1180, "otherBlocks": 2 }
+    {
+      "id": "m-40",
+      "role": "assistant",
+      "text": "all green",
+      "textTruncated": false,
+      "reasoningChars": 1180,
+      "otherBlocks": 2
+    }
   ]
 }
 ```
@@ -232,7 +238,7 @@ Start a live session on an existing workspace:
 The reply is `{ "sessionId": "session-…", "agentPreset": "standard" }`.
 
 Starting is **delegated to the harness's session controller** — the service named
-`sessionController`, *not* `sessions` (that is the raw `dsh-session` store, whose
+`sessionController`, _not_ `sessions` (that is the raw `dsh-session` store, whose
 `create(id, options)` mints a bare session and rejects this request shape) — and not
 reimplemented: that one call composes the agent's world from the preset, resolves the
 default model, creates the working directory, mints the id and attaches the session
@@ -316,40 +322,40 @@ done
 
 ## Configuration
 
-| Key | Env | Default | Meaning |
-|---|---|---|---|
-| `basePath` | `DSH_LAN_BASE_PATH` | `/dsh-lan` | Route prefix |
-| `groupKey` / `token` | `DSH_LAN_KEY`, `DSH_LAN_TOKEN` | `tinytitan-lan` | Group tag **and** the secret every request presents |
-| `peers` | `DSH_LAN_PEERS` | `[]` | Seed addresses (`host` or `host:port`) to try even when discovery finds nothing |
-| `discoveryIntervalSeconds` | `DSH_LAN_DISCOVERY_SECONDS` | `60` | How often the group is refreshed (minimum 5) |
-| `discoverTailscale` | — | `true` | Enumerate online tailnet peers that have an IPv4 address — macOS, Linux, Windows — from the Tailscale CLI |
-| `discoverBonjour` | — | `true` | Browse `_dsh-lan._tcp` through macOS `dns-sd` — browse only, and idle until something registers the service; the plugin registers none, on purpose |
-| `discoverSubnet` | — | `false` | Sweep each local `/24` on the peer port — the only source that touches hosts which never opted in |
-| `peerPort` | — | `3080` | The port other members answer on |
-| `probeTimeoutMs` | `DSH_LAN_PROBE_TIMEOUT` | `3000` | How long a peer probe waits — three seconds because a member may be on another continent |
-| `discoveryConcurrency` | — | `24` | How many peers are probed at once (socket connects) |
-| `resolveConcurrency` | `DSH_LAN_RESOLVE_CONCURRENCY` | `4` | How many hostnames are resolved at once — a stale name takes the full mDNS timeout (~5 s) |
-| `resolveTtlMs` | — | `300000` | How long an answer is reused, **including a failure**: a stale Bonjour name otherwise costs ~5 s every cycle |
-| `allowAddresses` | `DSH_LAN_ALLOW` | `[]` | Extra single hosts or CIDRs to admit |
-| `ipv4Networks` | — | loopback, RFC1918, link-local, CGNAT | Replace the IPv4 allowlist |
-| `ipv6Networks` | — | `::1/128`, `fc00::/7`, `fe80::/10` | Replace the IPv6 allowlist |
-| `trustedOrigins` | — | `[]` | Extra Origins accepted |
-| `allowPrivateOrigins` | — | `true` | Accept LAN Origins on mutations |
-| `enforceOrigin` | — | `true` | Check Origin on mutations at all |
-| `includeEmptyWorkspaces` | — | `false` | Show workspaces with no visible session |
-| `maxBodyBytes` | — | `262144` | Request body cap |
+| Key                        | Env                            | Default                              | Meaning                                                                                                                                            |
+| -------------------------- | ------------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `basePath`                 | `DSH_LAN_BASE_PATH`            | `/dsh-lan`                           | Route prefix                                                                                                                                       |
+| `groupKey` / `token`       | `DSH_LAN_KEY`, `DSH_LAN_TOKEN` | `tinytitan-lan`                      | Group tag **and** the secret every request presents                                                                                                |
+| `peers`                    | `DSH_LAN_PEERS`                | `[]`                                 | Seed addresses (`host` or `host:port`) to try even when discovery finds nothing                                                                    |
+| `discoveryIntervalSeconds` | `DSH_LAN_DISCOVERY_SECONDS`    | `60`                                 | How often the group is refreshed (minimum 5)                                                                                                       |
+| `discoverTailscale`        | —                              | `true`                               | Enumerate online tailnet peers that have an IPv4 address — macOS, Linux, Windows — from the Tailscale CLI                                          |
+| `discoverBonjour`          | —                              | `true`                               | Browse `_dsh-lan._tcp` through macOS `dns-sd` — browse only, and idle until something registers the service; the plugin registers none, on purpose |
+| `discoverSubnet`           | —                              | `false`                              | Sweep each local `/24` on the peer port — the only source that touches hosts which never opted in                                                  |
+| `peerPort`                 | —                              | `3080`                               | The port other members answer on                                                                                                                   |
+| `probeTimeoutMs`           | `DSH_LAN_PROBE_TIMEOUT`        | `3000`                               | How long a peer probe waits — three seconds because a member may be on another continent                                                           |
+| `discoveryConcurrency`     | —                              | `24`                                 | How many peers are probed at once (socket connects)                                                                                                |
+| `resolveConcurrency`       | `DSH_LAN_RESOLVE_CONCURRENCY`  | `4`                                  | How many hostnames are resolved at once — a stale name takes the full mDNS timeout (~5 s)                                                          |
+| `resolveTtlMs`             | —                              | `300000`                             | How long an answer is reused, **including a failure**: a stale Bonjour name otherwise costs ~5 s every cycle                                       |
+| `allowAddresses`           | `DSH_LAN_ALLOW`                | `[]`                                 | Extra single hosts or CIDRs to admit                                                                                                               |
+| `ipv4Networks`             | —                              | loopback, RFC1918, link-local, CGNAT | Replace the IPv4 allowlist                                                                                                                         |
+| `ipv6Networks`             | —                              | `::1/128`, `fc00::/7`, `fe80::/10`   | Replace the IPv6 allowlist                                                                                                                         |
+| `trustedOrigins`           | —                              | `[]`                                 | Extra Origins accepted                                                                                                                             |
+| `allowPrivateOrigins`      | —                              | `true`                               | Accept LAN Origins on mutations                                                                                                                    |
+| `enforceOrigin`            | —                              | `true`                               | Check Origin on mutations at all                                                                                                                   |
+| `includeEmptyWorkspaces`   | —                              | `false`                              | Show workspaces with no visible session                                                                                                            |
+| `maxBodyBytes`             | —                              | `262144`                             | Request body cap                                                                                                                                   |
 
 ## How it hangs together
 
-| File | Role |
-|---|---|
-| `src/index.js` | `apply()` — config, route registration, disposal, banner |
-| `src/router.js` | the three guards, routing, JSON bodies and responses |
-| `src/api.js` | the operations against `workspaceRegistry` / `agents` / `sessionController` / `sessionQuery`+`sessions` |
-| `src/net.js` | the address fence (pure, no I/O) |
-| `src/discovery.js` | Tailscale, Bonjour, seeds and subnet candidates (best-effort, never throws) |
-| `src/peers.js` | the peer table: validate, probe, gossip, expire, on a timer |
-| `src/config.js` | config and environment resolution |
+| File               | Role                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `src/index.js`     | `apply()` — config, route registration, disposal, banner                                                |
+| `src/router.js`    | the three guards, routing, JSON bodies and responses                                                    |
+| `src/api.js`       | the operations against `workspaceRegistry` / `agents` / `sessionController` / `sessionQuery`+`sessions` |
+| `src/net.js`       | the address fence (pure, no I/O)                                                                        |
+| `src/discovery.js` | Tailscale, Bonjour, seeds and subnet candidates (best-effort, never throws)                             |
+| `src/peers.js`     | the peer table: validate, probe, gossip, expire, on a timer                                             |
+| `src/config.js`    | config and environment resolution                                                                       |
 
 It reads harness services lazily through `ctx.get(...)` and imports no harness
 internals, so a harness upgrade cannot desynchronise it. The single dynamic import

@@ -72,7 +72,9 @@ export function registerRoute({
       log(`dsh-tinytitan: route refreshed from ${script} (${first})`);
       return { status: "written", script, detail: first };
     } catch (error) {
-      const detail = String(error?.stderr ?? error?.message ?? error).trim().split("\n")[0];
+      const detail = String(error?.stderr ?? error?.message ?? error)
+        .trim()
+        .split("\n")[0];
       log(`dsh-tinytitan: route refresh failed: ${detail}`);
       return { status: "failed", script, detail };
     }
@@ -82,9 +84,10 @@ export function registerRoute({
   // exists for; a repo that was found but carries no tool is reported the same
   // way, because neither can run the checkout tool.
   if (!selfContained) {
-    const why = repoFound === false
-      ? "no TinyTitan checkout found (set TINYTITAN_REPO or the repoRoot config)"
-      : `${script} is absent`;
+    const why =
+      repoFound === false
+        ? "no TinyTitan checkout found (set TINYTITAN_REPO or the repoRoot config)"
+        : `${script} is absent`;
     log(`dsh-tinytitan: ${why}; using the built-in route generator`);
   } else {
     log("dsh-tinytitan: selfContained is set; using the built-in route generator");
@@ -105,7 +108,9 @@ export function registerRoute({
       log,
     });
   } catch (error) {
-    const detail = String(error?.message ?? error).trim().split("\n")[0];
+    const detail = String(error?.message ?? error)
+      .trim()
+      .split("\n")[0];
     log(`dsh-tinytitan: route refresh failed: ${detail}`);
     return { status: "failed", detail };
   }

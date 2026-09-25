@@ -73,6 +73,18 @@ jobs:
             (cd "$plugin" && node --test test/*.test.js)
             echo "::endgroup::"
           done
+      - name: Install the pinned JS toolchain
+        # `tools/lint.sh`'s javascript gate needs each plugin package's own
+        # eslint/prettier and FAILS when they are missing or a different
+        # version, so CI installs them from the committed package-lock.json
+        # (`npm ci`, not `npm install`: the lockfile is the pin).
+        run: |
+          for plugin in plugins/dsh-*; do
+            [ -f "$plugin/package.json" ] || continue
+            echo "::group::$plugin"
+            (cd "$plugin" && npm ci --no-audit --no-fund)
+            echo "::endgroup::"
+          done
       - name: Build release products (0 warnings gate)
         run: |
           swift build -c release 2>&1 | tee /tmp/build.log

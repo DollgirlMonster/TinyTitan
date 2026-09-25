@@ -43,7 +43,10 @@ test("the shipped patch sets no field whose fallback is an environment variable"
 });
 
 test("both pinned fields now resolve from the environment", () => {
-  const resolved = resolveConfig({}, { DSH_LAN_BASE_PATH: "/fleet", DSH_LAN_DISCOVERY_SECONDS: "9" });
+  const resolved = resolveConfig(
+    {},
+    { DSH_LAN_BASE_PATH: "/fleet", DSH_LAN_DISCOVERY_SECONDS: "9" },
+  );
   assert.equal(resolved.basePath, "/fleet");
   assert.equal(resolved.discoveryIntervalSeconds, 9);
 });

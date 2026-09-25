@@ -111,9 +111,8 @@ function probeInstall(directory, env) {
   // A manifest that declares no known family was inferred from layer shape by
   // the server; the shape test needs the full arch, so an undeclared family is
   // read as the qwen3.6 default exactly as `peekIdentity` does.
-  const family = typeof declared === "string" && FAMILY_LEVELS[declared] !== undefined
-    ? declared
-    : "qwen36";
+  const family =
+    typeof declared === "string" && FAMILY_LEVELS[declared] !== undefined ? declared : "qwen36";
   if (MTP_FAMILIES.has(family)) {
     return { reason: `an MTP draft head (${family}), served only beside its target` };
   }
@@ -160,20 +159,22 @@ function probeSnapshot(directory) {
   }
   const bits = config?.quantization?.bits;
   if (!Number.isInteger(bits)) {
-    return { reason: "config.json has no quantization block; the CPU engine serves affine snapshots" };
+    return {
+      reason: "config.json has no quantization block; the CPU engine serves affine snapshots",
+    };
   }
   for (const required of ["model.safetensors.index.json", "tokenizer.json"]) {
     if (!existsSync(join(directory, required))) {
       return { reason: `incomplete snapshot: no ${required}` };
     }
   }
-  const declared = typeof config.model_id === "string" && config.model_id !== ""
-    ? config.model_id
-    : null;
+  const declared =
+    typeof config.model_id === "string" && config.model_id !== "" ? config.model_id : null;
   const id = declared ?? basename(directory);
-  const display = typeof config.display_name === "string" && config.display_name !== ""
-    ? config.display_name
-    : null;
+  const display =
+    typeof config.display_name === "string" && config.display_name !== ""
+      ? config.display_name
+      : null;
   return {
     model: {
       id,
@@ -205,11 +206,10 @@ function probe(directory, env) {
  * @returns `{ models, skipped }` — `models` is `--catalog`'s array, `skipped` is
  *   `{path, reason}` per directory that is not a model, for the caller to log.
  */
-export function scanModelsFolder(directory, {
-  env = process.env,
-  readdir = readdirSync,
-  stat = statSync,
-} = {}) {
+export function scanModelsFolder(
+  directory,
+  { env = process.env, readdir = readdirSync, stat = statSync } = {},
+) {
   const models = [];
   const skipped = [];
   let children;
@@ -223,13 +223,13 @@ export function scanModelsFolder(directory, {
     // `.skipsHiddenFiles`; a symlinked install is served from where it lives.
     if (name.startsWith(".")) continue;
     const child = join(directory, name);
-    let isDirectory = false;
+    let childStat;
     try {
-      isDirectory = stat(child).isDirectory();
+      childStat = stat(child);
     } catch {
       continue;
     }
-    if (!isDirectory) continue;
+    if (!childStat.isDirectory()) continue;
     const probed = probe(child, env);
     if (probed.model === undefined) {
       skipped.push({ path: child, reason: probed.reason });
@@ -241,8 +241,16 @@ export function scanModelsFolder(directory, {
     }
     models.push(probed.model);
   }
-  models.sort((lhs, rhs) => (lhs.backend === rhs.backend
-    ? (lhs.id < rhs.id ? -1 : lhs.id > rhs.id ? 1 : 0)
-    : (lhs.backend === "gpu" ? -1 : 1)));
+  models.sort((lhs, rhs) =>
+    lhs.backend === rhs.backend
+      ? lhs.id < rhs.id
+        ? -1
+        : lhs.id > rhs.id
+          ? 1
+          : 0
+      : lhs.backend === "gpu"
+        ? -1
+        : 1,
+  );
   return { models, skipped };
 }

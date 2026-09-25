@@ -71,6 +71,17 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Install the pinned JS toolchain
+        # The javascript gate needs each plugin's eslint/prettier from its
+        # committed package-lock.json and fails when they are absent.
+        run: |
+          for plugin in plugins/dsh-*; do
+            [ -f "$plugin/package.json" ] || continue
+            echo "::group::$plugin"
+            (cd "$plugin" && npm ci --no-audit --no-fund)
+            echo "::endgroup::"
+          done
+
       - name: Clean release build (zero-warning gate)
         run: |
           swift build -c release 2>&1 | tee /tmp/build.log
@@ -79,7 +90,7 @@ jobs:
             exit 1
           fi
 
-      - name: Production gates (all nine)
+      - name: Production gates (all ten)
         run: tools/lint.sh
 
       - name: Full suite with coverage

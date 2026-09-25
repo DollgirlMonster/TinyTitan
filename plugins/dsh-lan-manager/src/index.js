@@ -26,7 +26,7 @@
  */
 import { hostname } from "node:os";
 
-import { resolveConfig, localAddresses, DEFAULT_BASE_PATH } from "./config.js";
+import { resolveConfig, localAddresses } from "./config.js";
 import { resolveMessageFactory } from "./api.js";
 import { BONJOUR_SERVICE } from "./discovery.js";
 import { dshVersion, pluginVersion, supportDecision } from "./versions.js";
@@ -35,11 +35,7 @@ import { createHandler } from "./router.js";
 
 export { DEFAULT_BASE_PATH, localAddresses, parseList, resolveConfig } from "./config.js";
 export { SUPPORTED_DSH_VERSION, dshVersion, pluginVersion, supportDecision } from "./versions.js";
-export {
-  DEFAULT_GROUP_KEY,
-  DEFAULT_DISCOVERY_SECONDS,
-  DEFAULT_PEER_PORT,
-} from "./config.js";
+export { DEFAULT_GROUP_KEY, DEFAULT_DISCOVERY_SECONDS, DEFAULT_PEER_PORT } from "./config.js";
 export {
   BONJOUR_SERVICE,
   bonjourPeers,
@@ -136,9 +132,9 @@ export function apply(ctx, config = {}) {
   const resolved = resolveConfig(config);
   const log = resolved.logToHost
     ? (message) => {
-      if (typeof ctx?.logger?.info === "function") ctx.logger.info(message);
-      else console.log(message);
-    }
+        if (typeof ctx?.logger?.info === "function") ctx.logger.info(message);
+        else console.log(message);
+      }
     : () => {};
 
   // Read through `ctx.get`: a plain `ctx.webServer` property access throws
@@ -268,8 +264,10 @@ export function apply(ctx, config = {}) {
  */
 export function bonjourIdleNotice(config) {
   if (config?.discoverBonjour === false) return null;
-  return `dsh-lan-manager: Bonjour is browsing ${BONJOUR_SERVICE} and nothing registers ` +
-    "it, so the LAN source will find nothing until the harness can serve a reachable address";
+  return (
+    `dsh-lan-manager: Bonjour is browsing ${BONJOUR_SERVICE} and nothing registers ` +
+    "it, so the LAN source will find nothing until the harness can serve a reachable address"
+  );
 }
 
 /**

@@ -114,12 +114,13 @@ export function apply(ctx, config = {}) {
     refuse(ctx, config, decision.refusal);
     return { refused: true, version: harness };
   }
-  const log = typeof config.log === "function"
-    ? config.log
-    : (message) => {
-      if (typeof ctx?.logger?.info === "function") ctx.logger.info(message);
-      else console.log(message);
-    };
+  const log =
+    typeof config.log === "function"
+      ? config.log
+      : (message) => {
+          if (typeof ctx?.logger?.info === "function") ctx.logger.info(message);
+          else console.log(message);
+        };
   const resolved = resolveConfig(config);
   // A read-only home, a missing checkout or a failed write must not take the
   // profile down: the harness still works, only this convenience does not.
@@ -127,14 +128,18 @@ export function apply(ctx, config = {}) {
     try {
       registerRoute({ ...resolved, log });
     } catch (error) {
-      log(`dsh-tinytitan: route registration threw: ${error instanceof Error ? error.message : error}`);
+      log(
+        `dsh-tinytitan: route registration threw: ${error instanceof Error ? error.message : error}`,
+      );
     }
   }
   if (resolved.writeCompactionPreset) {
     try {
       ensureCompactionPreset({ ...resolved, log });
     } catch (error) {
-      log(`dsh-tinytitan: compaction preset threw: ${error instanceof Error ? error.message : error}`);
+      log(
+        `dsh-tinytitan: compaction preset threw: ${error instanceof Error ? error.message : error}`,
+      );
     }
   }
   // Boot writes the route once; a folder that changes during the session has to
@@ -143,7 +148,9 @@ export function apply(ctx, config = {}) {
   if (resolved.registerRoute && resolved.watchModels) {
     try {
       const modelsDir = findModelsDir({
-        explicit: resolved.modelsDir, env: process.env, repoRoot: resolved.repoRoot,
+        explicit: resolved.modelsDir,
+        env: process.env,
+        repoRoot: resolved.repoRoot,
       });
       const handle = watchModels({
         modelsDir,

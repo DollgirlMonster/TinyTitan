@@ -108,7 +108,10 @@ export function localAddresses() {
 export function parseList(value) {
   if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
   if (typeof value !== "string") return [];
-  return value.split(/[,\s]+/).map((v) => v.trim()).filter(Boolean);
+  return value
+    .split(/[,\s]+/)
+    .map((v) => v.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -125,20 +128,16 @@ export function resolveConfig(raw = {}, env = process.env) {
 
   // The group key and the door key are the same string; `token` is kept as the
   // name the router reads so existing callers do not have to know both.
-  const groupRaw = raw.groupKey ?? raw.token
-    ?? env.DSH_LAN_KEY ?? env.DSH_LAN_TOKEN
-    ?? DEFAULT_GROUP_KEY;
+  const groupRaw =
+    raw.groupKey ?? raw.token ?? env.DSH_LAN_KEY ?? env.DSH_LAN_TOKEN ?? DEFAULT_GROUP_KEY;
   const groupKey = groupRaw === null || groupRaw === undefined ? "" : String(groupRaw);
 
   const intervalRaw = raw.discoveryIntervalSeconds ?? env.DSH_LAN_DISCOVERY_SECONDS;
   const interval = Number(intervalRaw);
-  const discoveryIntervalSeconds = Number.isFinite(interval) && interval >= 5
-    ? Math.floor(interval)
-    : DEFAULT_DISCOVERY_SECONDS;
+  const discoveryIntervalSeconds =
+    Number.isFinite(interval) && interval >= 5 ? Math.floor(interval) : DEFAULT_DISCOVERY_SECONDS;
 
-  const allowAddresses = [
-    ...parseList(raw.allowAddresses ?? env.DSH_LAN_ALLOW ?? ""),
-  ];
+  const allowAddresses = [...parseList(raw.allowAddresses ?? env.DSH_LAN_ALLOW ?? "")];
 
   return {
     version: raw.version ?? null,
@@ -153,9 +152,8 @@ export function resolveConfig(raw = {}, env = process.env) {
     allowPrivateOrigins: raw.allowPrivateOrigins !== false,
     enforceOrigin: raw.enforceOrigin !== false,
     includeEmptyWorkspaces: raw.includeEmptyWorkspaces === true,
-    maxBodyBytes: Number.isInteger(raw.maxBodyBytes) && raw.maxBodyBytes > 0
-      ? raw.maxBodyBytes
-      : undefined,
+    maxBodyBytes:
+      Number.isInteger(raw.maxBodyBytes) && raw.maxBodyBytes > 0 ? raw.maxBodyBytes : undefined,
     logToHost: raw.logToHost !== false,
     // --- fleet discovery -----------------------------------------------------
     // Seeded peers always count; the sources below add to them. A subnet sweep
@@ -166,22 +164,23 @@ export function resolveConfig(raw = {}, env = process.env) {
     discoverTailscale: raw.discoverTailscale !== false,
     discoverBonjour: raw.discoverBonjour !== false,
     discoverSubnet: raw.discoverSubnet === true,
-    peerPort: Number.isInteger(raw.peerPort) && raw.peerPort > 0
-      ? raw.peerPort
-      : DEFAULT_PEER_PORT,
+    peerPort: Number.isInteger(raw.peerPort) && raw.peerPort > 0 ? raw.peerPort : DEFAULT_PEER_PORT,
     // A tailnet peer can be on another continent. On a direct WireGuard path it
     // answers in tens of milliseconds, but a relayed (DERP) or busy one is
     // slower than the 2 s that would do on a LAN, and a timed-out probe looks
     // exactly like a machine that is not running a harness.
     probeTimeoutMs: probeTimeout(env, raw),
-    discoveryConcurrency: Number.isInteger(raw.discoveryConcurrency) && raw.discoveryConcurrency > 0
-      ? raw.discoveryConcurrency
-      : DEFAULT_DISCOVERY_CONCURRENCY,
-    resolveConcurrency: positive(env.DSH_LAN_RESOLVE_CONCURRENCY, raw.resolveConcurrency)
-      ?? DEFAULT_RESOLVE_CONCURRENCY,
-    resolveTtlMs: Number.isInteger(raw.resolveTtlMs) && raw.resolveTtlMs >= 0
-      ? raw.resolveTtlMs
-      : DEFAULT_RESOLVE_TTL_MS,
+    discoveryConcurrency:
+      Number.isInteger(raw.discoveryConcurrency) && raw.discoveryConcurrency > 0
+        ? raw.discoveryConcurrency
+        : DEFAULT_DISCOVERY_CONCURRENCY,
+    resolveConcurrency:
+      positive(env.DSH_LAN_RESOLVE_CONCURRENCY, raw.resolveConcurrency) ??
+      DEFAULT_RESOLVE_CONCURRENCY,
+    resolveTtlMs:
+      Number.isInteger(raw.resolveTtlMs) && raw.resolveTtlMs >= 0
+        ? raw.resolveTtlMs
+        : DEFAULT_RESOLVE_TTL_MS,
   };
 }
 

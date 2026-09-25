@@ -121,7 +121,11 @@ export function toContent(prompt) {
     return [{ type: "text", text }];
   }
   if (Array.isArray(prompt) && prompt.length > 0) return prompt;
-  throw new ApiError(Failure.BAD_REQUEST, "prompt must be a string or a non-empty block array", 400);
+  throw new ApiError(
+    Failure.BAD_REQUEST,
+    "prompt must be a string or a non-empty block array",
+    400,
+  );
 }
 
 /**
@@ -132,7 +136,11 @@ export function toContent(prompt) {
 export function registry(ctx) {
   const service = ctx?.get?.("workspaceRegistry");
   if (!service || typeof service.list !== "function") {
-    throw new ApiError(Failure.NO_REGISTRY, "workspaceRegistry service is not composed in this profile", 503);
+    throw new ApiError(
+      Failure.NO_REGISTRY,
+      "workspaceRegistry service is not composed in this profile",
+      503,
+    );
   }
   return service;
 }
@@ -249,10 +257,11 @@ function groupVisibleSessions(ctx) {
   // `sessionCacheDir` is an override for tests and for a caller that keeps the
   // projection somewhere other than the default home.
   const home = process.env.DSH_HOME || `${process.env.HOME}/.dsh`;
-  const dir = ctxOverrides.get(ctx)?.sessionCacheDir ?? `${home}/storages/session_projcache/sessions`;
+  const dir =
+    ctxOverrides.get(ctx)?.sessionCacheDir ?? `${home}/storages/session_projcache/sessions`;
   const groups = new Map();
 
-  let entries = [];
+  let entries;
   try {
     entries = readdirSync(dir).filter((name) => name.endsWith(".json"));
   } catch {
@@ -464,13 +473,22 @@ function renderMessageContent(content) {
   let otherBlocks = 0;
   const blocks = Array.isArray(content)
     ? content
-    : (typeof content === "string" ? [{ type: "text", text: content }] : []);
+    : typeof content === "string"
+      ? [{ type: "text", text: content }]
+      : [];
   for (const block of blocks) {
-    if (typeof block === "string") { text.push(block); continue; }
+    if (typeof block === "string") {
+      text.push(block);
+      continue;
+    }
     if (!block || typeof block !== "object") continue;
     const type = String(block.type ?? "");
-    const body = typeof block.text === "string" ? block.text
-      : (typeof block.content === "string" ? block.content : "");
+    const body =
+      typeof block.text === "string"
+        ? block.text
+        : typeof block.content === "string"
+          ? block.content
+          : "";
     if (type === "text" && body !== "") text.push(body);
     else if ((type === "thinking" || type === "reasoning") && body !== "") reasoning.push(body);
     else otherBlocks += 1;
@@ -569,7 +587,11 @@ export async function readSessionMessages(ctx, sessionId, options = {}) {
   if (agent) {
     const session = agent.session;
     if (!session || typeof session.deriveMessages !== "function") {
-      throw new ApiError(Failure.NO_AGENTS, "the agent for this session does not expose its history", 503);
+      throw new ApiError(
+        Failure.NO_AGENTS,
+        "the agent for this session does not expose its history",
+        503,
+      );
     }
     derived = session.deriveMessages() ?? [];
   } else {
@@ -651,12 +673,12 @@ export function promptSession(ctx, sessionId, prompt, factory) {
  */
 export function promptAllActive(ctx, prompt, factory, options = {}) {
   const { sessions } = listAllActiveSessions(ctx);
-  const wanted = Array.isArray(options.sessionIds) && options.sessionIds.length > 0
-    ? sessions.filter((s) => options.sessionIds.includes(s.sessionId))
-    : sessions;
-  const capped = Number.isInteger(options.limit) && options.limit > 0
-    ? wanted.slice(0, options.limit)
-    : wanted;
+  const wanted =
+    Array.isArray(options.sessionIds) && options.sessionIds.length > 0
+      ? sessions.filter((s) => options.sessionIds.includes(s.sessionId))
+      : sessions;
+  const capped =
+    Number.isInteger(options.limit) && options.limit > 0 ? wanted.slice(0, options.limit) : wanted;
 
   const delivered = [];
   const failed = [];
@@ -685,8 +707,11 @@ export async function archiveSession(ctx, sessionId) {
   if (typeof reg.archiveSession !== "function") {
     throw new ApiError(Failure.NO_REGISTRY, "this harness does not expose archiveSession", 503);
   }
-  const exists = reg.list().some((w) => (w.sessionIds ?? []).map(String).includes(String(sessionId)));
-  if (!exists) throw new ApiError(Failure.NOT_FOUND, `no session ${sessionId} in any workspace`, 404);
+  const exists = reg
+    .list()
+    .some((w) => (w.sessionIds ?? []).map(String).includes(String(sessionId)));
+  if (!exists)
+    throw new ApiError(Failure.NOT_FOUND, `no session ${sessionId} in any workspace`, 404);
   await reg.archiveSession(sessionId);
   return { sessionId, archived: true };
 }
@@ -713,7 +738,10 @@ export async function deleteWorkspace(ctx, workspaceId, options = {}) {
         await reg.archiveSession(id);
         archived.push(id);
       } catch (error) {
-        archiveFailures.push({ sessionId: id, message: error instanceof Error ? error.message : String(error) });
+        archiveFailures.push({
+          sessionId: id,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
@@ -810,7 +838,11 @@ export async function createWorkspace(ctx, selector = {}) {
   } catch (error) {
     // `create` throws for a missing directory and for a path that is a file;
     // both are the caller's to fix, so they are a 400 and not a 500.
-    throw new ApiError(Failure.BAD_REQUEST, error instanceof Error ? error.message : String(error), 400);
+    throw new ApiError(
+      Failure.BAD_REQUEST,
+      error instanceof Error ? error.message : String(error),
+      400,
+    );
   }
   return {
     workspaceId: String(workspace?.id ?? ""),

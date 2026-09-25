@@ -58,8 +58,7 @@ export function createAuxiliaryQuietCompaction(Base) {
     async summarize(input, agent, signal) {
       const ctx = this.ctx;
       const llm = Object.create(ctx.llm);
-      llm.stream = (options, ...rest) =>
-        ctx.llm.stream(auxiliaryThinkingOff(options), ...rest);
+      llm.stream = (options, ...rest) => ctx.llm.stream(auxiliaryThinkingOff(options), ...rest);
       const quiet = Object.create(ctx);
       quiet.llm = llm;
       this.ctx = quiet;

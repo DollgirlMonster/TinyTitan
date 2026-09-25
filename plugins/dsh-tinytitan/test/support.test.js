@@ -31,13 +31,17 @@ import {
 const MANIFEST = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 /** The harness packages this plugin declares. */
-const DSH_PEERS = [
-  "@deepseek-ai/dsh-compaction-basic",
-  "@deepseek-ai/dsh-agent-presets",
-];
+const DSH_PEERS = ["@deepseek-ai/dsh-compaction-basic", "@deepseek-ai/dsh-agent-presets"];
 
 /** A version we positively read as *not* the supported one. */
-const OTHER_VERSIONS = ["0.1.5-rc.2", "0.1.6-alpha.1", "0.1.6-alpha.3", "0.1.6-rc.1", "0.1.6", "0.0.0-development"];
+const OTHER_VERSIONS = [
+  "0.1.5-rc.2",
+  "0.1.6-alpha.1",
+  "0.1.6-alpha.3",
+  "0.1.6-rc.1",
+  "0.1.6",
+  "0.0.0-development",
+];
 
 /** Run `apply` under `version`, with every side effect off, capturing both sinks. */
 function applyAs(version, config = {}) {
@@ -49,13 +53,16 @@ function applyAs(version, config = {}) {
   if (version === undefined) delete process.env.DSH_VERSION;
   else process.env.DSH_VERSION = version;
   try {
-    const result = apply({}, {
-      registerRoute: false,
-      writeCompactionPreset: false,
-      watchModels: false,
-      log: (message) => lines.push(String(message)),
-      ...config,
-    });
+    const result = apply(
+      {},
+      {
+        registerRoute: false,
+        writeCompactionPreset: false,
+        watchModels: false,
+        log: (message) => lines.push(String(message)),
+        ...config,
+      },
+    );
     return { lines, result, stderr };
   } finally {
     console.error = realError;
@@ -132,7 +139,9 @@ test("a refusal reaches stderr and the host error channel, never info", () => {
   const stderr = [];
   const realError = console.error;
   console.error = (m) => stderr.push(String(m));
-  const ctx = { logger: { info: (m) => infos.push(String(m)), error: (m) => errors.push(String(m)) } };
+  const ctx = {
+    logger: { info: (m) => infos.push(String(m)), error: (m) => errors.push(String(m)) },
+  };
   const previous = process.env.DSH_VERSION;
   process.env.DSH_VERSION = "0.1.6";
   try {
@@ -178,7 +187,10 @@ test("the harness package is found by walking up from its own entry point", () =
   const root = mkdtempSync(join(tmpdir(), "dsh-tinytitan-support-"));
   const harness = join(root, "node_modules", "@deepseek-ai", "dsh");
   mkdirSync(join(harness, "lib"), { recursive: true });
-  writeFileSync(join(harness, "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: "7.7.7" }));
+  writeFileSync(
+    join(harness, "package.json"),
+    JSON.stringify({ name: "@deepseek-ai/dsh", version: "7.7.7" }),
+  );
   assert.equal(packageFrom(join(harness, "lib", "bin.js"), "@deepseek-ai/dsh")?.version, "7.7.7");
   assert.equal(packageFrom(join(harness, "lib", "bin.js"), "some-other-package"), undefined);
 });
@@ -188,26 +200,43 @@ test("the harness is found beside the peer this plugin declares", () => {
   const scope = join(root, "node_modules", "@deepseek-ai");
   mkdirSync(join(scope, "dsh"), { recursive: true });
   mkdirSync(join(scope, "dsh-compaction-basic", "lib"), { recursive: true });
-  writeFileSync(join(scope, "dsh", "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: "8.8.8" }));
-  writeFileSync(join(scope, "dsh-compaction-basic", "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh-compaction-basic" }));
+  writeFileSync(
+    join(scope, "dsh", "package.json"),
+    JSON.stringify({ name: "@deepseek-ai/dsh", version: "8.8.8" }),
+  );
+  writeFileSync(
+    join(scope, "dsh-compaction-basic", "package.json"),
+    JSON.stringify({ name: "@deepseek-ai/dsh-compaction-basic" }),
+  );
   const anchor = join(scope, "dsh-compaction-basic", "lib", "index.js");
   writeFileSync(anchor, "");
   assert.equal(siblingPackage(anchor, "dsh")?.version, "8.8.8");
 
-  const load = { resolve: (specifier) => {
-    if (specifier !== "@deepseek-ai/dsh-compaction-basic") throw new Error(`unexpected ${specifier}`);
-    return anchor;
-  } };
+  const load = {
+    resolve: (specifier) => {
+      if (specifier !== "@deepseek-ai/dsh-compaction-basic")
+        throw new Error(`unexpected ${specifier}`);
+      return anchor;
+    },
+  };
   assert.equal(dshVersion({ require: load, env: {}, argv: [] }), "8.8.8");
 });
 
 test("nothing is claimed when no anchor resolves", () => {
-  const load = { resolve: () => { throw new Error("not resolvable"); } };
+  const load = {
+    resolve: () => {
+      throw new Error("not resolvable");
+    },
+  };
   assert.equal(dshVersion({ require: load, env: {}, argv: [] }), null);
 });
 
 test("the plugin's config still resolves with the route and preset switches off", () => {
-  const resolved = resolveConfig({ registerRoute: false, writeCompactionPreset: false, watchModels: false });
+  const resolved = resolveConfig({
+    registerRoute: false,
+    writeCompactionPreset: false,
+    watchModels: false,
+  });
   assert.equal(resolved.registerRoute, false);
   assert.equal(resolved.writeCompactionPreset, false);
   assert.equal(resolved.watchModels, false);

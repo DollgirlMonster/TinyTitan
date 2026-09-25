@@ -20,10 +20,21 @@ import {
 const TAILSCALE_JSON = JSON.stringify({
   Self: { HostName: "macbook-ab", OS: "macOS", TailscaleIPs: ["100.114.69.1"] },
   Peer: {
-    a: { HostName: "Node3", OS: "macOS", Online: true, TailscaleIPs: ["100.114.69.128", "fd7a::1"] },
+    a: {
+      HostName: "Node3",
+      OS: "macOS",
+      Online: true,
+      TailscaleIPs: ["100.114.69.128", "fd7a::1"],
+    },
     b: { HostName: "Ternak", OS: "macOS", Online: false, TailscaleIPs: ["100.75.83.5"] },
     c: { HostName: "windows-box", OS: "windows", Online: true, TailscaleIPs: ["100.75.83.9"] },
-    d: { HostName: "Maria", OS: "macOS", Online: true, DNSName: "maria.tail.ts.net.", TailscaleIPs: ["100.80.66.66"] },
+    d: {
+      HostName: "Maria",
+      OS: "macOS",
+      Online: true,
+      DNSName: "maria.tail.ts.net.",
+      TailscaleIPs: ["100.80.66.66"],
+    },
     e: { HostName: "v6only", OS: "macOS", Online: true, TailscaleIPs: ["fd7a:115c:a1e0::5"] },
     f: { HostName: "fra-dc-01", OS: "linux", Online: true, TailscaleIPs: ["100.101.5.9"] },
     g: { HostName: "phone", OS: "iOS", Online: true, TailscaleIPs: ["100.99.9.9"] },
@@ -34,12 +45,15 @@ test("tailscale peers: every online host, whatever continent or OS it runs", () 
   // A tailnet spans datacenters, so a Linux box in Frankfurt is a member just
   // like the Mac next to you. Filtering to macOS here once hid every one of them.
   const peers = parseTailscalePeers(TAILSCALE_JSON);
-  assert.deepEqual(peers.map((p) => p.address), [
-    "100.114.69.128", // macOS, online
-    "100.75.83.9", // windows, online
-    "100.80.66.66", // macOS, reached by DNSName
-    "100.101.5.9", // linux in a datacenter — the case that was missed
-  ]);
+  assert.deepEqual(
+    peers.map((p) => p.address),
+    [
+      "100.114.69.128", // macOS, online
+      "100.75.83.9", // windows, online
+      "100.80.66.66", // macOS, reached by DNSName
+      "100.101.5.9", // linux in a datacenter — the case that was missed
+    ],
+  );
   assert.equal(peers[0].name, "Node3");
   assert.ok(peers.every((p) => p.source === "tailscale"));
   assert.ok(!peers.some((p) => p.name === "Ternak"), "offline peers are skipped");
@@ -51,7 +65,12 @@ test("geography does not matter to the fence: every tailnet address is admitted"
   const { checkAddress } = await import("../src/net.js");
   // Tailscale addresses are CGNAT (100.64/10) or ULA (fd7a::), both inside the
   // allowlist, so a peer in another datacenter passes exactly like the Mac here.
-  for (const address of ["100.101.5.9", "100.88.7.7", "100.114.69.128", "fd7a:115c:a1e0::7f01:45af"]) {
+  for (const address of [
+    "100.101.5.9",
+    "100.88.7.7",
+    "100.114.69.128",
+    "fd7a:115c:a1e0::7f01:45af",
+  ]) {
     assert.equal(checkAddress(address).allowed, true, address);
   }
 });
@@ -105,7 +124,7 @@ test("seeds accept host and host:port", () => {
 
 test("tailscale discovery falls back to the app bundle path", async () => {
   const calls = [];
-  const exec = async (file, args) => {
+  const exec = async (file) => {
     calls.push(file);
     if (file === "tailscale") return { stdout: "", ok: false };
     return { stdout: TAILSCALE_JSON, ok: true };
@@ -119,12 +138,20 @@ test("bonjour discovery resolves every browsed instance", async () => {
   const exec = async (file, args) => {
     assert.equal(file, "dns-sd");
     if (args[0] === "-B") {
-      return { stdout: "10:41:05.123  Add        3  4 local.               _dsh-lan._tcp.       Node3", ok: false };
+      return {
+        stdout: "10:41:05.123  Add        3  4 local.               _dsh-lan._tcp.       Node3",
+        ok: false,
+      };
     }
-    return { stdout: "Node3._dsh-lan._tcp.local. can be reached at Node3.local.:3080 (interface 4)", ok: false };
+    return {
+      stdout: "Node3._dsh-lan._tcp.local. can be reached at Node3.local.:3080 (interface 4)",
+      ok: false,
+    };
   };
   const peers = await bonjourPeers({ exec });
-  assert.deepEqual(peers, [{ address: "Node3.local", port: 3080, name: "Node3", source: "bonjour" }]);
+  assert.deepEqual(peers, [
+    { address: "Node3.local", port: 3080, name: "Node3", source: "bonjour" },
+  ]);
 });
 
 test("discoverCandidates unions the enabled sources and de-duplicates", async () => {
@@ -159,5 +186,8 @@ test("discoverCandidates survives a source that blows up", async () => {
     config: { peerPort: 3080, peers: ["10.0.0.5"], discoverTailscale: true, discoverBonjour: true },
     exec,
   });
-  assert.deepEqual(found.map((c) => c.address), ["10.0.0.5"]);
+  assert.deepEqual(
+    found.map((c) => c.address),
+    ["10.0.0.5"],
+  );
 });

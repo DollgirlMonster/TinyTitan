@@ -20,15 +20,16 @@ import { SUPPORTED_DSH_VERSION } from "../src/versions.js";
 function mountingContext(lines) {
   const state = { registered: [], effectCleanup: null, disposeHandlers: [] };
   const ctx = {
-    get: (name) => (name === "webServer"
-      ? {
-        port: 3080,
-        register: (options) => {
-          state.registered.push(options);
-          return () => lines.push("route disposed");
-        },
-      }
-      : undefined),
+    get: (name) =>
+      name === "webServer"
+        ? {
+            port: 3080,
+            register: (options) => {
+              state.registered.push(options);
+              return () => lines.push("route disposed");
+            },
+          }
+        : undefined,
     effect: (register) => {
       state.effectCleanup = register();
     },
@@ -43,6 +44,13 @@ function mountingContext(lines) {
   return { ctx, state };
 }
 
+/** Put `process.env[name]` back the way it was. Synchronous on purpose: the
+ *  assignment must not sit across the `await` in `onSupportedHarness`. */
+function restoreEnv(name, previous) {
+  if (previous === undefined) delete process.env[name];
+  else process.env[name] = previous;
+}
+
 /** Run `body` with the harness version pinned to the one the plugin supports. */
 async function onSupportedHarness(body) {
   const previous = process.env.DSH_VERSION;
@@ -50,8 +58,7 @@ async function onSupportedHarness(body) {
   try {
     return await body();
   } finally {
-    if (previous === undefined) delete process.env.DSH_VERSION;
-    else process.env.DSH_VERSION = previous;
+    restoreEnv("DSH_VERSION", previous);
   }
 }
 
@@ -107,8 +114,12 @@ test("apply() mounts one prefix route, announces it, and disposes it", async () 
         socket: { remoteAddress: "8.8.8.8" },
       },
       {
-        writeHead: (status) => { captured.status = status; },
-        end: (chunk) => { if (chunk !== undefined) captured.body += String(chunk); },
+        writeHead: (status) => {
+          captured.status = status;
+        },
+        end: (chunk) => {
+          if (chunk !== undefined) captured.body += String(chunk);
+        },
       },
     );
     assert.equal(captured.status, 403, "a public source must be refused");

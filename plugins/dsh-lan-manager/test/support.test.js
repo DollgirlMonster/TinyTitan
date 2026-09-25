@@ -17,7 +17,14 @@ import { SUPPORTED_DSH_VERSION, supportDecision } from "../src/versions.js";
 const LAUNCHER = new URL("../../../tools/dsh_local.sh", import.meta.url);
 
 /** A version we positively read as *not* the supported one. */
-const OTHER_VERSIONS = ["0.1.5-rc.2", "0.1.6-alpha.1", "0.1.6-alpha.3", "0.1.6-rc.1", "0.1.6", "0.0.0-development"];
+const OTHER_VERSIONS = [
+  "0.1.5-rc.2",
+  "0.1.6-alpha.1",
+  "0.1.6-alpha.3",
+  "0.1.6-rc.1",
+  "0.1.6",
+  "0.0.0-development",
+];
 
 /** Run `apply` under `version` with a context that reports logging and defends services. */
 function applyAs(version, { ctx = {}, config = {} } = {}) {
@@ -30,7 +37,9 @@ function applyAs(version, { ctx = {}, config = {} } = {}) {
       info: (message) => lines.push(String(message)),
       error: (message) => lines.push(String(message)),
     },
-    get: () => { throw new Error("services must not be touched when refused"); },
+    get: () => {
+      throw new Error("services must not be touched when refused");
+    },
     ...ctx,
   };
   const previous = process.env.DSH_VERSION;
@@ -103,7 +112,9 @@ test("a refusal reaches stderr and the host error channel, never info", () => {
   console.error = (m) => stderr.push(String(m));
   const ctx = {
     logger: { info: (m) => infos.push(String(m)), error: (m) => errors.push(String(m)) },
-    get: () => { throw new Error("services must not be touched when refused"); },
+    get: () => {
+      throw new Error("services must not be touched when refused");
+    },
   };
   const previous = process.env.DSH_VERSION;
   process.env.DSH_VERSION = "0.1.6";

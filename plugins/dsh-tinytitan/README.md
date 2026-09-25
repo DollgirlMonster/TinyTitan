@@ -30,7 +30,7 @@ Two jobs, both at boot, both idempotent:
 
 This bundle supports **exactly one DeepSeek Harness release: `0.1.6-alpha.2`** —
 not older, not newer, and not a build from `main`. Both jobs above are written
-against that release: the preset is generated from *its* shipped `standard`
+against that release: the preset is generated from _its_ shipped `standard`
 preset, so the row ids move when the harness does, and the compaction backend
 subclasses that release's `dsh-compaction-basic`. It is also the release
 `tools/dsh_local.sh` installs.
@@ -63,12 +63,12 @@ dsh plugin --profile web add file:/path/to/TinyTitan/plugins/dsh-tinytitan
 Restart DSH (or start a new session) and the plugin logs what it did. Changes it
 makes, each with a timestamped backup beside the original:
 
-| File | Change |
-|---|---|
-| `~/.dsh/settings.yaml` | the `llm-pi-ai` route block, refreshed from the catalog |
+| File                                               | Change                                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `~/.dsh/settings.yaml`                             | the `llm-pi-ai` route block, refreshed from the catalog                               |
 | `~/.dsh/.agent-presets/tinytitan/agent.cordis.yml` | generated from the shipped `standard` preset, with the compaction row on this backend |
-| `~/.dsh/settings.yaml` | `agent-presets.default: tinytitan` — **only** when the file names no default |
-| the *current* default preset | its stock `compaction-basic` row, re-pointed (never a preset that is not a user file) |
+| `~/.dsh/settings.yaml`                             | `agent-presets.default: tinytitan` — **only** when the file names no default          |
+| the _current_ default preset                       | its stock `compaction-basic` row, re-pointed (never a preset that is not a user file) |
 
 The last one is `adoptDefaultPreset`: if you already chose a preset, that row is
 adopted rather than your choice being overwritten. Set it to `false` to leave
@@ -86,23 +86,23 @@ out, and `TINYTITAN_PORT` / `TINYTITAN_REASONING` / `TINYTITAN_REPO` /
 `TINYTITAN_SERVER` / `TINYTITAN_MODELS_DIR` / `DSH_HOME` are the environment
 fallbacks.
 
-| Field | Default | Meaning |
-|---|---|---|
-| `port` | resolved: `config.port`, else `TINYTITAN_PORT`, else `8080` | the port the TinyTitan server serves on. Nothing in this bundle pins it, so the environment can point the route at a server on another port |
-| `provider` | `tinytitan` | the `llm-pi-ai` provider route name |
-| `reasoning` | resolved: `config.reasoning`, else `TINYTITAN_REASONING`, else `medium` | the route's declared default reasoning level. It must match how the server was started: a route that says "think" against a server running `--reasoning off` makes a dense Qwen spend its whole output budget inside the reasoning block and never answer |
-| `presetId` | `tinytitan` | the agent preset this plugin generates |
-| `registerRoute` | `true` | refresh the route block from `tools/dsh_route.sh` |
-| `watchModels` | `true` | keep watching `models/` and refresh when an install appears or disappears |
-| `watchDebounceMs` | `2000` | how long the folder has to be quiet before the refresh runs |
-| `selfContained` | `false` | use the built-in generator even where `tools/dsh_route.sh` exists |
-| `serverBinary` | discovered | the `TinyTitanServer` the built-in generator runs (`$TINYTITAN_SERVER`) |
-| `modelsDir` | `<repoRoot>/models` | the installs it describes (`$TINYTITAN_MODELS_DIR`) |
-| `writeCompactionPreset` | `true` | generate the preset / adopt the default's row |
-| `adoptDefaultPreset` | `true` | re-point the current default preset's stock row |
-| `setDefaultWhenUnset` | `true` | set `agent-presets.default` only when absent |
-| `repoRoot` | this checkout | where `tools/dsh_route.sh` lives |
-| `dshHome` | `$DSH_HOME` or `~/.dsh` | settings and presets |
+| Field                   | Default                                                                 | Meaning                                                                                                                                                                                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                  | resolved: `config.port`, else `TINYTITAN_PORT`, else `8080`             | the port the TinyTitan server serves on. Nothing in this bundle pins it, so the environment can point the route at a server on another port                                                                                                               |
+| `provider`              | `tinytitan`                                                             | the `llm-pi-ai` provider route name                                                                                                                                                                                                                       |
+| `reasoning`             | resolved: `config.reasoning`, else `TINYTITAN_REASONING`, else `medium` | the route's declared default reasoning level. It must match how the server was started: a route that says "think" against a server running `--reasoning off` makes a dense Qwen spend its whole output budget inside the reasoning block and never answer |
+| `presetId`              | `tinytitan`                                                             | the agent preset this plugin generates                                                                                                                                                                                                                    |
+| `registerRoute`         | `true`                                                                  | refresh the route block from `tools/dsh_route.sh`                                                                                                                                                                                                         |
+| `watchModels`           | `true`                                                                  | keep watching `models/` and refresh when an install appears or disappears                                                                                                                                                                                 |
+| `watchDebounceMs`       | `2000`                                                                  | how long the folder has to be quiet before the refresh runs                                                                                                                                                                                               |
+| `selfContained`         | `false`                                                                 | use the built-in generator even where `tools/dsh_route.sh` exists                                                                                                                                                                                         |
+| `serverBinary`          | discovered                                                              | the `TinyTitanServer` the built-in generator runs (`$TINYTITAN_SERVER`)                                                                                                                                                                                   |
+| `modelsDir`             | `<repoRoot>/models`                                                     | the installs it describes (`$TINYTITAN_MODELS_DIR`)                                                                                                                                                                                                       |
+| `writeCompactionPreset` | `true`                                                                  | generate the preset / adopt the default's row                                                                                                                                                                                                             |
+| `adoptDefaultPreset`    | `true`                                                                  | re-point the current default preset's stock row                                                                                                                                                                                                           |
+| `setDefaultWhenUnset`   | `true`                                                                  | set `agent-presets.default` only when absent                                                                                                                                                                                                              |
+| `repoRoot`              | this checkout                                                           | where `tools/dsh_route.sh` lives                                                                                                                                                                                                                          |
+| `dshHome`               | `$DSH_HOME` or `~/.dsh`                                                 | settings and presets                                                                                                                                                                                                                                      |
 
 The built-in generator looks for the server at `serverBinary`, then
 `TINYTITAN_SERVER`, then `TinyTitanServer` on `PATH`, then the checkout's
