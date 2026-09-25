@@ -22,6 +22,7 @@ result — both installs at 20/20 — is evidence that this instrument is too bl
 not that precision does not matter. It is here so a promotion has something to
 fail against before it costs a 360 GB fetch.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,14 +43,20 @@ CASES: list[tuple[str, str, str]] = [
     ("What is 17 + 28?", "45", "number"),
     ("What is 13 x 7?", "91", "number"),
     ("If x + 9 = 20, what is x?", "11", "number"),
-    ("A train leaves at 14:20 and arrives at 16:05. "
-     "How many minutes is the journey?", "105", "number"),
+    (
+        "A train leaves at 14:20 and arrives at 16:05. How many minutes is the journey?",
+        "105",
+        "number",
+    ),
     ("How many letter r are in the word strawberry?", "3", "number"),
     ("Which is the smallest: 0.7, 0.07, or 0.17?", "0.07", "number"),
     ("What is the capital of Australia?", "Canberra", "word"),
     ("What is 100 - 37?", "63", "number"),
-    ("If all Bloops are Razzies and all Razzies are Lazzies, "
-     "are all Bloops Lazzies?", "yes", "word"),
+    (
+        "If all Bloops are Razzies and all Razzies are Lazzies, are all Bloops Lazzies?",
+        "yes",
+        "word",
+    ),
     ("Write the numbers 1 to 5 as a JSON array.", "[1,2,3,4,5]", "json"),
     ("What is 12% of 250?", "30", "number"),
     ("Who wrote Pride and Prejudice?", "Austen", "word"),
@@ -57,8 +64,7 @@ CASES: list[tuple[str, str, str]] = [
     ("Reverse the word stressed.", "desserts", "word"),
     ("If today is Wednesday, what day is it in 10 days?", "Saturday", "word"),
     ("What is the sum of the first five prime numbers?", "28", "number"),
-    ("Which word does not belong: apple, banana, carrot, cherry?",
-     "carrot", "word"),
+    ("Which word does not belong: apple, banana, carrot, cherry?", "carrot", "word"),
     ("What is 9 squared minus 9?", "72", "number"),
     ("How many minutes are in 2.5 hours?", "150", "number"),
     ("What is 7 factorial?", "5040", "number"),
@@ -67,8 +73,7 @@ CASES: list[tuple[str, str, str]] = [
 
 def completion_of(stdout: str) -> str:
     """The model's text, without the CLI's `[stop=…]` statistics line."""
-    lines = [line for line in stdout.splitlines()
-             if not line.startswith("[stop=")]
+    lines = [line for line in stdout.splitlines() if not line.startswith("[stop=")]
     return "\n".join(lines).strip()
 
 
@@ -88,14 +93,27 @@ def passed(reply: str, expected: str, kind: str) -> bool:
 
 def run_case(model: str, prompt: str) -> str:
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
-        json.dump([{"role": "system", "content": SYSTEM},
-                   {"role": "user", "content": prompt}], handle)
+        json.dump(
+            [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}], handle
+        )
         path = handle.name
     try:
         result = subprocess.run(
-            [str(CLI), "--model", model, "--messages-file", path,
-             "--max-new", str(MAX_NEW), "--temperature", "0"],
-            capture_output=True, text=True, timeout=1800)
+            [
+                str(CLI),
+                "--model",
+                model,
+                "--messages-file",
+                path,
+                "--max-new",
+                str(MAX_NEW),
+                "--temperature",
+                "0",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
     finally:
         Path(path).unlink(missing_ok=True)
     if result.returncode != 0:
@@ -108,8 +126,10 @@ def main() -> int:
     ap.add_argument("models", nargs="+", help="two or more installs of one model")
     args = ap.parse_args()
     if not CLI.exists():
-        print(f"build it first: swift build -c release --product TinyTitanCLI\n"
-              f"  missing {CLI}", file=sys.stderr)
+        print(
+            f"build it first: swift build -c release --product TinyTitanCLI\n  missing {CLI}",
+            file=sys.stderr,
+        )
         return 2
 
     results: dict[str, list[bool]] = {}
@@ -120,8 +140,7 @@ def main() -> int:
             reply = run_case(model, prompt)
             ok = passed(reply, expected, kind)
             hits.append(ok)
-            print(f"  {'ok  ' if ok else 'MISS'} want={expected:12s} "
-                  f"got={reply[:40]!r}")
+            print(f"  {'ok  ' if ok else 'MISS'} want={expected:12s} got={reply[:40]!r}")
         results[model] = hits
 
     print("\n=== totals")

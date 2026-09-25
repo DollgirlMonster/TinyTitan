@@ -86,17 +86,26 @@ def validate_config(path: Path) -> dict:
     config = json.loads(path.read_text())
     text = config.get("text_config", config)
     expected = {
-        "hidden_size": 2048, "num_hidden_layers": 40, "num_experts": 256,
-        "num_experts_per_tok": 8, "moe_intermediate_size": 512,
-        "shared_expert_intermediate_size": 512, "num_attention_heads": 16,
-        "num_key_value_heads": 2, "head_dim": 256,
-        "mtp_num_hidden_layers": 1, "mtp_use_dedicated_embeddings": False,
+        "hidden_size": 2048,
+        "num_hidden_layers": 40,
+        "num_experts": 256,
+        "num_experts_per_tok": 8,
+        "moe_intermediate_size": 512,
+        "shared_expert_intermediate_size": 512,
+        "num_attention_heads": 16,
+        "num_key_value_heads": 2,
+        "head_dim": 256,
+        "mtp_num_hidden_layers": 1,
+        "mtp_use_dedicated_embeddings": False,
         "vocab_size": 248320,
     }
     if config.get("model_type") != "qwen3_5_moe":
         raise ValueError("source config is not qwen3_5_moe")
-    mismatches = [f"{key}={text.get(key)!r}, expected {value!r}"
-                  for key, value in expected.items() if text.get(key) != value]
+    mismatches = [
+        f"{key}={text.get(key)!r}, expected {value!r}"
+        for key, value in expected.items()
+        if text.get(key) != value
+    ]
     if mismatches:
         raise ValueError("unsupported Ornith MTP config: " + "; ".join(mismatches))
     return config
@@ -109,10 +118,10 @@ def validate_index(path: Path, shard_name: str) -> set[str]:
     if actual_digest != SOURCE_INDEX_SHA256:
         raise ValueError(
             f"source index SHA-256 {actual_digest} does not match pinned "
-            f"revision {SOURCE_REVISION} ({SOURCE_INDEX_SHA256})")
+            f"revision {SOURCE_REVISION} ({SOURCE_INDEX_SHA256})"
+        )
     index = json.loads(path.read_text())
-    mapped = {name: shard for name, shard in index["weight_map"].items()
-              if name.startswith("mtp.")}
+    mapped = {name: shard for name, shard in index["weight_map"].items() if name.startswith("mtp.")}
     expected = set(source_shapes())
     if set(mapped) != expected:
         missing = sorted(expected - set(mapped))[:3]
@@ -133,8 +142,8 @@ def validate_shard(path: Path, expected: set[str]) -> None:
             tensor = source.get_slice(name)
             if tuple(tensor.get_shape()) != shapes[name] or tensor.get_dtype() != "BF16":
                 raise ValueError(
-                    f"unexpected {name}: shape={tensor.get_shape()} "
-                    f"dtype={tensor.get_dtype()}")
+                    f"unexpected {name}: shape={tensor.get_shape()} dtype={tensor.get_dtype()}"
+                )
 
 
 def quantize_affine(value: np.ndarray, bits: int) -> tuple[np.ndarray, ...]:
@@ -149,10 +158,14 @@ def quantize_affine(value: np.ndarray, bits: int) -> tuple[np.ndarray, ...]:
     scale = np.where(high == bias, np.float32(1), (high - bias) / levels)
     scale = scale.astype(ml_dtypes.bfloat16)
     bias = bias.astype(ml_dtypes.bfloat16)
-    quantized = np.rint(
-        (grouped - bias.astype(np.float32)[..., None])
-        / scale.astype(np.float32)[..., None]
-    ).clip(0, levels).astype(np.uint32).reshape(value.shape)
+    quantized = (
+        np.rint(
+            (grouped - bias.astype(np.float32)[..., None]) / scale.astype(np.float32)[..., None]
+        )
+        .clip(0, levels)
+        .astype(np.uint32)
+        .reshape(value.shape)
+    )
     lanes = 32 // bits
     words = quantized.reshape(*quantized.shape[:-1], quantized.shape[-1] // lanes, lanes)
     packed = np.zeros(words.shape[:-1], dtype=np.uint32)
@@ -161,8 +174,7 @@ def quantize_affine(value: np.ndarray, bits: int) -> tuple[np.ndarray, ...]:
     return packed, scale, bias
 
 
-def add_quantized(output: dict[str, np.ndarray], name: str,
-                  value: np.ndarray, bits: int) -> None:
+def add_quantized(output: dict[str, np.ndarray], name: str, value: np.ndarray, bits: int) -> None:
     weight, scales, biases = quantize_affine(value, bits)
     output[name + ".weight"] = weight
     output[name + ".scales"] = scales
@@ -176,41 +188,42 @@ def convert_tensors(shard: Path, bits: int) -> dict[str, np.ndarray]:
             destination = source_name.removeprefix("mtp.")
             value = source.get_tensor(source_name)
             if source_name in NORM_NAMES:
-                output[destination] = (
-                    value.astype(np.float32) + np.float32(1)
-                ).astype(ml_dtypes.bfloat16)
+                output[destination] = (value.astype(np.float32) + np.float32(1)).astype(
+                    ml_dtypes.bfloat16
+                )
             else:
                 add_quantized(output, destination.removesuffix(".weight"), value, bits)
         for role in ("gate_proj", "up_proj", "down_proj"):
-            values = [source.get_tensor(
-                f"mtp.layers.0.mlp.experts.{expert}.{role}.weight"
-            ).astype(np.float32) for expert in range(EXPERTS)]
-            add_quantized(output, f"layers.0.mlp.switch_mlp.{role}",
-                          np.stack(values, axis=0), bits)
+            values = [
+                source.get_tensor(f"mtp.layers.0.mlp.experts.{expert}.{role}.weight").astype(
+                    np.float32
+                )
+                for expert in range(EXPERTS)
+            ]
+            add_quantized(output, f"layers.0.mlp.switch_mlp.{role}", np.stack(values, axis=0), bits)
     return output
 
 
-def write_snapshot(stage: Path, tensors: dict[str, np.ndarray],
-                   config: dict, bits: int) -> None:
+def write_snapshot(stage: Path, tensors: dict[str, np.ndarray], config: dict, bits: int) -> None:
     stage.mkdir(parents=False)
     model_path = stage / "model.safetensors"
     save_file(tensors, model_path)
     total_size = sum(value.nbytes for value in tensors.values())
-    index = {"metadata": {"total_size": total_size},
-             "weight_map": {name: model_path.name for name in sorted(tensors)}}
+    index = {
+        "metadata": {"total_size": total_size},
+        "weight_map": {name: model_path.name for name in sorted(tensors)},
+    }
     (stage / "model.safetensors.index.json").write_text(
-        json.dumps(index, indent=2, sort_keys=True) + "\n")
+        json.dumps(index, indent=2, sort_keys=True) + "\n"
+    )
     config["model_type"] = "qwen3_5_mtp"
     config["architectures"] = ["Qwen3_5MoeMTP"]
-    config["quantization"] = {
-        "group_size": GROUP_SIZE, "bits": bits, "mode": "affine"}
-    (stage / "config.json").write_text(
-        json.dumps(config, indent=2, sort_keys=True) + "\n")
+    config["quantization"] = {"group_size": GROUP_SIZE, "bits": bits, "mode": "affine"}
+    (stage / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        epilog=f"Pinned source: {SOURCE_REPO}@{SOURCE_REVISION}")
+    parser = argparse.ArgumentParser(epilog=f"Pinned source: {SOURCE_REPO}@{SOURCE_REVISION}")
     parser.add_argument("--source-shard", required=True, type=Path)
     parser.add_argument("--source-config", required=True, type=Path)
     parser.add_argument("--source-index", required=True, type=Path)

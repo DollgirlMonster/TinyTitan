@@ -35,6 +35,7 @@ Two arms:
     python3 benchmark/memory_projects.py control
     python3 benchmark/memory_projects.py report
 """
+
 from __future__ import annotations
 
 import json
@@ -47,7 +48,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ARMS = ("control", "auto")
-OUT = Path(os.environ.get("TINYTITAN_MEMVAL_RESULTS", ROOT / ".build/benchmark-logs/memory-projects"))
+OUT = Path(
+    os.environ.get("TINYTITAN_MEMVAL_RESULTS", ROOT / ".build/benchmark-logs/memory-projects")
+)
 PORT = int(os.environ.get("TINYTITAN_PORT", "8096"))
 BASE = f"http://127.0.0.1:{PORT}/v1"
 # Which run of the arm this is; results are kept per run so repeats can be
@@ -119,8 +122,11 @@ def placements_logged() -> list[tuple[str, str]]:
         return []
     pattern = re.compile(r"session=\S+ scope=(\S+) tag=\S* via=(\S+)")
     with open(SERVER_LOG, errors="replace") as handle:
-        return [(match.group(1), match.group(2))
-                for match in (pattern.search(line) for line in handle) if match]
+        return [
+            (match.group(1), match.group(2))
+            for match in (pattern.search(line) for line in handle)
+            if match
+        ]
 
 
 # Two pipelines with the same parts and different values. The header value is
@@ -161,8 +167,16 @@ PROJECTS = {
 # there.
 PROBE_WORKSPACE = "proj-probe"
 
-QUIZ_KEYS = ("ingest_source", "ingest_language", "retry_limit", "retry_backoff",
-             "datastore", "datastore_shards", "release_cadence", "release_day")
+QUIZ_KEYS = (
+    "ingest_source",
+    "ingest_language",
+    "retry_limit",
+    "retry_backoff",
+    "datastore",
+    "datastore_shards",
+    "release_cadence",
+    "release_day",
+)
 
 BRIEF = {
     "alpha": """\
@@ -193,8 +207,7 @@ These are KESTREL's settled facts. Nothing decided later may contradict them.
 # floor rather than a measurement of the prompt.
 WORK = (
     "Sketch, in five bullet points, how ingest should backfill a day it missed.",
-    "Write two short paragraphs on what a failed ingest batch should record "
-    "before it gives up.",
+    "Write two short paragraphs on what a failed ingest batch should record before it gives up.",
     "List four checks to run before the next release ships.",
     "Write a six-line checklist for adding a column to the primary datastore.",
     "Name three metrics the on-call dashboard should show for ingest, and why.",
@@ -217,7 +230,8 @@ def quiz(project: str) -> str:
         f"ingest_language; retry_limit (a number); retry_backoff (one word); "
         f"datastore; datastore_shards (a number); release_cadence (one word); "
         f"release_day (a weekday). Use null for anything you do not know. Do "
-        f"not guess: a guessed value is worse than null.")
+        f"not guess: a guessed value is worse than null."
+    )
 
 
 def session_prompt(session: int) -> str:
@@ -233,23 +247,27 @@ def session_prompt(session: int) -> str:
 
 
 def post(messages, model, workspace, max_tokens=1200):
-    body = json.dumps({"model": model, "messages": messages,
-                       "max_completion_tokens": max_tokens,
-                       **sampling()}).encode()
+    body = json.dumps(
+        {"model": model, "messages": messages, "max_completion_tokens": max_tokens, **sampling()}
+    ).encode()
     # The workspace header is the whole scenario: it is what makes two
     # conversations against one server two projects.
-    request = urllib.request.Request(f"{BASE}/chat/completions", data=body,
-                                     headers={"Content-Type": "application/json",
-                                              "X-TinyTitan-Workspace": workspace})
+    request = urllib.request.Request(
+        f"{BASE}/chat/completions",
+        data=body,
+        headers={"Content-Type": "application/json", "X-TinyTitan-Workspace": workspace},
+    )
     started = time.time()
     with urllib.request.urlopen(request, timeout=3600) as response:
         payload = json.load(response)
     choice = payload["choices"][0]["message"]
     usage = payload.get("usage", {})
-    return {"content": choice.get("content") or "",
-            "prompt_tokens": usage.get("prompt_tokens", 0),
-            "completion_tokens": usage.get("completion_tokens", 0),
-            "seconds": time.time() - started}
+    return {
+        "content": choice.get("content") or "",
+        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "completion_tokens": usage.get("completion_tokens", 0),
+        "seconds": time.time() - started,
+    }
 
 
 def model_id():
@@ -265,7 +283,8 @@ def assert_arm_is_real(arm: str, prompt: str, prompt_tokens: int):
             raise SystemExit(
                 f"ABORT: arm 'control' but the server placed sessions in memory "
                 f"({placed[0][0]} via {placed[0][1]}). Memory is on in the arm "
-                f"whose whole job is to have none. Check TINYTITAN_MEMORY.")
+                f"whose whole job is to have none. Check TINYTITAN_MEMORY."
+            )
         # Without a server log there is nothing authoritative to check, so
         # fall back to size: the memory system prompt fragment is ~90 tokens
         # and a control prompt should be about the prompt text and no more.
@@ -275,11 +294,13 @@ def assert_arm_is_real(arm: str, prompt: str, prompt_tokens: int):
             raise SystemExit(
                 f"ABORT: arm 'control' saw {prompt_tokens} prompt tokens for a "
                 f"~{estimate}-token prompt; something is being prepended. "
-                f"Check TINYTITAN_MEMORY and TINYTITAN_MEMORY_TOOLS.")
+                f"Check TINYTITAN_MEMORY and TINYTITAN_MEMORY_TOOLS."
+            )
     elif SERVER_LOG and not placed:
         raise SystemExit(
             f"ABORT: arm '{arm}' claims memory but the server logged no session "
-            f"placement. Rebuild the release binary and check TINYTITAN_MEMORY.")
+            f"placement. Rebuild the release binary and check TINYTITAN_MEMORY."
+        )
 
 
 def assert_header_is_honoured(model: str):
@@ -303,7 +324,8 @@ def assert_header_is_honoured(model: str):
         f"in {sorted({scope for scope, _ in placed}) or 'no logged workspace'} "
         f"(via {sorted({via for _, via in placed}) or '-'}). The header is not "
         f"choosing the workspace, so both projects would share one store and the "
-        f"run would report their shared facts as leaks.")
+        f"run would report their shared facts as leaks."
+    )
 
 
 def assert_projects_are_separate():
@@ -329,11 +351,13 @@ def assert_projects_are_separate():
             raise SystemExit(
                 f"ABORT: the server placed sessions via {sorted(sources)}, not "
                 f"'header'. X-TinyTitan-Workspace is not reaching the placement "
-                f"decision, so both projects share a store.")
+                f"decision, so both projects share a store."
+            )
         if not workspaces <= scopes:
             raise SystemExit(
                 f"ABORT: expected scopes {sorted(workspaces)}, saw {sorted(scopes)}. "
-                f"The two projects are not separate.")
+                f"The two projects are not separate."
+            )
         return
     # No log: the journal filenames say the same thing, one file per
     # workspace, and by now both projects have been consolidated once.
@@ -341,7 +365,8 @@ def assert_projects_are_separate():
     if not workspaces <= files:
         raise SystemExit(
             f"ABORT: expected journals {sorted(workspaces)} under {MEMDIR}, "
-            f"saw {sorted(files) or 'none'}. The two projects are not separate.")
+            f"saw {sorted(files) or 'none'}. The two projects are not separate."
+        )
 
 
 def extract_quiz(text: str) -> dict:
@@ -364,11 +389,9 @@ def extract_quiz(text: str) -> dict:
 VOCABULARY = {
     "ingest_source": (("kafka", r"kafka"), ("s3", r"\bs3\b|object stor")),
     "ingest_language": (("rust", r"\brust\b"), ("go", r"\bgo(lang)?\b")),
-    "retry_backoff": (("exponential", r"exponential|doubling"),
-                      ("fixed", r"fixed|constant|flat")),
+    "retry_backoff": (("exponential", r"exponential|doubling"), ("fixed", r"fixed|constant|flat")),
     "datastore": (("postgres", r"postgre"), ("clickhouse", r"click\s*house")),
-    "release_cadence": (("weekly", r"weekly|every week"),
-                        ("monthly", r"monthly|every month")),
+    "release_cadence": (("weekly", r"weekly|every week"), ("monthly", r"monthly|every month")),
     "release_day": (("tuesday", r"tuesday"), ("thursday", r"thursday")),
 }
 
@@ -403,8 +426,9 @@ def leaks(project: str, answers: dict) -> list[dict]:
     for key in QUIZ_KEYS:
         value = normalise(key, answers.get(key))
         if value is not None and value == theirs[key] and value != mine[key]:
-            found.append({"key": key, "answered": answers.get(key),
-                          "mine": mine[key], "theirs": theirs[key]})
+            found.append(
+                {"key": key, "answered": answers.get(key), "mine": mine[key], "theirs": theirs[key]}
+            )
     return found
 
 
@@ -427,7 +451,8 @@ def run_arm(arm: str):
             "ABORT: set TINYTITAN_MEMVAL_SERVER_LOG or TINYTITAN_MEMVAL_MEMDIR. Without "
             "one of them this run cannot show that the two projects went to two "
             "workspaces, and an ignored X-TinyTitan-Workspace header would be "
-            "reported as a total leak.")
+            "reported as a total leak."
+        )
     model = model_id()
     if memory_on and SERVER_LOG:
         assert_header_is_honoured(model)
@@ -443,13 +468,22 @@ def run_arm(arm: str):
         result = post([{"role": "user", "content": prompt}], model, workspace)
         answers = extract_quiz(result["content"])
         correct, leaked, total = score(project, answers)
-        result.update(session=session, project=project, workspace=workspace,
-                      answers=answers, correct=correct, leaked=leaked, total=total)
+        result.update(
+            session=session,
+            project=project,
+            workspace=workspace,
+            answers=answers,
+            correct=correct,
+            leaked=leaked,
+            total=total,
+        )
         (OUT / f"{arm}-r{RUN}-{session:02d}-{project}.md").write_text(result["content"])
-        print(f"{arm}/session {session:2d} {project:5s} ({workspace}): "
-              f"{result['completion_tokens']} tokens, {result['seconds']:.0f}s, "
-              f"prompt {result['prompt_tokens']}, quiz {correct}/{total}, "
-              f"leaked {leaked}")
+        print(
+            f"{arm}/session {session:2d} {project:5s} ({workspace}): "
+            f"{result['completion_tokens']} tokens, {result['seconds']:.0f}s, "
+            f"prompt {result['prompt_tokens']}, quiz {correct}/{total}, "
+            f"leaked {leaked}"
+        )
         if session == 1:
             assert_arm_is_real(arm, prompt, result["prompt_tokens"])
         result["consolidation_wait"] = wait_for_consolidation(seen) if memory_on else 0.0
@@ -468,8 +502,10 @@ def report():
         if arm in ARMS:
             runs.setdefault(arm, {})[run] = json.loads(path.read_text())
 
-    print(f"\n{'arm':8s} {'run':>3s} {'session':>7s} {'project':7s} {'prompt':>7s} "
-          f"{'completion':>11s} {'seconds':>8s} {'wait':>5s} {'quiz':>6s} {'leak':>4s}")
+    print(
+        f"\n{'arm':8s} {'run':>3s} {'session':>7s} {'project':7s} {'prompt':>7s} "
+        f"{'completion':>11s} {'seconds':>8s} {'wait':>5s} {'quiz':>6s} {'leak':>4s}"
+    )
     totals = {}
     for arm in ARMS:
         for run, results in sorted(runs.get(arm, {}).items()):
@@ -479,13 +515,22 @@ def report():
                 # run wrote down, so a scoring fix applies to every version
                 # identically.
                 correct, leaked, total = score(project, result["answers"])
-                print(f"{arm:8s} {run:>3s} {result['session']:7d} {project:7s} "
-                      f"{result['prompt_tokens']:7d} {result['completion_tokens']:11d} "
-                      f"{result['seconds']:8.0f} {result.get('consolidation_wait', 0):5.0f} "
-                      f"{correct:3d}/{total:<2d} {leaked:4d}")
-                row = totals.setdefault(arm, {"correct": 0, "total": 0,
-                                              "carried_correct": 0, "carried_total": 0,
-                                              "leaks": []})
+                print(
+                    f"{arm:8s} {run:>3s} {result['session']:7d} {project:7s} "
+                    f"{result['prompt_tokens']:7d} {result['completion_tokens']:11d} "
+                    f"{result['seconds']:8.0f} {result.get('consolidation_wait', 0):5.0f} "
+                    f"{correct:3d}/{total:<2d} {leaked:4d}"
+                )
+                row = totals.setdefault(
+                    arm,
+                    {
+                        "correct": 0,
+                        "total": 0,
+                        "carried_correct": 0,
+                        "carried_total": 0,
+                        "leaks": [],
+                    },
+                )
                 row["correct"] += correct
                 row["total"] += total
                 # Sessions 1 and 2 carry their project's brief in the prompt;
@@ -502,12 +547,17 @@ def report():
         if not row:
             continue
         overall = f"{100 * row['correct'] / row['total']:.0f}%" if row["total"] else "n/a"
-        carried = (f"{100 * row['carried_correct'] / row['carried_total']:.0f}%"
-                   if row["carried_total"] else "n/a")
-        print(f"  {arm:8s} overall {overall:>4s} ({row['correct']}/{row['total']}), "
-              f"carried {carried:>4s} "
-              f"({row['carried_correct']}/{row['carried_total']}), "
-              f"leaks {len(row['leaks'])}")
+        carried = (
+            f"{100 * row['carried_correct'] / row['carried_total']:.0f}%"
+            if row["carried_total"]
+            else "n/a"
+        )
+        print(
+            f"  {arm:8s} overall {overall:>4s} ({row['correct']}/{row['total']}), "
+            f"carried {carried:>4s} "
+            f"({row['carried_correct']}/{row['carried_total']}), "
+            f"leaks {len(row['leaks'])}"
+        )
 
     print("\nLeaks, one line each:")
     any_leak = False
@@ -515,10 +565,12 @@ def report():
         for run, session, project, leak in totals.get(arm, {}).get("leaks", []):
             any_leak = True
             other = "beta" if project == "alpha" else "alpha"
-            print(f"  {arm:8s} r{run} s{session:02d} {project:5s} {leak['key']}: "
-                  f"answered {leak['answered']!r}; "
-                  f"{PROJECTS[project]['name']}={leak['mine']}, "
-                  f"{PROJECTS[other]['name']}={leak['theirs']}")
+            print(
+                f"  {arm:8s} r{run} s{session:02d} {project:5s} {leak['key']}: "
+                f"answered {leak['answered']!r}; "
+                f"{PROJECTS[project]['name']}={leak['mine']}, "
+                f"{PROJECTS[other]['name']}={leak['theirs']}"
+            )
     if not any_leak:
         print("  none")
 

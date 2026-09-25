@@ -22,6 +22,7 @@ answer is in the store. `cases()` turns them into the same one-decision jobs
     python3.13 benchmark/side_engine_judges.py --jobs /tmp/scenarios.jsonl \
         --judge cpu:models/qwen3.5_4B_4Bit
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,40 +58,58 @@ SCENARIOS: dict[str, dict] = {
         "facts": {
             "decisions/datastore": "Postgres 16 on db-7",
             "decisions/queue": "single-threaded, deliberately: it prevents a "
-                               "race in background sync",
+            "race in background sync",
             "config/api_port": "8443",
             "config/region": "eu-west-1",
             "rules/rollback": "the previous release is kept for 48 hours",
         },
         "changed": {
-            2: [("config/api_port", "9443",
-                 "The API moved to 9443 behind the new proxy.")],
-            3: [("decisions/datastore",
-                 "ClickHouse for analytics, Postgres for OLTP",
-                 "Analytics moved to ClickHouse; Postgres stays for OLTP.")],
-            4: [("rules/rollback", "the previous release is kept for 72 hours",
-                 "The rollback window is 72 hours now.")],
+            2: [("config/api_port", "9443", "The API moved to 9443 behind the new proxy.")],
+            3: [
+                (
+                    "decisions/datastore",
+                    "ClickHouse for analytics, Postgres for OLTP",
+                    "Analytics moved to ClickHouse; Postgres stays for OLTP.",
+                )
+            ],
+            4: [
+                (
+                    "rules/rollback",
+                    "the previous release is kept for 72 hours",
+                    "The rollback window is 72 hours now.",
+                )
+            ],
         },
         "narration": "The proxy change went smoothly and we moved on to the next ticket.",
         "questions": [
             ("Which port does the API listen on?", "config/api_port", "config/region"),
-            ("Why is the sync queue single-threaded?", "decisions/queue",
-             "decisions/datastore"),
-            ("How long is a release kept for rollback?", "rules/rollback",
-             "config/api_port"),
+            ("Why is the sync queue single-threaded?", "decisions/queue", "decisions/datastore"),
+            ("How long is a release kept for rollback?", "rules/rollback", "config/api_port"),
         ],
         "disagree": ("config/api_port", "8443", "config/api_port", "9443", "YES"),
         "agree": ("config/region", "eu-west-1", "config/zone", "eu-west-1", "NO"),
-        "duplicate": ("decisions/queue",
-                      "single-threaded, deliberately: it prevents a race in background sync",
-                      "decisions/sync_model",
-                      "the sync path is single-threaded to avoid a race", "YES"),
+        "duplicate": (
+            "decisions/queue",
+            "single-threaded, deliberately: it prevents a race in background sync",
+            "decisions/sync_model",
+            "the sync path is single-threaded to avoid a race",
+            "YES",
+        ),
         "not_duplicate": ("config/api_port", "8443", "config/admin_port", "9090", "NO"),
-        "rule_conflict": ("config/api_port", "8443", "9443",
-                          "the API port is fixed and must never change", "CONFLICT"),
-        "rule_update": ("config/api_port", "8443", "9443",
-                        "the rollback window is fixed and must never change",
-                        "UPDATE"),
+        "rule_conflict": (
+            "config/api_port",
+            "8443",
+            "9443",
+            "the API port is fixed and must never change",
+            "CONFLICT",
+        ),
+        "rule_update": (
+            "config/api_port",
+            "8443",
+            "9443",
+            "the rollback window is fixed and must never change",
+            "UPDATE",
+        ),
     },
     "lab": {
         "facts": {
@@ -100,38 +119,74 @@ SCENARIOS: dict[str, dict] = {
             "equipment/centrifuge": "the Beckman on bench 3",
         },
         "changed": {
-            2: [("protocol/reagent", "0.25 M Tris",
-                 "Correction: the reagent is 0.25 M Tris, not 0.5 M.")],
-            3: [("equipment/centrifuge",
-                 "the Eppendorf while the Beckman is serviced",
-                 "The Beckman is out for service; use the Eppendorf.")],
-            4: [("protocol/incubation", "37 C for 45 minutes",
-                 "Incubation is now 45 minutes.")],
+            2: [
+                (
+                    "protocol/reagent",
+                    "0.25 M Tris",
+                    "Correction: the reagent is 0.25 M Tris, not 0.5 M.",
+                )
+            ],
+            3: [
+                (
+                    "equipment/centrifuge",
+                    "the Eppendorf while the Beckman is serviced",
+                    "The Beckman is out for service; use the Eppendorf.",
+                )
+            ],
+            4: [("protocol/incubation", "37 C for 45 minutes", "Incubation is now 45 minutes.")],
         },
         "narration": "Today we ran the third batch and it looked fine under the lamp.",
         "questions": [
-            ("What temperature and time is the incubation?", "protocol/incubation",
-             "protocol/reagent"),
-            ("What is the reagent concentration?", "protocol/reagent",
-             "equipment/centrifuge"),
-            ("Which centrifuge should be used?", "equipment/centrifuge",
-             "protocol/incubation"),
+            (
+                "What temperature and time is the incubation?",
+                "protocol/incubation",
+                "protocol/reagent",
+            ),
+            ("What is the reagent concentration?", "protocol/reagent", "equipment/centrifuge"),
+            ("Which centrifuge should be used?", "equipment/centrifuge", "protocol/incubation"),
         ],
-        "disagree": ("protocol/incubation", "37 C for 30 minutes",
-                     "protocol/incubation", "70 C for 10 minutes", "YES"),
-        "agree": ("protocol/incubation", "37 C for 45 minutes",
-                  "protocol/temperature", "37 C", "NO"),
-        "duplicate": ("protocol/reagent", "0.25 M Tris",
-                      "protocol/buffer", "Tris at 0.25 M", "YES"),
-        "not_duplicate": ("equipment/centrifuge", "the Eppendorf",
-                          "equipment/incubator", "the Memmert", "NO"),
-        "rule_conflict": ("protocol/reagent", "0.5 M Tris", "0.25 M Tris",
-                          "reagent concentrations are fixed and must never change",
-                          "CONFLICT"),
-        "rule_update": ("protocol/incubation", "37 C for 30 minutes",
-                        "37 C for 45 minutes",
-                        "the reagent concentration is fixed and must never change",
-                        "UPDATE"),
+        "disagree": (
+            "protocol/incubation",
+            "37 C for 30 minutes",
+            "protocol/incubation",
+            "70 C for 10 minutes",
+            "YES",
+        ),
+        "agree": (
+            "protocol/incubation",
+            "37 C for 45 minutes",
+            "protocol/temperature",
+            "37 C",
+            "NO",
+        ),
+        "duplicate": (
+            "protocol/reagent",
+            "0.25 M Tris",
+            "protocol/buffer",
+            "Tris at 0.25 M",
+            "YES",
+        ),
+        "not_duplicate": (
+            "equipment/centrifuge",
+            "the Eppendorf",
+            "equipment/incubator",
+            "the Memmert",
+            "NO",
+        ),
+        "rule_conflict": (
+            "protocol/reagent",
+            "0.5 M Tris",
+            "0.25 M Tris",
+            "reagent concentrations are fixed and must never change",
+            "CONFLICT",
+        ),
+        "rule_update": (
+            "protocol/incubation",
+            "37 C for 30 minutes",
+            "37 C for 45 minutes",
+            "the reagent concentration is fixed and must never change",
+            "UPDATE",
+        ),
     },
     "contract": {
         "facts": {
@@ -142,67 +197,127 @@ SCENARIOS: dict[str, dict] = {
             "state/signing": "unsigned",
         },
         "changed": {
-            2: [("clause/termination",
-                 "either party may terminate on 60 days' notice",
-                 "The amendment extends termination notice to 60 days.")],
-            3: [("clause/liability_cap",
-                 "liability is capped at 12 months' fees, except for gross negligence",
-                 "The cap now carves out gross negligence.")],
-            4: [("agreement/governing_law", "the laws of England and Wales",
-                 "The governing law is England and Wales.")],
+            2: [
+                (
+                    "clause/termination",
+                    "either party may terminate on 60 days' notice",
+                    "The amendment extends termination notice to 60 days.",
+                )
+            ],
+            3: [
+                (
+                    "clause/liability_cap",
+                    "liability is capped at 12 months' fees, except for gross negligence",
+                    "The cap now carves out gross negligence.",
+                )
+            ],
+            4: [
+                (
+                    "agreement/governing_law",
+                    "the laws of England and Wales",
+                    "The governing law is England and Wales.",
+                )
+            ],
         },
         "narration": "We discussed the termination clause at length in the meeting.",
         "questions": [
-            ("What is the termination notice period?", "clause/termination",
-             "clause/liability_cap"),
-            ("Which law governs the agreement?", "agreement/governing_law",
-             "parties/client"),
-            ("What is the liability cap?", "clause/liability_cap",
-             "clause/termination"),
+            (
+                "What is the termination notice period?",
+                "clause/termination",
+                "clause/liability_cap",
+            ),
+            ("Which law governs the agreement?", "agreement/governing_law", "parties/client"),
+            ("What is the liability cap?", "clause/liability_cap", "clause/termination"),
         ],
-        "disagree": ("clause/termination", "30 days' notice",
-                     "clause/termination", "60 days' notice", "YES"),
-        "agree": ("agreement/governing_law", "the laws of Singapore",
-                  "agreement/jurisdiction", "Singapore", "NO"),
-        "duplicate": ("clause/liability_cap",
-                      "capped at the fees paid in the last 12 months",
-                      "clause/liability_limit", "capped at 12 months' fees", "YES"),
-        "not_duplicate": ("clause/termination", "60 days' notice",
-                          "clause/payment_terms", "30 days", "NO"),
-        "rule_conflict": ("clause/termination", "30 days' notice", "60 days' notice",
-                          "the termination notice is fixed and must never change",
-                          "CONFLICT"),
-        "rule_update": ("state/signing", "unsigned", "signed by both parties",
-                        "the liability cap is fixed and must never change", "UPDATE"),
+        "disagree": (
+            "clause/termination",
+            "30 days' notice",
+            "clause/termination",
+            "60 days' notice",
+            "YES",
+        ),
+        "agree": (
+            "agreement/governing_law",
+            "the laws of Singapore",
+            "agreement/jurisdiction",
+            "Singapore",
+            "NO",
+        ),
+        "duplicate": (
+            "clause/liability_cap",
+            "capped at the fees paid in the last 12 months",
+            "clause/liability_limit",
+            "capped at 12 months' fees",
+            "YES",
+        ),
+        "not_duplicate": (
+            "clause/termination",
+            "60 days' notice",
+            "clause/payment_terms",
+            "30 days",
+            "NO",
+        ),
+        "rule_conflict": (
+            "clause/termination",
+            "30 days' notice",
+            "60 days' notice",
+            "the termination notice is fixed and must never change",
+            "CONFLICT",
+        ),
+        "rule_update": (
+            "state/signing",
+            "unsigned",
+            "signed by both parties",
+            "the liability cap is fixed and must never change",
+            "UPDATE",
+        ),
     },
 }
 
 
 def _t2(key: str, value: str, truth: str, note: str) -> dict:
-    return tasks.job("T2", f"FACT: {key} = {value}\nKeep it?", truth, note,
-                     authored=True)
+    return tasks.job("T2", f"FACT: {key} = {value}\nKeep it?", truth, note, authored=True)
 
 
 def _t5(a_key, a_value, b_key, b_value, truth, note) -> dict:
-    return tasks.job("T5", f"A: {a_key} = {a_value}\nB: {b_key} = {b_value}\n"
-                          "Same fact?", truth, note, authored=True)
+    return tasks.job(
+        "T5",
+        f"A: {a_key} = {a_value}\nB: {b_key} = {b_value}\nSame fact?",
+        truth,
+        note,
+        authored=True,
+    )
 
 
 def _t3(a_key, a_value, b_key, b_value, truth, note) -> dict:
-    return tasks.job("T3", f"A: {a_key} = {a_value}\nB: {b_key} = {b_value}\n"
-                          "Do A and B disagree?", truth, note, authored=True)
+    return tasks.job(
+        "T3",
+        f"A: {a_key} = {a_value}\nB: {b_key} = {b_value}\nDo A and B disagree?",
+        truth,
+        note,
+        authored=True,
+    )
 
 
 def _t7(question, key, value, truth, note) -> dict:
-    return tasks.job("T7", f"QUESTION: {question}\nFACT: {key} = {value}\n"
-                           "Could this fact answer it?", truth, note, authored=True)
+    return tasks.job(
+        "T7",
+        f"QUESTION: {question}\nFACT: {key} = {value}\nCould this fact answer it?",
+        truth,
+        note,
+        authored=True,
+    )
 
 
 def _t4(key, earlier, now, rule, truth, note) -> dict:
     prefix = f"RULE: {rule}\n" if rule else ""
-    return tasks.job("T4", f"{prefix}EARLIER: {key} = {earlier}\n"
-                           f"NOW: {key} = {now}\nWhich is it?", truth, note,
-                     authored=True)
+    return tasks.job(
+        "T4",
+        f"{prefix}EARLIER: {key} = {earlier}\nNOW: {key} = {now}\nWhich is it?",
+        truth,
+        note,
+        authored=True,
+    )
 
 
 def cases() -> list[dict]:
@@ -221,20 +336,26 @@ def cases() -> list[dict]:
 
         for key, value in latest.items():
             jobs.append(_t2(key, value, "YES", f"{name}: standing fact {key}"))
-        jobs.append(_t2(f"session/{name}_note", world["narration"], "NO",
-                        f"{name}: session narration"))
+        jobs.append(
+            _t2(f"session/{name}_note", world["narration"], "NO", f"{name}: session narration")
+        )
 
         for question, target, distractor in world["questions"]:
-            jobs.append(_t7(question, target, latest[target], "YES",
-                            f"{name}: {target} answers it"))
-            jobs.append(_t7(question, distractor, latest[distractor], "NO",
-                            f"{name}: {distractor} does not"))
+            jobs.append(
+                _t7(question, target, latest[target], "YES", f"{name}: {target} answers it")
+            )
+            jobs.append(
+                _t7(
+                    question, distractor, latest[distractor], "NO", f"{name}: {distractor} does not"
+                )
+            )
 
         a_key, a_value, b_key, b_value, truth = world["duplicate"]
         jobs.append(_t5(a_key, a_value, b_key, b_value, truth, f"{name}: duplicate"))
         a_key, a_value, b_key, b_value, truth = world["not_duplicate"]
-        jobs.append(_t5(a_key, a_value, b_key, b_value, truth,
-                        f"{name}: different keys, different facts"))
+        jobs.append(
+            _t5(a_key, a_value, b_key, b_value, truth, f"{name}: different keys, different facts")
+        )
 
         a_key, a_value, b_key, b_value, truth = world["disagree"]
         jobs.append(_t3(a_key, a_value, b_key, b_value, truth, f"{name}: disagree"))
@@ -256,8 +377,7 @@ def main() -> int:
         ap.print_help()
         return 1
     jobs = cases()
-    args.prepare.write_text("\n".join(json.dumps(j) for j in jobs) + "\n",
-                            encoding="utf-8")
+    args.prepare.write_text("\n".join(json.dumps(j) for j in jobs) + "\n", encoding="utf-8")
     counts: dict[str, int] = {}
     for j in jobs:
         counts[j["task"]] = counts.get(j["task"], 0) + 1

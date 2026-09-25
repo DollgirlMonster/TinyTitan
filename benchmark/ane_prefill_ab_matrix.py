@@ -19,6 +19,7 @@ explicitly `on`, the runtime fails the load rather than pretending.
   python3 benchmark/ane_prefill_ab_matrix.py \
       --models qwen3.5_2B_4Bit qwen3.5_4B_4Bit --label v5.6 --record
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,7 +52,8 @@ CHARACTERS_PER_TOKEN = 5.31
 
 FOOTER = re.compile(
     r"\[stop=(\S+) prefill=(\d+)tok/([\d.]+)s new=(\d+)tok decode=([\d.]+)s "
-    r"tok/s=([\d.]+)\]")
+    r"tok/s=([\d.]+)\]"
+)
 
 # A fixed, self-contained body. Deriving it from repo files would make the
 # prompt length move whenever those files are edited, and prompt length is the
@@ -64,7 +66,8 @@ FOOTER = re.compile(
 PARAGRAPH = (
     "Swift and C++ differ in memory management, dispatch, compilation and type "
     "safety, and a fair comparison names each axis before it judges either "
-    "language. ")
+    "language. "
+)
 PROMPT_CHARACTERS = 23_000
 
 
@@ -87,16 +90,25 @@ def parse_footer(stderr: str) -> dict | None:
     }
 
 
-def run_arm(model: str, ane: bool, characters: int, chunk: int,
-            timeout: int = 3600) -> dict:
+def run_arm(model: str, ane: bool, characters: int, chunk: int, timeout: int = 3600) -> dict:
     env = os.environ.copy()
     env["TINYTITAN_PREFILL_ANE"] = "on" if ane else "off"
-    command = [str(CLI), "--model", str(MODELS_DIR / model),
-               "--prompt", prompt(characters),
-               "--max-new", str(MAX_NEW), "--temperature", "0",
-               "--prefill-chunk", str(chunk)]
-    proc = subprocess.run(command, capture_output=True, text=True, env=env,
-                          cwd=ROOT, timeout=timeout)
+    command = [
+        str(CLI),
+        "--model",
+        str(MODELS_DIR / model),
+        "--prompt",
+        prompt(characters),
+        "--max-new",
+        str(MAX_NEW),
+        "--temperature",
+        "0",
+        "--prefill-chunk",
+        str(chunk),
+    ]
+    proc = subprocess.run(
+        command, capture_output=True, text=True, env=env, cwd=ROOT, timeout=timeout
+    )
     arm: dict = {"ane": ane, "exit": proc.returncode}
     if proc.returncode != 0:
         err = proc.stderr
@@ -116,16 +128,15 @@ def run_arm(model: str, ane: bool, characters: int, chunk: int,
     arm["used_ane"] = FALLBACK_MARKER not in proc.stderr
     if not arm["used_ane"]:
         arm["fallback_reason"] = next(
-            (line.strip() for line in proc.stderr.splitlines()
-             if FALLBACK_MARKER in line), FALLBACK_MARKER)
-    arm["response_sha256"] = hashlib.sha256(
-        proc.stdout.strip().encode()).hexdigest()
+            (line.strip() for line in proc.stderr.splitlines() if FALLBACK_MARKER in line),
+            FALLBACK_MARKER,
+        )
+    arm["response_sha256"] = hashlib.sha256(proc.stdout.strip().encode()).hexdigest()
     arm["response_head"] = proc.stdout.strip()[:120]
     return arm
 
 
-def measure(model: str, repeats: int, characters: int,
-            chunk: int) -> dict:
+def measure(model: str, repeats: int, characters: int, chunk: int) -> dict:
     """Warm both arms, then alternate `repeats` measured runs per arm.
 
     The warm-ups are discarded because the first ANE run pays Core ML's compile
@@ -137,25 +148,25 @@ def measure(model: str, repeats: int, characters: int,
     arms: dict[str, list[dict]] = {"off": [], "on": []}
     warm_off = run_arm(model, False, characters, chunk)
     if "error" in warm_off:
-        return {"model": model, "arms": arms,
-                "error": f"off warm-up: {warm_off['error']}"}
+        return {"model": model, "arms": arms, "error": f"off warm-up: {warm_off['error']}"}
     arms["off"].append(run_arm(model, False, characters, chunk))
     if "error" in arms["off"][-1]:
-        return {"model": model, "arms": arms,
-                "error": f"off arm: {arms['off'][-1]['error']}"}
+        return {"model": model, "arms": arms, "error": f"off arm: {arms['off'][-1]['error']}"}
     warm_on = run_arm(model, True, characters, chunk)
     if "error" in warm_on:
         return {"model": model, "arms": arms, "ane_unavailable": warm_on["error"]}
     arms["on"].append(run_arm(model, True, characters, chunk))
     if "error" in arms["on"][-1]:
-        return {"model": model, "arms": arms,
-                "error": f"on arm: {arms['on'][-1]['error']}"}
+        return {"model": model, "arms": arms, "error": f"on arm: {arms['on'][-1]['error']}"}
     for _ in range(max(0, repeats - 1)):
         for ane in (False, True):
             run = run_arm(model, ane, characters, chunk)
             if "error" in run:
-                return {"model": model, "arms": arms,
-                        "error": f"{'on' if ane else 'off'} arm: {run['error']}"}
+                return {
+                    "model": model,
+                    "arms": arms,
+                    "error": f"{'on' if ane else 'off'} arm: {run['error']}",
+                }
             arms["on" if ane else "off"].append(run)
     return {"model": model, "arms": arms}
 
@@ -170,12 +181,10 @@ def summarize(record: dict, chunk: int = PREFILL_CHUNK) -> dict:
     for name, runs in record["arms"].items():
         good = [r for r in runs if "error" not in r]
         if not good:
-            out[name] = {"error": runs[0].get("error", "no runs") if runs
-                         else "no runs"}
+            out[name] = {"error": runs[0].get("error", "no runs") if runs else "no runs"}
             continue
         out[name] = {
-            "prefill_seconds_median": statistics.median(
-                r["prefill_seconds"] for r in good),
+            "prefill_seconds_median": statistics.median(r["prefill_seconds"] for r in good),
             "prefill_tokens": good[0]["prefill_tokens"],
             "used_ane": all(r.get("used_ane", False) for r in good),
             "runs": len(good),
@@ -191,7 +200,8 @@ def summarize(record: dict, chunk: int = PREFILL_CHUNK) -> dict:
     if tokens and tokens < chunk:
         out["prompt_too_short"] = (
             f"{tokens} prompt tokens is under one {chunk}-token chunk; "
-            f"the ANE cannot engage, so these are two GPU arms")
+            f"the ANE cannot engage, so these are two GPU arms"
+        )
     if off and on and out.get("on", {}).get("used_ane") and "prompt_too_short" not in out:
         out["speedup"] = off / on
         out["saved_seconds"] = off - on
@@ -200,8 +210,7 @@ def summarize(record: dict, chunk: int = PREFILL_CHUNK) -> dict:
 
 def format_row(r: dict) -> str:
     if "error" in r:
-        return (f"{r['model']:<44} {'-':>9} {'-':>9} {'-':>8} {'-':>9}  "
-                f"{r['error']}")
+        return f"{r['model']:<44} {'-':>9} {'-':>9} {'-':>8} {'-':>9}  {r['error']}"
     off = r["off"].get("prefill_seconds_median")
     on = r["on"].get("prefill_seconds_median")
     note = ""
@@ -213,18 +222,18 @@ def format_row(r: dict) -> str:
         note = "ANE arm fell back to the GPU"
     elif not r["off"].get("used_ane", True):
         note = "OFF arm reported an ANE fallback (unexpected)"
-    return (f"{r['model']:<44} "
-            f"{f'{off:.2f}' if off is not None else '-':>9} "
-            f"{f'{on:.2f}' if on is not None else '-':>9} "
-            f"{r.get('speedup', 0):>8.3f} "
-            f"{str(r.get('on', {}).get('used_ane')):>9}  {note}")
+    return (
+        f"{r['model']:<44} "
+        f"{f'{off:.2f}' if off is not None else '-':>9} "
+        f"{f'{on:.2f}' if on is not None else '-':>9} "
+        f"{r.get('speedup', 0):>8.3f} "
+        f"{str(r.get('on', {}).get('used_ane')):>9}  {note}"
+    )
 
 
-def new_record(repeats: int, characters: int, max_new: int,
-               chunk: int = PREFILL_CHUNK) -> dict:
+def new_record(repeats: int, characters: int, max_new: int, chunk: int = PREFILL_CHUNK) -> dict:
     return {
-        "recorded_at": datetime.datetime.now(
-            datetime.timezone.utc).isoformat(timespec="seconds"),
+        "recorded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "prompt_characters": characters,
         "prefill_chunk": chunk,
         "max_new_tokens": max_new,
@@ -253,41 +262,61 @@ def store_result(record: dict, result: dict) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--models", nargs="+", required=True,
-                        help="install directory names under models/")
-    parser.add_argument("--repeats", type=int, default=2,
-                        help="measured runs per arm (default 2). Each arm also "
-                             "gets one discarded warm-up, which the first ANE "
-                             "run needs for Core ML's compile")
-    parser.add_argument("--prompt-characters", type=int,
-                        default=PROMPT_CHARACTERS,
-                        help=f"prompt size (default {PROMPT_CHARACTERS}, about "
-                             f"4,300 tokens). The prompt must reach one full "
-                             f"--prefill-chunk or the ANE cannot engage at all")
-    parser.add_argument("--prefill-chunk", type=int, default=PREFILL_CHUNK,
-                        help=f"the runtime's prefill chunk (default "
-                             f"{PREFILL_CHUNK}). It must equal the sidecar's "
-                             f"chunk, so it also picks which sidecar directory "
-                             f"is loaded — a model can carry several widths "
-                             f"(ane_prefill-1024 beside ane_prefill)")
+    parser.add_argument(
+        "--models", nargs="+", required=True, help="install directory names under models/"
+    )
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=2,
+        help="measured runs per arm (default 2). Each arm also "
+        "gets one discarded warm-up, which the first ANE "
+        "run needs for Core ML's compile",
+    )
+    parser.add_argument(
+        "--prompt-characters",
+        type=int,
+        default=PROMPT_CHARACTERS,
+        help=f"prompt size (default {PROMPT_CHARACTERS}, about "
+        f"4,300 tokens). The prompt must reach one full "
+        f"--prefill-chunk or the ANE cannot engage at all",
+    )
+    parser.add_argument(
+        "--prefill-chunk",
+        type=int,
+        default=PREFILL_CHUNK,
+        help=f"the runtime's prefill chunk (default "
+        f"{PREFILL_CHUNK}). It must equal the sidecar's "
+        f"chunk, so it also picks which sidecar directory "
+        f"is loaded — a model can carry several widths "
+        f"(ane_prefill-1024 beside ane_prefill)",
+    )
     parser.add_argument("--label", default=None)
-    parser.add_argument("--record", action="store_true",
-                        help="write benchmark/ane-prefill/<label>.json, after "
-                             "every model so a held run keeps what it measured")
-    parser.add_argument("--skip-done", action="store_true",
-                        help="with --record, skip models already measured into "
-                             "the record (this is how a held run resumes)")
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="write benchmark/ane-prefill/<label>.json, after "
+        "every model so a held run keeps what it measured",
+    )
+    parser.add_argument(
+        "--skip-done",
+        action="store_true",
+        help="with --record, skip models already measured into "
+        "the record (this is how a held run resumes)",
+    )
     args = parser.parse_args()
 
     chunk_floor = int(args.prefill_chunk * CHARACTERS_PER_TOKEN)
     if args.prompt_characters < chunk_floor:
-        print(f"warning: {args.prompt_characters} characters is under one full "
-              f"{args.prefill_chunk}-token chunk (~{chunk_floor} characters), so "
-              f"the ANE arm would measure the GPU path", file=sys.stderr)
+        print(
+            f"warning: {args.prompt_characters} characters is under one full "
+            f"{args.prefill_chunk}-token chunk (~{chunk_floor} characters), so "
+            f"the ANE arm would measure the GPU path",
+            file=sys.stderr,
+        )
 
     path = None
-    record = new_record(args.repeats, args.prompt_characters, MAX_NEW,
-                                                          args.prefill_chunk)
+    record = new_record(args.repeats, args.prompt_characters, MAX_NEW, args.prefill_chunk)
     if args.record:
         RESULTS.mkdir(parents=True, exist_ok=True)
         label = args.label or datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -297,15 +326,14 @@ def main() -> int:
                 record = json.loads(path.read_text())
                 record.setdefault("results", [])
             except ValueError:
-                record = new_record(args.repeats, args.prompt_characters, MAX_NEW,
-                                                          args.prefill_chunk)
+                record = new_record(
+                    args.repeats, args.prompt_characters, MAX_NEW, args.prefill_chunk
+                )
     done = stored_models(record)
     if args.skip_done and done:
-        print(f"resuming {path.name}: {len(done)} model(s) already measured",
-              flush=True)
+        print(f"resuming {path.name}: {len(done)} model(s) already measured", flush=True)
 
-    header = (f"{'model':<44} {'off s':>9} {'on s':>9} {'speedup':>8} "
-              f"{'ANE used':>9}  note")
+    header = f"{'model':<44} {'off s':>9} {'on s':>9} {'speedup':>8} {'ANE used':>9}  note"
     print(header, flush=True)
 
     # Each model is printed *and stored* as it finishes: a full matrix is hours
@@ -315,13 +343,16 @@ def main() -> int:
         if args.skip_done and name in done:
             print(f"{name:<44} skipped (already in {path.name})", flush=True)
             continue
-        result = summarize(measure(name, args.repeats, args.prompt_characters,
-                                   args.prefill_chunk), args.prefill_chunk)
+        result = summarize(
+            measure(name, args.repeats, args.prompt_characters, args.prefill_chunk),
+            args.prefill_chunk,
+        )
         print(format_row(result), flush=True)
         if path is not None:
             store_result(record, result)
-            record["recorded_at"] = datetime.datetime.now(
-                datetime.timezone.utc).isoformat(timespec="seconds")
+            record["recorded_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat(
+                timespec="seconds"
+            )
             # Whole-file rewrite after each model: the file is small and a
             # partial row is worse than none.
             path.write_text(json.dumps(record, indent=2) + "\n")

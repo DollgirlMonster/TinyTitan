@@ -18,11 +18,11 @@ is not installed (the CI python does not have it; `~/.venvs/coreml-py311` does):
     cd benchmark && ~/.venvs/coreml-py311/bin/python -m unittest \
         test_export_ane_prefill -v
 """
+
 from __future__ import annotations
 
 import contextlib
 import io
-import json
 import os
 import pathlib
 import sys
@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 try:
     import export_ane_prefill as exporter
+
     IMPORT_ERROR = ""
 except Exception as exc:  # coremltools or numpy absent
     exporter = None
@@ -43,11 +44,19 @@ except Exception as exc:  # coremltools or numpy absent
 def arch(**overrides) -> dict:
     """The 35B-A3B row, which every supported family only varies from."""
     base = {
-        "family": "qwen36", "hiddenSize": 2048, "numHeads": 16,
-        "numKVHeads": 2, "numFullKVHeads": 2, "headDim": 256,
-        "fullHeadDim": 256, "attentionScale": 0.0625, "attentionKEqV": False,
-        "ropeNeoxSubdim": True, "slidingWindow": 0,
-        "fullRopeTheta": 10_000_000, "partialRotaryFactor": 0.25,
+        "family": "qwen36",
+        "hiddenSize": 2048,
+        "numHeads": 16,
+        "numKVHeads": 2,
+        "numFullKVHeads": 2,
+        "headDim": 256,
+        "fullHeadDim": 256,
+        "attentionScale": 0.0625,
+        "attentionKEqV": False,
+        "ropeNeoxSubdim": True,
+        "slidingWindow": 0,
+        "fullRopeTheta": 10_000_000,
+        "partialRotaryFactor": 0.25,
         "numLayers": 40,
         "fullAttentionLayerMask": [2, 2, 2, 1] * 10,
     }
@@ -64,19 +73,34 @@ class GeometryTests(unittest.TestCase):
     def test_reads_the_geometry_and_the_full_attention_layers(self):
         geom = exporter.geometry_for(arch(), ENTRIES)
         self.assertEqual(
-            (geom.family, geom.hidden, geom.q_heads, geom.kv_heads,
-             geom.head_dim, geom.rotary, geom.layers),
-            ("qwen36", 2048, 16, 2, 256, 64, (3, 7, 11, 15, 19, 23, 27, 31, 35, 39)))
+            (
+                geom.family,
+                geom.hidden,
+                geom.q_heads,
+                geom.kv_heads,
+                geom.head_dim,
+                geom.rotary,
+                geom.layers,
+            ),
+            ("qwen36", 2048, 16, 2, 256, 64, (3, 7, 11, 15, 19, 23, 27, 31, 35, 39)),
+        )
 
     def test_a_dense_shape_is_derived_not_assumed(self):
         # The 4B: hidden 2560, 16 q heads, 4 kv heads, 8 full-attention layers.
         geom = exporter.geometry_for(
-            arch(hiddenSize=2560, numKVHeads=4, numFullKVHeads=4, numLayers=32,
-                 fullAttentionLayerMask=[2, 2, 2, 1] * 8),
-            {f"{PREFIX}3.self_attn.q_proj.weight": {}})
-        self.assertEqual((geom.hidden, geom.q_heads, geom.kv_heads,
-                          geom.q_dim, geom.kv_dim, len(geom.layers)),
-                         (2560, 16, 4, 4096, 1024, 8))
+            arch(
+                hiddenSize=2560,
+                numKVHeads=4,
+                numFullKVHeads=4,
+                numLayers=32,
+                fullAttentionLayerMask=[2, 2, 2, 1] * 8,
+            ),
+            {f"{PREFIX}3.self_attn.q_proj.weight": {}},
+        )
+        self.assertEqual(
+            (geom.hidden, geom.q_heads, geom.kv_heads, geom.q_dim, geom.kv_dim, len(geom.layers)),
+            (2560, 16, 4, 4096, 1024, 8),
+        )
 
     def test_the_prefix_is_discovered_from_the_index(self):
         # The 3.8 family spells it the other way round.
@@ -89,9 +113,10 @@ class GeometryTests(unittest.TestCase):
         # geometry is the same kind of block as the other families, and the
         # runtime folds the selection into the mask the graph already takes.
         geom = exporter.geometry_for(arch(family="qwen38flash"), ENTRIES)
-        self.assertEqual((geom.family, geom.hidden, geom.q_heads,
-                          geom.kv_heads, geom.head_dim, geom.rotary),
-                         ("qwen38flash", 2048, 16, 2, 256, 64))
+        self.assertEqual(
+            (geom.family, geom.hidden, geom.q_heads, geom.kv_heads, geom.head_dim, geom.rotary),
+            ("qwen38flash", 2048, 16, 2, 256, 64),
+        )
 
     def test_the_mtp_draft_is_refused(self):
         # The runtime verifies the one-layer draft rather than prefilling it on
@@ -113,8 +138,7 @@ class GeometryTests(unittest.TestCase):
 
     def test_a_model_with_no_full_attention_layer_is_refused(self):
         with self.assertRaises(SystemExit):
-            exporter.geometry_for(
-                arch(fullAttentionLayerMask=[2] * 40), ENTRIES)
+            exporter.geometry_for(arch(fullAttentionLayerMask=[2] * 40), ENTRIES)
 
     def test_an_unknown_attention_layout_is_refused(self):
         with self.assertRaises(SystemExit):
@@ -122,8 +146,15 @@ class GeometryTests(unittest.TestCase):
 
     def test_the_recorded_metadata_carries_what_the_runtime_validates(self):
         meta = exporter.geometry_for(arch(), ENTRIES).as_metadata()
-        for key in ("family", "hiddenSize", "numHeads", "numKVHeads",
-                    "headDim", "chunkTokens", "fullAttentionLayers"):
+        for key in (
+            "family",
+            "hiddenSize",
+            "numHeads",
+            "numKVHeads",
+            "headDim",
+            "chunkTokens",
+            "fullAttentionLayers",
+        ):
             self.assertIn(key, meta)
         self.assertEqual(meta["chunkTokens"], exporter.CHUNK)
         self.assertEqual(meta["family"], "qwen36")
@@ -133,20 +164,24 @@ class GeometryTests(unittest.TestCase):
 class TensorWidthTests(unittest.TestCase):
     def test_a_per_tensor_override_beats_the_slot(self):
         # The dense installs' shape: a 4-bit slot, an 8-bit k_proj.
-        manifest = {"quant": {"attention": {"weightBits": 4},
-                              f"{PREFIX}3.self_attn.k_proj": {"weightBits": 8}}}
+        manifest = {
+            "quant": {
+                "attention": {"weightBits": 4},
+                f"{PREFIX}3.self_attn.k_proj": {"weightBits": 8},
+            }
+        }
         self.assertEqual(
-            exporter.tensor_weight_bits(
-                manifest, f"{PREFIX}3.self_attn.k_proj.weight", 4), 8)
+            exporter.tensor_weight_bits(manifest, f"{PREFIX}3.self_attn.k_proj.weight", 4), 8
+        )
         self.assertEqual(
-            exporter.tensor_weight_bits(
-                manifest, f"{PREFIX}3.self_attn.q_proj.weight", 4), 4)
+            exporter.tensor_weight_bits(manifest, f"{PREFIX}3.self_attn.q_proj.weight", 4), 4
+        )
 
     def test_the_slot_is_the_fallback(self):
         manifest = {"quant": {"attention": {"weightBits": 8}}}
         self.assertEqual(
-            exporter.tensor_weight_bits(
-                manifest, f"{PREFIX}3.self_attn.k_proj.weight", 8), 8)
+            exporter.tensor_weight_bits(manifest, f"{PREFIX}3.self_attn.k_proj.weight", 8), 8
+        )
 
 
 @unittest.skipIf(exporter is None, f"exporter needs coremltools: {IMPORT_ERROR}")
@@ -160,8 +195,9 @@ class CompileMarkerTests(unittest.TestCase):
 
     def test_a_compile_error_marker_fails_the_step(self):
         def refuses():
-            os.write(2, b"MILCompilerForANE error: failed to compile ANE model\n"
-                        b"ANECCompile() FAILED.\n")
+            os.write(
+                2, b"MILCompilerForANE error: failed to compile ANE model\nANECCompile() FAILED.\n"
+            )
             return "ok"
 
         with self.assertRaises(exporter.ANEExportError) as caught:
@@ -169,8 +205,7 @@ class CompileMarkerTests(unittest.TestCase):
         self.assertIn("refused to compile", str(caught.exception))
 
     def test_a_clean_step_returns_its_result(self):
-        self.assertEqual(
-            exporter.run_checked("layer 3 h0 convert", lambda: 41 + 1), 42)
+        self.assertEqual(exporter.run_checked("layer 3 h0 convert", lambda: 41 + 1), 42)
 
 
 @unittest.skipIf(exporter is None, f"exporter needs coremltools: {IMPORT_ERROR}")
@@ -185,10 +220,13 @@ class ANEAssignmentTests(unittest.TestCase):
     """
 
     def setUp(self):
-        self.addCleanup(setattr, exporter, "MLComputePlan",
-                        exporter.MLComputePlan)
-        self.addCleanup(setattr, exporter.ct.models.utils, "compile_model",
-                        exporter.ct.models.utils.compile_model)
+        self.addCleanup(setattr, exporter, "MLComputePlan", exporter.MLComputePlan)
+        self.addCleanup(
+            setattr,
+            exporter.ct.models.utils,
+            "compile_model",
+            exporter.ct.models.utils.compile_model,
+        )
         exporter.ct.models.utils.compile_model = lambda path: "/tmp/fake.mlmodelc"
 
     @staticmethod
@@ -206,8 +244,9 @@ class ANEAssignmentTests(unittest.TestCase):
         device = NeuralEngineComputeDevice()
         operations = [Operation() for _ in range(total)]
         decided = {id(op): index < on_ane for index, op in enumerate(operations)}
-        function_object = type("Function", (), {
-            "block": type("Block", (), {"operations": operations})()})()
+        function_object = type(
+            "Function", (), {"block": type("Block", (), {"operations": operations})()}
+        )()
         program = type("Program", (), {"functions": {function: function_object}})()
 
         class Plan:
@@ -221,20 +260,25 @@ class ANEAssignmentTests(unittest.TestCase):
 
     def install(self, on_ane: int, total: int = 8):
         exporter.MLComputePlan = type(
-            "MLComputePlan", (), {"load_from_path": staticmethod(
-                lambda path, compute_units=None: self.fakePlan(on_ane, total))})
+            "MLComputePlan",
+            (),
+            {
+                "load_from_path": staticmethod(
+                    lambda path, compute_units=None: self.fakePlan(on_ane, total)
+                )
+            },
+        )
 
     def test_a_variant_assigned_to_the_ane_reports_its_count(self):
         self.install(on_ane=6)
         self.assertEqual(
-            exporter.verify_variant_reaches_the_ane(
-                pathlib.Path("h4096.mlpackage"), 4096, 3), 6)
+            exporter.verify_variant_reaches_the_ane(pathlib.Path("h4096.mlpackage"), 4096, 3), 6
+        )
 
     def test_a_variant_the_ane_refuses_fails_the_export(self):
         self.install(on_ane=0, total=173)
         with self.assertRaises(exporter.ANEExportError) as caught:
-            exporter.verify_variant_reaches_the_ane(
-                pathlib.Path("h12288.mlpackage"), 12288, 3)
+            exporter.verify_variant_reaches_the_ane(pathlib.Path("h12288.mlpackage"), 12288, 3)
         message = str(caught.exception)
         self.assertIn("h12288", message)
         self.assertIn("173", message)
@@ -243,8 +287,7 @@ class ANEAssignmentTests(unittest.TestCase):
     def test_an_empty_graph_is_refused_rather_than_counted(self):
         self.install(on_ane=0, total=0)
         with self.assertRaises(exporter.ANEExportError) as caught:
-            exporter.verify_variant_reaches_the_ane(
-                pathlib.Path("h0.mlpackage"), 0, 3)
+            exporter.verify_variant_reaches_the_ane(pathlib.Path("h0.mlpackage"), 0, 3)
         self.assertIn("no operations", str(caught.exception))
 
     def test_no_compute_plan_api_warns_once_and_does_not_fail(self):
@@ -252,10 +295,10 @@ class ANEAssignmentTests(unittest.TestCase):
         exporter._warnedNoComputePlan = False
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            first = exporter.verify_variant_reaches_the_ane(
-                pathlib.Path("h0.mlpackage"), 0, 3)
+            first = exporter.verify_variant_reaches_the_ane(pathlib.Path("h0.mlpackage"), 0, 3)
             second = exporter.verify_variant_reaches_the_ane(
-                pathlib.Path("h4096.mlpackage"), 4096, 3)
+                pathlib.Path("h4096.mlpackage"), 4096, 3
+            )
         self.assertIsNone(first)
         self.assertIsNone(second)
         self.assertIn("MLComputePlan", stderr.getvalue())
@@ -282,14 +325,15 @@ class VariantLoadTests(unittest.TestCase):
             seen.append(function_name)
             if function_name == "h12288":
                 raise RuntimeError(
-                    "`.functionName` property must be nil unless the model type "
-                    "is ML Program.")
+                    "`.functionName` property must be nil unless the model type is ML Program."
+                )
             return object()
 
         exporter.ct.models.MLModel = fake
         with self.assertRaises(exporter.ANEExportError) as caught:
-            exporter.verify_variants_load(pathlib.Path("layer_3.mlpackage"),
-                                          [0, 4096, 8192, 12288], 3)
+            exporter.verify_variants_load(
+                pathlib.Path("layer_3.mlpackage"), [0, 4096, 8192, 12288], 3
+            )
         self.assertIn("h12288", str(caught.exception))
         # It reaches the failing variant rather than stopping early, so the
         # error names the history that has to change.
@@ -305,13 +349,14 @@ class VariantLoadTests(unittest.TestCase):
                 warnings.warn(
                     "You will not be able to run predict() on this Core ML "
                     "model. Underlying exception message was: `.functionName` "
-                    "property must be nil unless the model type is ML Program.")
+                    "property must be nil unless the model type is ML Program.",
+                    stacklevel=2,
+                )
             return object()
 
         exporter.ct.models.MLModel = fake
         with self.assertRaises(exporter.ANEExportError) as caught:
-            exporter.verify_variants_load(pathlib.Path("layer_3.mlpackage"),
-                                          [0, 12288], 3)
+            exporter.verify_variants_load(pathlib.Path("layer_3.mlpackage"), [0, 12288], 3)
         self.assertIn("h12288", str(caught.exception))
         self.assertIn("cannot run", str(caught.exception))
 
@@ -323,31 +368,38 @@ class VariantLoadTests(unittest.TestCase):
             return object()
 
         exporter.ct.models.MLModel = fake
-        exporter.verify_variants_load(pathlib.Path("layer_7.mlpackage"),
-                                      [0, 4096], 7)
+        exporter.verify_variants_load(pathlib.Path("layer_7.mlpackage"), [0, 4096], 7)
         self.assertEqual(seen, ["h0", "h4096"])
 
 
 @unittest.skipIf(exporter is None, f"exporter needs coremltools: {IMPORT_ERROR}")
 class LoadTensorTests(unittest.TestCase):
     def entry(self, rows, cols, size, dtype=0):
-        return {"shape": (rows, cols, 0, 0), "size": size, "dtype": dtype,
-                "offset": 0, "scale": (0, 2 * rows * (cols // 64)),
-                "bias": (0, 2 * rows * (cols // 64))}
+        return {
+            "shape": (rows, cols, 0, 0),
+            "size": size,
+            "dtype": dtype,
+            "offset": 0,
+            "scale": (0, 2 * rows * (cols // 64)),
+            "bias": (0, 2 * rows * (cols // 64)),
+        }
 
     def test_a_manifest_that_lies_about_its_width_is_refused(self):
         # 8-bit payload declared as 4-bit: 1,048,576 bytes for 512x2048.
         with self.assertRaises(SystemExit) as caught:
-            exporter.load_tensor(io.BytesIO(b"\x00" * (1 << 21)),
-                                 self.entry(512, 2048, 1 << 20),
-                                 weight_bits=4, name="k_proj")
+            exporter.load_tensor(
+                io.BytesIO(b"\x00" * (1 << 21)),
+                self.entry(512, 2048, 1 << 20),
+                weight_bits=4,
+                name="k_proj",
+            )
         self.assertIn("refusing to guess", str(caught.exception))
 
     def test_an_unsupported_width_is_refused(self):
         with self.assertRaises(SystemExit):
-            exporter.load_tensor(io.BytesIO(b"\x00" * 32),
-                                 self.entry(8, 8, 32), weight_bits=3,
-                                 name="k_proj")
+            exporter.load_tensor(
+                io.BytesIO(b"\x00" * 32), self.entry(8, 8, 32), weight_bits=3, name="k_proj"
+            )
 
 
 if __name__ == "__main__":

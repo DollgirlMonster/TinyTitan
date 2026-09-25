@@ -20,6 +20,7 @@ and the stores recorded from real runs -- because those have ground truth
 that nobody wrote for this file. Where a case had to be authored, the task
 says so, and authored cases are marked in the output.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,49 +45,61 @@ sim = guard.sim
 ONE_WORD = "Do not explain. Do not quote. Answer with one word and nothing else."
 
 SYSTEMS = {
-    "T1": ("You decide whether one statement came from the person or not. "
-           "Answer with exactly one word: YES or NO. YES means the person "
-           "wrote it or clearly implied it. NO means it does not appear in "
-           "what they wrote, however true it might be. " + ONE_WORD),
-    "T2": ("You decide whether one fact is worth keeping after this session "
-           "ends. Answer with exactly one word: YES or NO. YES only for a "
-           "standing fact a later session needs: a decision and its reason, a "
-           "fixed attribute, a rule, a constraint, a preference, or the state "
-           "of the work right now. NO for anything that reports what happened "
-           "in this session instead of stating how things are: story text, "
-           "narration, chapter content, a summary of what was written, a "
-           "remark about the writing, a plan to write, an offer, or an "
-           "acknowledgement. A fact that would only make sense to someone who "
-           "read this session is NO. " + ONE_WORD),
-    "T3": ("You decide whether two statements disagree. Answer with exactly "
-           "one word: YES or NO. YES means both cannot be true at once. NO "
-           "means they can both be true, including when they are about "
-           "different things, or when one simply says more than the other. "
-           "Different wording for the same thing is NO. " + ONE_WORD),
-    "T4": ("Something has changed about one fact. You decide which kind of "
-           "change it is. Answer with exactly one word: UPDATE or CONFLICT. "
-           "UPDATE: the earlier value was true before and the newer one is "
-           "true now, so both can be true in turn -- the world moved on. "
-           "CONFLICT: a rule says this value never changes, or the two are "
-           "about the same moment, so both cannot be true and one is wrong. A "
-           "change of state -- a place burned, a person found, a service "
-           "stopped -- is UPDATE. A change to something a rule fixes -- an "
-           "eye colour under a rule that it never changes -- is CONFLICT. "
-           + ONE_WORD),
-    "T5": ("You decide whether two facts say the same thing. Answer with "
-           "exactly one word: YES or NO. YES means a reader learns nothing "
-           "from the second that the first did not already tell them. NO "
-           "means the second adds something, or is about something else. "
-           + ONE_WORD),
-    "T6": ("You check one reply against one thing that is known. Answer with "
-           "exactly one word: YES or NO. YES means the reply says something "
-           "that cannot be true if the known fact is true. NO means it "
-           "agrees, or does not touch on it at all. Silence is not a "
-           "contradiction. " + ONE_WORD),
-    "T7": ("You decide whether one stored fact could answer one question. "
-           "Answer with exactly one word: YES or NO. YES means the fact "
-           "contains the answer, or part of it. NO means it does not, even "
-           "if it is about the same subject. " + ONE_WORD),
+    "T1": (
+        "You decide whether one statement came from the person or not. "
+        "Answer with exactly one word: YES or NO. YES means the person "
+        "wrote it or clearly implied it. NO means it does not appear in "
+        "what they wrote, however true it might be. " + ONE_WORD
+    ),
+    "T2": (
+        "You decide whether one fact is worth keeping after this session "
+        "ends. Answer with exactly one word: YES or NO. YES only for a "
+        "standing fact a later session needs: a decision and its reason, a "
+        "fixed attribute, a rule, a constraint, a preference, or the state "
+        "of the work right now. NO for anything that reports what happened "
+        "in this session instead of stating how things are: story text, "
+        "narration, chapter content, a summary of what was written, a "
+        "remark about the writing, a plan to write, an offer, or an "
+        "acknowledgement. A fact that would only make sense to someone who "
+        "read this session is NO. " + ONE_WORD
+    ),
+    "T3": (
+        "You decide whether two statements disagree. Answer with exactly "
+        "one word: YES or NO. YES means both cannot be true at once. NO "
+        "means they can both be true, including when they are about "
+        "different things, or when one simply says more than the other. "
+        "Different wording for the same thing is NO. " + ONE_WORD
+    ),
+    "T4": (
+        "Something has changed about one fact. You decide which kind of "
+        "change it is. Answer with exactly one word: UPDATE or CONFLICT. "
+        "UPDATE: the earlier value was true before and the newer one is "
+        "true now, so both can be true in turn -- the world moved on. "
+        "CONFLICT: a rule says this value never changes, or the two are "
+        "about the same moment, so both cannot be true and one is wrong. A "
+        "change of state -- a place burned, a person found, a service "
+        "stopped -- is UPDATE. A change to something a rule fixes -- an "
+        "eye colour under a rule that it never changes -- is CONFLICT. " + ONE_WORD
+    ),
+    "T5": (
+        "You decide whether two facts say the same thing. Answer with "
+        "exactly one word: YES or NO. YES means a reader learns nothing "
+        "from the second that the first did not already tell them. NO "
+        "means the second adds something, or is about something else. " + ONE_WORD
+    ),
+    "T6": (
+        "You check one reply against one thing that is known. Answer with "
+        "exactly one word: YES or NO. YES means the reply says something "
+        "that cannot be true if the known fact is true. NO means it "
+        "agrees, or does not touch on it at all. Silence is not a "
+        "contradiction. " + ONE_WORD
+    ),
+    "T7": (
+        "You decide whether one stored fact could answer one question. "
+        "Answer with exactly one word: YES or NO. YES means the fact "
+        "contains the answer, or part of it. NO means it does not, even "
+        "if it is about the same subject. " + ONE_WORD
+    ),
 }
 
 # The book's fixed attributes, as key/value pairs the model would really see.
@@ -140,16 +153,24 @@ def truth_of(row: dict) -> str:
     return row["truth"]
 
 
-def job(task: str, prompt: str, truth: str, note: str, authored: bool = False,
-        system: str | None = None):
-    return {"chat": True, "system": system or SYSTEMS[task], "prompt": prompt,
-            "max": 8, "task": task, "truth": truth, "note": note,
-            "authored": authored}
+def job(
+    task: str, prompt: str, truth: str, note: str, authored: bool = False, system: str | None = None
+):
+    return {
+        "chat": True,
+        "system": system or SYSTEMS[task],
+        "prompt": prompt,
+        "max": 8,
+        "task": task,
+        "truth": truth,
+        "note": note,
+        "authored": authored,
+    }
 
 
 def cases() -> list[dict]:
     jobs: list[dict] = []
-    said = sim.user_text(10)
+    sim.user_text(10)
 
     # T1: every clause of every composite the recorded runs produced, with
     # the person's own words as the reference. Ground truth comes from the
@@ -167,34 +188,48 @@ def cases() -> list[dict]:
                     continue
                 stems = guard.stems(guard.significant(sim.user_text(fact["session"])))
                 truth = len({w for w in words if guard.stem(w) in stems}) / len(words)
-                jobs.append(job(
-                    "T1",
-                    f"WHAT THE PERSON WROTE:\n{sim.user_text(fact['session'])}\n\n"
-                    f"STATEMENT: {fact['address']} = {clause}\n"
-                    f"Did the person state this?",
-                    HAND_LABELS.get(f"{fact['address']} = {clause}",
-                                    "YES" if truth >= 0.5 else "NO"),
-                    f"{fact['address']} / {label}"))
+                jobs.append(
+                    job(
+                        "T1",
+                        f"WHAT THE PERSON WROTE:\n{sim.user_text(fact['session'])}\n\n"
+                        f"STATEMENT: {fact['address']} = {clause}\n"
+                        f"Did the person state this?",
+                        HAND_LABELS.get(
+                            f"{fact['address']} = {clause}", "YES" if truth >= 0.5 else "NO"
+                        ),
+                        f"{fact['address']} / {label}",
+                    )
+                )
 
     # T2: durable against not. The positives are the bible's own facts; the
     # negatives are lines of the novel the model wrote, which are exactly
     # what must not be stored.
     for key, value in BIBLE.items():
         jobs.append(job("T2", f"FACT: {key} = {value}\nKeep it?", "YES", key))
-    for index, line in enumerate([
-        "Chapter 12: Ines turned the brittle pages and found the photograph.",
-        "I will write the next ten chapters now.",
-        "Chapter 34: the inn burned as the tide came in.",
-        "Let me re-read chapter 8 before continuing.",
-        "The prose in chapter 20 could be tightened.",
-        "Chapter 51: Marcus walked to the harbour in the rain.",
-        "Here are chapters 41 to 50 as requested.",
-        "I have finished the section you asked for.",
-        "Chapter 63: the certificate lay in the drawer, unsigned.",
-        "That completes the ten chapters.",
-    ], start=1):
-        jobs.append(job("T2", f"FACT: session/note{index} = {line}\nKeep it?",
-                        "NO", f"narration {index}", authored=True))
+    for index, line in enumerate(
+        [
+            "Chapter 12: Ines turned the brittle pages and found the photograph.",
+            "I will write the next ten chapters now.",
+            "Chapter 34: the inn burned as the tide came in.",
+            "Let me re-read chapter 8 before continuing.",
+            "The prose in chapter 20 could be tightened.",
+            "Chapter 51: Marcus walked to the harbour in the rain.",
+            "Here are chapters 41 to 50 as requested.",
+            "I have finished the section you asked for.",
+            "Chapter 63: the certificate lay in the drawer, unsigned.",
+            "That completes the ten chapters.",
+        ],
+        start=1,
+    ):
+        jobs.append(
+            job(
+                "T2",
+                f"FACT: session/note{index} = {line}\nKeep it?",
+                "NO",
+                f"narration {index}",
+                authored=True,
+            )
+        )
 
     # T3: a contradiction is the same key with an incompatible value. A
     # non-contradiction is two different facts, or the same fact reworded --
@@ -202,12 +237,23 @@ def cases() -> list[dict]:
     keys = list(BIBLE)
     for key in keys[:5]:
         wrong = "hazel" if BIBLE[key] != "hazel" else "grey"
-        jobs.append(job("T3", f"A: {key} = {BIBLE[key]}\nB: {key} = {wrong}\n"
-                             f"Do A and B disagree?", "YES", key))
-    for first, second in zip(keys[:5], keys[5:10]):
-        jobs.append(job("T3", f"A: {first} = {BIBLE[first]}\n"
-                             f"B: {second} = {BIBLE[second]}\n"
-                             f"Do A and B disagree?", "NO", f"{first} vs {second}"))
+        jobs.append(
+            job(
+                "T3",
+                f"A: {key} = {BIBLE[key]}\nB: {key} = {wrong}\nDo A and B disagree?",
+                "YES",
+                key,
+            )
+        )
+    for first, second in zip(keys[:5], keys[5:10], strict=False):
+        jobs.append(
+            job(
+                "T3",
+                f"A: {first} = {BIBLE[first]}\nB: {second} = {BIBLE[second]}\nDo A and B disagree?",
+                "NO",
+                f"{first} vs {second}",
+            )
+        )
 
     # T4: the plot events really are updates -- the person said the inn
     # burned. An eye colour changing is a conflict, because the bible says it
@@ -216,38 +262,77 @@ def cases() -> list[dict]:
     # (`SideEngineJudgement.supersession`'s `rule`). Without it the CONFLICT
     # half is unanswerable and the model is guessing.
     for key, (before, after) in EVENTS.items():
-        jobs.append(job("T4", f"{RULE}\nEARLIER: {key} = {before}\n"
-                             f"NOW: {key} = {after}\nWhich is it?", "UPDATE", key))
+        jobs.append(
+            job(
+                "T4",
+                f"{RULE}\nEARLIER: {key} = {before}\nNOW: {key} = {after}\nWhich is it?",
+                "UPDATE",
+                key,
+            )
+        )
     for key in list(BIBLE)[:3]:
-        jobs.append(job("T4", f"{RULE}\nEARLIER: {key} = {BIBLE[key]}\n"
-                             f"NOW: {key} = hazel\nWhich is it?", "CONFLICT", key))
+        jobs.append(
+            job(
+                "T4",
+                f"{RULE}\nEARLIER: {key} = {BIBLE[key]}\nNOW: {key} = hazel\nWhich is it?",
+                "CONFLICT",
+                key,
+            )
+        )
 
     # T5: the same fact reworded against two different facts.
     for key, value in list(BIBLE.items())[:4]:
         subject = key.split("/")[1]
-        jobs.append(job("T5", f"A: {key} = {value}\n"
-                             f"B: notes/{subject} = {subject}'s eyes are {value}\n"
-                             f"Same fact?", "YES", key, authored=True))
-    for first, second in zip(keys[:4], keys[4:8]):
-        jobs.append(job("T5", f"A: {first} = {BIBLE[first]}\n"
-                             f"B: {second} = {BIBLE[second]}\nSame fact?",
-                        "NO", f"{first} vs {second}"))
+        jobs.append(
+            job(
+                "T5",
+                f"A: {key} = {value}\n"
+                f"B: notes/{subject} = {subject}'s eyes are {value}\n"
+                f"Same fact?",
+                "YES",
+                key,
+                authored=True,
+            )
+        )
+    for first, second in zip(keys[:4], keys[4:8], strict=False):
+        jobs.append(
+            job(
+                "T5",
+                f"A: {first} = {BIBLE[first]}\nB: {second} = {BIBLE[second]}\nSame fact?",
+                "NO",
+                f"{first} vs {second}",
+            )
+        )
 
     # T6: a reply that contradicts a known fact, against one that does not
     # touch it. Silence must not read as contradiction -- the failure that
     # would make a checker fire on every reply.
     for key, value in list(BIBLE.items())[:4]:
         subject = key.split("/")[1]
-        jobs.append(job("T6", f"KNOWN: {key} = {value}\n"
-                             f"REPLY: {subject.title()} looked up, hazel eyes catching "
-                             f"the light.\nDoes the reply contradict what is known?",
-                        "YES" if value != "hazel" else "NO", key, authored=True))
+        jobs.append(
+            job(
+                "T6",
+                f"KNOWN: {key} = {value}\n"
+                f"REPLY: {subject.title()} looked up, hazel eyes catching "
+                f"the light.\nDoes the reply contradict what is known?",
+                "YES" if value != "hazel" else "NO",
+                key,
+                authored=True,
+            )
+        )
     for key, value in list(BIBLE.items())[:4]:
-        jobs.append(job("T6", f"KNOWN: {key} = {value}\n"
-                             f"REPLY: The ferry did not come that morning, and the "
-                             f"harbour stayed empty.\n"
-                             f"Does the reply contradict what is known?",
-                        "NO", key, authored=True))
+        jobs.append(
+            job(
+                "T6",
+                f"KNOWN: {key} = {value}\n"
+                f"REPLY: The ferry did not come that morning, and the "
+                f"harbour stayed empty.\n"
+                f"Does the reply contradict what is known?",
+                "NO",
+                key,
+                authored=True,
+            )
+        )
 
     # T7: the quiz's own questions against the key that answers them, and
     # against a key about the same person that does not.
@@ -258,8 +343,14 @@ def cases() -> list[dict]:
         "characters/ines/role": "What does Ines do?",
     }
     for key, question in asks.items():
-        jobs.append(job("T7", f"QUESTION: {question}\nFACT: {key} = {BIBLE[key]}\n"
-                             f"Could this fact answer it?", "YES", key))
+        jobs.append(
+            job(
+                "T7",
+                f"QUESTION: {question}\nFACT: {key} = {BIBLE[key]}\nCould this fact answer it?",
+                "YES",
+                key,
+            )
+        )
     wrong = {
         "characters/marcus/eyes": "characters/marcus/role",
         "setting/town": "rules/weather",
@@ -268,8 +359,14 @@ def cases() -> list[dict]:
     }
     for key, question in asks.items():
         other = wrong[key]
-        jobs.append(job("T7", f"QUESTION: {question}\nFACT: {other} = {BIBLE[other]}\n"
-                             f"Could this fact answer it?", "NO", f"{key} vs {other}"))
+        jobs.append(
+            job(
+                "T7",
+                f"QUESTION: {question}\nFACT: {other} = {BIBLE[other]}\nCould this fact answer it?",
+                "NO",
+                f"{key} vs {other}",
+            )
+        )
     return jobs
 
 
@@ -284,11 +381,15 @@ def cases() -> list[dict]:
 # ways.
 VARIANTS = {
     "plain": "",
-    "stakes": (" This is a production system. A wrong answer corrupts a "
-               "person's saved memory, and they will not know it happened. "
-               "Be certain before you answer."),
-    "confidence": (" After your one-word answer, add a space and a "
-                   "confidence percentage from 0 to 100, like: YES 90"),
+    "stakes": (
+        " This is a production system. A wrong answer corrupts a "
+        "person's saved memory, and they will not know it happened. "
+        "Be certain before you answer."
+    ),
+    "confidence": (
+        " After your one-word answer, add a space and a "
+        "confidence percentage from 0 to 100, like: YES 90"
+    ),
 }
 
 
@@ -301,30 +402,38 @@ VARIANTS = {
 # boundary it collapsed on. T3, T6 and T7 keep their wording.
 SYSTEMS_V2 = {
     **SYSTEMS,
-    "T1": ("You decide whether one statement came from the person or not. "
-           "Answer with exactly one word: YES or NO. YES means the person "
-           "wrote it or clearly implied it, however the statement is "
-           "written: shorthand such as name_attribute value counts. NO means "
-           "it does not appear in what they wrote, however true it might "
-           "be. " + ONE_WORD),
-    "T2": ("You decide whether one note is worth keeping after this session "
-           "ends. Answer with exactly one word: YES or NO. YES for decisions "
-           "and the reasons behind them, fixed attributes, rules, "
-           "constraints, and current state. NO for a line of the story "
-           "itself, for anything about the writing -- what was written, what "
-           "comes next, what could be better -- and for conversation, "
-           "reasoning, code, and anything true only right now. " + ONE_WORD),
-    "T4": ("Something has changed about one fact. You decide which kind of "
-           "change it is. Answer with exactly one word: UPDATE or CONFLICT. "
-           "UPDATE means the world moved on and the newer one is the current "
-           "state. CONFLICT means the two cannot both have been true, and "
-           "one of them is wrong. A change the rule forbids is always "
-           "CONFLICT. " + ONE_WORD),
-    "T5": ("You decide whether two facts say the same thing. Answer with "
-           "exactly one word: YES or NO. YES means a reader learns nothing "
-           "from the second that the first did not already tell them, "
-           "however differently it is worded. NO means the second adds "
-           "something, or is about something else. " + ONE_WORD),
+    "T1": (
+        "You decide whether one statement came from the person or not. "
+        "Answer with exactly one word: YES or NO. YES means the person "
+        "wrote it or clearly implied it, however the statement is "
+        "written: shorthand such as name_attribute value counts. NO means "
+        "it does not appear in what they wrote, however true it might "
+        "be. " + ONE_WORD
+    ),
+    "T2": (
+        "You decide whether one note is worth keeping after this session "
+        "ends. Answer with exactly one word: YES or NO. YES for decisions "
+        "and the reasons behind them, fixed attributes, rules, "
+        "constraints, and current state. NO for a line of the story "
+        "itself, for anything about the writing -- what was written, what "
+        "comes next, what could be better -- and for conversation, "
+        "reasoning, code, and anything true only right now. " + ONE_WORD
+    ),
+    "T4": (
+        "Something has changed about one fact. You decide which kind of "
+        "change it is. Answer with exactly one word: UPDATE or CONFLICT. "
+        "UPDATE means the world moved on and the newer one is the current "
+        "state. CONFLICT means the two cannot both have been true, and "
+        "one of them is wrong. A change the rule forbids is always "
+        "CONFLICT. " + ONE_WORD
+    ),
+    "T5": (
+        "You decide whether two facts say the same thing. Answer with "
+        "exactly one word: YES or NO. YES means a reader learns nothing "
+        "from the second that the first did not already tell them, "
+        "however differently it is worded. NO means the second adds "
+        "something, or is about something else. " + ONE_WORD
+    ),
 }
 
 
@@ -336,7 +445,7 @@ def sentence(key: str, value: str) -> str:
     value = value.rstrip(".")
     namespace, *parts = [p.replace("_", " ") for p in key.split("/")]
     if namespace in ("session", "notes"):
-        return value[:1].upper() + value[1:] + "."   # already prose
+        return value[:1].upper() + value[1:] + "."  # already prose
     if len(parts) >= 2:
         return f"{parts[0].title()}'s {' '.join(parts[1:])}: {value}."
     return f"{parts[0].capitalize()}: {value}."
@@ -363,8 +472,7 @@ def v2_cases() -> list[dict]:
         prompt = as_sentences(case["prompt"])
         if case["task"] == "T4" and not prompt.startswith("RULE:"):
             prompt = f"{RULE}\n{prompt}"
-        jobs.append(dict(case, prompt=prompt, system=SYSTEMS_V2[case["task"]],
-                         variant="v2"))
+        jobs.append(dict(case, prompt=prompt, system=SYSTEMS_V2[case["task"]], variant="v2"))
     return jobs
 
 
@@ -389,8 +497,7 @@ def score_variants(path: Path) -> int:
     for row in rows:
         groups.setdefault(row.get("variant", "plain"), []).append(row)
 
-    print(f"{'variant':12s} {'n':>3s} {'correct':>8s}   {'YES cases':>12s} "
-          f"{'NO cases':>10s}")
+    print(f"{'variant':12s} {'n':>3s} {'correct':>8s}   {'YES cases':>12s} {'NO cases':>10s}")
     for name in VARIANTS:
         group = groups.get(name) or []
         if not group:
@@ -406,8 +513,10 @@ def score_variants(path: Path) -> int:
         total = sum(v[1] for v in halves.values())
         yes = halves.get("YES", [0, 0])
         no = halves.get("NO", [0, 0])
-        print(f"{name:12s} {total:3d} {100 * correct / total:7.0f}%   "
-              f"{yes[0]:>5d}/{yes[1]:<6d} {no[0]:>5d}/{no[1]:<4d}")
+        print(
+            f"{name:12s} {total:3d} {100 * correct / total:7.0f}%   "
+            f"{yes[0]:>5d}/{yes[1]:<6d} {no[0]:>5d}/{no[1]:<4d}"
+        )
 
     # Calibration: a confidence figure is only worth having if being sure
     # means being right. If the model says 90 whether it is right or wrong,
@@ -423,13 +532,16 @@ def score_variants(path: Path) -> int:
             continue
         hit = parts[0].strip(".,:;") == truth_of(row)
         value = int(parts[1])
-        band = "100" if value >= 100 else ("90-99" if value >= 90 else
-                                           ("70-89" if value >= 70 else "under 70"))
+        band = (
+            "100"
+            if value >= 100
+            else ("90-99" if value >= 90 else ("70-89" if value >= 70 else "under 70"))
+        )
         entry = buckets.setdefault(band, [0, 0])
         entry[0] += hit
         entry[1] += 1
     if buckets:
-        print(f"\ncalibration -- is being sure the same as being right?")
+        print("\ncalibration -- is being sure the same as being right?")
         print(f"  {'stated':10s} {'n':>3s} {'actually right':>15s}")
         for band in ("100", "90-99", "70-89", "under 70"):
             if band not in buckets:
@@ -487,10 +599,14 @@ def score(path: Path) -> int:
         worst = min((v[0] / v[1]) for v in by_truth.values() if v[1])
         mark = " " if worst >= 0.7 else "*"
         failures += worst < 0.7
-        print(f"{task:5s} {total:3d} {100 * correct / total:7.0f}%{mark}  {halves:28s} "
-              f"{unparseable:>3d}")
-    print("\n* one half below 70%: the model is not reading the question, "
-          "whatever the overall figure says.")
+        print(
+            f"{task:5s} {total:3d} {100 * correct / total:7.0f}%{mark}  {halves:28s} "
+            f"{unparseable:>3d}"
+        )
+    print(
+        "\n* one half below 70%: the model is not reading the question, "
+        "whatever the overall figure says."
+    )
     if failures:
         print(f"{failures} task(s) not ready.")
     else:
@@ -502,13 +618,19 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prepare", type=Path)
     ap.add_argument("--score", type=Path)
-    ap.add_argument("--prepare-variants", type=Path,
-                    help="T1 again under stakes framing and with a confidence "
-                         "figure, to test two beliefs about prompting")
+    ap.add_argument(
+        "--prepare-variants",
+        type=Path,
+        help="T1 again under stakes framing and with a confidence "
+        "figure, to test two beliefs about prompting",
+    )
     ap.add_argument("--score-variants", type=Path)
-    ap.add_argument("--prepare-v2", type=Path,
-                    help="every case again with facts as sentences and the "
-                         "second-draft prompts; score with --score")
+    ap.add_argument(
+        "--prepare-v2",
+        type=Path,
+        help="every case again with facts as sentences and the "
+        "second-draft prompts; score with --score",
+    )
     args = ap.parse_args()
     if args.prepare:
         return prepare(args.prepare)
@@ -519,8 +641,7 @@ def main() -> int:
         return 0
     if args.prepare_variants:
         jobs = confidence_cases()
-        args.prepare_variants.write_text(
-            "\n".join(json.dumps(j) for j in jobs) + "\n")
+        args.prepare_variants.write_text("\n".join(json.dumps(j) for j in jobs) + "\n")
         print(f"{len(jobs)} cases -> {args.prepare_variants}")
         return 0
     if args.score_variants:

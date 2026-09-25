@@ -6,6 +6,7 @@ verdict rests on it being ~64x for the shipped 3.8 geometry and ~103 GB at the
 real chunk. A silent change to the geometry or the budget would move that number
 without failing anything, so it is asserted rather than computed in prose.
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -17,6 +18,7 @@ sys.path.insert(0, str(ROOT / "benchmark"))
 
 try:
     import ane_gather_probe as probe
+
     IMPORT_ERROR = ""
 except Exception as exc:  # coremltools or numpy absent
     probe = None
@@ -29,8 +31,7 @@ class GatherGeometryTests(unittest.TestCase):
         geom = probe.Geometry(chunk=32)
         self.assertEqual(geom.dense_values, 24 * 32 * 8_192)
         self.assertEqual(geom.gather_values, 24 * 32 * 2_051 * 256)
-        self.assertAlmostEqual(geom.gather_values / geom.dense_values, 64.09,
-                               places=2)
+        self.assertAlmostEqual(geom.gather_values / geom.dense_values, 64.09, places=2)
 
     def test_the_real_chunk_would_need_103_gb_of_gathered_keys(self):
         # 24 heads x 4096 x 2051 x 256 fp16, against a 1.6 GB dense score matrix.
@@ -41,8 +42,9 @@ class GatherGeometryTests(unittest.TestCase):
 
     def test_the_probe_chunk_does_not_change_the_geometry(self):
         small = probe.Geometry(chunk=16)
-        self.assertEqual((small.total, small.heads, small.head_dim,
-                          small.budget), (8_192, 24, 256, 2_051))
+        self.assertEqual(
+            (small.total, small.heads, small.head_dim, small.budget), (8_192, 24, 256, 2_051)
+        )
 
 
 @unittest.skipIf(probe is None, f"probe needs coremltools: {IMPORT_ERROR}")

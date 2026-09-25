@@ -10,30 +10,36 @@ Decode rates come from the server footer (authoritative); per-chunk timestamps
 give the decode-rate drift over the generation. Server RSS sampled around the
 10k-token prefill. Usage: python3 benchmark/tinytitan_longctx.py
 """
+
 import json
 import os
-import re
-import signal
 import subprocess
-import sys
 import time
 import http.client
 
 from tinytitan_profile import (
-    DEFAULT_API_MODEL, DEFAULT_MODEL_PATH, benchmark_log_path,
-    server_command, server_environment, resolve_api_model,
+    DEFAULT_MODEL_PATH,
+    benchmark_log_path,
+    server_command,
+    server_environment,
+    resolve_api_model,
 )
 
 BASE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 BIN = os.path.join(BASE, ".build", "release", "TinyTitanServer")
 MODEL = str(DEFAULT_MODEL_PATH)
 PORT = 8091
+
+
 def build_prompt():
-    para = ("The TinyTitan inference engine executes Ornith 1.5 35B-A3B on Apple "
-            "Silicon via Metal with a 40-layer mixture-of-experts network "
-            "and routed-expert pread streaming. This paragraph repeats to "
-            "build a long context for decode-pressure measurement. ")
+    para = (
+        "The TinyTitan inference engine executes Ornith 1.5 35B-A3B on Apple "
+        "Silicon via Metal with a 40-layer mixture-of-experts network "
+        "and routed-expert pread streaming. This paragraph repeats to "
+        "build a long context for decode-pressure measurement. "
+    )
     return "Continue the technical discussion: " + para * 40
+
 
 PROMPT_10K = build_prompt()
 SHORT = "Write a detailed essay about the history of computing."
@@ -43,7 +49,10 @@ def launch_server():
     log = open(benchmark_log_path("longctx_server.log"), "w")
     proc = subprocess.Popen(
         server_command(BIN, PORT, model=MODEL),
-        env=server_environment(), stdout=log, stderr=subprocess.STDOUT)
+        env=server_environment(),
+        stdout=log,
+        stderr=subprocess.STDOUT,
+    )
     for _ in range(240):
         try:
             conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=2)
@@ -70,21 +79,24 @@ def rss_mb(pid):
 def request(messages, max_new, label):
     """Stream one request; returns dict incl. chunk_times (t_since_start,
     cum_chars) per recv."""
-    payload = json.dumps({
-        "model": resolve_api_model(PORT),
-        "messages": messages,
-        "temperature": 0,
-        "top_p": 0.95,
-        "top_k": 20,
-        "presence_penalty": 0.0,
-        "max_completion_tokens": max_new,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": resolve_api_model(PORT),
+            "messages": messages,
+            "temperature": 0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "presence_penalty": 0.0,
+            "max_completion_tokens": max_new,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+    ).encode()
     conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=1800)
     start = time.time()
-    conn.request("POST", "/v1/chat/completions", body=payload,
-                 headers={"Content-Type": "application/json"})
+    conn.request(
+        "POST", "/v1/chat/completions", body=payload, headers={"Content-Type": "application/json"}
+    )
     resp = conn.getresponse()
     buf = ""
     usage = None
@@ -127,10 +139,12 @@ def request(messages, max_new, label):
     wall = time.time() - start
     ct = int(usage["completion_tokens"]) if usage else 0
     pt = int(usage["prompt_tokens"]) if usage else 0
-    print(f"  [{label}] wall={wall:.1f}s ttft={ttft:.1f}s pt={pt} ct={ct} "
-          f"client_decode={ct/(wall-ttft):.2f} tok/s", flush=True)
-    return {"wall": wall, "ttft": ttft, "pt": pt, "ct": ct,
-            "chunk_times": chunk_times}
+    print(
+        f"  [{label}] wall={wall:.1f}s ttft={ttft:.1f}s pt={pt} ct={ct} "
+        f"client_decode={ct / (wall - ttft):.2f} tok/s",
+        flush=True,
+    )
+    return {"wall": wall, "ttft": ttft, "pt": pt, "ct": ct, "chunk_times": chunk_times}
 
 
 def rate_at(times, frac):
@@ -168,14 +182,19 @@ def main():
 
     post_c_rss = rss_mb(proc.pid)
 
-    print(f"\nRSS: base={base_rss:.0f}MB afterA={post_a_rss:.0f}MB "
-          f"afterC={post_c_rss:.0f}MB", flush=True)
+    print(
+        f"\nRSS: base={base_rss:.0f}MB afterA={post_a_rss:.0f}MB afterC={post_c_rss:.0f}MB",
+        flush=True,
+    )
     for name, times in (("B", b_times), ("C", c_times)):
         if len(times) >= 4:
-            first_half = rate_at(times[:max(2, len(times)//2)], 0.5)
+            first_half = rate_at(times[: max(2, len(times) // 2)], 0.5)
             last_half = rate_at(times, 0.5)
-            print(f"{name} decode drift: first-half={first_half:.2f} tok/s "
-                  f"last-half={last_half:.2f} tok/s", flush=True)
+            print(
+                f"{name} decode drift: first-half={first_half:.2f} tok/s "
+                f"last-half={last_half:.2f} tok/s",
+                flush=True,
+            )
 
     proc.terminate()
     try:

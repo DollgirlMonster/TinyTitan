@@ -11,6 +11,7 @@ Run from this directory, like the other benchmark tests:
 
     cd benchmark && python3 -m unittest test_coder_clients -v
 """
+
 from __future__ import annotations
 
 import json
@@ -40,7 +41,10 @@ def installed_model() -> str | None:
     try:
         listing = subprocess.run(
             [str(SERVER), "--catalog", "--models-dir", str(MODELS)],
-            text=True, capture_output=True, check=True, timeout=120,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=120,
         ).stdout
         models = json.loads(listing)["models"]
     except Exception:
@@ -54,14 +58,20 @@ def run_launcher(*args: str, stdin: str | None = None) -> subprocess.CompletedPr
         environment["TINYTITAN_LAUNCHER_ASSUME_TTY"] = "1"
     return subprocess.run(
         ["bash", str(LAUNCHER), *args],
-        input=stdin, text=True, capture_output=True, check=False, env=environment,
+        input=stdin,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
     )
 
 
 def run_harness(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(ROOT / "benchmark/coder_cli_benchmark.py"), *args],
-        text=True, capture_output=True, check=False,
+        text=True,
+        capture_output=True,
+        check=False,
     )
 
 
@@ -76,8 +86,7 @@ class ClientCatalogueTests(unittest.TestCase):
                 self.assertTrue(client["binaries"])
         ids = [client["id"] for client in harness.CLIENTS]
         self.assertEqual(len(ids), len(set(ids)), "duplicate client id")
-        self.assertEqual(
-            set(harness.CODER_CLIENTS) | set(harness.EDITOR_CLIENTS), set(ids))
+        self.assertEqual(set(harness.CODER_CLIENTS) | set(harness.EDITOR_CLIENTS), set(ids))
 
     def test_launcher_help_lists_exactly_the_catalogue(self) -> None:
         run = run_launcher("--help")
@@ -116,8 +125,11 @@ class ClientCatalogueTests(unittest.TestCase):
         source = (ROOT / "benchmark/coder_cli_benchmark.py").read_text()
         for client in harness.CODER_CLIENTS:
             with self.subTest(client=client):
-                self.assertIn(f'client == "{client}"', source,
-                              f"{client} is a coder client with no run_client branch")
+                self.assertIn(
+                    f'client == "{client}"',
+                    source,
+                    f"{client} is a coder client with no run_client branch",
+                )
 
     def test_editor_client_is_refused_as_a_benchmark_client(self) -> None:
         for client in harness.EDITOR_CLIENTS:

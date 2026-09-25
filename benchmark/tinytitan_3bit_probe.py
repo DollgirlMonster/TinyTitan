@@ -22,6 +22,7 @@ the unpack does not push the kernel into being ALU-bound instead.
 
   ~/.venvs/coreml-py311/bin/python benchmark/tinytitan_3bit_probe.py
 """
+
 from __future__ import annotations
 
 import json
@@ -44,12 +45,18 @@ def read_index(path):
     for i in range(count):
         off = 24 + i * 72
         name_off, name_len = struct.unpack_from("<IH", region, off)
-        name = region[name_off:name_off + name_len].decode()
+        name = region[name_off : name_off + name_len].decode()
         file_off, size = struct.unpack_from("<QQ", region, off + 8)
         shape = struct.unpack_from("<4I", region, off + 24)
         so, ss, bo, bs = struct.unpack_from("<QQQQ", region, off + 40)
-        entries[name] = dict(dtype=region[off + 6], offset=file_off, size=size,
-                             shape=shape, scale=(so, ss), bias=(bo, bs))
+        entries[name] = dict(
+            dtype=region[off + 6],
+            offset=file_off,
+            size=size,
+            shape=shape,
+            scale=(so, ss),
+            bias=(bo, bs),
+        )
     return entries
 
 
@@ -61,8 +68,7 @@ def bf16(raw):
 def dequant4(handle, entry):
     rows, cols = entry["shape"][0], entry["shape"][1]
     handle.seek(entry["offset"])
-    packed = np.frombuffer(handle.read(entry["size"]),
-                           dtype=np.uint8).reshape(rows, cols // 2)
+    packed = np.frombuffer(handle.read(entry["size"]), dtype=np.uint8).reshape(rows, cols // 2)
     q = np.empty((rows, cols), dtype=np.float32)
     q[:, 0::2] = packed & 0x0F
     q[:, 1::2] = packed >> 4
@@ -88,8 +94,7 @@ def affine_roundtrip(w: np.ndarray, bits: int) -> np.ndarray:
 
 
 def rel_error(reference: np.ndarray, approx: np.ndarray) -> float:
-    return float(np.abs(approx - reference).mean()
-                 / max(np.abs(reference).mean(), 1e-12))
+    return float(np.abs(approx - reference).mean() / max(np.abs(reference).mean(), 1e-12))
 
 
 def packing_analysis() -> list[dict]:
@@ -107,14 +112,16 @@ def packing_analysis() -> list[dict]:
         # Metadata: bf16 scale + bias per group.
         meta = 4
         crosses_word = (32 % bits) != 0
-        rows.append({
-            "bits": bits,
-            "group_bytes_stream": stream_bytes + meta,
-            "group_bytes_padded": padded_bytes + meta,
-            "vs_4bit_stream": (stream_bytes + meta) / (GROUP * 4 / 8 + meta),
-            "vs_4bit_padded": (padded_bytes + meta) / (GROUP * 4 / 8 + meta),
-            "power_of_two": not crosses_word,
-        })
+        rows.append(
+            {
+                "bits": bits,
+                "group_bytes_stream": stream_bytes + meta,
+                "group_bytes_padded": padded_bytes + meta,
+                "vs_4bit_stream": (stream_bytes + meta) / (GROUP * 4 / 8 + meta),
+                "vs_4bit_padded": (padded_bytes + meta) / (GROUP * 4 / 8 + meta),
+                "power_of_two": not crosses_word,
+            }
+        )
     return rows
 
 
@@ -150,23 +157,31 @@ def main() -> int:
     print(f"\n  median 3-bit/4-bit error ratio: {np.median(ratios):.2f}x")
 
     print("\n== packing: bytes per 64-weight group (incl. bf16 scale+bias) ==")
-    print(f"{'bits':>5} {'stream B':>9} {'padded B':>9} "
-          f"{'vs 4-bit (stream)':>18} {'vs 4-bit (padded)':>18} {'PoT':>5}")
+    print(
+        f"{'bits':>5} {'stream B':>9} {'padded B':>9} "
+        f"{'vs 4-bit (stream)':>18} {'vs 4-bit (padded)':>18} {'PoT':>5}"
+    )
     rows = packing_analysis()
     for r in rows:
-        print(f"{r['bits']:>5} {r['group_bytes_stream']:>9.1f} "
-              f"{r['group_bytes_padded']:>9.1f} "
-              f"{r['vs_4bit_stream']:>17.3f}x {r['vs_4bit_padded']:>17.3f}x "
-              f"{'yes' if r['power_of_two'] else 'NO':>5}")
+        print(
+            f"{r['bits']:>5} {r['group_bytes_stream']:>9.1f} "
+            f"{r['group_bytes_padded']:>9.1f} "
+            f"{r['vs_4bit_stream']:>17.3f}x {r['vs_4bit_padded']:>17.3f}x "
+            f"{'yes' if r['power_of_two'] else 'NO':>5}"
+        )
 
     three = next(r for r in rows if r["bits"] == 3)
     six = next(r for r in rows if r["bits"] == 6)
-    print(f"\n  3-bit byte saving vs 4-bit: "
-          f"{(1 - three['vs_4bit_stream']) * 100:.1f}% (bit-exact stream), "
-          f"{(1 - three['vs_4bit_padded']) * 100:.1f}% (word-padded)")
-    print(f"  6-bit, for reference (withdrawn after measuring 46.8 GB/s "
-          f"against 60): {(1 - six['vs_4bit_stream']) * 100:.1f}% / "
-          f"{(1 - six['vs_4bit_padded']) * 100:.1f}%")
+    print(
+        f"\n  3-bit byte saving vs 4-bit: "
+        f"{(1 - three['vs_4bit_stream']) * 100:.1f}% (bit-exact stream), "
+        f"{(1 - three['vs_4bit_padded']) * 100:.1f}% (word-padded)"
+    )
+    print(
+        f"  6-bit, for reference (withdrawn after measuring 46.8 GB/s "
+        f"against 60): {(1 - six['vs_4bit_stream']) * 100:.1f}% / "
+        f"{(1 - six['vs_4bit_padded']) * 100:.1f}%"
+    )
 
     out = ROOT / ".build/benchmark-results/3bit-probe.json"
     out.parent.mkdir(parents=True, exist_ok=True)

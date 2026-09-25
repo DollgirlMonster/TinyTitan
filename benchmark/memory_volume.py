@@ -56,6 +56,7 @@ and turns that exhausted their tool rounds are reported beside the scores.
     python3 benchmark/memory_volume.py full
     python3 benchmark/memory_volume.py report
 """
+
 from __future__ import annotations
 
 import json
@@ -139,8 +140,10 @@ TOOL_CALL = re.compile(r"memory tool=(\S+)")
 ROUNDS_EXHAUSTED = "tool rounds exhausted"
 BOOTSTRAP_INJECTED = re.compile(r"\bbootstrap=(\d+) durable=")
 CONSOLIDATED_KEYS = re.compile(r"consolidated session=\S+ .*?\bkeys=(.*?) prompt=")
-STARTUP_LINE = re.compile(r"memory enabled=(\w+).*?memory_tools=(\w+).*?"
-                          r"bootstrap=(\d+)/(\d+)B")
+STARTUP_LINE = re.compile(
+    r"memory enabled=(\w+).*?memory_tools=(\w+).*?"
+    r"bootstrap=(\d+)/(\d+)B"
+)
 
 
 def server_log_state() -> dict | None:
@@ -153,8 +156,15 @@ def server_log_state() -> dict | None:
     """
     if not SERVER_LOG or not os.path.exists(SERVER_LOG):
         return None
-    state = {"tool_calls": 0, "rounds_exhausted": 0, "bootstrap_records": -1,
-             "stored_keys": set(), "enabled": None, "tools": None, "cap": None}
+    state = {
+        "tool_calls": 0,
+        "rounds_exhausted": 0,
+        "bootstrap_records": -1,
+        "stored_keys": set(),
+        "enabled": None,
+        "tools": None,
+        "cap": None,
+    }
     with open(SERVER_LOG, errors="replace") as handle:
         for line in handle:
             if TOOL_CALL.search(line):
@@ -188,41 +198,41 @@ def server_log_state() -> dict | None:
 # they are used sparingly as buried keys.
 FIELDS = ("session", "owner", "port", "depends", "runbook", "oncall")
 ESTATE = {
-    "haldane":      (1, "Petra Voss", 7412, None, "RB-318", "aurora"),
-    "quillbase":    (1, "Marek Ilves", 8137, "haldane", "RB-204", "borealis"),
-    "tessellate":   (1, "Ada Okonjo", 7955, "haldane", "RB-471", "cascade"),
-    "ambergris":    (1, "Ruben Castell", 8620, "quillbase", "RB-129", "aurora"),
-    "kelpdrift":    (2, "Ingrid Solberg", 7038, "tessellate", "RB-556", "dovetail"),
-    "novemdial":    (2, "Tomasz Reiner", 9214, "ambergris", "RB-382", "ember"),
-    "parapet":      (2, "Hana Muraoka", 7743, "quillbase", "RB-207", "cascade"),
-    "sablewick":    (2, "Diego Ferreira", 8891, "kelpdrift", "RB-644", "foxglove"),
-    "thornrun":     (3, "Nils Bergqvist", 7126, "parapet", "RB-415", "aurora"),
-    "umbercast":    (3, "Yara Haddad", 9407, "novemdial", "RB-238", "borealis"),
-    "verdigris":    (3, "Colm Beirne", 8302, "sablewick", "RB-590", "dovetail"),
-    "whetstone":    (3, "Sofia Marchetti", 7681, "thornrun", "RB-163", "ember"),
-    "xanthine":     (4, "Lars Kirkegaard", 9015, "umbercast", "RB-472", "foxglove"),
-    "yarrowgate":   (4, "Nour El-Amin", 7290, "verdigris", "RB-321", "cascade"),
-    "zephyrlock":   (4, "Bea Lindqvist", 8564, "whetstone", "RB-608", "aurora"),
-    "bittern":      (4, "Rafael Duarte", 7807, "xanthine", "RB-255", "borealis"),
-    "cinderhold":   (5, "Miriam Ostrow", 9338, "yarrowgate", "RB-497", "dovetail"),
-    "driftmoor":    (5, "Kwame Adjei", 7059, "zephyrlock", "RB-142", "ember"),
-    "emberline":    (5, "Lucia Ferraro", 8471, "bittern", "RB-583", "foxglove"),
-    "fallowbrook":  (5, "Otto Brandt", 7614, "cinderhold", "RB-236", "cascade"),
-    "glasswing":    (6, "Sunna Petursdottir", 9182, "driftmoor", "RB-374", "aurora"),
-    "hollowpine":   (6, "Emil Novak", 7425, "emberline", "RB-519", "borealis"),
-    "ironvane":     (6, "Priya Raghavan", 8036, "fallowbrook", "RB-268", "dovetail"),
-    "jackdaw":      (7, "Teodor Vasilev", 9560, "glasswing", "RB-441", "ember"),
-    "kestrelight":  (7, "Anouk Devries", 7183, "hollowpine", "RB-127", "foxglove"),
-    "lodestone":    (7, "Samir Qureshi", 8719, "ironvane", "RB-635", "cascade"),
-    "marlinspike":  (8, "Greta Ahlberg", 7346, "jackdaw", "RB-582", "aurora"),
-    "nightjar":     (8, "Idris Bello", 9028, "kestrelight", "RB-309", "borealis"),
+    "haldane": (1, "Petra Voss", 7412, None, "RB-318", "aurora"),
+    "quillbase": (1, "Marek Ilves", 8137, "haldane", "RB-204", "borealis"),
+    "tessellate": (1, "Ada Okonjo", 7955, "haldane", "RB-471", "cascade"),
+    "ambergris": (1, "Ruben Castell", 8620, "quillbase", "RB-129", "aurora"),
+    "kelpdrift": (2, "Ingrid Solberg", 7038, "tessellate", "RB-556", "dovetail"),
+    "novemdial": (2, "Tomasz Reiner", 9214, "ambergris", "RB-382", "ember"),
+    "parapet": (2, "Hana Muraoka", 7743, "quillbase", "RB-207", "cascade"),
+    "sablewick": (2, "Diego Ferreira", 8891, "kelpdrift", "RB-644", "foxglove"),
+    "thornrun": (3, "Nils Bergqvist", 7126, "parapet", "RB-415", "aurora"),
+    "umbercast": (3, "Yara Haddad", 9407, "novemdial", "RB-238", "borealis"),
+    "verdigris": (3, "Colm Beirne", 8302, "sablewick", "RB-590", "dovetail"),
+    "whetstone": (3, "Sofia Marchetti", 7681, "thornrun", "RB-163", "ember"),
+    "xanthine": (4, "Lars Kirkegaard", 9015, "umbercast", "RB-472", "foxglove"),
+    "yarrowgate": (4, "Nour El-Amin", 7290, "verdigris", "RB-321", "cascade"),
+    "zephyrlock": (4, "Bea Lindqvist", 8564, "whetstone", "RB-608", "aurora"),
+    "bittern": (4, "Rafael Duarte", 7807, "xanthine", "RB-255", "borealis"),
+    "cinderhold": (5, "Miriam Ostrow", 9338, "yarrowgate", "RB-497", "dovetail"),
+    "driftmoor": (5, "Kwame Adjei", 7059, "zephyrlock", "RB-142", "ember"),
+    "emberline": (5, "Lucia Ferraro", 8471, "bittern", "RB-583", "foxglove"),
+    "fallowbrook": (5, "Otto Brandt", 7614, "cinderhold", "RB-236", "cascade"),
+    "glasswing": (6, "Sunna Petursdottir", 9182, "driftmoor", "RB-374", "aurora"),
+    "hollowpine": (6, "Emil Novak", 7425, "emberline", "RB-519", "borealis"),
+    "ironvane": (6, "Priya Raghavan", 8036, "fallowbrook", "RB-268", "dovetail"),
+    "jackdaw": (7, "Teodor Vasilev", 9560, "glasswing", "RB-441", "ember"),
+    "kestrelight": (7, "Anouk Devries", 7183, "hollowpine", "RB-127", "foxglove"),
+    "lodestone": (7, "Samir Qureshi", 8719, "ironvane", "RB-635", "cascade"),
+    "marlinspike": (8, "Greta Ahlberg", 7346, "jackdaw", "RB-582", "aurora"),
+    "nightjar": (8, "Idris Bello", 9028, "kestrelight", "RB-309", "borealis"),
     "obsidianquay": (8, "Vera Kalnina", 8253, "lodestone", "RB-466", "dovetail"),
-    "pennyroyal":   (9, "Joon-ho Park", 7592, "marlinspike", "RB-178", "ember"),
-    "quicklime":    (9, "Freya Lindholm", 9471, "nightjar", "RB-624", "foxglove"),
+    "pennyroyal": (9, "Joon-ho Park", 7592, "marlinspike", "RB-178", "ember"),
+    "quicklime": (9, "Freya Lindholm", 9471, "nightjar", "RB-624", "foxglove"),
     "ravensbourne": (9, "Amara Diallo", 8107, "obsidianquay", "RB-353", "cascade"),
-    "saltmarsh":   (10, "Bram Hoekstra", 7268, "pennyroyal", "RB-490", "aurora"),
-    "tidewrack":   (10, "Zofia Kaminska", 9635, "quicklime", "RB-215", "borealis"),
-    "undercliff":  (10, "Hugo Almeida", 8842, "ravensbourne", "RB-547", "dovetail"),
+    "saltmarsh": (10, "Bram Hoekstra", 7268, "pennyroyal", "RB-490", "aurora"),
+    "tidewrack": (10, "Zofia Kaminska", 9635, "quicklime", "RB-215", "borealis"),
+    "undercliff": (10, "Hugo Almeida", 8842, "ravensbourne", "RB-547", "dovetail"),
 }
 ROTATIONS = ("aurora", "borealis", "cascade", "dovetail", "ember", "foxglove")
 
@@ -246,26 +256,106 @@ def arrivals(session: int) -> list[str]:
 # a fresh fact. Burial only holds for an attribute established once and
 # never spoken of again.
 QUIZ_PLAN = {
-    1: ("haldane_owner", "haldane_port", "quillbase_port", "quillbase_depends",
-        "tessellate_runbook", "tessellate_oncall", "ambergris_owner", "ambergris_runbook"),
-    2: ("kelpdrift_port", "kelpdrift_runbook", "novemdial_owner", "parapet_depends",
-        "sablewick_oncall", "ambergris_oncall", "quillbase_owner", "tessellate_depends"),
-    3: ("thornrun_owner", "thornrun_port", "umbercast_runbook", "verdigris_depends",
-        "whetstone_oncall", "kelpdrift_owner", "novemdial_port", "sablewick_runbook"),
-    4: ("xanthine_port", "xanthine_oncall", "yarrowgate_owner", "zephyrlock_runbook",
-        "bittern_depends", "thornrun_runbook", "umbercast_owner", "verdigris_port"),
-    5: ("cinderhold_owner", "cinderhold_port", "driftmoor_runbook", "emberline_depends",
-        "fallowbrook_oncall", "xanthine_owner", "yarrowgate_port", "zephyrlock_depends"),
-    6: ("glasswing_port", "hollowpine_owner", "ironvane_runbook", "fallowbrook_port",
-        "haldane_runbook", "tessellate_port", "ambergris_depends", "quillbase_runbook"),
-    7: ("jackdaw_owner", "kestrelight_port", "lodestone_runbook", "glasswing_owner",
-        "parapet_owner", "parapet_port", "novemdial_runbook", "sablewick_port"),
-    8: ("marlinspike_port", "nightjar_owner", "obsidianquay_runbook", "kestrelight_owner",
-        "whetstone_owner", "whetstone_port", "umbercast_port", "verdigris_runbook"),
-    9: ("pennyroyal_owner", "quicklime_port", "ravensbourne_runbook", "marlinspike_owner",
-        "tessellate_owner", "ambergris_port", "parapet_runbook", "sablewick_owner"),
-    10: ("saltmarsh_port", "tidewrack_owner", "undercliff_runbook", "quicklime_owner",
-         "haldane_oncall", "kelpdrift_depends", "novemdial_depends", "verdigris_owner"),
+    1: (
+        "haldane_owner",
+        "haldane_port",
+        "quillbase_port",
+        "quillbase_depends",
+        "tessellate_runbook",
+        "tessellate_oncall",
+        "ambergris_owner",
+        "ambergris_runbook",
+    ),
+    2: (
+        "kelpdrift_port",
+        "kelpdrift_runbook",
+        "novemdial_owner",
+        "parapet_depends",
+        "sablewick_oncall",
+        "ambergris_oncall",
+        "quillbase_owner",
+        "tessellate_depends",
+    ),
+    3: (
+        "thornrun_owner",
+        "thornrun_port",
+        "umbercast_runbook",
+        "verdigris_depends",
+        "whetstone_oncall",
+        "kelpdrift_owner",
+        "novemdial_port",
+        "sablewick_runbook",
+    ),
+    4: (
+        "xanthine_port",
+        "xanthine_oncall",
+        "yarrowgate_owner",
+        "zephyrlock_runbook",
+        "bittern_depends",
+        "thornrun_runbook",
+        "umbercast_owner",
+        "verdigris_port",
+    ),
+    5: (
+        "cinderhold_owner",
+        "cinderhold_port",
+        "driftmoor_runbook",
+        "emberline_depends",
+        "fallowbrook_oncall",
+        "xanthine_owner",
+        "yarrowgate_port",
+        "zephyrlock_depends",
+    ),
+    6: (
+        "glasswing_port",
+        "hollowpine_owner",
+        "ironvane_runbook",
+        "fallowbrook_port",
+        "haldane_runbook",
+        "tessellate_port",
+        "ambergris_depends",
+        "quillbase_runbook",
+    ),
+    7: (
+        "jackdaw_owner",
+        "kestrelight_port",
+        "lodestone_runbook",
+        "glasswing_owner",
+        "parapet_owner",
+        "parapet_port",
+        "novemdial_runbook",
+        "sablewick_port",
+    ),
+    8: (
+        "marlinspike_port",
+        "nightjar_owner",
+        "obsidianquay_runbook",
+        "kestrelight_owner",
+        "whetstone_owner",
+        "whetstone_port",
+        "umbercast_port",
+        "verdigris_runbook",
+    ),
+    9: (
+        "pennyroyal_owner",
+        "quicklime_port",
+        "ravensbourne_runbook",
+        "marlinspike_owner",
+        "tessellate_owner",
+        "ambergris_port",
+        "parapet_runbook",
+        "sablewick_owner",
+    ),
+    10: (
+        "saltmarsh_port",
+        "tidewrack_owner",
+        "undercliff_runbook",
+        "quicklime_owner",
+        "haldane_oncall",
+        "kelpdrift_depends",
+        "novemdial_depends",
+        "verdigris_owner",
+    ),
 }
 
 ATTRIBUTE_QUESTIONS = {
@@ -304,8 +394,9 @@ def check_scenario():
             raise SystemExit(f"ABORT: duplicate {attribute} in the estate table")
     surnames = [fact(n, "owner").split()[-1].lower() for n in ESTATE]
     if len(set(surnames)) != len(surnames):
-        raise SystemExit("ABORT: duplicate surname in the estate table; "
-                         "owners are scored on the surname alone")
+        raise SystemExit(
+            "ABORT: duplicate surname in the estate table; owners are scored on the surname alone"
+        )
     for session, keys in QUIZ_PLAN.items():
         if len(set(keys)) != len(keys):
             raise SystemExit(f"ABORT: session {session} asks a key twice")
@@ -319,14 +410,18 @@ def check_scenario():
             if established > session:
                 raise SystemExit(f"ABORT: session {session} asks {key} before it exists")
             if band(session, key) == "buried" and established > session - BURIED_AGE:
-                raise SystemExit(f"ABORT: {key} in session {session} is neither recent "
-                                 f"nor {BURIED_AGE} sessions old")
+                raise SystemExit(
+                    f"ABORT: {key} in session {session} is neither recent "
+                    f"nor {BURIED_AGE} sessions old"
+                )
     asked: dict[str, int] = {}
     for session in sorted(QUIZ_PLAN):
         for key in QUIZ_PLAN[session]:
             if key in asked:
-                raise SystemExit(f"ABORT: {key} asked in sessions {asked[key]} and "
-                                 f"{session}; the second one is not buried")
+                raise SystemExit(
+                    f"ABORT: {key} asked in sessions {asked[key]} and "
+                    f"{session}; the second one is not buried"
+                )
             asked[key] = session
 
 
@@ -353,7 +448,8 @@ def arrival_block(session: int) -> str:
             f"- {name}: owner {fact(name, 'owner')}, listens on port "
             f"{fact(name, 'port')}, depends on "
             f"{depends if depends else 'nothing'}, runbook "
-            f"{fact(name, 'runbook')}, on-call rotation {fact(name, 'oncall')}.")
+            f"{fact(name, 'runbook')}, on-call rotation {fact(name, 'oncall')}."
+        )
     return "\n".join(lines)
 
 
@@ -362,8 +458,10 @@ def quiz_prompt(session: int) -> str:
     for key in QUIZ_PLAN[session]:
         service, attribute = key.rsplit("_", 1)
         parts.append(f"{key} ({ATTRIBUTE_QUESTIONS[attribute].format(service=service)})")
-    return ("Finally, answer this catalogue quiz as a JSON object in a ```json "
-            "block with exactly these keys: " + "; ".join(parts) + ".")
+    return (
+        "Finally, answer this catalogue quiz as a JSON object in a ```json "
+        "block with exactly these keys: " + "; ".join(parts) + "."
+    )
 
 
 def session_prompt(session: int) -> str:
@@ -379,7 +477,8 @@ def session_prompt(session: int) -> str:
         "Write the handbook entry for each of them: two or three sentences of "
         "prose saying what the service is for, who to wake when it pages, and "
         "how its dependency and its runbook fit together. Invent the purpose; "
-        "keep every detail above exactly as given.")
+        "keep every detail above exactly as given."
+    )
     if any(band(session, key) == "buried" for key in QUIZ_PLAN[session]):
         parts.append(REVIEW)
     parts.append(quiz_prompt(session))
@@ -387,20 +486,23 @@ def session_prompt(session: int) -> str:
 
 
 def post(messages, model, max_tokens=2500):
-    body = json.dumps({"model": model, "messages": messages,
-                       "max_completion_tokens": max_tokens,
-                       **sampling()}).encode()
-    request = urllib.request.Request(f"{BASE}/chat/completions", data=body,
-                                     headers={"Content-Type": "application/json"})
+    body = json.dumps(
+        {"model": model, "messages": messages, "max_completion_tokens": max_tokens, **sampling()}
+    ).encode()
+    request = urllib.request.Request(
+        f"{BASE}/chat/completions", data=body, headers={"Content-Type": "application/json"}
+    )
     started = time.time()
     with urllib.request.urlopen(request, timeout=3600) as response:
         payload = json.load(response)
     choice = payload["choices"][0]["message"]
     usage = payload.get("usage", {})
-    return {"content": choice.get("content") or "",
-            "prompt_tokens": usage.get("prompt_tokens", 0),
-            "completion_tokens": usage.get("completion_tokens", 0),
-            "seconds": time.time() - started}
+    return {
+        "content": choice.get("content") or "",
+        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "completion_tokens": usage.get("completion_tokens", 0),
+        "seconds": time.time() - started,
+    }
 
 
 def model_id():
@@ -419,8 +521,10 @@ def assert_arm_is_real(arm: str, prompt_tokens: int):
     """
     state = server_log_state()
     if state is None:
-        print(f"  (no TINYTITAN_MEMVAL_SERVER_LOG: arm '{arm}' is UNVERIFIED, and "
-              f"session 1 cost {prompt_tokens} prompt tokens)")
+        print(
+            f"  (no TINYTITAN_MEMVAL_SERVER_LOG: arm '{arm}' is UNVERIFIED, and "
+            f"session 1 cost {prompt_tokens} prompt tokens)"
+        )
         return
 
     def described(surface):
@@ -433,11 +537,14 @@ def assert_arm_is_real(arm: str, prompt_tokens: int):
             f"ABORT: arm '{arm}' wants {described(expected)} but the "
             f"server logged {described(seen)}. "
             f"The server is not running what this arm claims. Check TINYTITAN_MEMORY / "
-            f"TINYTITAN_MEMORY_TOOLS and that the release binary is current.")
+            f"TINYTITAN_MEMORY_TOOLS and that the release binary is current."
+        )
     if state["cap"] and expected is not None:
         records, byte_cap = state["cap"]
-        print(f"  (bootstrap cap {records} records / {byte_cap} B; the estate "
-              f"establishes {len(ESTATE) * (len(FIELDS) - 1)} facts)")
+        print(
+            f"  (bootstrap cap {records} records / {byte_cap} B; the estate "
+            f"establishes {len(ESTATE) * (len(FIELDS) - 1)} facts)"
+        )
 
 
 def extract_quiz(text: str, keys: tuple[str, ...]) -> dict:
@@ -497,9 +604,14 @@ def score(session: int, answers: dict) -> tuple[int, int, int, int, int, int]:
         counters = tally[band(session, key)]
         counters[0] += hit
         counters[1] += 1
-    return (correct, len(QUIZ_PLAN[session]),
-            tally["recent"][0], tally["recent"][1],
-            tally["buried"][0], tally["buried"][1])
+    return (
+        correct,
+        len(QUIZ_PLAN[session]),
+        tally["recent"][0],
+        tally["recent"][1],
+        tally["buried"][0],
+        tally["buried"][1],
+    )
 
 
 def run_arm(arm: str):
@@ -521,21 +633,30 @@ def run_arm(arm: str):
         after = server_log_state()
         answers = extract_quiz(result["content"], QUIZ_PLAN[session])
         correct, total, recent_c, recent_t, buried_c, buried_t = score(session, answers)
-        result.update(session=session, answers=answers, correct=correct, total=total,
-                      recent_correct=recent_c, recent_total=recent_t,
-                      buried_correct=buried_c, buried_total=buried_t,
-                      tool_calls=(after["tool_calls"] - before["tool_calls"]
-                                  if after and before else -1),
-                      rounds_exhausted=(after["rounds_exhausted"] - before["rounds_exhausted"]
-                                        if after and before else -1),
-                      bootstrap_records=after["bootstrap_records"] if after else -1)
+        result.update(
+            session=session,
+            answers=answers,
+            correct=correct,
+            total=total,
+            recent_correct=recent_c,
+            recent_total=recent_t,
+            buried_correct=buried_c,
+            buried_total=buried_t,
+            tool_calls=(after["tool_calls"] - before["tool_calls"] if after and before else -1),
+            rounds_exhausted=(
+                after["rounds_exhausted"] - before["rounds_exhausted"] if after and before else -1
+            ),
+            bootstrap_records=after["bootstrap_records"] if after else -1,
+        )
         (OUT / f"{arm}-r{RUN}-{session:02d}.md").write_text(result["content"])
-        print(f"{arm}/session {session:2d}: {result['completion_tokens']} tokens, "
-              f"{result['seconds']:.0f}s, prompt {result['prompt_tokens']}, "
-              f"bootstrap {result['bootstrap_records']}, "
-              f"tools {result['tool_calls']}, "
-              f"quiz {correct}/{total} (recent {recent_c}/{recent_t}, "
-              f"buried {buried_c}/{buried_t})")
+        print(
+            f"{arm}/session {session:2d}: {result['completion_tokens']} tokens, "
+            f"{result['seconds']:.0f}s, prompt {result['prompt_tokens']}, "
+            f"bootstrap {result['bootstrap_records']}, "
+            f"tools {result['tool_calls']}, "
+            f"quiz {correct}/{total} (recent {recent_c}/{recent_t}, "
+            f"buried {buried_c}/{buried_t})"
+        )
         if session == 1:
             assert_arm_is_real(arm, result["prompt_tokens"])
         # The session is over; with consolidation on the server distils it in
@@ -557,9 +678,11 @@ def report():
         if arm in ARMS:
             runs.setdefault(arm, {})[run] = json.loads(path.read_text())
 
-    print(f"\n{'arm':8s} {'run':>3s} {'session':>7s} {'boot':>4s} {'keys':>4s} "
-          f"{'prompt':>7s} {'completion':>11s} {'seconds':>8s} {'tools':>5s} "
-          f"{'quiz':>6s} {'recent':>6s} {'buried':>6s}  missed")
+    print(
+        f"\n{'arm':8s} {'run':>3s} {'session':>7s} {'boot':>4s} {'keys':>4s} "
+        f"{'prompt':>7s} {'completion':>11s} {'seconds':>8s} {'tools':>5s} "
+        f"{'quiz':>6s} {'recent':>6s} {'buried':>6s}  missed"
+    )
     totals = []
     for arm in ARMS:
         for run, results in sorted(runs.get(arm, {}).items()):
@@ -571,24 +694,33 @@ def report():
                 # run wrote down, so a scoring fix applies to every version
                 # identically.
                 scored = score(session, result["answers"])
-                (result["correct"], result["total"], result["recent_correct"],
-                 result["recent_total"], result["buried_correct"],
-                 result["buried_total"]) = scored
-                tally = [a + b for a, b in zip(tally, scored)]
+                (
+                    result["correct"],
+                    result["total"],
+                    result["recent_correct"],
+                    result["recent_total"],
+                    result["buried_correct"],
+                    result["buried_total"],
+                ) = scored
+                tally = [a + b for a, b in zip(tally, scored, strict=False)]
                 if not result["answers"]:
                     missed = "(no quiz answered)"
                 else:
                     missed = ", ".join(
-                        f"{key}[{band(session, key)[0]}]" for key in QUIZ_PLAN[session]
-                        if not matches(key, result["answers"].get(key)))
-                print(f"{arm:8s} {run:>3s} {session:7d} "
-                      f"{result.get('bootstrap_records', -1):4d} "
-                      f"{result.get('stored_keys', -1):4d} "
-                      f"{result['prompt_tokens']:7d} {result['completion_tokens']:11d} "
-                      f"{result['seconds']:8.0f} {result.get('tool_calls', -1):5d} "
-                      f"{result['correct']:3d}/{result['total']:<2d} "
-                      f"{result['recent_correct']:3d}/{result['recent_total']:<2d} "
-                      f"{result['buried_correct']:3d}/{result['buried_total']:<2d}  {missed}")
+                        f"{key}[{band(session, key)[0]}]"
+                        for key in QUIZ_PLAN[session]
+                        if not matches(key, result["answers"].get(key))
+                    )
+                print(
+                    f"{arm:8s} {run:>3s} {session:7d} "
+                    f"{result.get('bootstrap_records', -1):4d} "
+                    f"{result.get('stored_keys', -1):4d} "
+                    f"{result['prompt_tokens']:7d} {result['completion_tokens']:11d} "
+                    f"{result['seconds']:8.0f} {result.get('tool_calls', -1):5d} "
+                    f"{result['correct']:3d}/{result['total']:<2d} "
+                    f"{result['recent_correct']:3d}/{result['recent_total']:<2d} "
+                    f"{result['buried_correct']:3d}/{result['buried_total']:<2d}  {missed}"
+                )
                 calls += max(0, result.get("tool_calls", 0))
                 exhausted += max(0, result.get("rounds_exhausted", 0))
                 prompt += result["prompt_tokens"]
@@ -599,17 +731,23 @@ def report():
     def percent(correct: int, total: int) -> str:
         return f"{100 * correct / total:.0f}%" if total else "n/a"
 
-    print(f"\n{'arm':8s} {'run':>3s} {'overall':>13s} {'recent':>13s} {'buried':>13s} "
-          f"{'calls':>6s} {'exhausted':>10s}")
+    print(
+        f"\n{'arm':8s} {'run':>3s} {'overall':>13s} {'recent':>13s} {'buried':>13s} "
+        f"{'calls':>6s} {'exhausted':>10s}"
+    )
     for arm, run, tally, calls, exhausted, *_ in totals:
-        print(f"{arm:8s} {run:>3s} "
-              f"{tally[0]:4d}/{tally[1]:<3d} {percent(*tally[0:2]):>4s} "
-              f"{tally[2]:4d}/{tally[3]:<3d} {percent(*tally[2:4]):>4s} "
-              f"{tally[4]:4d}/{tally[5]:<3d} {percent(*tally[4:6]):>4s} "
-              f"{calls:6d} {exhausted:10d}")
+        print(
+            f"{arm:8s} {run:>3s} "
+            f"{tally[0]:4d}/{tally[1]:<3d} {percent(*tally[0:2]):>4s} "
+            f"{tally[2]:4d}/{tally[3]:<3d} {percent(*tally[2:4]):>4s} "
+            f"{tally[4]:4d}/{tally[5]:<3d} {percent(*tally[4:6]):>4s} "
+            f"{calls:6d} {exhausted:10d}"
+        )
 
-    print("\nPer arm, runs pooled. Buried is the score this scenario exists for; "
-          "calls is what earned it.")
+    print(
+        "\nPer arm, runs pooled. Buried is the score this scenario exists for; "
+        "calls is what earned it."
+    )
     for arm in ARMS:
         rows = [row for row in totals if row[0] == arm]
         if not rows:
@@ -617,13 +755,17 @@ def report():
         pooled = [sum(row[2][i] for row in rows) for i in range(6)]
         calls = sum(row[3] for row in rows)
         exhausted = sum(row[4] for row in rows)
-        print(f"  {arm:8s} overall {percent(*pooled[0:2]):>4s}   "
-              f"recent {percent(*pooled[2:4]):>4s}   "
-              f"buried {percent(*pooled[4:6]):>4s}   "
-              f"tool calls {calls}, rounds exhausted {exhausted}")
+        print(
+            f"  {arm:8s} overall {percent(*pooled[0:2]):>4s}   "
+            f"recent {percent(*pooled[2:4]):>4s}   "
+            f"buried {percent(*pooled[4:6]):>4s}   "
+            f"tool calls {calls}, rounds exhausted {exhausted}"
+        )
         if arm == "full" and calls == 0:
-            print("           NOTE: zero tool calls. Whatever this arm scored, it did "
-                  "not score it by retrieving.")
+            print(
+                "           NOTE: zero tool calls. Whatever this arm scored, it did "
+                "not score it by retrieving."
+            )
 
     print("\nCost per run (prompt + completion tokens, seconds incl. waits):")
     for arm, run, _, _, _, prompt, completion, seconds in totals:

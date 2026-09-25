@@ -14,6 +14,7 @@ sweep takes hours, so a drifting baseline is the difference between a real 8%
 win and a machine that got quieter. If the two baselines disagree by more than
 the smallest win claimed, the sweep is inconclusive and says so.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,47 +32,80 @@ from tinytitan_profile import benchmark_log_path, server_command, server_environ
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / ".build/release/TinyTitanServer"
-MODEL = os.environ.get("TINYTITAN_BENCH_MODEL",
-                       str(ROOT / "models/qwen3.8-flash-next_125B_A6B_4Bit"))
+MODEL = os.environ.get(
+    "TINYTITAN_BENCH_MODEL", str(ROOT / "models/qwen3.8-flash-next_125B_A6B_4Bit")
+)
 PORT = 8131
 MAX_TOKENS = int(os.environ.get("SWEEP_TOKENS", "256"))
-PROMPT = ("Write a detailed essay about the history of computing.")
+PROMPT = "Write a detailed essay about the history of computing."
 
 # Every arm is one env delta from the shipped defaults, so a win is
 # attributable. Combinations come later, built from what wins here.
 ARMS: list[tuple[str, dict[str, str], str]] = [
     ("base", {}, "shipped defaults"),
-    ("sync_event", {"TINYTITAN_EXPERT_IO_SYNC": "event"},
-     "GPU event instead of a host wait per layer (25.7 host waits/token)"),
-    ("submit_now", {"TINYTITAN_EXPERT_IO_SUBMISSION": "immediate"},
-     "submit expert reads as planned, not deferred (io_hidden_pct 18.9%)"),
-    ("gpu_resident", {"TINYTITAN_DECODE_EXPERT_EXECUTION": "gpu-residency"},
-     "GPU-side hit/miss classification (gpu_classified_* all zero today)"),
-    ("barrier", {"TINYTITAN_DECODE_EXPERT_EXECUTION": "barrier"},
-     "control: the simple schedule, expected slower"),
+    (
+        "sync_event",
+        {"TINYTITAN_EXPERT_IO_SYNC": "event"},
+        "GPU event instead of a host wait per layer (25.7 host waits/token)",
+    ),
+    (
+        "submit_now",
+        {"TINYTITAN_EXPERT_IO_SUBMISSION": "immediate"},
+        "submit expert reads as planned, not deferred (io_hidden_pct 18.9%)",
+    ),
+    (
+        "gpu_resident",
+        {"TINYTITAN_DECODE_EXPERT_EXECUTION": "gpu-residency"},
+        "GPU-side hit/miss classification (gpu_classified_* all zero today)",
+    ),
+    (
+        "barrier",
+        {"TINYTITAN_DECODE_EXPERT_EXECUTION": "barrier"},
+        "control: the simple schedule, expected slower",
+    ),
     # The cache-policy, cache-layout, prefetch-depth and retention arms are
     # gone with their knobs: each measured a wash or a loss, was documented, and
     # was then removed from the engine (their env vars no longer exist, so an arm
     # here would silently measure the baseline).
-    ("prefetch_off", {"TINYTITAN_PREDICTIVE_PREFETCH": "0"},
-     "control: confirm prefetch still earns its place"),
-    ("slots_128", {"TINYTITAN_EXPERT_CACHE_SLOTS": "128"},
-     "hit rate 87.4% at 96; does the curve still climb?"),
-    ("slots_64", {"TINYTITAN_EXPERT_CACHE_SLOTS": "64"},
-     "control: fewer slots must be worse if the cache matters"),
+    (
+        "prefetch_off",
+        {"TINYTITAN_PREDICTIVE_PREFETCH": "0"},
+        "control: confirm prefetch still earns its place",
+    ),
+    (
+        "slots_128",
+        {"TINYTITAN_EXPERT_CACHE_SLOTS": "128"},
+        "hit rate 87.4% at 96; does the curve still climb?",
+    ),
+    (
+        "slots_64",
+        {"TINYTITAN_EXPERT_CACHE_SLOTS": "64"},
+        "control: fewer slots must be worse if the cache matters",
+    ),
     # --- second pass: knobs the first sweep listed but never ran -------------
-    ("rdadvise_off", {"TINYTITAN_RDADVISE_POLICY": "off"},
-     "rdadvise costs 5.1 ms/token, 3% of the budget"),
+    (
+        "rdadvise_off",
+        {"TINYTITAN_RDADVISE_POLICY": "off"},
+        "rdadvise costs 5.1 ms/token, 3% of the budget",
+    ),
     ("rdadvise_adaptive", {"TINYTITAN_RDADVISE_POLICY": "adaptive"}, "ditto"),
     ("rdadvise_bounded", {"TINYTITAN_RDADVISE_POLICY": "bounded"}, "ditto"),
-    ("io_metal", {"TINYTITAN_EXPERT_IO_BACKEND": "metal"},
-     "the other I/O backend, never measured on this model"),
-    ("bounded_io_off", {"TINYTITAN_BOUNDED_IO": "0"},
-     "unbounded reader footprint"),
-    ("sampler_generic", {"TINYTITAN_SAMPLER_PATH": "generic"},
-     "control: the tiled sampler should win"),
-    ("slots_112", {"TINYTITAN_EXPERT_CACHE_SLOTS": "112"},
-     "the untested middle: 96 fits at 85.4%, 128 swaps at 89.8%"),
+    (
+        "io_metal",
+        {"TINYTITAN_EXPERT_IO_BACKEND": "metal"},
+        "the other I/O backend, never measured on this model",
+    ),
+    ("bounded_io_off", {"TINYTITAN_BOUNDED_IO": "0"}, "unbounded reader footprint"),
+    (
+        "sampler_generic",
+        {"TINYTITAN_SAMPLER_PATH": "generic"},
+        "control: the tiled sampler should win",
+    ),
+    (
+        "slots_112",
+        {"TINYTITAN_EXPERT_CACHE_SLOTS": "112"},
+        "the untested middle: 96 fits at 85.4%, 128 swaps at 89.8%",
+    ),
     # --- 8-bit: the cache is sized in bytes, so a 1.89x expert stride buys
     # fewer slots. 64 slots at 8-bit is 16.1 GB of cache -- essentially the
     # footprint that cost 4-bit 68% at 128 slots. Sweep downward.
@@ -88,21 +122,39 @@ ARMS: list[tuple[str, dict[str, str], str]] = [
     # Each async piece was measured alone, where it pays its own overhead and
     # still cannot remove the host wait because the other two force one.
     # Together they are the only configuration that actually removes it.
-    ("async_all", {"TINYTITAN_DECODE_EXPERT_EXECUTION": "gpu-residency",
-                   "TINYTITAN_EXPERT_IO_SYNC": "event",
-                   "TINYTITAN_EXPERT_IO_BACKEND": "metal"},
-     "GPU classification + event sync + MTLIO together"),
-    ("async_event_metal", {"TINYTITAN_EXPERT_IO_SYNC": "event",
-                           "TINYTITAN_EXPERT_IO_BACKEND": "metal"},
-     "event sync on the backend that signals the event natively"),
-    ("async_pread", {"TINYTITAN_DECODE_EXPERT_EXECUTION": "gpu-residency",
-                     "TINYTITAN_EXPERT_IO_SYNC": "event"},
-     "GPU classification + event sync on pread -- avoids the MTLIO crash"),
+    (
+        "async_all",
+        {
+            "TINYTITAN_DECODE_EXPERT_EXECUTION": "gpu-residency",
+            "TINYTITAN_EXPERT_IO_SYNC": "event",
+            "TINYTITAN_EXPERT_IO_BACKEND": "metal",
+        },
+        "GPU classification + event sync + MTLIO together",
+    ),
+    (
+        "async_event_metal",
+        {"TINYTITAN_EXPERT_IO_SYNC": "event", "TINYTITAN_EXPERT_IO_BACKEND": "metal"},
+        "event sync on the backend that signals the event natively",
+    ),
+    (
+        "async_pread",
+        {"TINYTITAN_DECODE_EXPERT_EXECUTION": "gpu-residency", "TINYTITAN_EXPERT_IO_SYNC": "event"},
+        "GPU classification + event sync on pread -- avoids the MTLIO crash",
+    ),
     ("base_again", {}, "drift check -- must match base"),
 ]
 
-COUNTERS = ("expert_hit_rate", "io_hidden_pct", "io_ms", "wait_ms", "body_ms",
-            "expert_evictions", "io_host_waits", "cache_plan_ms", "rdadvise_ms")
+COUNTERS = (
+    "expert_hit_rate",
+    "io_hidden_pct",
+    "io_ms",
+    "wait_ms",
+    "body_ms",
+    "expert_evictions",
+    "io_host_waits",
+    "cache_plan_ms",
+    "rdadvise_ms",
+)
 
 
 def wait_ready(proc, timeout=2400) -> str | None:
@@ -122,14 +174,21 @@ def wait_ready(proc, timeout=2400) -> str | None:
 
 
 def request(model_id: str, tokens: int) -> None:
-    payload = json.dumps({
-        "model": model_id, "messages": [{"role": "user", "content": PROMPT}],
-        "temperature": 0, "top_p": 0.95, "top_k": 20,
-        "max_completion_tokens": tokens, "stream": True,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": model_id,
+            "messages": [{"role": "user", "content": PROMPT}],
+            "temperature": 0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "max_completion_tokens": tokens,
+            "stream": True,
+        }
+    ).encode()
     conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=3600)
-    conn.request("POST", "/v1/chat/completions", body=payload,
-                 headers={"Content-Type": "application/json"})
+    conn.request(
+        "POST", "/v1/chat/completions", body=payload, headers={"Content-Type": "application/json"}
+    )
     resp = conn.getresponse()
     while resp.read(8192):
         pass
@@ -144,8 +203,9 @@ def run_arm(name: str, env_delta: dict[str, str]) -> dict:
     env["TINYTITAN_RUNNER_STATS"] = "1"
     env.update(env_delta)
     with open(log_path, "w") as fh:
-        proc = subprocess.Popen(server_command(BIN, PORT, model=MODEL),
-                                env=env, stdout=fh, stderr=subprocess.STDOUT)
+        proc = subprocess.Popen(
+            server_command(BIN, PORT, model=MODEL), env=env, stdout=fh, stderr=subprocess.STDOUT
+        )
     try:
         model_id = wait_ready(proc)
         if model_id is None:
@@ -155,13 +215,15 @@ def run_arm(name: str, env_delta: dict[str, str]) -> dict:
         # and continue: losing the rest of a multi-hour sweep to one bad
         # configuration is worse than losing the arm.
         try:
-            request(model_id, 32)            # warm shaders and the cache
-            request(model_id, MAX_TOKENS)    # measured
+            request(model_id, 32)  # warm shaders and the cache
+            request(model_id, MAX_TOKENS)  # measured
         except Exception as exc:
             alive = proc.poll() is None
-            return {"arm": name, "ok": False,
-                    "note": f"{type(exc).__name__}: {exc}"[:110]
-                            + ("" if alive else " (server died)")}
+            return {
+                "arm": name,
+                "ok": False,
+                "note": f"{type(exc).__name__}: {exc}"[:110] + ("" if alive else " (server died)"),
+            }
     finally:
         proc.terminate()
         try:
@@ -171,15 +233,13 @@ def run_arm(name: str, env_delta: dict[str, str]) -> dict:
         time.sleep(3)
 
     text = Path(log_path).read_text()
-    rates = [float(m) for m in
-             re.findall(r"TinyTitan generation .*?decode_tok_s=([\d.]+)", text)]
+    rates = [float(m) for m in re.findall(r"TinyTitan generation .*?decode_tok_s=([\d.]+)", text)]
     if not rates:
         return {"arm": name, "ok": False, "note": "no decode footer"}
     out = {"arm": name, "ok": True, "tok_s": rates[-1]}
     runner = re.findall(r"TinyTitan runner (.+)", text)
     if runner:
-        fields = dict(kv.split("=", 1) for kv in runner[-1].split()
-                      if "=" in kv)
+        fields = dict(kv.split("=", 1) for kv in runner[-1].split() if "=" in kv)
         for c in COUNTERS:
             if c in fields:
                 out[c] = float(fields[c])
@@ -187,22 +247,24 @@ def run_arm(name: str, env_delta: dict[str, str]) -> dict:
 
 
 def table(results: list[dict], baseline: float | None) -> str:
-    head = (f"{'arm':<15}{'tok/s':>8}{'vs base':>9}{'hit%':>7}"
-            f"{'io_hid%':>9}{'io_ms':>8}{'evict':>8}{'waits':>8}")
+    head = (
+        f"{'arm':<15}{'tok/s':>8}{'vs base':>9}{'hit%':>7}"
+        f"{'io_hid%':>9}{'io_ms':>8}{'evict':>8}{'waits':>8}"
+    )
     lines = [head, "-" * len(head)]
     for r in results:
         if not r.get("ok"):
-            lines.append(f"{r['arm']:<15}{'FAILED':>8}   {r.get('note','')[:50]}")
+            lines.append(f"{r['arm']:<15}{'FAILED':>8}   {r.get('note', '')[:50]}")
             continue
-        delta = (f"{(r['tok_s'] / baseline - 1) * 100:+.1f}%"
-                 if baseline else "--")
+        delta = f"{(r['tok_s'] / baseline - 1) * 100:+.1f}%" if baseline else "--"
         lines.append(
             f"{r['arm']:<15}{r['tok_s']:>8.2f}{delta:>9}"
             f"{r.get('expert_hit_rate', 0) * 100:>7.1f}"
             f"{r.get('io_hidden_pct', 0):>9.1f}"
             f"{r.get('io_ms', 0):>8.1f}"
             f"{r.get('expert_evictions', 0):>8.0f}"
-            f"{r.get('io_host_waits', 0):>8.0f}")
+            f"{r.get('io_host_waits', 0):>8.0f}"
+        )
     return "\n".join(lines)
 
 
@@ -213,8 +275,9 @@ def main() -> int:
     wanted = [a.strip() for a in args.arms.split(",") if a.strip()]
     arms = [a for a in ARMS if not wanted or a[0] in wanted]
 
-    busy = subprocess.run(["pgrep", "-f", "TinyTitanServer|TinyTitanCLI"],
-                          capture_output=True, text=True).stdout.strip()
+    busy = subprocess.run(
+        ["pgrep", "-f", "TinyTitanServer|TinyTitanCLI"], capture_output=True, text=True
+    ).stdout.strip()
     if busy:
         print("another model process is running; stop it first", file=sys.stderr)
         return 3
@@ -228,9 +291,12 @@ def main() -> int:
         if r.get("ok"):
             if name == "base":
                 baseline = r["tok_s"]
-            print(f"   {r['tok_s']:.2f} tok/s  hit={r.get('expert_hit_rate',0)*100:.1f}%"
-                  f"  io_hidden={r.get('io_hidden_pct',0):.1f}%"
-                  f"  io_ms={r.get('io_ms',0):.1f}", flush=True)
+            print(
+                f"   {r['tok_s']:.2f} tok/s  hit={r.get('expert_hit_rate', 0) * 100:.1f}%"
+                f"  io_hidden={r.get('io_hidden_pct', 0):.1f}%"
+                f"  io_ms={r.get('io_ms', 0):.1f}",
+                flush=True,
+            )
         else:
             print(f"   FAILED: {r.get('note')}", flush=True)
         print("\n" + table(results, baseline), flush=True)
@@ -239,8 +305,10 @@ def main() -> int:
     last = next((r for r in results if r["arm"] == "base_again" and r.get("ok")), None)
     if first and last:
         drift = abs(last["tok_s"] / first["tok_s"] - 1) * 100
-        print(f"\nbaseline drift over the sweep: {drift:.1f}% "
-              f"({first['tok_s']:.2f} -> {last['tok_s']:.2f})")
+        print(
+            f"\nbaseline drift over the sweep: {drift:.1f}% "
+            f"({first['tok_s']:.2f} -> {last['tok_s']:.2f})"
+        )
         print("Any win smaller than this is inside the noise and is not a win.")
     return 0
 

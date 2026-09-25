@@ -20,6 +20,7 @@ Usage:
 
 Requires a release build: swift build -c release
 """
+
 import argparse
 import json
 import os
@@ -72,43 +73,60 @@ def validate_context(prompt_tokens: int, max_new: int, max_context: int) -> int:
     if max_context < need:
         raise SystemExit(
             "--prompt-tokens %d + --max-new %d needs ~%d tokens of context, "
-            "above --max-context %d"
-            % (prompt_tokens, max_new, need, max_context))
+            "above --max-context %d" % (prompt_tokens, max_new, need, max_context)
+        )
     return max_context
 
 
-def run_once(cli: str, model: str, slots: int, chunk: int, prompt_file: str,
-             max_new: int, max_context: int) -> dict:
-    cmd = [cli, "--model", model,
-           "--expert-cache-slots", str(slots),
-           "--prefill-chunk", str(chunk),
-           "--messages-file", prompt_file,
-           "--max-context", str(max_context),
-           "--rope-scaling", "none",
-           "--kv-bits", "8",
-           "--max-new", str(max_new)]
+def run_once(
+    cli: str, model: str, slots: int, chunk: int, prompt_file: str, max_new: int, max_context: int
+) -> dict:
+    cmd = [
+        cli,
+        "--model",
+        model,
+        "--expert-cache-slots",
+        str(slots),
+        "--prefill-chunk",
+        str(chunk),
+        "--messages-file",
+        prompt_file,
+        "--max-context",
+        str(max_context),
+        "--rope-scaling",
+        "none",
+        "--kv-bits",
+        "8",
+        "--max-new",
+        str(max_new),
+    ]
     # Every return below carries slots/chunk, so a failed run is still
     # attributable to its configuration in the CSV.
     tags = {"slots": slots, "chunk": chunk}
     t0 = time.time()
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=RUN_TIMEOUT_S)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT_S)
     except subprocess.TimeoutExpired:
         return {**tags, "error": "timed out after %ds" % RUN_TIMEOUT_S}
     elapsed = time.time() - t0
     if proc.returncode != 0:
-        detail = proc.stderr.strip().splitlines()[-1] if proc.stderr else "exit %d" % proc.returncode
+        detail = (
+            proc.stderr.strip().splitlines()[-1] if proc.stderr else "exit %d" % proc.returncode
+        )
         return {**tags, "error": detail}
     footer = proc.stderr
-    m = re.search(r"prefill=(\d+)tok/([\d.]+)s new=(\d+)tok decode=([\d.]+)s tok/s=([\d.]+)",
-                  footer)
+    m = re.search(
+        r"prefill=(\d+)tok/([\d.]+)s new=(\d+)tok decode=([\d.]+)s tok/s=([\d.]+)", footer
+    )
     if not m:
         return {**tags, "error": "no timing footer in output"}
     return {
-        "slots": slots, "chunk": chunk,
-        "prefill_tokens": int(m.group(1)), "prefill_s": float(m.group(2)),
-        "new_tokens": int(m.group(3)), "decode_s": float(m.group(4)),
+        "slots": slots,
+        "chunk": chunk,
+        "prefill_tokens": int(m.group(1)),
+        "prefill_s": float(m.group(2)),
+        "new_tokens": int(m.group(3)),
+        "decode_s": float(m.group(4)),
         "tok_per_s": float(m.group(5)),
         "wall_s": round(elapsed, 1),
     }
@@ -117,15 +135,17 @@ def run_once(cli: str, model: str, slots: int, chunk: int, prompt_file: str,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=str(DEFAULT_MODEL_PATH))
-    ap.add_argument("--cli", default=None,
-                    help="path to TinyTitanCLI (default: .build/release/TinyTitanCLI)")
+    ap.add_argument(
+        "--cli", default=None, help="path to TinyTitanCLI (default: .build/release/TinyTitanCLI)"
+    )
     ap.add_argument("--sweep", choices=["slots", "chunk", "both"], default="both")
     ap.add_argument("--slots", default=",".join(map(str, DEFAULT_SLOTS)))
     ap.add_argument("--chunks", default=",".join(map(str, DEFAULT_CHUNKS)))
     ap.add_argument("--prompt-tokens", type=int, default=8192)
     ap.add_argument("--max-new", type=int, default=256)
-    ap.add_argument("--max-context", type=int, choices=SUPPORTED_CONTEXTS,
-                    default=DEFAULT_CONTEXT_TOKENS)
+    ap.add_argument(
+        "--max-context", type=int, choices=SUPPORTED_CONTEXTS, default=DEFAULT_CONTEXT_TOKENS
+    )
     args = ap.parse_args()
 
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -146,8 +166,10 @@ def main():
 
     print("TinyTitan M5 sweep")
     print("  model: %s" % args.model)
-    print("  prompt: ~%d tokens | max-new: %d | context: %d | first run is cold" % (
-        args.prompt_tokens, args.max_new, max_context))
+    print(
+        "  prompt: ~%d tokens | max-new: %d | context: %d | first run is cold"
+        % (args.prompt_tokens, args.max_new, max_context)
+    )
     print()
 
     results = []
@@ -155,26 +177,42 @@ def main():
         if args.sweep in ("slots", "both"):
             print("== slot sweep (chunk 4096) ==")
             for s in slots:
-                r = run_once(cli, args.model, s, 4096, prompt_file, args.max_new,
-                             max_context)
+                r = run_once(cli, args.model, s, 4096, prompt_file, args.max_new, max_context)
                 results.append(r)
                 if "error" in r:
                     print("  slots=%3d  ERROR: %s" % (s, r["error"]))
                 else:
-                    print("  slots=%3d  prefill %6.1fs (%4d tok)  decode %6.2f tok/s (%3d tok)  wall %5.1fs"
-                          % (s, r["prefill_s"], r["prefill_tokens"], r["tok_per_s"], r["new_tokens"], r["wall_s"]))
+                    print(
+                        "  slots=%3d  prefill %6.1fs (%4d tok)  decode %6.2f tok/s (%3d tok)  wall %5.1fs"
+                        % (
+                            s,
+                            r["prefill_s"],
+                            r["prefill_tokens"],
+                            r["tok_per_s"],
+                            r["new_tokens"],
+                            r["wall_s"],
+                        )
+                    )
             print()
         if args.sweep in ("chunk", "both"):
             print("== chunk sweep (slots 64) ==")
             for c in chunks:
-                r = run_once(cli, args.model, 64, c, prompt_file, args.max_new,
-                             max_context)
+                r = run_once(cli, args.model, 64, c, prompt_file, args.max_new, max_context)
                 results.append(r)
                 if "error" in r:
                     print("  chunk=%4d  ERROR: %s" % (c, r["error"]))
                 else:
-                    print("  chunk=%4d  prefill %6.1fs (%4d tok)  decode %6.2f tok/s (%3d tok)  wall %5.1fs"
-                          % (c, r["prefill_s"], r["prefill_tokens"], r["tok_per_s"], r["new_tokens"], r["wall_s"]))
+                    print(
+                        "  chunk=%4d  prefill %6.1fs (%4d tok)  decode %6.2f tok/s (%3d tok)  wall %5.1fs"
+                        % (
+                            c,
+                            r["prefill_s"],
+                            r["prefill_tokens"],
+                            r["tok_per_s"],
+                            r["new_tokens"],
+                            r["wall_s"],
+                        )
+                    )
             print()
     except KeyboardInterrupt:
         # A full sweep is 11 cold runs. Keep whatever completed rather than
@@ -194,18 +232,38 @@ def main():
         actual = measured[0]
         drift = abs(actual - args.prompt_tokens) / max(args.prompt_tokens, 1)
         note = "  (estimate off by %.0f%%)" % (drift * 100) if drift > 0.05 else ""
-        print("prompt: requested ~%d tokens, tokenizer produced %d%s"
-              % (args.prompt_tokens, actual, note))
+        print(
+            "prompt: requested ~%d tokens, tokenizer produced %d%s"
+            % (args.prompt_tokens, actual, note)
+        )
 
     csv = "slots,chunk,prefill_s,prefill_tokens,tok_per_s,new_tokens,decode_s,wall_s,error\n"
     for r in results:
         if "error" in r:
-            csv += "%s\n" % ",".join([str(r.get("slots", "")), str(r.get("chunk", "")),
-                                      "", "", "", "", "", "", r["error"]])
+            csv += "%s\n" % ",".join(
+                [
+                    str(r.get("slots", "")),
+                    str(r.get("chunk", "")),
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    r["error"],
+                ]
+            )
         else:
             csv += "%d,%d,%.2f,%d,%.2f,%d,%.2f,%.1f,\n" % (
-                r["slots"], r["chunk"], r["prefill_s"], r["prefill_tokens"],
-                r["tok_per_s"], r["new_tokens"], r["decode_s"], r["wall_s"])
+                r["slots"],
+                r["chunk"],
+                r["prefill_s"],
+                r["prefill_tokens"],
+                r["tok_per_s"],
+                r["new_tokens"],
+                r["decode_s"],
+                r["wall_s"],
+            )
     # Alongside the other harnesses, in the git-ignored results directory —
     # the repo root is tracked, so writing there leaves the tree dirty.
     out_dir = os.path.join(base, "benchmark", "benchmark-results")

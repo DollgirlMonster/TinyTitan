@@ -32,6 +32,7 @@ come from the *prefill* chunk, so nothing about the decode length enters it.
   python3 benchmark/ane_prefill_layer_diff.py \
       --models qwen3.8-flash-next_125B_A6B_4Bit --label v5.6-ane-38 --record
 """
+
 from __future__ import annotations
 
 import argparse
@@ -61,23 +62,33 @@ def sparse_indexed(model: str) -> bool:
     return int((manifest.get("arch") or {}).get("indexerBudget") or 0) > 0
 
 
-def run_arm(model: str, arm: str, characters: int, chunk: int,
-            dump_root: pathlib.Path, timeout: int = 3600) -> dict:
+def run_arm(
+    model: str, arm: str, characters: int, chunk: int, dump_root: pathlib.Path, timeout: int = 3600
+) -> dict:
     env = os.environ.copy()
     env["TINYTITAN_PREFILL_ANE"] = "off" if arm == "off" else "on"
     if arm == "causal":
         env["TINYTITAN_ANE_MASK"] = "causal"
     env["TINYTITAN_ACT_DUMP"] = str(dump_root / arm)
-    command = [str(CLI), "--model", str(MODELS_DIR / model),
-               "--prompt", ab.prompt(characters),
-               "--max-new", "1", "--temperature", "0",
-               "--prefill-chunk", str(chunk)]
-    proc = subprocess.run(command, capture_output=True, text=True, env=env,
-                          cwd=ROOT, timeout=timeout)
+    command = [
+        str(CLI),
+        "--model",
+        str(MODELS_DIR / model),
+        "--prompt",
+        ab.prompt(characters),
+        "--max-new",
+        "1",
+        "--temperature",
+        "0",
+        "--prefill-chunk",
+        str(chunk),
+    ]
+    proc = subprocess.run(
+        command, capture_output=True, text=True, env=env, cwd=ROOT, timeout=timeout
+    )
     result: dict = {"arm": arm, "exit": proc.returncode}
     if proc.returncode != 0:
-        tail = [line.strip() for line in proc.stderr.strip().splitlines()
-                if line.strip()]
+        tail = [line.strip() for line in proc.stderr.strip().splitlines() if line.strip()]
         result["error"] = " / ".join(tail[-3:])[:400] or f"exit {proc.returncode}"
         return result
     result["used_ane"] = ab.FALLBACK_MARKER not in proc.stderr
@@ -98,8 +109,7 @@ def dumps(root: pathlib.Path) -> dict[str, np.ndarray]:
     return out
 
 
-def compare(reference: dict[str, np.ndarray],
-            arm: dict[str, np.ndarray]) -> dict[str, dict]:
+def compare(reference: dict[str, np.ndarray], arm: dict[str, np.ndarray]) -> dict[str, dict]:
     """Mean relative error per activation, over what both arms wrote."""
     out: dict[str, dict] = {}
     for key in sorted(set(reference) & set(arm)):
@@ -109,22 +119,21 @@ def compare(reference: dict[str, np.ndarray],
             continue
         base = float(np.abs(a).mean())
         out[key] = {
-            "mean_relative_percent": float(np.abs(a - b).mean() / base * 100.0)
-            if base else None,
+            "mean_relative_percent": float(np.abs(a - b).mean() / base * 100.0) if base else None,
             "max_absolute": float(np.abs(a - b).max()),
         }
     return out
 
 
-def summarize(model: str, arms: dict[str, dict],
-              arm_dumps: dict[str, dict[str, np.ndarray]]) -> dict:
+def summarize(
+    model: str, arms: dict[str, dict], arm_dumps: dict[str, dict[str, np.ndarray]]
+) -> dict:
     failed = [run for run in arms.values() if "error" in run]
     if failed:
         return {"model": model, "error": failed[0]["error"]}
     for name in ("on", "causal"):
         if name in arms and not arms[name]["used_ane"]:
-            return {"model": model,
-                    "error": f"the {name} arm fell back to the GPU"}
+            return {"model": model, "error": f"the {name} arm fell back to the GPU"}
     out: dict = {"model": model, "arms": arms, "comparisons": {}}
     for name in ("on", "causal"):
         if name in arm_dumps and "off" in arm_dumps:
@@ -132,8 +141,7 @@ def summarize(model: str, arms: dict[str, dict],
     # The fold-specific signal: the two ANE arms differ only in whether the
     # selection is folded in, so their difference is exactly what the fold buys.
     if "on" in arm_dumps and "causal" in arm_dumps:
-        out["comparisons"]["causal_vs_on"] = compare(arm_dumps["on"],
-                                                     arm_dumps["causal"])
+        out["comparisons"]["causal_vs_on"] = compare(arm_dumps["on"], arm_dumps["causal"])
     return out
 
 
@@ -145,32 +153,34 @@ def format_row(row: dict) -> str:
         diffs = row["comparisons"].get(name)
         if diffs is None:
             continue
-        logits = diffs.get("pos0/prefill_logits", {}).get(
-            "mean_relative_percent")
-        control = max((diffs.get(f"pos0/L{layer}_after", {}).get(
-            "mean_relative_percent") or 0.0)
-            for layer in (0, 1, 2))
+        logits = diffs.get("pos0/prefill_logits", {}).get("mean_relative_percent")
+        control = max(
+            (diffs.get(f"pos0/L{layer}_after", {}).get("mean_relative_percent") or 0.0)
+            for layer in (0, 1, 2)
+        )
         if logits is None:
             parts.append(f"{name}: no logits dump")
         else:
-            parts.append(f"{name} logits {logits:.2f}% (linear ctrl "
-                         f"{control:.3f}%)")
+            parts.append(f"{name} logits {logits:.2f}% (linear ctrl {control:.3f}%)")
     return f"{row['model']:<44} " + "  ".join(parts)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", nargs="+", required=True)
-    parser.add_argument("--attention-layer", type=int, default=3,
-                        help="the first full-attention layer the dump covers "
-                             "(the one the fold acts on)")
-    parser.add_argument("--prompt-characters", type=int,
-                        default=ab.PROMPT_CHARACTERS)
+    parser.add_argument(
+        "--attention-layer",
+        type=int,
+        default=3,
+        help="the first full-attention layer the dump covers (the one the fold acts on)",
+    )
+    parser.add_argument("--prompt-characters", type=int, default=ab.PROMPT_CHARACTERS)
     parser.add_argument("--prefill-chunk", type=int, default=ab.PREFILL_CHUNK)
     parser.add_argument("--label", default=None)
     parser.add_argument("--record", action="store_true")
-    parser.add_argument("--keep-dumps", action="store_true",
-                        help="leave the dump directories behind for inspection")
+    parser.add_argument(
+        "--keep-dumps", action="store_true", help="leave the dump directories behind for inspection"
+    )
     args = parser.parse_args()
 
     attention_layers = [args.attention_layer]
@@ -181,8 +191,7 @@ def main() -> int:
         arm_dumps: dict[str, dict[str, np.ndarray]] = {}
         wanted = list(ARMS) if sparse_indexed(name) else ["off", "on"]
         for arm in wanted:
-            run = run_arm(name, arm, args.prompt_characters,
-                          args.prefill_chunk, root)
+            run = run_arm(name, arm, args.prompt_characters, args.prefill_chunk, root)
             arms[arm] = run
             if "error" in run:
                 break
@@ -199,12 +208,15 @@ def main() -> int:
             RESULTS.mkdir(parents=True, exist_ok=True)
             label = args.label or datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
             path = RESULTS / f"ane-layer-diff-{label}.json"
-            record = {"recorded_at": datetime.datetime.now(
-                          datetime.timezone.utc).isoformat(timespec="seconds"),
-                      "prompt_characters": args.prompt_characters,
-                      "prefill_chunk": args.prefill_chunk,
-                      "attention_layers": attention_layers,
-                      "results": results}
+            record = {
+                "recorded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(
+                    timespec="seconds"
+                ),
+                "prompt_characters": args.prompt_characters,
+                "prefill_chunk": args.prefill_chunk,
+                "attention_layers": attention_layers,
+                "results": results,
+            }
             path.write_text(json.dumps(record, indent=2) + "\n")
             print(f"  wrote {path.relative_to(ROOT)}", flush=True)
     return 0 if all("error" not in row for row in results) else 1

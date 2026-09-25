@@ -23,15 +23,11 @@ def main() -> int:
     logs: dict[str, str] = {}
     for backend in ("pread", "metal"):
         for prompt_name, prompt in benchmark.PROMPTS.items():
-            rows, log = benchmark.run_case(
-                "hit-fixup", prompt_name, prompt, io_backend=backend)
+            rows, log = benchmark.run_case("hit-fixup", prompt_name, prompt, io_backend=backend)
             results.extend(rows)
             logs[f"{backend}/{prompt_name}"] = str(log)
 
-    by_case = {
-        (row["prompt"], row["warmth"], row["io_backend"]): row
-        for row in results
-    }
+    by_case = {(row["prompt"], row["warmth"], row["io_backend"]): row for row in results}
     mismatches = []
     for prompt in benchmark.PROMPTS:
         for warmth in ("cold", "warm"):
@@ -42,14 +38,20 @@ def main() -> int:
 
     output = benchmark.ROOT / ".build/benchmark-results/io-backend-ab.json"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps({
-        "metadata": metadata,
-        "warning": "Metal I/O requires separate page-cache/memory-pressure validation",
-        "logs": logs,
-        "results": results,
-        "response_mismatches": mismatches,
-        "passed": not mismatches,
-    }, indent=2) + "\n")
+    output.write_text(
+        json.dumps(
+            {
+                "metadata": metadata,
+                "warning": "Metal I/O requires separate page-cache/memory-pressure validation",
+                "logs": logs,
+                "results": results,
+                "response_mismatches": mismatches,
+                "passed": not mismatches,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(f"results: {output}")
     return 1 if mismatches else 0
 

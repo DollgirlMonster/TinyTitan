@@ -21,6 +21,7 @@ shards, so it does not need the 4.5 GB checkpoint on disk.
     python3.13 tools/compare_qwen35_precision.py
     python3.13 tools/compare_qwen35_precision.py --anchor 0      # local only
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,8 +46,7 @@ URL = f"https://huggingface.co/{REPO}/resolve/{COMMIT}/{SHARD}"
 GROUP = 64
 
 
-def dequantize(packed: np.ndarray, scales: np.ndarray, biases: np.ndarray,
-               bits: int) -> np.ndarray:
+def dequantize(packed: np.ndarray, scales: np.ndarray, biases: np.ndarray, bits: int) -> np.ndarray:
     """Unpack the affine layout the converter writes: `bits`-wide unsigned
     lanes low-first inside each uint32, one BF16 scale and bias per group of
     64. Deliberately the arithmetic the kernels use, not a shortcut."""
@@ -57,8 +57,7 @@ def dequantize(packed: np.ndarray, scales: np.ndarray, biases: np.ndarray,
     for lane in range(lanes):
         out[:, lane::lanes] = ((packed >> (bits * lane)) & mask).astype(np.float32)
     grouped = out.reshape(rows, -1, GROUP)
-    scaled = grouped * scales.astype(np.float32)[..., None] \
-        + biases.astype(np.float32)[..., None]
+    scaled = grouped * scales.astype(np.float32)[..., None] + biases.astype(np.float32)[..., None]
     return scaled.reshape(rows, -1)
 
 
@@ -93,8 +92,11 @@ class Source:
         end = start + per_row * min(count, shape[0])
         raw = self._range(self.base + start, self.base + end - 1)
         dtype = np.float32 if meta["dtype"] == "F32" else ml_dtypes.bfloat16
-        return np.frombuffer(raw, dtype=dtype).astype(np.float32) \
+        return (
+            np.frombuffer(raw, dtype=dtype)
+            .astype(np.float32)
             .reshape(-1, shape[1] if len(shape) > 1 else 1)
+        )
 
 
 def snapshot_name_to_checkpoint(name: str) -> str:
@@ -111,8 +113,9 @@ def relative(a: np.ndarray, b: np.ndarray) -> float:
 def _widths(snapshot: Path) -> tuple[int, dict[str, int]]:
     quantization = json.loads((snapshot / "config.json").read_text())["quantization"]
     base = quantization["bits"]
-    overrides = {stem: entry["bits"] for stem, entry in quantization.items()
-                 if isinstance(entry, dict)}
+    overrides = {
+        stem: entry["bits"] for stem, entry in quantization.items() if isinstance(entry, dict)
+    }
     return base, overrides
 
 
@@ -123,11 +126,19 @@ def bits_for(stem: str, widths: tuple[int, dict[str, int]]) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--anchor", type=int, default=6,
-                    help="tensors to also compare against the bf16 source (0 = skip)")
-    ap.add_argument("--rows", type=int, default=64,
-                    help="rows per tensor; the comparison is per row, so a sample "
-                         "is as informative as the whole and far cheaper")
+    ap.add_argument(
+        "--anchor",
+        type=int,
+        default=6,
+        help="tensors to also compare against the bf16 source (0 = skip)",
+    )
+    ap.add_argument(
+        "--rows",
+        type=int,
+        default=64,
+        help="rows per tensor; the comparison is per row, so a sample "
+        "is as informative as the whole and far cheaper",
+    )
     args = ap.parse_args()
     for path in (EIGHT, FOUR):
         if not (path / "model.safetensors.index.json").exists():
@@ -139,10 +150,8 @@ def main() -> int:
     # embedding at 8 even in the 4-bit build, because it is the output
     # projection as well and 508M parameters of it decide every token.
     widths = {name: _widths(path) for name, path in (("8", EIGHT), ("4", FOUR))}
-    shared = sorted({n for n in eight.keys() if n.endswith(".weight")}
-                    & set(four.keys()))
-    quantized = [n for n in shared
-                 if n.removesuffix(".weight") + ".scales" in set(eight.keys())]
+    shared = sorted({n for n in eight.keys() if n.endswith(".weight")} & set(four.keys()))
+    quantized = [n for n in shared if n.removesuffix(".weight") + ".scales" in set(eight.keys())]
 
     rng = np.random.default_rng(0)
     per_kind: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
@@ -150,22 +159,26 @@ def main() -> int:
         stem = name.removesuffix(".weight")
         b8, b4 = bits_for(stem, widths["8"]), bits_for(stem, widths["4"])
         if b8 == b4:
-            continue          # same width in both builds: nothing to compare
-        w8 = dequantize(eight.get_tensor(name)[: args.rows],
-                        eight.get_tensor(stem + ".scales")[: args.rows],
-                        eight.get_tensor(stem + ".biases")[: args.rows], b8)
-        w4 = dequantize(four.get_tensor(name)[: args.rows],
-                        four.get_tensor(stem + ".scales")[: args.rows],
-                        four.get_tensor(stem + ".biases")[: args.rows], b4)
+            continue  # same width in both builds: nothing to compare
+        w8 = dequantize(
+            eight.get_tensor(name)[: args.rows],
+            eight.get_tensor(stem + ".scales")[: args.rows],
+            eight.get_tensor(stem + ".biases")[: args.rows],
+            b8,
+        )
+        w4 = dequantize(
+            four.get_tensor(name)[: args.rows],
+            four.get_tensor(stem + ".scales")[: args.rows],
+            four.get_tensor(stem + ".biases")[: args.rows],
+            b4,
+        )
         x = rng.standard_normal(w8.shape[1]).astype(np.float32)
         y8, y4 = w8 @ x, w4 @ x
         cosine = float(y8 @ y4 / (np.linalg.norm(y8) * np.linalg.norm(y4) + 1e-30))
         per_kind[kind_of(name)].append((relative(w4, w8), relative(y4, y8), cosine))
 
-    print(f"4-bit against 8-bit, {args.rows} rows per tensor, "
-          f"{len(quantized)} quantized tensors\n")
-    print(f"  {'tensor kind':34s} {'n':>3s} {'weight err':>11s} "
-          f"{'output err':>11s} {'cosine':>9s}")
+    print(f"4-bit against 8-bit, {args.rows} rows per tensor, {len(quantized)} quantized tensors\n")
+    print(f"  {'tensor kind':34s} {'n':>3s} {'weight err':>11s} {'output err':>11s} {'cosine':>9s}")
     worst_cosine = 1.0
     for kind in sorted(per_kind):
         rows = per_kind[kind]
@@ -186,20 +199,25 @@ def main() -> int:
             reference = source.rows(snapshot_name_to_checkpoint(name), args.rows)
             if reference is None:
                 continue
-            w8 = dequantize(eight.get_tensor(name)[: args.rows],
-                            eight.get_tensor(stem + ".scales")[: args.rows],
-                            eight.get_tensor(stem + ".biases")[: args.rows],
-                            bits_for(stem, widths["8"]))
-            w4 = dequantize(four.get_tensor(name)[: args.rows],
-                            four.get_tensor(stem + ".scales")[: args.rows],
-                            four.get_tensor(stem + ".biases")[: args.rows],
-                            bits_for(stem, widths["4"]))
+            w8 = dequantize(
+                eight.get_tensor(name)[: args.rows],
+                eight.get_tensor(stem + ".scales")[: args.rows],
+                eight.get_tensor(stem + ".biases")[: args.rows],
+                bits_for(stem, widths["8"]),
+            )
+            w4 = dequantize(
+                four.get_tensor(name)[: args.rows],
+                four.get_tensor(stem + ".scales")[: args.rows],
+                four.get_tensor(stem + ".biases")[: args.rows],
+                bits_for(stem, widths["4"]),
+            )
             label = name.removeprefix("language_model.model.").removesuffix(".weight")
-            print(f"  {label:44s} {relative(w8, reference):8.4f} "
-                  f"{relative(w4, reference):8.4f}")
+            print(f"  {label:44s} {relative(w8, reference):8.4f} {relative(w4, reference):8.4f}")
         print("\n  8-bit allows 1/255 = 0.0039 of range, 4-bit 1/15 = 0.0667.")
-    print("\nThis measures the weights. Whether the two widths choose the same\n"
-          "tokens is a question for the engine, and is not answered here.")
+    print(
+        "\nThis measures the weights. Whether the two widths choose the same\n"
+        "tokens is a question for the engine, and is not answered here."
+    )
     return 0
 
 

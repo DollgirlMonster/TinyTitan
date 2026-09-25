@@ -16,6 +16,7 @@ one dry run that must write nothing at all.
 
     cd benchmark && python3 -m unittest test_dsh_isolation -v
 """
+
 from __future__ import annotations
 
 import os
@@ -63,8 +64,11 @@ class PrivateHarnessIsolationTests(unittest.TestCase):
         # `--prefix` does not move npm's cache or log directory, and npm reads
         # the user's ~/.npmrc unless told not to. DSH, pnpm and Playwright each
         # install with npm, so all three must carry both variables.
-        installs = [command for command in self.commands
-                    if re.search(r'"\$\(?npm(?:_bin)?\)?"\s+install', command)]
+        installs = [
+            command
+            for command in self.commands
+            if re.search(r'"\$\(?npm(?:_bin)?\)?"\s+install', command)
+        ]
         self.assertEqual(len(installs), 3, "expected the DSH, pnpm and Playwright installs")
         for command in installs:
             head = command.strip()[:70]
@@ -84,22 +88,32 @@ class PrivateHarnessIsolationTests(unittest.TestCase):
         # agent can read the user's git, gh and registry configuration.
         web = [c for c in self.commands if "web --port" in c and "exec env" in c]
         self.assertEqual(len(web), 1)
-        for variable in ("XDG_CACHE_HOME=", "XDG_STATE_HOME=", "PNPM_HOME=",
-                         "npm_config_cache="):
+        for variable in ("XDG_CACHE_HOME=", "XDG_STATE_HOME=", "PNPM_HOME=", "npm_config_cache="):
             self.assertIn(variable, web[0])
         for absent in ("npm_config_userconfig=", "XDG_CONFIG_HOME=", "XDG_DATA_HOME="):
             self.assertNotIn(absent, web[0])
 
     def test_the_private_paths_live_under_one_root(self) -> None:
-        for name in ("DSH_NPM_CACHE", "DSH_NPMRC", "DSH_XDG_CACHE", "DSH_XDG_STATE",
-                     "DSH_PNPM_HOME"):
+        for name in (
+            "DSH_NPM_CACHE",
+            "DSH_NPMRC",
+            "DSH_XDG_CACHE",
+            "DSH_XDG_STATE",
+            "DSH_PNPM_HOME",
+        ):
             with self.subTest(name=name):
                 pattern = re.compile(rf'^{name}="\$DSH_ROOT/', re.M)
                 self.assertRegex(self.script, pattern, name)
 
     def test_dsh_is_never_put_on_the_users_path(self) -> None:
-        for pattern in (r"^\s*export PATH=", r"\.zshrc", r"\.bash_profile",
-                        r"\.profile", r"npm install -g", r"/usr/local/bin"):
+        for pattern in (
+            r"^\s*export PATH=",
+            r"\.zshrc",
+            r"\.bash_profile",
+            r"\.profile",
+            r"npm install -g",
+            r"/usr/local/bin",
+        ):
             with self.subTest(pattern=pattern):
                 self.assertIsNone(re.search(pattern, self.script, re.M), pattern)
 
@@ -108,15 +122,24 @@ class PrivateHarnessIsolationTests(unittest.TestCase):
         try:
             marker = home / "marker"
             marker.write_text("")
-            env = dict(os.environ, HOME=str(home),
-                       TINYTITAN_DSH_ROOT=str(home / ".tinytitan/dsh"),
-                       TINYTITAN_DSH_DRY_RUN="1")
-            result = subprocess.run(["bash", str(DSH_LOCAL), "ensure"], env=env,
-                                    capture_output=True, text=True, timeout=120)
+            env = dict(
+                os.environ,
+                HOME=str(home),
+                TINYTITAN_DSH_ROOT=str(home / ".tinytitan/dsh"),
+                TINYTITAN_DSH_DRY_RUN="1",
+            )
+            result = subprocess.run(
+                ["bash", str(DSH_LOCAL), "ensure"],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
             self.assertEqual(result.returncode, 0, result.stderr[-400:])
             self.assertIn("would", result.stdout)
-            written = [str(p.relative_to(home)) for p in home.rglob("*")
-                       if p.is_file() and p != marker]
+            written = [
+                str(p.relative_to(home)) for p in home.rglob("*") if p.is_file() and p != marker
+            ]
             self.assertEqual(written, [], "the dry run wrote into the home")
         finally:
             shutil.rmtree(home, ignore_errors=True)
@@ -143,13 +166,15 @@ class ModelsDirectoryTests(unittest.TestCase):
         (root / "models").mkdir()
         return root
 
-    def paths(self, script: pathlib.Path, home: pathlib.Path,
-              environment: dict[str, str] | None = None) -> dict[str, str]:
+    def paths(
+        self, script: pathlib.Path, home: pathlib.Path, environment: dict[str, str] | None = None
+    ) -> dict[str, str]:
         env = {"PATH": os.environ["PATH"], "HOME": str(home)}
         if environment:
             env.update(environment)
-        result = subprocess.run(["bash", str(script), "paths"], env=env,
-                                capture_output=True, text=True, timeout=60)
+        result = subprocess.run(
+            ["bash", str(script), "paths"], env=env, capture_output=True, text=True, timeout=60
+        )
         self.assertEqual(result.returncode, 0, result.stderr[-400:])
         return dict(line.split(None, 1) for line in result.stdout.splitlines() if line.strip())
 
@@ -164,8 +189,11 @@ class ModelsDirectoryTests(unittest.TestCase):
 
     def test_an_explicit_directory_still_wins(self) -> None:
         root = self.install_layout()
-        paths = self.paths(root / "src" / "tools" / "dsh_local.sh", root,
-                           {"TINYTITAN_MODELS_DIR": "/tmp/chosen-models"})
+        paths = self.paths(
+            root / "src" / "tools" / "dsh_local.sh",
+            root,
+            {"TINYTITAN_MODELS_DIR": "/tmp/chosen-models"},
+        )
         self.assertEqual(paths["models"], "/tmp/chosen-models")
 
     def test_the_harness_launch_exports_the_resolved_directory(self) -> None:
@@ -173,8 +201,11 @@ class ModelsDirectoryTests(unittest.TestCase):
         # `$REPO_ROOT/models`, which is what an installed copy does not have.
         script = DSH_LOCAL.read_text()
         self.assertNotIn('TINYTITAN_MODELS_DIR="$REPO_ROOT/models"', script)
-        launches = [c for c in logical_lines(script)
-                    if re.search(r"\bweb --", c) and "TINYTITAN_MODELS_DIR=" in c]
+        launches = [
+            c
+            for c in logical_lines(script)
+            if re.search(r"\bweb --", c) and "TINYTITAN_MODELS_DIR=" in c
+        ]
         self.assertEqual(len(launches), 2, "expected the web and smoke launches")
         for launch in launches:
             self.assertIn('TINYTITAN_MODELS_DIR="$MODELS_DIR"', launch)
@@ -190,15 +221,22 @@ class InstallerIsolationTests(unittest.TestCase):
     def test_it_never_edits_a_shell_rc_file(self) -> None:
         # It *prints* the line to add when ~/.local/bin is not on PATH; that is
         # advice, not an edit.
-        self.assertIsNone(re.search(r'>>?\s*"?\$HOME/\.(?:zshrc|bash_profile|profile)',
-                                    self.script))
+        self.assertIsNone(
+            re.search(r'>>?\s*"?\$HOME/\.(?:zshrc|bash_profile|profile)', self.script)
+        )
         self.assertIn("Add it to your PATH", self.script)
 
     def test_its_only_writes_outside_the_root_are_the_two_launchers(self) -> None:
-        writes = set(re.findall(
-            r'(?:cat\s*>\s*|mkdir\s+-p\s+|chmod\s+\+x\s+)"?(\$HOME[^"\\ ]*)', self.script))
-        allowed = {"$HOME/.local/bin", "$HOME/.local/bin/tinytitan",
-                   "$HOME/.local/bin/tinytitan-web"}
+        writes = set(
+            re.findall(
+                r'(?:cat\s*>\s*|mkdir\s+-p\s+|chmod\s+\+x\s+)"?(\$HOME[^"\\ ]*)', self.script
+            )
+        )
+        allowed = {
+            "$HOME/.local/bin",
+            "$HOME/.local/bin/tinytitan",
+            "$HOME/.local/bin/tinytitan-web",
+        }
         self.assertEqual(writes - allowed, set())
 
     def test_the_install_root_is_overridable_for_a_simulated_machine(self) -> None:

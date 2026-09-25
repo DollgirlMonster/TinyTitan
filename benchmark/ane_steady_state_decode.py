@@ -29,6 +29,7 @@ end of the range: a longer ANE prefill leaves Core ML holding more arena space
   python3 benchmark/ane_steady_state_decode.py \
       --model models/qwen-agentworld_35B_A3B_4Bit --small 64 --big 448 --record
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,7 +56,8 @@ PARAGRAPH = (
     "Attention state is held in a compressed key-value cache whose precision "
     "is chosen independently of the weight precision. Prefill processes the "
     "prompt in fixed chunks, while decode emits one token at a time and is "
-    "bounded by memory bandwidth rather than arithmetic. ")
+    "bounded by memory bandwidth rather than arithmetic. "
+)
 
 # The qualification prompt asks for a 40-word summary and therefore stops at
 # ~60 tokens. This asks for a long continuation and forbids stopping, which is
@@ -63,39 +65,71 @@ PARAGRAPH = (
 INSTRUCTION = (
     "\n\nContinue the technical description above. Write at least 700 more "
     "words in the same style, without summarizing and without stopping early. "
-    "Start immediately with the next sentence.\n")
+    "Start immediately with the next sentence.\n"
+)
 
 FOOTER = re.compile(
     r"\[stop=(\S+) prefill=(\d+)tok/([\d.]+)s new=(\d+)tok decode=([\d.]+)s "
-    r"tok/s=([\d.]+)\]")
-WIRE = re.compile(r"\[wire\] setExpertCachePinned\((\w+)\) ([\d.]+) ms "
-                  r"early=(\w+) walked=(\d+)")
+    r"tok/s=([\d.]+)\]"
+)
+WIRE = re.compile(
+    r"\[wire\] setExpertCachePinned\((\w+)\) ([\d.]+) ms "
+    r"early=(\w+) walked=(\d+)"
+)
 
 
 def build_prompt(paragraphs: int) -> str:
     return PARAGRAPH * paragraphs + INSTRUCTION
 
 
-def run_cli(model: pathlib.Path, prompt: str, max_new: int, ane: bool,
-            messages_file: pathlib.Path,
-            wire_trace: bool = False) -> dict:
+def run_cli(
+    model: pathlib.Path,
+    prompt: str,
+    max_new: int,
+    ane: bool,
+    messages_file: pathlib.Path,
+    wire_trace: bool = False,
+) -> dict:
     """One arm at one length: a fresh process, so each run pays its own transient."""
     env = dict(os.environ)
     env["TINYTITAN_PREFILL_ANE"] = "on" if ane else "off"
     if wire_trace:
         env["TINYTITAN_WIRE_TRACE"] = "1"
     proc = subprocess.run(
-        [str(CLI), "--model", str(model), "--messages-file", str(messages_file),
-         "--max-new", str(max_new), "--temperature", "0"],
-        env=env, cwd=ROOT, capture_output=True, text=True, timeout=3600)
+        [
+            str(CLI),
+            "--model",
+            str(model),
+            "--messages-file",
+            str(messages_file),
+            "--max-new",
+            str(max_new),
+            "--temperature",
+            "0",
+        ],
+        env=env,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=3600,
+    )
     match = FOOTER.search(proc.stderr)
     if match is None:
-        return {"arm": "ane" if ane else "gpu", "max_new": max_new,
-                "failed": (proc.stderr or proc.stdout)[-400:]}
+        return {
+            "arm": "ane" if ane else "gpu",
+            "max_new": max_new,
+            "failed": (proc.stderr or proc.stdout)[-400:],
+        }
     stop, prompt_tokens, prefill_s, new, decode_s, rate = match.groups()
-    wire = [{"pinned": bool(m.group(1) == "true"), "ms": float(m.group(2)),
-             "early": m.group(3) == "true", "walked": int(m.group(4))}
-            for m in WIRE.finditer(proc.stderr)]
+    wire = [
+        {
+            "pinned": bool(m.group(1) == "true"),
+            "ms": float(m.group(2)),
+            "early": m.group(3) == "true",
+            "walked": int(m.group(4)),
+        }
+        for m in WIRE.finditer(proc.stderr)
+    ]
     return {
         "arm": "ane" if ane else "gpu",
         "max_new": max_new,
@@ -133,22 +167,36 @@ def steady_state(rows: list[dict], arm: str, small: int, big: int) -> float | No
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="models/qwen-agentworld_35B_A3B_4Bit",
-                        help="an installed model directory with an ANE sidecar")
-    parser.add_argument("--small", type=int, default=64,
-                        help="short generation, past first-token effects")
-    parser.add_argument("--big", type=int, default=448,
-                        help="long generation, the differencing upper end")
-    parser.add_argument("--paragraphs", type=int, default=140,
-                        help="prompt body; 140 is ~12,500 tokens (three 4,096-token "
-                             "ANE chunks), 47 is ~4,230 (the cheapest eligible prompt)")
-    parser.add_argument("--reps", type=int, default=1,
-                        help="gpu/ane/ane/gpu blocks; 1 gives two runs per arm")
-    parser.add_argument("--wire-trace", action="store_true",
-                        help="TINYTITAN_WIRE_TRACE=1, to record the pin/unpin calls")
+    parser.add_argument(
+        "--model",
+        default="models/qwen-agentworld_35B_A3B_4Bit",
+        help="an installed model directory with an ANE sidecar",
+    )
+    parser.add_argument(
+        "--small", type=int, default=64, help="short generation, past first-token effects"
+    )
+    parser.add_argument(
+        "--big", type=int, default=448, help="long generation, the differencing upper end"
+    )
+    parser.add_argument(
+        "--paragraphs",
+        type=int,
+        default=140,
+        help="prompt body; 140 is ~12,500 tokens (three 4,096-token "
+        "ANE chunks), 47 is ~4,230 (the cheapest eligible prompt)",
+    )
+    parser.add_argument(
+        "--reps", type=int, default=1, help="gpu/ane/ane/gpu blocks; 1 gives two runs per arm"
+    )
+    parser.add_argument(
+        "--wire-trace",
+        action="store_true",
+        help="TINYTITAN_WIRE_TRACE=1, to record the pin/unpin calls",
+    )
     parser.add_argument("--label", default="tt007")
-    parser.add_argument("--record", action="store_true",
-                        help="write rows to benchmark/ane-prefill/")
+    parser.add_argument(
+        "--record", action="store_true", help="write rows to benchmark/ane-prefill/"
+    )
     args = parser.parse_args()
 
     model = (ROOT / args.model).resolve()
@@ -156,9 +204,11 @@ def main() -> int:
         raise SystemExit(f"not an installed model: {model}")
     if not (model / "ane_prefill").is_dir():
         raise SystemExit(f"no ANE sidecar under {model}")
-    busy = subprocess.run(["pgrep", "-fl",
-                           "TinyTitanCLI|TinyTitanServer|mlx_lm|mlx-lm"],
-                          capture_output=True, text=True).stdout.strip()
+    busy = subprocess.run(
+        ["pgrep", "-fl", "TinyTitanCLI|TinyTitanServer|mlx_lm|mlx-lm"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     if busy:
         raise SystemExit(f"a model process is already running:\n{busy}")
 
@@ -167,21 +217,23 @@ def main() -> int:
     # this into "keep writing" for an instruct model, and it is the path the
     # qualification harness uses. Written once and reused by every run.
     messages = tempfile.NamedTemporaryFile(
-        "w", prefix="tt007-messages-", suffix=".json", delete=False)
+        "w", prefix="tt007-messages-", suffix=".json", delete=False
+    )
     json.dump([{"role": "user", "content": prompt}], messages)
     messages.close()
     messages_file = pathlib.Path(messages.name)
 
     rows: list[dict] = []
-    print(f"[tt007] {model.name}: prompt {len(prompt)} chars, "
-          f"generations {args.small} and {args.big}"
-          + (", wire trace" if args.wire_trace else ""), flush=True)
+    print(
+        f"[tt007] {model.name}: prompt {len(prompt)} chars, "
+        f"generations {args.small} and {args.big}" + (", wire trace" if args.wire_trace else ""),
+        flush=True,
+    )
     try:
-        for rep in range(args.reps):
+        for _rep in range(args.reps):
             for ane in (False, True, True, False):
                 for length in (args.small, args.big):
-                    row = run_cli(model, prompt, length, ane, messages_file,
-                                  args.wire_trace)
+                    row = run_cli(model, prompt, length, ane, messages_file, args.wire_trace)
                     rows.append(row)
                     if row.get("failed"):
                         print(f"[{row['arm']:<3} {length:>4}] FAILED: {row['failed']}", flush=True)
@@ -191,13 +243,19 @@ def main() -> int:
                     if wire:
                         releases = sum(1 for w in wire if not w["pinned"])
                         pin_ms = sum(w["ms"] for w in wire if w["pinned"])
-                        wire_note = (f"  wire: {len(wire)} calls, {releases} release, "
-                                     f"{pin_ms:6.1f} ms pinned")
-                    print(f"[{row['arm']:<3} {length:>4}] prefill "
-                          f"{row['prefill_s']:7.2f} s  decode {row['decode_s']:6.2f} s  "
-                          f"new {row['new_tokens']:4d}  {row['decode_tok_s']:6.2f} tok/s  "
-                          f"stop={row['stop']}" + ("" if row["complete"] else "  [INCOMPLETE]")
-                          + wire_note, flush=True)
+                        wire_note = (
+                            f"  wire: {len(wire)} calls, {releases} release, "
+                            f"{pin_ms:6.1f} ms pinned"
+                        )
+                    print(
+                        f"[{row['arm']:<3} {length:>4}] prefill "
+                        f"{row['prefill_s']:7.2f} s  decode {row['decode_s']:6.2f} s  "
+                        f"new {row['new_tokens']:4d}  {row['decode_tok_s']:6.2f} tok/s  "
+                        f"stop={row['stop']}"
+                        + ("" if row["complete"] else "  [INCOMPLETE]")
+                        + wire_note,
+                        flush=True,
+                    )
     finally:
         messages_file.unlink(missing_ok=True)
 
@@ -208,42 +266,59 @@ def main() -> int:
 
     print("\n" + "=" * 72)
     print(f"STEADY-STATE DECODE PAST THE ANE HANDOVER — {model.name}")
-    print(f"  prompt {rows[0].get('prompt_tokens', '?')} tokens, greedy, "
-          f"differenced over [{args.small}, {args.big}] generated tokens")
+    print(
+        f"  prompt {rows[0].get('prompt_tokens', '?')} tokens, greedy, "
+        f"differenced over [{args.small}, {args.big}] generated tokens"
+    )
     print("=" * 72)
     if gpu_prefill and ane_prefill:
-        print(f"  prefill   GPU {gpu_prefill:7.2f} s   ANE {ane_prefill:7.2f} s   "
-              f"speedup {gpu_prefill / ane_prefill:.2f}x")
+        print(
+            f"  prefill   GPU {gpu_prefill:7.2f} s   ANE {ane_prefill:7.2f} s   "
+            f"speedup {gpu_prefill / ane_prefill:.2f}x"
+        )
     for label, value in (("GPU", gpu_ss), ("ANE", ane_ss)):
-        print(f"  decode    {label} steady state "
-              + (f"{value:6.2f} tok/s" if value else "unavailable"))
+        print(
+            f"  decode    {label} steady state "
+            + (f"{value:6.2f} tok/s" if value else "unavailable")
+        )
     if gpu_ss and ane_ss:
         gap = (ane_ss - gpu_ss) / gpu_ss * 100.0
-        print(f"  ANE vs GPU steady state: {gap:+.1f}% "
-              f"({ane_ss:.2f} vs {gpu_ss:.2f} tok/s)")
+        print(f"  ANE vs GPU steady state: {gap:+.1f}% ({ane_ss:.2f} vs {gpu_ss:.2f} tok/s)")
         for length in (args.small, args.big):
-            g = median([r for r in rows if r["arm"] == "gpu" and r["max_new"] == length],
-                       "decode_tok_s")
-            a = median([r for r in rows if r["arm"] == "ane" and r["max_new"] == length],
-                       "decode_tok_s")
+            g = median(
+                [r for r in rows if r["arm"] == "gpu" and r["max_new"] == length], "decode_tok_s"
+            )
+            a = median(
+                [r for r in rows if r["arm"] == "ane" and r["max_new"] == length], "decode_tok_s"
+            )
             if g and a:
-                print(f"    window up to {length:>4} tokens: "
-                      f"ANE vs GPU {(a - g) / g * 100.0:+.1f}% "
-                      f"({a:.2f} vs {g:.2f} tok/s) — contains the transient")
+                print(
+                    f"    window up to {length:>4} tokens: "
+                    f"ANE vs GPU {(a - g) / g * 100.0:+.1f}% "
+                    f"({a:.2f} vs {g:.2f} tok/s) — contains the transient"
+                )
 
     if args.record:
         RESULTS.mkdir(parents=True, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M")
         out = RESULTS / f"steady-state-{args.label}-{stamp}.json"
-        out.write_text(json.dumps({
-            "model": model.name,
-            "small": args.small, "big": args.big,
-            "paragraphs": args.paragraphs,
-            "wire_trace": args.wire_trace,
-            "gpu_steady_tok_s": gpu_ss, "ane_steady_tok_s": ane_ss,
-            "gpu_prefill_s": gpu_prefill, "ane_prefill_s": ane_prefill,
-            "rows": rows,
-        }, indent=2))
+        out.write_text(
+            json.dumps(
+                {
+                    "model": model.name,
+                    "small": args.small,
+                    "big": args.big,
+                    "paragraphs": args.paragraphs,
+                    "wire_trace": args.wire_trace,
+                    "gpu_steady_tok_s": gpu_ss,
+                    "ane_steady_tok_s": ane_ss,
+                    "gpu_prefill_s": gpu_prefill,
+                    "ane_prefill_s": ane_prefill,
+                    "rows": rows,
+                },
+                indent=2,
+            )
+        )
         print(f"\nwrote {out.relative_to(ROOT)}")
     return 0
 

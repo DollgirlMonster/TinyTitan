@@ -6,7 +6,8 @@ import unittest
 
 MODULE_PATH = pathlib.Path(__file__).with_name("tinytitan_prefetch_trace_analysis.py")
 SPEC = importlib.util.spec_from_file_location("prefetch_analysis", MODULE_PATH)
-assert SPEC is not None and SPEC.loader is not None
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError(f"cannot load {MODULE_PATH} as a module")
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)

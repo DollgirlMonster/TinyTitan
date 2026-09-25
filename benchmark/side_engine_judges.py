@@ -19,13 +19,13 @@ system+user prompt to a running TinyTitan server, which is how a 35B MoE or a
 125B is reached. The jobs file is the one `side_engine_tasks.py --prepare`
 writes; scoring is that script's, imported rather than copied.
 """
+
 from __future__ import annotations
 
 import argparse
 import importlib.util
 import json
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.request
@@ -52,7 +52,10 @@ def run_cpu(install: str, jobs: list[dict], out: Path) -> float:
         started = time.time()
         result = subprocess.run(
             [str(BENCH), "cpu35batch", install, str(source), str(out)],
-            capture_output=True, text=True, timeout=14_400)
+            capture_output=True,
+            text=True,
+            timeout=14_400,
+        )
         elapsed = time.time() - started
     if result.returncode != 0:
         raise SystemExit(f"cpu35batch exited {result.returncode}\n{result.stderr[-2000:]}")
@@ -63,18 +66,22 @@ def run_server(url: str, model: str, jobs: list[dict], out: Path) -> float:
     started = time.time()
     lines = []
     for job in jobs:
-        body = json.dumps({
-            "model": model,
-            "messages": [
-                {"role": "system", "content": job["system"]},
-                {"role": "user", "content": job["prompt"]},
-            ],
-            "max_completion_tokens": job.get("max", 8),
-            "temperature": 0,
-        }).encode()
+        body = json.dumps(
+            {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": job["system"]},
+                    {"role": "user", "content": job["prompt"]},
+                ],
+                "max_completion_tokens": job.get("max", 8),
+                "temperature": 0,
+            }
+        ).encode()
         request = urllib.request.Request(
-            f"{url.rstrip('/')}/chat/completions", data=body,
-            headers={"content-type": "application/json"})
+            f"{url.rstrip('/')}/chat/completions",
+            data=body,
+            headers={"content-type": "application/json"},
+        )
         try:
             with urllib.request.urlopen(request, timeout=600) as reply:
                 payload = json.loads(reply.read())
@@ -116,9 +123,11 @@ def line(label: str, per_task: dict, seconds: float, count: int) -> None:
         halves = "  ".join(f"{k}: {v[0]}/{v[1]}" for k, v in sorted(entry["halves"].items()))
         worst = min((v[0] / v[1]) for v in entry["halves"].values() if v[1])
         ready += worst >= 0.7
-        print(f"{task:5s} {entry['total']:3d} "
-              f"{100 * entry['correct'] / entry['total']:7.0f}%  {halves}"
-              f"{'' if worst >= 0.7 else '   *'}")
+        print(
+            f"{task:5s} {entry['total']:3d} "
+            f"{100 * entry['correct'] / entry['total']:7.0f}%  {halves}"
+            f"{'' if worst >= 0.7 else '   *'}"
+        )
     print(f"  tasks good on both halves: {ready}/{len(per_task)}")
 
 
@@ -129,9 +138,9 @@ def parse_judge(spec: str) -> tuple[str, str, str | None]:
     last colon separates the two halves of a server spec.
     """
     if spec.startswith("cpu:"):
-        return ("cpu", spec[len("cpu:"):], None)
+        return ("cpu", spec[len("cpu:") :], None)
     if spec.startswith("server:"):
-        url, model = spec[len("server:"):].rsplit(":", 1)
+        url, model = spec[len("server:") :].rsplit(":", 1)
         return ("server", url, model)
     raise ValueError(f"unknown judge spec: {spec}")
 
@@ -139,10 +148,12 @@ def parse_judge(spec: str) -> tuple[str, str, str | None]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--jobs", type=Path, required=True)
-    ap.add_argument("--judge", action="append", required=True,
-                    help="cpu:<install> or server:<url>:<model>")
-    ap.add_argument("--out", type=Path, help="directory for the done files "
-                    "(default: beside the jobs file)")
+    ap.add_argument(
+        "--judge", action="append", required=True, help="cpu:<install> or server:<url>:<model>"
+    )
+    ap.add_argument(
+        "--out", type=Path, help="directory for the done files (default: beside the jobs file)"
+    )
     args = ap.parse_args()
     jobs = [json.loads(line) for line in args.jobs.read_text().splitlines() if line.strip()]
     out_dir = args.out or args.jobs.parent

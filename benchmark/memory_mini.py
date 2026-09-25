@@ -24,6 +24,7 @@ Two jobs are measured, because the simulation says they are not equally hard:
     benchmark/memory_mini.py run 350m-extract --runs 3
     benchmark/memory_mini.py report
 """
+
 from __future__ import annotations
 
 import json
@@ -60,7 +61,7 @@ MODELS = {
 SYSTEM = (
     "You extract durable facts from a writing session so a later session cannot "
     "contradict them. Return a JSON object mapping short keys to short values. "
-    "A key looks like \"characters/marcus_eyes\", \"setting/town\", "
+    'A key looks like "characters/marcus_eyes", "setting/town", '
     '"state/inn", "rules/ferry". A value is a few words. Record fixed '
     "attributes, rules, and the current state of anything that changed. "
     "Do not invent facts that are not in the text."
@@ -69,7 +70,7 @@ SYSTEM = (
 CAPTURE_SYSTEM = (
     "You extract the facts the user has stated, so they can be stored and never "
     "contradicted later. Return a JSON object mapping short keys to short "
-    "values. A key looks like \"characters/marcus_eyes\", \"setting/town\", "
+    'values. A key looks like "characters/marcus_eyes", "setting/town", '
     '"state/inn", "rules/ferry". A value is a few words. Record only what the '
     "user's message states or requires. Do not invent anything."
 )
@@ -78,6 +79,7 @@ CAPTURE_SYSTEM = (
 # --------------------------------------------------------------------------
 # Serving
 # --------------------------------------------------------------------------
+
 
 def serve(name: str) -> None:
     path = MODELS[name]
@@ -88,13 +90,22 @@ def serve(name: str) -> None:
     # CPU only and few threads on purpose: the 35B owns the GPU, and this has
     # to be able to run beside it without taking the machine.
     command = [
-        "/opt/homebrew/bin/llama-server", "-m", str(path), "-ngl", "0",
-        "-t", os.environ.get("TINYTITAN_MINI_THREADS", "2"), "-c", "8192",
-        "--port", str(PORT), "--host", "127.0.0.1",
+        "/opt/homebrew/bin/llama-server",
+        "-m",
+        str(path),
+        "-ngl",
+        "0",
+        "-t",
+        os.environ.get("TINYTITAN_MINI_THREADS", "2"),
+        "-c",
+        "8192",
+        "--port",
+        str(PORT),
+        "--host",
+        "127.0.0.1",
     ]
     with log.open("w") as handle:
-        subprocess.Popen(command, stdout=handle, stderr=handle,
-                         start_new_session=True)
+        subprocess.Popen(command, stdout=handle, stderr=handle, start_new_session=True)
     for _ in range(180):
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/health", timeout=2) as reply:
@@ -107,28 +118,32 @@ def serve(name: str) -> None:
 
 
 def complete(system: str, user: str, max_tokens: int = 400) -> tuple[str, dict, float]:
-    body = json.dumps({
-        "messages": [{"role": "system", "content": system},
-                     {"role": "user", "content": user}],
-        # Sampling is a knob because it is not obvious which way it should
-        # go for this job. Greedy is reproducible, which a memory keeper
-        # wants; the vendor's recommended profile is tuned for chat, and a
-        # verifier that samples can disagree with itself between turns.
-        "temperature": float(os.environ.get("TINYTITAN_MINI_TEMP", "0")),
-        "top_p": float(os.environ.get("TINYTITAN_MINI_TOP_P", "1")),
-        "repeat_penalty": float(os.environ.get("TINYTITAN_MINI_REPEAT", "1")),
-        "max_tokens": max_tokens,
-        # Qwen3.5 thinks by default and the thinking lands in
-        # reasoning_content, so a budget sized for the answer is spent
-        # before the answer starts. The memory keeper is an extraction job;
-        # it does not need to deliberate, and a shadow agent that costs a
-        # thousand tokens of reasoning per turn is not a shadow agent.
-        "chat_template_kwargs": {
-            "enable_thinking": os.environ.get("TINYTITAN_MINI_THINK") == "1"},
-    }).encode()
+    body = json.dumps(
+        {
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            # Sampling is a knob because it is not obvious which way it should
+            # go for this job. Greedy is reproducible, which a memory keeper
+            # wants; the vendor's recommended profile is tuned for chat, and a
+            # verifier that samples can disagree with itself between turns.
+            "temperature": float(os.environ.get("TINYTITAN_MINI_TEMP", "0")),
+            "top_p": float(os.environ.get("TINYTITAN_MINI_TOP_P", "1")),
+            "repeat_penalty": float(os.environ.get("TINYTITAN_MINI_REPEAT", "1")),
+            "max_tokens": max_tokens,
+            # Qwen3.5 thinks by default and the thinking lands in
+            # reasoning_content, so a budget sized for the answer is spent
+            # before the answer starts. The memory keeper is an extraction job;
+            # it does not need to deliberate, and a shadow agent that costs a
+            # thousand tokens of reasoning per turn is not a shadow agent.
+            "chat_template_kwargs": {
+                "enable_thinking": os.environ.get("TINYTITAN_MINI_THINK") == "1"
+            },
+        }
+    ).encode()
     request = urllib.request.Request(
-        f"http://127.0.0.1:{PORT}/v1/chat/completions", data=body,
-        headers={"Content-Type": "application/json"})
+        f"http://127.0.0.1:{PORT}/v1/chat/completions",
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
     started = time.time()
     with urllib.request.urlopen(request, timeout=300) as reply:
         answer = json.loads(reply.read())
@@ -174,8 +189,11 @@ def parse_facts(text: str) -> dict[str, str]:
         parsed = {}
         for key, value in re.findall(r'"([^"]{2,80})"\s*:\s*"([^"]{1,200})"', blob):
             parsed[key] = value
-    return {str(k): str(v) for k, v in parsed.items()
-            if isinstance(parsed, dict) and not isinstance(v, (dict, list))}
+    return {
+        str(k): str(v)
+        for k, v in parsed.items()
+        if isinstance(parsed, dict) and not isinstance(v, (dict, list))
+    }
 
 
 def session_input(run: dict, session: int, job: str) -> str:
@@ -202,21 +220,23 @@ def run_model(name: str, limit: int, jobs: tuple[str, ...]) -> None:
                     continue
                 system = CAPTURE_SYSTEM if job == "capture" else SYSTEM
                 try:
-                    text, usage, seconds = complete(
-                        system, session_input(run, session, job))
+                    text, usage, seconds = complete(system, session_input(run, session, job))
                 except (urllib.error.URLError, TimeoutError) as error:
                     print(f"  {run['name']} s{session}: {error}")
                     continue
                 facts = parse_facts(text)
                 per_session[session] = {
-                    "facts": facts, "seconds": seconds,
+                    "facts": facts,
+                    "seconds": seconds,
                     "prompt_tokens": usage.get("prompt_tokens", 0),
                     "completion_tokens": usage.get("completion_tokens", 0),
                     "raw": text[:400] if not facts else "",
                 }
-                print(f"  {name}/{job} {run['name']} s{session}: "
-                      f"{len(facts):2d} facts, {seconds:.1f}s, "
-                      f"{usage.get('prompt_tokens', 0)}+{usage.get('completion_tokens', 0)} tok")
+                print(
+                    f"  {name}/{job} {run['name']} s{session}: "
+                    f"{len(facts):2d} facts, {seconds:.1f}s, "
+                    f"{usage.get('prompt_tokens', 0)}+{usage.get('completion_tokens', 0)} tok"
+                )
             record["runs"][run["name"]] = per_session
             out.write_text(json.dumps(record, indent=1))
     print(f"wrote {RESULTS}")
@@ -226,18 +246,27 @@ def run_model(name: str, limit: int, jobs: tuple[str, ...]) -> None:
 # Scoring: the same store, the same reader
 # --------------------------------------------------------------------------
 
+
 def store_from(per_session: dict, upto: int) -> dict[str, dict]:
     """The mini-model's facts as a store, replayed in session order under the
     v3 rule (last write wins), so the number is comparable with the 35B's."""
     store: dict[str, dict] = {}
     order = 0
     for session in range(1, upto + 1):
-        for address, value in (per_session.get(str(session))
-                               or per_session.get(session) or {}).get("facts", {}).items():
+        for address, value in (
+            (per_session.get(str(session)) or per_session.get(session) or {})
+            .get("facts", {})
+            .items()
+        ):
             order += 1
-            store[address] = {"address": address, "value": str(value),
-                              "session": session, "order": order,
-                              "author": "mini", "user": False}
+            store[address] = {
+                "address": address,
+                "value": str(value),
+                "session": session,
+                "order": order,
+                "author": "mini",
+                "user": False,
+            }
     return store
 
 
@@ -269,18 +298,31 @@ def report() -> None:
                     if sim.read(store, key, session) == truth[key]:
                         right += 1
         if seen:
-            rows.append((record["model"], record["job"], 100 * right / seen,
-                         seconds / calls if calls else 0,
-                         (prompt + completion) / calls if calls else 0,
-                         100 * empty / calls if calls else 0, len(record["runs"])))
-    print("small resident model as the memory keeper -- store fidelity read by\n"
-          "the same reader as the 35B's own extraction (v3 = 89%, and the\n"
-          "capture ceiling measured offline = 100%)\n")
-    print(f"  {'model':14s} {'job':8s} {'fidelity':>9s} {'s/session':>10s} "
-          f"{'tok/session':>12s} {'no JSON':>8s} {'runs':>5s}")
+            rows.append(
+                (
+                    record["model"],
+                    record["job"],
+                    100 * right / seen,
+                    seconds / calls if calls else 0,
+                    (prompt + completion) / calls if calls else 0,
+                    100 * empty / calls if calls else 0,
+                    len(record["runs"]),
+                )
+            )
+    print(
+        "small resident model as the memory keeper -- store fidelity read by\n"
+        "the same reader as the 35B's own extraction (v3 = 89%, and the\n"
+        "capture ceiling measured offline = 100%)\n"
+    )
+    print(
+        f"  {'model':14s} {'job':8s} {'fidelity':>9s} {'s/session':>10s} "
+        f"{'tok/session':>12s} {'no JSON':>8s} {'runs':>5s}"
+    )
     for model, job, fidelity, seconds, tokens, empty, count in rows:
-        print(f"  {model:14s} {job:8s} {fidelity:8.0f}% {seconds:9.1f}s "
-              f"{tokens:11.0f} {empty:7.0f}% {count:5d}")
+        print(
+            f"  {model:14s} {job:8s} {fidelity:8.0f}% {seconds:9.1f}s "
+            f"{tokens:11.0f} {empty:7.0f}% {count:5d}"
+        )
     print("\n  the 35B spends 45-55 s and about 1.8k tokens per session on this.")
 
 
@@ -290,9 +332,9 @@ def report() -> None:
 
 VERIFY_SYSTEM = (
     "You check an assistant's answer against established facts. You are given "
-    "FACTS (true) and an ANSWER. Return a JSON object {\"wrong\": [keys]} "
+    'FACTS (true) and an ANSWER. Return a JSON object {"wrong": [keys]} '
     "listing only the answer keys that contradict the facts. If the answer "
-    "agrees with the facts, return {\"wrong\": []}. Do not guess: list a key "
+    'agrees with the facts, return {"wrong": []}. Do not guess: list a key '
     "only when a fact plainly says otherwise."
 )
 
@@ -322,19 +364,25 @@ def verify(limit: int = 6) -> None:
             facts = "\n".join(f"- {key}: {truth[key]}" for key in book.QUIZ_KEYS)
             given = "\n".join(
                 f"- {key}: {book.normalise(key, answers.get(key))}"
-                for key in book.QUIZ_KEYS if key in answers)
-            actually_wrong = {key for key in book.QUIZ_KEYS
-                              if key in answers
-                              and book.normalise(key, answers[key]) != truth[key]}
+                for key in book.QUIZ_KEYS
+                if key in answers
+            )
+            actually_wrong = {
+                key
+                for key in book.QUIZ_KEYS
+                if key in answers and book.normalise(key, answers[key]) != truth[key]
+            }
             try:
                 text, _, _ = complete(
-                    VERIFY_SYSTEM, f"FACTS\n{facts}\n\nANSWER\n{given}",
-                    max_tokens=int(os.environ.get("TINYTITAN_MINI_MAXTOK", "200")))
+                    VERIFY_SYSTEM,
+                    f"FACTS\n{facts}\n\nANSWER\n{given}",
+                    max_tokens=int(os.environ.get("TINYTITAN_MINI_MAXTOK", "200")),
+                )
             except Exception as error:
                 print(f"  {run['name']} s{session}: {error}")
                 continue
             flagged = set()
-            parsed = parse_facts(text.replace("[", '["').replace("]", '"]')) if False else None
+            parse_facts(text.replace("[", '["').replace("]", '"]')) if False else None
             match = re.search(r'"wrong"\s*:\s*\[([^\]]*)\]', text)
             if match:
                 # A small model often answers "marcus_eyes: hazel" where the
@@ -342,7 +390,7 @@ def verify(limit: int = 6) -> None:
                 # its answer, not grading its formatting.
                 flagged = set()
                 for name in match.group(1).split(","):
-                    name = name.strip().strip('"\' ').split(":")[0].strip()
+                    name = name.strip().strip("\"' ").split(":")[0].strip()
                     if name:
                         flagged.add(name)
             flagged &= set(book.QUIZ_KEYS)
@@ -354,15 +402,22 @@ def verify(limit: int = 6) -> None:
                 per_key.setdefault(key, [0, 0])[1] += 1
             false_alarm += len(flagged - actually_wrong)
             quiet += len(set(book.QUIZ_KEYS) - flagged - actually_wrong)
-            print(f"  {run['name']} s{session}: wrong={sorted(actually_wrong)} "
-                  f"flagged={sorted(flagged)}")
+            print(
+                f"  {run['name']} s{session}: wrong={sorted(actually_wrong)} "
+                f"flagged={sorted(flagged)}"
+            )
     recall = 100 * caught / (caught + missed) if caught + missed else 0
     precision = 100 * caught / (caught + false_alarm) if caught + false_alarm else 0
     print(f"\n  errors caught {caught}, missed {missed}  -> recall {recall:.0f}%")
-    print(f"  false alarms {false_alarm} on {quiet + false_alarm} correct answers"
-          f"  -> precision {precision:.0f}%")
-    print("\n  precision is what decides whether it may act alone; recall only\n"
-          "  decides how much it is worth as a flag.")
+    print(
+        f"  false alarms {false_alarm} on {quiet + false_alarm} correct answers"
+        f"  -> precision {precision:.0f}%"
+    )
+    print(
+        "\n  precision is what decides whether it may act alone; recall only\n"
+        "  decides how much it is worth as a flag."
+    )
+
 
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else "report"
@@ -378,5 +433,3 @@ if __name__ == "__main__":
         verify(int(sys.argv[sys.argv.index("--runs") + 1]) if "--runs" in sys.argv else 6)
     else:
         report()
-
-

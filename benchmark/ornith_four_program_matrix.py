@@ -38,18 +38,24 @@ MODEL_PATHS = {
     4: ROOT / "models/ornith-1.5_35B_A3B_4Bit",
     8: ROOT / "models/ornith-1.5_35B_A3B_8Bit",
 }
-PYTHON_314 = pathlib.Path(os.environ.get(
-    "TINYTITAN_BENCH_PYTHON_314",
-    str(pathlib.Path.home() / ".venvs/tools/bin/python"),
-))
-TENSORFLOW_PYTHON = pathlib.Path(os.environ.get(
-    "TINYTITAN_BENCH_TENSORFLOW_PYTHON",
-    str(pathlib.Path.home() / ".venvs/tensorflow-metal-py311/bin/python"),
-))
-PYTORCH_PYTHON = pathlib.Path(os.environ.get(
-    "TINYTITAN_BENCH_PYTORCH_PYTHON",
-    shutil.which("python3.13") or "/opt/homebrew/bin/python3.13",
-))
+PYTHON_314 = pathlib.Path(
+    os.environ.get(
+        "TINYTITAN_BENCH_PYTHON_314",
+        str(pathlib.Path.home() / ".venvs/tools/bin/python"),
+    )
+)
+TENSORFLOW_PYTHON = pathlib.Path(
+    os.environ.get(
+        "TINYTITAN_BENCH_TENSORFLOW_PYTHON",
+        str(pathlib.Path.home() / ".venvs/tensorflow-metal-py311/bin/python"),
+    )
+)
+PYTORCH_PYTHON = pathlib.Path(
+    os.environ.get(
+        "TINYTITAN_BENCH_PYTORCH_PYTHON",
+        shutil.which("python3.13") or "/opt/homebrew/bin/python3.13",
+    )
+)
 
 PROGRAM_ORDER = (
     "ShortestPath.swift",
@@ -356,10 +362,16 @@ def run_source(path: pathlib.Path, stdin: str, timeout: int = 120) -> dict[str, 
             "wall_seconds": round(time.monotonic() - started, 3),
         }
     except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout.decode("utf-8", "replace") if isinstance(
-            exc.stdout, bytes) else (exc.stdout or "")
-        stderr = exc.stderr.decode("utf-8", "replace") if isinstance(
-            exc.stderr, bytes) else (exc.stderr or "")
+        stdout = (
+            exc.stdout.decode("utf-8", "replace")
+            if isinstance(exc.stdout, bytes)
+            else (exc.stdout or "")
+        )
+        stderr = (
+            exc.stderr.decode("utf-8", "replace")
+            if isinstance(exc.stderr, bytes)
+            else (exc.stderr or "")
+        )
         return {
             "command": command,
             "exit_code": 124,
@@ -374,8 +386,7 @@ def execute_tool(name: str, arguments: dict[str, Any], workspace: pathlib.Path) 
         return {
             "ok": True,
             "files": sorted(
-                str(path.relative_to(workspace))
-                for path in workspace.rglob("*") if path.is_file()
+                str(path.relative_to(workspace)) for path in workspace.rglob("*") if path.is_file()
             ),
         }
     path = safe_path(workspace, arguments.get("path"))
@@ -407,7 +418,8 @@ def execute_tool(name: str, arguments: dict[str, Any], workspace: pathlib.Path) 
         result = run_source(path, PUBLIC_INPUTS[path.name])
         result["expected_stdout"] = EXPECTED_PUBLIC[path.name]
         result["passed"] = (
-            result["exit_code"] == 0 and result["stdout"] == EXPECTED_PUBLIC[path.name])
+            result["exit_code"] == 0 and result["stdout"] == EXPECTED_PUBLIC[path.name]
+        )
         result["ok"] = result["passed"]
         return result
     return {"ok": False, "error": f"unknown tool {name}"}
@@ -419,16 +431,16 @@ def wait_ready(port: int, timeout: int = 300) -> None:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=2):
                 return
-        except (OSError, urllib.error.URLError):
+        except OSError, urllib.error.URLError:
             time.sleep(1)
     raise RuntimeError(f"server on port {port} did not become ready")
 
 
-def start_server(output: pathlib.Path, quant: int, concise: bool,
-                 thinking: bool, port: int, label: str) -> ServerProcess:
+def start_server(
+    output: pathlib.Path, quant: int, concise: bool, thinking: bool, port: int, label: str
+) -> ServerProcess:
     mode = "on" if thinking else "off"
-    command = server_command(
-        SERVER, port, model=MODEL_PATHS[quant], thinking_mode=mode)
+    command = server_command(SERVER, port, model=MODEL_PATHS[quant], thinking_mode=mode)
     environment = server_environment(concise=concise, thinking_mode=mode)
     log_path = output / "server" / f"{label}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -451,7 +463,9 @@ def start_server(output: pathlib.Path, quant: int, concise: bool,
     return server
 
 
-def post_chat(port: int, messages: list[dict[str, Any]], timeout: int) -> tuple[dict[str, Any], float]:
+def post_chat(
+    port: int, messages: list[dict[str, Any]], timeout: int
+) -> tuple[dict[str, Any], float]:
     payload = {
         "model": DEFAULT_API_MODEL,
         "messages": messages,
@@ -475,8 +489,9 @@ def post_chat(port: int, messages: list[dict[str, Any]], timeout: int) -> tuple[
     return value, time.monotonic() - started
 
 
-def run_tool_loop(workspace: pathlib.Path, port: int, timeout: int,
-                  label: str, program: str) -> dict[str, Any]:
+def run_tool_loop(
+    workspace: pathlib.Path, port: int, timeout: int, label: str, program: str
+) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": PROGRAM_PROMPTS[program]},
@@ -499,14 +514,16 @@ def run_tool_loop(workspace: pathlib.Path, port: int, timeout: int,
             message = choices[0].get("message") or {}
             calls = message.get("tool_calls") or []
             usages.append(response.get("usage") or {})
-            trace.append({
-                "turn": turn,
-                "kind": "assistant",
-                "wall_seconds": round(wall, 3),
-                "content": message.get("content") or "",
-                "tool_call_count": len(calls),
-                "finish_reason": choices[0].get("finish_reason"),
-            })
+            trace.append(
+                {
+                    "turn": turn,
+                    "kind": "assistant",
+                    "wall_seconds": round(wall, 3),
+                    "content": message.get("content") or "",
+                    "tool_call_count": len(calls),
+                    "finish_reason": choices[0].get("finish_reason"),
+                }
+            )
             print(
                 f"PROGRESS {progress_label} turn={turn} model_done={wall:.1f}s tools={len(calls)}",
                 flush=True,
@@ -516,11 +533,13 @@ def run_tool_loop(workspace: pathlib.Path, port: int, timeout: int,
                 if choices[0].get("finish_reason") == "length":
                     error = "assistant hit the response limit before completing the tool loop"
                 break
-            messages.append({
-                "role": "assistant",
-                "content": message.get("content"),
-                "tool_calls": calls,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.get("content"),
+                    "tool_calls": calls,
+                }
+            )
             for call in calls:
                 function = call.get("function") or {}
                 name = function.get("name") or ""
@@ -538,19 +557,23 @@ def run_tool_loop(workspace: pathlib.Path, port: int, timeout: int,
                     f"PROGRESS {progress_label} tool={name} path={path} ok={result.get('ok', False)}",
                     flush=True,
                 )
-                trace.append({
-                    "turn": turn,
-                    "kind": "tool",
-                    "name": name,
-                    "arguments": arguments,
-                    "result": result,
-                })
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call.get("id") or f"missing-{turn}",
-                    "name": name,
-                    "content": json.dumps(result, sort_keys=True),
-                })
+                trace.append(
+                    {
+                        "turn": turn,
+                        "kind": "tool",
+                        "name": name,
+                        "arguments": arguments,
+                        "result": result,
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id") or f"missing-{turn}",
+                        "name": name,
+                        "content": json.dumps(result, sort_keys=True),
+                    }
+                )
         except Exception as exc:
             error = repr(exc)
             break
@@ -640,8 +663,16 @@ def usage_totals(usages: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
-def run_cell(output: pathlib.Path, index: int, total: int, quant: int,
-             concise: bool, thinking: bool, port: int, timeout: int) -> dict[str, Any]:
+def run_cell(
+    output: pathlib.Path,
+    index: int,
+    total: int,
+    quant: int,
+    concise: bool,
+    thinking: bool,
+    port: int,
+    timeout: int,
+) -> dict[str, Any]:
     label = f"q{quant}-concise-{'on' if concise else 'off'}-thinking-{'on' if thinking else 'off'}"
     workspace = output / "workspaces" / label
     prepare_workspace(workspace)
@@ -660,16 +691,17 @@ def run_cell(output: pathlib.Path, index: int, total: int, quant: int,
                 f"MATRIX {index}/{total} SESSION {program_index}/4 {label}/{program} fresh=true",
                 flush=True,
             )
-            program_results.append(
-                run_tool_loop(workspace, port, timeout, label, program))
+            program_results.append(run_tool_loop(workspace, port, timeout, label, program))
         trace = [
             {"program": result["program"], **row}
-            for result in program_results for row in result["trace"]
+            for result in program_results
+            for row in result["trace"]
         ]
         usages = [usage for result in program_results for usage in result["usage"]]
         errors = [
             f"{result['program']}: {result['error']}"
-            for result in program_results if result["error"]
+            for result in program_results
+            if result["error"]
         ]
         quality = validate_workspace(workspace, trace)
         totals = usage_totals(usages)
@@ -689,8 +721,9 @@ def run_cell(output: pathlib.Path, index: int, total: int, quant: int,
             "usage_totals": totals,
             "finished_at": utc_now(),
             "wall_seconds": round(time.monotonic() - started, 3),
-            "model_wall_seconds": round(sum(
-                result["model_wall_seconds"] for result in program_results), 3),
+            "model_wall_seconds": round(
+                sum(result["model_wall_seconds"] for result in program_results), 3
+            ),
             "final_answer": {
                 result["program"]: result["final_answer"] for result in program_results
             },
@@ -763,11 +796,13 @@ def runtime_facts() -> dict[str, Any]:
     commands = {
         "python_314": [str(PYTHON_314), "--version"],
         "tensorflow": [
-            str(TENSORFLOW_PYTHON), "-c",
+            str(TENSORFLOW_PYTHON),
+            "-c",
             "import sys,tensorflow as tf;print(sys.version.split()[0],tf.__version__)",
         ],
         "pytorch": [
-            str(PYTORCH_PYTHON), "-c",
+            str(PYTORCH_PYTHON),
+            "-c",
             "import sys,torch;print(sys.version.split()[0],torch.__version__)",
         ],
     }
@@ -792,42 +827,45 @@ def main() -> int:
     output = (args.output or DEFAULT_OUTPUT / stamp).resolve()
     output.mkdir(parents=True, exist_ok=False)
     environment = preflight(MODEL_PATHS.values())
-    environment.update({
-        "models": {str(bits): str(path) for bits, path in MODEL_PATHS.items()},
-        "server": str(SERVER),
-        "runtime_facts": runtime_facts(),
-        "sampling": SAMPLING,
-        "expected_final_result": EXPECTED_FINAL,
-        "matrix": {
-            "quant_bits": list(MATRIX_QUANT_BITS),
-            "concise": list(MATRIX_BOOLEAN_VALUES),
-            "thinking": list(MATRIX_BOOLEAN_VALUES),
-            "cells": 8,
-        },
-        "protocol": {
-            "context_tokens": 262_144,
-            "prompt_cache": "multi-prefix",
-            "prompt_cache_memory_mib": 256,
-            "expert_cache_budget": "8G",
-            "kv_bits": 8,
-            "mtp": False,
-            "fast_alias": False,
-            "fresh_server_per_cell": True,
-            "fresh_conversation_per_program": True,
-            "max_turns_per_program": MAX_TURNS_PER_PROGRAM,
-            "warmup": False,
-        },
-    })
+    environment.update(
+        {
+            "models": {str(bits): str(path) for bits, path in MODEL_PATHS.items()},
+            "server": str(SERVER),
+            "runtime_facts": runtime_facts(),
+            "sampling": SAMPLING,
+            "expected_final_result": EXPECTED_FINAL,
+            "matrix": {
+                "quant_bits": list(MATRIX_QUANT_BITS),
+                "concise": list(MATRIX_BOOLEAN_VALUES),
+                "thinking": list(MATRIX_BOOLEAN_VALUES),
+                "cells": 8,
+            },
+            "protocol": {
+                "context_tokens": 262_144,
+                "prompt_cache": "multi-prefix",
+                "prompt_cache_memory_mib": 256,
+                "expert_cache_budget": "8G",
+                "kv_bits": 8,
+                "mtp": False,
+                "fast_alias": False,
+                "fresh_server_per_cell": True,
+                "fresh_conversation_per_program": True,
+                "max_turns_per_program": MAX_TURNS_PER_PROGRAM,
+                "warmup": False,
+            },
+        }
+    )
     write_json(output / "environment.json", environment)
     print(f"OUTPUT {output}", flush=True)
-    cells = list(itertools.product(
-        MATRIX_QUANT_BITS, MATRIX_BOOLEAN_VALUES, MATRIX_BOOLEAN_VALUES))
+    cells = list(itertools.product(MATRIX_QUANT_BITS, MATRIX_BOOLEAN_VALUES, MATRIX_BOOLEAN_VALUES))
     records: list[dict[str, Any]] = []
     try:
         for index, (quant, concise, thinking) in enumerate(cells, 1):
-            records.append(run_cell(
-                output, index, len(cells), quant, concise, thinking,
-                args.port, args.timeout))
+            records.append(
+                run_cell(
+                    output, index, len(cells), quant, concise, thinking, args.port, args.timeout
+                )
+            )
     except KeyboardInterrupt:
         print(f"PAUSED {output}", flush=True)
         return 130

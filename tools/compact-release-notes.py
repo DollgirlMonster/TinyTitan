@@ -47,8 +47,20 @@ BULLET = re.compile(r"^[-*]\s+")
 # Splitting on (?<=[.!?])\s+ alone breaks these apart. Only abbreviations this
 # repo's notes actually use are listed.
 ABBREVIATIONS = (
-    "e.g.", "i.e.", "cf.", "vs.", "etc.", "resp.", "approx.", "no.", "fig.",
-    "al.", "Dr.", "Mr.", "Ms.", "St.",
+    "e.g.",
+    "i.e.",
+    "cf.",
+    "vs.",
+    "etc.",
+    "resp.",
+    "approx.",
+    "no.",
+    "fig.",
+    "al.",
+    "Dr.",
+    "Mr.",
+    "Ms.",
+    "St.",
 )
 
 
@@ -66,7 +78,9 @@ def split_sentences(paragraph: str) -> list[str]:
         if not found:
             break
         holes.append(found.group(0))
-        protected = protected[: found.start()] + f"\x00{len(holes) - 1}\x00" + protected[found.end():]
+        protected = (
+            protected[: found.start()] + f"\x00{len(holes) - 1}\x00" + protected[found.end() :]
+        )
 
     sentences = []
     for part in re.split(r"(?<=[.!?])\s+", protected):
@@ -112,7 +126,7 @@ def main() -> int:
         return 2
 
     out: list[str] = []
-    mode = "lead"          # lead | section | checksum
+    mode = "lead"  # lead | section | checksum
     lead: list[str] = []
     prose: list[str] = []
     bullet: list[str] = []

@@ -18,6 +18,7 @@ same modules and a change to them would reach a run in flight.
     benchmark/memory_small_model.py book     # summary arm, one run
     benchmark/memory_small_model.py pong     # control arm, one run
 """
+
 from __future__ import annotations
 
 import os
@@ -35,7 +36,11 @@ THINK = os.environ.get("TINYTITAN_SMALL_THINK") == "1"
 os.environ.setdefault("TINYTITAN_PORT", PORT)
 os.environ.setdefault(
     "TINYTITAN_MEMVAL_RESULTS",
-    str(ROOT / f".build/benchmark-logs/memory-small-{os.environ.get('TINYTITAN_SMALL_LABEL', 'qwen2b')}"))
+    str(
+        ROOT
+        / f".build/benchmark-logs/memory-small-{os.environ.get('TINYTITAN_SMALL_LABEL', 'qwen2b')}"
+    ),
+)
 
 
 def patch(module):
@@ -45,9 +50,14 @@ def patch(module):
     work -- a 2B spends its whole budget deliberating and never reaches the
     answer. Here that would cost the chapters themselves, not just a verdict.
     """
+
     def sampling():
-        return {"temperature": TEMPERATURE, "top_p": TOP_P,
-                "chat_template_kwargs": {"enable_thinking": THINK}}
+        return {
+            "temperature": TEMPERATURE,
+            "top_p": TOP_P,
+            "chat_template_kwargs": {"enable_thinking": THINK},
+        }
+
     module.sampling = sampling
     return module
 
@@ -56,12 +66,16 @@ if __name__ == "__main__":
     which = sys.argv[1] if len(sys.argv) > 1 else "book"
     if which == "book":
         import memory_book as bench
+
         arm = "summary"
     else:
         import memory_value as bench
+
         arm = "control"
     patch(bench)
     Path(os.environ["TINYTITAN_MEMVAL_RESULTS"]).mkdir(parents=True, exist_ok=True)
-    print(f"{which} / {arm} against port {PORT}, temp={TEMPERATURE} top_p={TOP_P} "
-          f"thinking={'on' if THINK else 'off'}")
+    print(
+        f"{which} / {arm} against port {PORT}, temp={TEMPERATURE} top_p={TOP_P} "
+        f"thinking={'on' if THINK else 'off'}"
+    )
     bench.run_arm(arm)

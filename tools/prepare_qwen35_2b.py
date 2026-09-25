@@ -8,6 +8,7 @@ naming rules here. The converter itself lives in one place.
     python3.13 tools/prepare_qwen35_2b.py --bits 8 \\
         --output .build/qwen35-2b-affine-8bit --work .build/qwen35-2b-shards
 """
+
 from __future__ import annotations
 
 import sys

@@ -15,9 +15,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import os
 import pathlib
-import re
 import signal
 import subprocess
 import sys
@@ -265,15 +263,14 @@ def wait_ready(port: int, timeout: int = 300) -> None:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=2):
                 return
-        except (OSError, urllib.error.URLError):
+        except OSError, urllib.error.URLError:
             time.sleep(1)
     raise RuntimeError(f"server on port {port} did not become ready")
 
 
 def start_server(output: pathlib.Path, concise: bool, port: int) -> ServerProcess:
     label = "concise-on" if concise else "concise-off"
-    command = server_command(
-        SERVER, port, model=DEFAULT_MODEL_PATH, thinking_mode="off")
+    command = server_command(SERVER, port, model=DEFAULT_MODEL_PATH, thinking_mode="off")
     environment = server_environment(concise=concise, thinking_mode="off")
     # Match the coding-client benchmark: rendered reasoning is disabled so
     # Concise Mode is the sole behavioral variable in this A/B.
@@ -376,7 +373,9 @@ def execute_tool(name: str, arguments: dict[str, Any], workspace: pathlib.Path) 
     return {"ok": False, "error": f"unknown tool {name}"}
 
 
-def post_chat(port: int, messages: list[dict[str, Any]], timeout: int) -> tuple[dict[str, Any], float]:
+def post_chat(
+    port: int, messages: list[dict[str, Any]], timeout: int
+) -> tuple[dict[str, Any], float]:
     payload = {
         "model": DEFAULT_API_MODEL,
         "messages": messages,
@@ -419,24 +418,28 @@ def run_tool_loop(case: str, workspace: pathlib.Path, port: int, timeout: int) -
             message = choices[0].get("message") or {}
             usages.append(response.get("usage") or {})
             calls = message.get("tool_calls") or []
-            trace.append({
-                "turn": turn,
-                "kind": "assistant",
-                "wall_seconds": round(wall, 3),
-                "content": message.get("content") or "",
-                "tool_call_count": len(calls),
-                "finish_reason": choices[0].get("finish_reason"),
-            })
+            trace.append(
+                {
+                    "turn": turn,
+                    "kind": "assistant",
+                    "wall_seconds": round(wall, 3),
+                    "content": message.get("content") or "",
+                    "tool_call_count": len(calls),
+                    "finish_reason": choices[0].get("finish_reason"),
+                }
+            )
             if not calls:
                 final_answer = message.get("content") or ""
                 if choices[0].get("finish_reason") == "length":
                     error = "assistant hit the 2048-token response limit before a tool call"
                 break
-            messages.append({
-                "role": "assistant",
-                "content": message.get("content"),
-                "tool_calls": calls,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.get("content"),
+                    "tool_calls": calls,
+                }
+            )
             for call in calls:
                 function = call.get("function") or {}
                 name = function.get("name") or ""
@@ -449,19 +452,23 @@ def run_tool_loop(case: str, workspace: pathlib.Path, port: int, timeout: int) -
                 except Exception as exc:
                     arguments = {"_raw": raw_arguments}
                     result = {"ok": False, "error": repr(exc)}
-                trace.append({
-                    "turn": turn,
-                    "kind": "tool",
-                    "name": name,
-                    "arguments": arguments,
-                    "result": result,
-                })
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call.get("id") or f"missing-{turn}",
-                    "name": name,
-                    "content": json.dumps(result, sort_keys=True),
-                })
+                trace.append(
+                    {
+                        "turn": turn,
+                        "kind": "tool",
+                        "name": name,
+                        "arguments": arguments,
+                        "result": result,
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id") or f"missing-{turn}",
+                        "name": name,
+                        "content": json.dumps(result, sort_keys=True),
+                    }
+                )
         except Exception as exc:
             error = repr(exc)
             break
@@ -486,8 +493,12 @@ def validate_json_artifacts(workspace: pathlib.Path) -> list[str]:
             failures.append("curriculum.json must contain two tasks")
         else:
             required = {
-                "language", "title", "objective", "scaffold",
-                "self_chosen_edge_case", "rubric",
+                "language",
+                "title",
+                "objective",
+                "scaffold",
+                "self_chosen_edge_case",
+                "rubric",
             }
             for index, task in enumerate(tasks):
                 if not isinstance(task, dict) or not required.issubset(task):
@@ -509,7 +520,9 @@ def validate_json_artifacts(workspace: pathlib.Path) -> list[str]:
     return failures
 
 
-def validate_case(case: str, workspace: pathlib.Path, trace: list[dict[str, Any]]) -> dict[str, Any]:
+def validate_case(
+    case: str, workspace: pathlib.Path, trace: list[dict[str, Any]]
+) -> dict[str, Any]:
     files = {
         "swift": ["Slug.swift"],
         "python": ["stats.py"],
@@ -531,7 +544,8 @@ def validate_case(case: str, workspace: pathlib.Path, trace: list[dict[str, Any]
             failures.append(f"{name} failed hidden validation")
     tool_rows = [row for row in trace if row.get("kind") == "tool"]
     successful_runs = [
-        row for row in tool_rows
+        row
+        for row in tool_rows
         if row.get("name") in ("run_python_file", "run_swift_file")
         and (row.get("result") or {}).get("passed")
     ]
@@ -541,7 +555,8 @@ def validate_case(case: str, workspace: pathlib.Path, trace: list[dict[str, Any]
         failures.extend(validate_json_artifacts(workspace))
         written_names = [
             (row.get("arguments") or {}).get("path")
-            for row in tool_rows if row.get("name") == "write_workspace_file"
+            for row in tool_rows
+            if row.get("name") == "write_workspace_file"
         ]
         if written_names.count("scaffold.py") < 2 or written_names.count("scaffold.swift") < 2:
             failures.append("initial scaffold and solution stages were not both observable")
@@ -563,17 +578,22 @@ def prepare_workspace(path: pathlib.Path, case: str) -> None:
         (path / name).write_text(content)
 
 
-def run_profile(output: pathlib.Path, concise: bool, port: int, timeout: int,
-                cases: list[str]) -> list[dict[str, Any]]:
+def run_profile(
+    output: pathlib.Path, concise: bool, port: int, timeout: int, cases: list[str]
+) -> list[dict[str, Any]]:
     label = "concise-on" if concise else "concise-off"
     server = start_server(output, concise, port)
     records: list[dict[str, Any]] = []
     try:
         # Discarded warmup: load kernels and establish the same prompt-cache path.
-        post_chat(port, [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": "Reply with READY and do not call a tool."},
-        ], timeout)
+        post_chat(
+            port,
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": "Reply with READY and do not call a tool."},
+            ],
+            timeout,
+        )
         for case in cases:
             workspace = output / "workspaces" / label / case
             prepare_workspace(workspace, case)
@@ -608,16 +628,13 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     for label in ("concise-on", "concise-off"):
         rows = [record for record in records if record["profile"] == label]
         completion = sum(
-            int(usage.get("completion_tokens", 0))
-            for row in rows for usage in row["usage"]
+            int(usage.get("completion_tokens", 0)) for row in rows for usage in row["usage"]
         )
-        prompt = sum(
-            int(usage.get("prompt_tokens", 0))
-            for row in rows for usage in row["usage"]
-        )
+        prompt = sum(int(usage.get("prompt_tokens", 0)) for row in rows for usage in row["usage"])
         cached = sum(
             int((usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0))
-            for row in rows for usage in row["usage"]
+            for row in rows
+            for usage in row["usage"]
         )
         profiles[label] = {
             "artifact_passed": sum(bool(row["quality"]["passed"]) for row in rows),
@@ -663,29 +680,31 @@ def main() -> int:
     output = (args.output or DEFAULT_OUTPUT / stamp).resolve()
     output.mkdir(parents=True, exist_ok=False)
     environment = preflight([DEFAULT_MODEL_PATH])
-    environment.update({
-        "model": str(DEFAULT_MODEL_PATH),
-        "server": str(SERVER),
-        "server_command": server_command(SERVER, args.port, model=DEFAULT_MODEL_PATH),
-        "sampling": SAMPLING,
-        "profiles": args.profiles,
-        "cases": args.cases,
-        "protocol": {
-            "context_tokens": 262_144,
-            "prompt_cache": "multi-prefix",
-            "prompt_cache_memory_mib": 256,
-            "expert_cache_budget": "8G",
-            "kv_bits": 8,
-            "mtp": False,
-            "fast_alias": False,
-            "thinking": "off",
-            "warmup": "one discarded request per profile",
-        },
-        "purpose_note": (
-            "Evaluates participation in a self-scaffolding data-generation loop; "
-            "does not perform weight updates or online learning."
-        ),
-    })
+    environment.update(
+        {
+            "model": str(DEFAULT_MODEL_PATH),
+            "server": str(SERVER),
+            "server_command": server_command(SERVER, args.port, model=DEFAULT_MODEL_PATH),
+            "sampling": SAMPLING,
+            "profiles": args.profiles,
+            "cases": args.cases,
+            "protocol": {
+                "context_tokens": 262_144,
+                "prompt_cache": "multi-prefix",
+                "prompt_cache_memory_mib": 256,
+                "expert_cache_budget": "8G",
+                "kv_bits": 8,
+                "mtp": False,
+                "fast_alias": False,
+                "thinking": "off",
+                "warmup": "one discarded request per profile",
+            },
+            "purpose_note": (
+                "Evaluates participation in a self-scaffolding data-generation loop; "
+                "does not perform weight updates or online learning."
+            ),
+        }
+    )
     write_json(output / "environment.json", environment)
     print(f"OUTPUT {output}", flush=True)
     records: list[dict[str, Any]] = []

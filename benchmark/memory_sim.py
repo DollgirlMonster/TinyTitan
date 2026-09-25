@@ -22,11 +22,11 @@ trusted further than it has just been shown to hold.
     benchmark/memory_sim.py compare      # store fidelity under each policy
     benchmark/memory_sim.py detail inn_status
 """
+
 from __future__ import annotations
 
 import glob
 import json
-import os
 import re
 import sys
 from collections import defaultdict
@@ -43,9 +43,14 @@ LOGS = ROOT / ".build/benchmark-logs"
 # Loading a recorded run
 # --------------------------------------------------------------------------
 
+
 def journal_for(label: str, run: str) -> Path | None:
-    paths = [Path(p) for p in glob.glob(
-        str(LOGS / f"memval-scratch-{label}/book-auto-r{run}/tinytitan/*/*.ndjson"))]
+    paths = [
+        Path(p)
+        for p in glob.glob(
+            str(LOGS / f"memval-scratch-{label}/book-auto-r{run}/tinytitan/*/*.ndjson")
+        )
+    ]
     real = [p for p in paths if "_global" not in p.name and p.stat().st_size > 0]
     return real[0] if real else None
 
@@ -66,14 +71,16 @@ def load_writes(journal: Path) -> list[dict]:
         if not item:
             continue
         provenance = item.get("provenance") or {}
-        writes.append({
-            "session_id": provenance.get("sessionID", ""),
-            "at": item.get("createdAt") or provenance.get("timestamp", ""),
-            "address": f"{item['namespace'].removeprefix('k.')}/{item['key']}",
-            "value": str(item.get("value", "")),
-            "version": item.get("version", 1),
-            "author": provenance.get("author", "model"),
-        })
+        writes.append(
+            {
+                "session_id": provenance.get("sessionID", ""),
+                "at": item.get("createdAt") or provenance.get("timestamp", ""),
+                "address": f"{item['namespace'].removeprefix('k.')}/{item['key']}",
+                "value": str(item.get("value", "")),
+                "version": item.get("version", 1),
+                "author": provenance.get("author", "model"),
+            }
+        )
     order: list[str] = []
     for write in writes:
         if write["session_id"] not in order:
@@ -95,12 +102,14 @@ def load_runs() -> list[dict]:
         if journal is None:
             continue
         results = json.loads(path.read_text())
-        runs.append({
-            "name": f"{label} r{run}",
-            "writes": load_writes(journal),
-            "answers": {r["session"]: r.get("answers") or {} for r in results},
-            "text": {r["session"]: r.get("content", "") for r in results},
-        })
+        runs.append(
+            {
+                "name": f"{label} r{run}",
+                "writes": load_writes(journal),
+                "answers": {r["session"]: r.get("answers") or {} for r in results},
+                "text": {r["session"]: r.get("content", "") for r in results},
+            }
+        )
     return runs
 
 
@@ -167,8 +176,7 @@ REFINE: dict[str, tuple[str, ...]] = {
 CHAPTER = re.compile(r"chapter\s+(\d+)")
 NEGATED = re.compile(r"\b(not|never|no|none|nobody|no one|hasn't|has not|did not|didn't)\b")
 COLOURS = ("grey", "gray", "green", "brown", "hazel", "blue")
-WEEKDAYS = ("sunday", "monday", "tuesday", "wednesday", "thursday", "friday",
-            "saturday")
+WEEKDAYS = ("sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
 
 # Consolidation sometimes stores a whole answer sheet as one fact -- the model
 # hands back the quiz it just filled in and the extraction keeps it verbatim
@@ -225,15 +233,14 @@ def candidates(store: dict[str, dict], key: str) -> list[dict]:
     hits = []
     for fact in store.values():
         if matches(fact["address"]):
-            hits.append((fact, 1))          # the address names the topic
+            hits.append((fact, 1))  # the address names the topic
         elif matches(fact["address"] + " " + fact["value"]):
-            hits.append((fact, 0))          # only the text mentions it
+            hits.append((fact, 0))  # only the text mentions it
 
     # Newest first, and only within one session does an address match beat a
     # passing mention. Ranking every address match above every newer fact is
     # what let a session-2 note outrank what the user said in session 6.
-    hits.sort(key=lambda pair: (pair[0]["session"], pair[1], pair[0]["order"]),
-              reverse=True)
+    hits.sort(key=lambda pair: (pair[0]["session"], pair[1], pair[0]["order"]), reverse=True)
     return [fact for fact, _ in hits]
 
 
@@ -251,8 +258,12 @@ def interpret(key: str, fact: dict, session: int):
     if inner is not None:
         text = inner.lower()
     last_chapter = session * 10
-    if key in ("marcus_knows_photo", "halvorsen_confessed", "ferry_running",
-               "anyone_left_ashgrove"):
+    if key in (
+        "marcus_knows_photo",
+        "halvorsen_confessed",
+        "ferry_running",
+        "anyone_left_ashgrove",
+    ):
         if inner is not None:
             if inner.strip() in ("true", "1", "yes"):
                 return True
@@ -262,24 +273,33 @@ def interpret(key: str, fact: dict, session: int):
         happened = max(chapters) <= last_chapter if chapters else True
         negated = bool(NEGATED.search(text))
         if key == "ferry_running":
-            stopped = any(word in text for word in
-                          ("stop", "no longer", "ceased", "ended", "last crossing",
-                           "not running", "dead"))
+            stopped = any(
+                word in text
+                for word in (
+                    "stop",
+                    "no longer",
+                    "ceased",
+                    "ended",
+                    "last crossing",
+                    "not running",
+                    "dead",
+                )
+            )
             return not (stopped and happened)
         if key == "marcus_knows_photo":
             if negated:
                 return False
-            knows = any(word in text for word in
-                        ("knows", "learned", "learns", "discovers", "discovered",
-                         "found out"))
+            knows = any(
+                word in text
+                for word in ("knows", "learned", "learns", "discovers", "discovered", "found out")
+            )
             return bool(knows and happened)
         if key == "halvorsen_confessed":
             return False if negated else bool("confess" in text and happened)
         if key == "anyone_left_ashgrove":
             if negated:
                 return False
-            return bool(any(word in text for word in ("left", "leaves", "departed"))
-                        and happened)
+            return bool(any(word in text for word in ("left", "leaves", "departed")) and happened)
     if key.endswith("_eyes"):
         # The colour can sit anywhere in a prose fact ("grey eyes, the
         # lighthouse keeper's son"), not only at its start.
@@ -306,9 +326,11 @@ def read(store: dict[str, dict], key: str, session: int):
             return answer
     return book.truth(1)[key]
 
+
 # --------------------------------------------------------------------------
 # Policies: what the store keeps when a write contradicts what it holds
 # --------------------------------------------------------------------------
+
 
 def user_view(session: int) -> dict:
     """What the user has themselves asserted by the end of this session: the
@@ -353,9 +375,14 @@ def user_facts(session: int) -> list[tuple[str, str]]:
     1; each event arrives in the session that delivers it."""
     if session == 1:
         view = book.truth(1)
-        return [("bible/marcus_eyes", "grey"), ("bible/ines_eyes", "green"),
-                ("bible/halvorsen_eyes", "brown"), ("bible/rosa_eyes", "hazel"),
-                ("bible/aldo_eyes", "blue"), ("bible/town", "Ashgrove"),
+        return (
+            [
+                ("bible/marcus_eyes", "grey"),
+                ("bible/ines_eyes", "green"),
+                ("bible/halvorsen_eyes", "brown"),
+                ("bible/rosa_eyes", "hazel"),
+                ("bible/aldo_eyes", "blue"),
+                ("bible/town", "Ashgrove"),
                 ("bible/weather_rule", "never rains"),
                 ("bible/ferry_day", "the ferry runs only on Sundays"),
                 ("bible/inn_status", "the inn is standing"),
@@ -363,8 +390,11 @@ def user_facts(session: int) -> list[tuple[str, str]]:
                 ("bible/marcus_knows_photo", "Marcus does not know what the photograph shows"),
                 ("bible/halvorsen_confessed", "Halvorsen has not confessed"),
                 ("bible/ferry_running", "the ferry is running"),
-                ("bible/anyone_left_ashgrove", "no character has left Ashgrove")] \
-            if view else []
+                ("bible/anyone_left_ashgrove", "no character has left Ashgrove"),
+            ]
+            if view
+            else []
+        )
     stated = []
     event = book.EVENTS.get(session)
     if event:
@@ -387,15 +417,25 @@ def apply_policy(writes: list[dict], policy: str) -> dict[int, dict[str, dict]]:
             injected.add(session)
             for address, value in user_facts(session):
                 order += 1
-                store[address] = {"address": address, "value": value,
-                                  "session": session, "order": order + 100_000,
-                                  "author": "user", "user": True}
+                store[address] = {
+                    "address": address,
+                    "value": value,
+                    "session": session,
+                    "order": order + 100_000,
+                    "author": "user",
+                    "user": True,
+                }
         order += 1
-        fact = {"address": write["address"], "value": write["value"],
-                "session": session, "order": order, "author": write["author"],
-                "user": False}
+        fact = {
+            "address": write["address"],
+            "value": write["value"],
+            "session": session,
+            "order": order,
+            "author": write["author"],
+            "user": False,
+        }
         if policy == "v3":
-            store[write["address"]] = fact          # last write wins
+            store[write["address"]] = fact  # last write wins
         elif policy in ("guard", "capture"):
             # A fact the model derived never overrules what the user said.
             # The write is kept out rather than silently superseding; at
@@ -419,9 +459,14 @@ def apply_policy(writes: list[dict], policy: str) -> dict[int, dict[str, dict]]:
     for session in range(1, 11):
         if policy == "capture" and session not in snapshots:
             for address, value in user_facts(session):
-                last[address] = {"address": address, "value": value,
-                                 "session": session, "order": 900_000,
-                                 "author": "user", "user": True}
+                last[address] = {
+                    "address": address,
+                    "value": value,
+                    "session": session,
+                    "order": 900_000,
+                    "author": "user",
+                    "user": True,
+                }
         last = snapshots.get(session, last)
         filled[session] = dict(last)
     return filled
@@ -433,6 +478,7 @@ POLICIES = ["v3", "guard", "capture", "oracle"]
 # --------------------------------------------------------------------------
 # Reports
 # --------------------------------------------------------------------------
+
 
 def validate() -> None:
     """How well the reader-on-the-v3-store tracks what the model answered.
@@ -462,22 +508,25 @@ def validate() -> None:
                     disagree += 1
                     confusion[(key, str(simulated), str(actual))] += 1
     total = agree + disagree
-    print(f"reader vs the model it stands in for: {agree}/{total} = "
-          f"{100 * agree / total:.0f}% of answers identical\n")
+    print(
+        f"reader vs the model it stands in for: {agree}/{total} = "
+        f"{100 * agree / total:.0f}% of answers identical\n"
+    )
     print(f"  {'key':24s} {'agreement':>10s}")
     for key in book.QUIZ_KEYS:
         hit, seen = table[key]
         print(f"  {key:24s} {100 * hit / seen:9.0f}%")
     print("\n  largest disagreements (key, reader, model):")
-    for (key, simulated, actual), count in sorted(
-            confusion.items(), key=lambda kv: -kv[1])[:8]:
+    for (key, simulated, actual), count in sorted(confusion.items(), key=lambda kv: -kv[1])[:8]:
         print(f"    {count:3d}x {key:22s} reader={simulated:10s} model={actual}")
 
 
 def compare() -> None:
     runs = load_runs()
-    print(f"store fidelity: would a reader of the store have known the answer?"
-          f"  ({len(runs)} recorded runs, sessions 2-10)\n")
+    print(
+        f"store fidelity: would a reader of the store have known the answer?"
+        f"  ({len(runs)} recorded runs, sessions 2-10)\n"
+    )
     header = f"  {'run':18s}" + "".join(f"{p:>14s}" for p in POLICIES)
     print(header)
     totals = {p: [0, 0] for p in POLICIES}
@@ -496,8 +545,10 @@ def compare() -> None:
             totals[policy][1] += seen
             cells.append(f"{100 * right / seen:12.0f}%")
         print(f"  {run['name']:18s}" + "".join(cells))
-    print(f"\n  {'mean':18s}" + "".join(
-        f"{100 * totals[p][0] / totals[p][1]:12.0f}%" for p in POLICIES))
+    print(
+        f"\n  {'mean':18s}"
+        + "".join(f"{100 * totals[p][0] / totals[p][1]:12.0f}%" for p in POLICIES)
+    )
     print("\n  per-key, in policy order:")
     per = {p: defaultdict(lambda: [0, 0]) for p in POLICIES}
     for run in runs:
@@ -510,8 +561,7 @@ def compare() -> None:
                     if read(snapshots[session], key, session) == truth[key]:
                         per[policy][key][0] += 1
     for key in book.QUIZ_KEYS:
-        line = "  ".join(
-            f"{100 * per[p][key][0] / per[p][key][1]:3.0f}%" for p in POLICIES)
+        line = "  ".join(f"{100 * per[p][key][0] / per[p][key][1]:3.0f}%" for p in POLICIES)
         print(f"    {key:24s} {line}")
 
 
@@ -529,8 +579,9 @@ def detail(key: str) -> None:
                 mark = "ok" if answer == truth else "XX"
                 cells.append(f"{policy}={str(answer)[:9]}({mark})")
             model = book.normalise(key, (run["answers"].get(session) or {}).get(key))
-            print(f"    s{session:<2d} truth={str(truth):9s} model={str(model):9s} "
-                  + " ".join(cells))
+            print(
+                f"    s{session:<2d} truth={str(truth):9s} model={str(model):9s} " + " ".join(cells)
+            )
         print()
 
 
@@ -542,15 +593,36 @@ def detail(key: str) -> None:
 # the model itself wrote, rather than in a distilled fact.
 EVIDENCE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     # key: (words that show the change happened, words that show it has not)
-    "inn_status": (("inn burn", "burned", "burning inn", "ashes of the inn",
-                    "inn was gone", "fire at the inn"), ("inn stood", "inn still")),
-    "tomas_status": (("tomas was found", "found tomas", "tomas, alive",
-                      "tomas alive", "found alive"), ("still missing",)),
-    "marcus_knows_photo": (("marcus learned", "marcus knew", "marcus saw what",
-                            "marcus understood", "marcus finally"), ()),
+    "inn_status": (
+        (
+            "inn burn",
+            "burned",
+            "burning inn",
+            "ashes of the inn",
+            "inn was gone",
+            "fire at the inn",
+        ),
+        ("inn stood", "inn still"),
+    ),
+    "tomas_status": (
+        ("tomas was found", "found tomas", "tomas, alive", "tomas alive", "found alive"),
+        ("still missing",),
+    ),
+    "marcus_knows_photo": (
+        ("marcus learned", "marcus knew", "marcus saw what", "marcus understood", "marcus finally"),
+        (),
+    ),
     "halvorsen_confessed": (("halvorsen confessed", "confession", "confessed to aldo"), ()),
-    "ferry_running": (("ferry stopped", "last crossing", "ferry ran for the last",
-                       "no more ferry", "ferry would not"), ()),
+    "ferry_running": (
+        (
+            "ferry stopped",
+            "last crossing",
+            "ferry ran for the last",
+            "no more ferry",
+            "ferry would not",
+        ),
+        (),
+    ),
 }
 
 
@@ -578,7 +650,7 @@ def tail() -> None:
             previous = run["text"].get(session - 1, "").lower()
             for key in book.QUIZ_KEYS:
                 if book.normalise(key, answers.get(key)) == truth[key]:
-                    continue                      # the model already had it
+                    continue  # the model already had it
                 if key not in EVIDENCE:
                     continue
                 changed, _ = EVIDENCE[key]
@@ -592,13 +664,18 @@ def tail() -> None:
                     missed += 1
                 del store_right
     total = covered + missed
-    print("of the model's misses on state keys, how many had the evidence in\n"
-          "the previous session's own chapters (the verbatim tail)?\n")
+    print(
+        "of the model's misses on state keys, how many had the evidence in\n"
+        "the previous session's own chapters (the verbatim tail)?\n"
+    )
     print(f"  {'key':24s} {'misses':>7s} {'evidence in tail':>18s}")
     for key, (seen, hit) in sorted(per_key.items(), key=lambda kv: -kv[1][0]):
         print(f"  {key:24s} {seen:7d} {hit:14d} = {100 * hit / seen if seen else 0:3.0f}%")
-    print(f"\n  overall {covered}/{total} = {100 * covered / total if total else 0:.0f}% "
-          f"of state misses had the answer in the preceding 600-700 tokens")
+    print(
+        f"\n  overall {covered}/{total} = {100 * covered / total if total else 0:.0f}% "
+        f"of state misses had the answer in the preceding 600-700 tokens"
+    )
+
 
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else "compare"
@@ -610,5 +687,3 @@ if __name__ == "__main__":
         detail(sys.argv[2] if len(sys.argv) > 2 else "inn_status")
     else:
         compare()
-
-

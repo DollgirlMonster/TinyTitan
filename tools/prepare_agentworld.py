@@ -31,6 +31,7 @@ dt_bias. Together about 45 MB of resident memory. The runtime reads these
 tensors' width from their own dtype, which is what the Qwen3.8 8-bit build
 established.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,17 +53,19 @@ try:
     from safetensors import safe_open
     from safetensors.numpy import save_file
 except ImportError as exc:  # pragma: no cover - environment, not logic
-    sys.exit(f"missing dependency: {exc}\n"
-             f"  install them for the interpreter running this file: {sys.executable}\n"
-             "    -m pip install safetensors numpy ml_dtypes\n"
-             "  (or point TINYTITAN_PYTHON at another Python 3.10+)")
+    sys.exit(
+        f"missing dependency: {exc}\n"
+        f"  install them for the interpreter running this file: {sys.executable}\n"
+        "    -m pip install safetensors numpy ml_dtypes\n"
+        "  (or point TINYTITAN_PYTHON at another Python 3.10+)"
+    )
 # Every Qwen3.5-MoE 35B-A3B release this converter builds. Pinned commits:
 # the install receipt records the source, and a moved `main` must not
 # silently change what "AgentWorld 4-bit" means.
 MODELS = {
     "agentworld": ("Qwen/Qwen-AgentWorld-35B-A3B", "60d2b0434a53d2e62a7c00a489586815d94ebffb"),
-    "qwen36":     ("Qwen/Qwen3.6-35B-A3B",         "995ad96eacd98c81ed38be0c5b274b04031597b0"),
-    "ornith15":   ("ornith-ai/Ornith-1.5-35B-A3B",  "10fbf86fed7ecee4a061f8b499a618f46001cac1"),
+    "qwen36": ("Qwen/Qwen3.6-35B-A3B", "995ad96eacd98c81ed38be0c5b274b04031597b0"),
+    "ornith15": ("ornith-ai/Ornith-1.5-35B-A3B", "10fbf86fed7ecee4a061f8b499a618f46001cac1"),
     # KAT-Coder-V2.5-Dev is a Qwen3.6-35B-A3B fine-tune, so it has the same
     # geometry and the same tensor names (`model.language_model.*`, `lm_head`)
     # as the three above -- verified against its own index rather than assumed:
@@ -71,7 +74,7 @@ MODELS = {
     # config declares a `vision_config` and the multimodal wrapper, which is why
     # the checkpoint was checked for vision tensors rather than trusted to lack
     # them.
-    "katcoder":   ("Kwaipilot/KAT-Coder-V2.5-Dev",  "7be56fe773e72b6f5ca93c1ae45d828ddb893922"),
+    "katcoder": ("Kwaipilot/KAT-Coder-V2.5-Dev", "7be56fe773e72b6f5ca93c1ae45d828ddb893922"),
 }
 REPO = MODELS["agentworld"][0]
 COMMIT = MODELS["agentworld"][1]
@@ -82,6 +85,8 @@ def select_model(name: str) -> None:
     global REPO, COMMIT, BASE
     REPO, COMMIT = MODELS[name]
     BASE = f"https://huggingface.co/{REPO}/resolve/{COMMIT}"
+
+
 GROUP_SIZE = 64
 BITS_4, BITS_8 = 4, 8
 OUTPUT_SHARD_BYTES = 4 << 30
@@ -118,10 +123,14 @@ def quantize_affine(value: np.ndarray, bits: int) -> tuple[np.ndarray, ...]:
     scale = np.where(high == bias, np.float32(1), (high - bias) / levels)
     scale = scale.astype(ml_dtypes.bfloat16)
     bias = bias.astype(ml_dtypes.bfloat16)
-    quantized = np.rint(
-        (grouped - bias.astype(np.float32)[..., None])
-        / scale.astype(np.float32)[..., None]
-    ).clip(0, levels).astype(np.uint32).reshape(value.shape)
+    quantized = (
+        np.rint(
+            (grouped - bias.astype(np.float32)[..., None]) / scale.astype(np.float32)[..., None]
+        )
+        .clip(0, levels)
+        .astype(np.uint32)
+        .reshape(value.shape)
+    )
     lanes = 32 // bits
     words = quantized.reshape(*quantized.shape[:-1], quantized.shape[-1] // lanes, lanes)
     packed = np.zeros(words.shape[:-1], dtype=np.uint32)
@@ -133,8 +142,8 @@ def quantize_affine(value: np.ndarray, bits: int) -> tuple[np.ndarray, ...]:
 # --- naming ------------------------------------------------------------------
 
 
-DRAFT_HEAD = False   # --draft-head: convert only the `mtp.*` namespace
-HEAD_BITS = BITS_8   # --head-bits: the embedding and lm_head slot
+DRAFT_HEAD = False  # --draft-head: convert only the `mtp.*` namespace
+HEAD_BITS = BITS_8  # --head-bits: the embedding and lm_head slot
 
 
 def is_draft_norm(name: str) -> bool:
@@ -159,13 +168,13 @@ def rename(name: str) -> str:
         # The qwen36 MTP sidecar is its own one-layer model: `mtp.` stripped,
         # nothing else, matching prepare_ornith_mtp.py's output.
         if name.startswith("mtp."):
-            return name[len("mtp."):]
+            return name[len("mtp.") :]
         raise ValueError(f"unexpected tensor outside the draft head: {name}")
     if name == "lm_head.weight":
         return "language_model.lm_head.weight"
     prefix = "model.language_model."
     if name.startswith(prefix):
-        return "language_model.model." + name[len(prefix):]
+        return "language_model.model." + name[len(prefix) :]
     raise ValueError(f"unexpected tensor outside the language model: {name}")
 
 
@@ -197,8 +206,8 @@ def fold_unit_offset(out_name: str, value: np.ndarray) -> np.ndarray:
 
 # Kept at bf16 in both widths. Suffixes of the renamed stem (no `.weight`).
 KEEP_BF16 = (
-    ".mlp.gate",                 # router
-    ".mlp.shared_expert_gate",   # 1 row of D
+    ".mlp.gate",  # router
+    ".mlp.shared_expert_gate",  # 1 row of D
     ".linear_attn.in_proj_a",
     ".linear_attn.in_proj_b",
 )
@@ -218,7 +227,7 @@ def quant_bits(name: str, width: int) -> int | None:
     those tensors from their own dtype.
     """
     if not name.endswith(".weight"):
-        return None                                   # A_log, dt_bias
+        return None  # A_log, dt_bias
     if name.endswith("conv1d.weight") or name.endswith("norm.weight"):
         return None
     if DRAFT_HEAD and is_draft_norm(name):
@@ -240,8 +249,10 @@ def outputs_for(name: str, shape: list[int]) -> list[tuple[str, list[int]]]:
         # [experts, 2F, hidden]: gate rows first, then up.
         stem = new[: -len("experts.gate_up_proj")] + "switch_mlp."
         experts, fused, hidden = shape
-        return [(stem + "gate_proj.weight", [experts, fused // 2, hidden]),
-                (stem + "up_proj.weight", [experts, fused // 2, hidden])]
+        return [
+            (stem + "gate_proj.weight", [experts, fused // 2, hidden]),
+            (stem + "up_proj.weight", [experts, fused // 2, hidden]),
+        ]
     if new.endswith(".mlp.experts.down_proj"):
         stem = new[: -len("experts.down_proj")] + "switch_mlp."
         return [(stem + "down_proj.weight", list(shape))]
@@ -261,7 +272,8 @@ def outputs_for(name: str, shape: list[int]) -> list[tuple[str, list[int]]]:
 # per-expert checkpoint must be stacked into it. KAT-Coder-V2.5-Dev is the
 # per-expert shape; Qwen 3.6 / AgentWorld / Ornith are the fused one.
 PER_EXPERT_RE = re.compile(
-    r"^(?P<stem>.*\.mlp\.experts)\.(?P<expert>\d+)\.(?P<role>gate_proj|up_proj|down_proj)\.weight$")
+    r"^(?P<stem>.*\.mlp\.experts)\.(?P<expert>\d+)\.(?P<role>gate_proj|up_proj|down_proj)\.weight$"
+)
 
 
 def per_expert_routed(out_name: str) -> tuple[str, int, str] | None:
@@ -269,8 +281,11 @@ def per_expert_routed(out_name: str) -> tuple[str, int, str] | None:
     m = PER_EXPERT_RE.match(out_name)
     if not m:
         return None
-    return (f"{m.group('stem').replace('.mlp.experts', '.mlp.switch_mlp')}"
-            f".{m.group('role')}.weight", int(m.group("expert")), m.group("role"))
+    return (
+        f"{m.group('stem').replace('.mlp.experts', '.mlp.switch_mlp')}.{m.group('role')}.weight",
+        int(m.group("expert")),
+        m.group("role"),
+    )
 
 
 def routed_slices(name: str, value: np.ndarray) -> list[tuple[str, np.ndarray]]:
@@ -321,8 +336,7 @@ class FusedExperts:
         self._layers: dict[tuple[int, str], dict] = {}
         self._seen: set[str] = set()
 
-    def add(self, name: str, value: np.ndarray, width: int,
-            writer: "OutputWriter") -> None:
+    def add(self, name: str, value: np.ndarray, width: int, writer: "OutputWriter") -> None:
         if name in self._seen:
             raise ValueError(f"duplicate source tensor {name}")
         self._seen.add(name)
@@ -360,11 +374,13 @@ class FusedExperts:
             stack[expert] = piece
             target["experts"].add(expert)
 
-    def release(self, experts_per_layer: int,
-                writers: dict[int, "OutputWriter"]) -> None:
+    def release(self, experts_per_layer: int, writers: dict[int, "OutputWriter"]) -> None:
         """Emit every layer whose experts have all arrived, and forget it."""
-        done = [key for key, target in self._layers.items()
-                if len(target["experts"]) >= experts_per_layer]
+        done = [
+            key
+            for key, target in self._layers.items()
+            if len(target["experts"]) >= experts_per_layer
+        ]
         for key in done:
             width, out_name = key
             emit_fused(out_name, self._layers.pop(key)["stack"], width, writers)
@@ -379,12 +395,15 @@ class FusedExperts:
         `num_experts`, or a shard was missed. Either way the install would be
         wrong, so `main` refuses to write the index.
         """
-        return [f"{width}-bit {out_name} ({len(target['experts'])} experts)"
-                for (width, out_name), target in sorted(self._layers.items())]
+        return [
+            f"{width}-bit {out_name} ({len(target['experts'])} experts)"
+            for (width, out_name), target in sorted(self._layers.items())
+        ]
 
 
-def emit_fused(out_name: str, stack: list[np.ndarray], width: int,
-               writers: dict[int, "OutputWriter"]) -> None:
+def emit_fused(
+    out_name: str, stack: list[np.ndarray], width: int, writers: dict[int, "OutputWriter"]
+) -> None:
     """Quantize one fused tensor exactly as a fused checkpoint's would be."""
     if len(stack) == 1 and stack[0].ndim == 3:
         # The fused source supplies the whole expert axis in one tensor.
@@ -406,7 +425,6 @@ def emit_fused(out_name: str, stack: list[np.ndarray], width: int,
     writer.add(stem + ".biases", biases)
 
 
-
 def write_config(config: dict, out: Path, tensor_names, width: int) -> dict:
     """config.json with the `quantization` block TinyTitanRepack reads: a base
     width plus every tensor whose width differs, keyed by stem."""
@@ -423,7 +441,10 @@ def write_config(config: dict, out: Path, tensor_names, width: int) -> dict:
         config["model_type"] = "qwen3_5_mtp"
         config["architectures"] = ["Qwen3_5MoeMTP"]
     config["quantization"] = {
-        "bits": width, "group_size": GROUP_SIZE, "mode": "affine", **overrides,
+        "bits": width,
+        "group_size": GROUP_SIZE,
+        "mode": "affine",
+        **overrides,
     }
     (out / "config.json").write_text(json.dumps(config, indent=1))
     return config
@@ -439,18 +460,27 @@ RETRY = ["--retry", "5", "--retry-delay", "5", "--retry-all-errors", "--http1.1"
 
 
 def fetch_json(remote: str) -> dict:
-    raw = subprocess.run(["curl", "-sfL", "--max-time", "120", *RETRY, f"{BASE}/{remote}"],
-                         capture_output=True, check=True).stdout
+    raw = subprocess.run(
+        ["curl", "-sfL", "--max-time", "120", *RETRY, f"{BASE}/{remote}"],
+        capture_output=True,
+        check=True,
+    ).stdout
     return json.loads(raw)
 
 
 def fetch_header(shard: str) -> dict:
     url = f"{BASE}/{shard}"
-    raw = subprocess.run(["curl", "-sfL", "--max-time", "60", *RETRY, "-r", "0-7", url],
-                         capture_output=True, check=True).stdout
+    raw = subprocess.run(
+        ["curl", "-sfL", "--max-time", "60", *RETRY, "-r", "0-7", url],
+        capture_output=True,
+        check=True,
+    ).stdout
     size = struct.unpack("<Q", raw[:8])[0]
-    body = subprocess.run(["curl", "-sfL", "--max-time", "180", *RETRY, "-r", f"8-{8 + size - 1}", url],
-                          capture_output=True, check=True).stdout
+    body = subprocess.run(
+        ["curl", "-sfL", "--max-time", "180", *RETRY, "-r", f"8-{8 + size - 1}", url],
+        capture_output=True,
+        check=True,
+    ).stdout
     return json.loads(body)
 
 
@@ -482,12 +512,15 @@ def expected_size(shard: str) -> int:
     detectable, so it is checked against the server rather than assumed.
     """
     url = f"{BASE}/{shard}"
-    prefix = subprocess.run(["curl", "-sfL", "--http1.1", *RETRY, "-r", "0-7", url],
-                            capture_output=True, check=True).stdout
+    prefix = subprocess.run(
+        ["curl", "-sfL", "--http1.1", *RETRY, "-r", "0-7", url], capture_output=True, check=True
+    ).stdout
     header_len = struct.unpack("<Q", prefix[:8])[0]
-    body = subprocess.run(["curl", "-sfL", "--http1.1", *RETRY,
-                           "-r", f"8-{8 + header_len - 1}", url],
-                          capture_output=True, check=True).stdout
+    body = subprocess.run(
+        ["curl", "-sfL", "--http1.1", *RETRY, "-r", f"8-{8 + header_len - 1}", url],
+        capture_output=True,
+        check=True,
+    ).stdout
     if len(body) != header_len:
         raise RuntimeError(f"{shard}: header {len(body)} bytes, expected {header_len}")
     tensors = json.loads(body)
@@ -496,13 +529,18 @@ def expected_size(shard: str) -> int:
         raise RuntimeError(f"{shard}: header carries no tensors")
     payload = max(t["data_offsets"][1] for t in tensors.values())
     derived = 8 + header_len + payload
-    reported = subprocess.run(["curl", "-sIL", "--http1.1", *RETRY, url],
-                              capture_output=True, text=True, check=True).stdout
-    lengths = [int(line.split(":", 1)[1]) for line in reported.splitlines()
-               if line.lower().startswith("content-length")]
+    reported = subprocess.run(
+        ["curl", "-sIL", "--http1.1", *RETRY, url], capture_output=True, text=True, check=True
+    ).stdout
+    lengths = [
+        int(line.split(":", 1)[1])
+        for line in reported.splitlines()
+        if line.lower().startswith("content-length")
+    ]
     if lengths and lengths[-1] != derived:
-        raise RuntimeError(f"{shard}: header derives {derived} bytes but the server "
-                           f"reports {lengths[-1]}")
+        raise RuntimeError(
+            f"{shard}: header derives {derived} bytes but the server reports {lengths[-1]}"
+        )
     return derived
 
 
@@ -512,10 +550,14 @@ def resolve_url(shard: str) -> str:
     The signed URL expires (about an hour), so a long download must resolve a
     new one rather than reuse the first.
     """
-    out = subprocess.run(["curl", "-sIL", "--http1.1", f"{BASE}/{shard}"],
-                         capture_output=True, text=True, check=True).stdout
-    locations = [line.split(":", 1)[1].strip()
-                 for line in out.splitlines() if line.lower().startswith("location:")]
+    out = subprocess.run(
+        ["curl", "-sIL", "--http1.1", f"{BASE}/{shard}"], capture_output=True, text=True, check=True
+    ).stdout
+    locations = [
+        line.split(":", 1)[1].strip()
+        for line in out.splitlines()
+        if line.lower().startswith("location:")
+    ]
     return locations[-1] if locations else f"{BASE}/{shard}"
 
 
@@ -547,8 +589,9 @@ def download(shard: str, work: Path) -> Path:
     if have == expected:
         return dest
     if have:
-        print(f"    {shard}: resuming at {have / 1e9:.2f} GB of {expected / 1e9:.2f} GB",
-              flush=True)
+        print(
+            f"    {shard}: resuming at {have / 1e9:.2f} GB of {expected / 1e9:.2f} GB", flush=True
+        )
     mode = "ab" if have else "wb"
     with open(dest, mode) as out:
         done = have
@@ -558,12 +601,31 @@ def download(shard: str, work: Path) -> Path:
             for attempt in range(1, CHUNK_ATTEMPTS + 1):
                 url = resolve_url(shard)
                 proc = subprocess.Popen(
-                    ["curl", "-fL", "--http1.1", "--retry", "5", "--retry-delay", "5",
-                     "--retry-all-errors", "--remove-on-error", "--max-time", str(CHUNK_TIMEOUT),
-                     "--speed-limit", str(CHUNK_MIN_BYTES_PER_SEC),
-                     "--speed-time", str(CHUNK_STALL_SECONDS),
-                     "-r", f"{done}-{done + want - 1}", "--silent", "--show-error",
-                     "-o", str(chunk), url])
+                    [
+                        "curl",
+                        "-fL",
+                        "--http1.1",
+                        "--retry",
+                        "5",
+                        "--retry-delay",
+                        "5",
+                        "--retry-all-errors",
+                        "--remove-on-error",
+                        "--max-time",
+                        str(CHUNK_TIMEOUT),
+                        "--speed-limit",
+                        str(CHUNK_MIN_BYTES_PER_SEC),
+                        "--speed-time",
+                        str(CHUNK_STALL_SECONDS),
+                        "-r",
+                        f"{done}-{done + want - 1}",
+                        "--silent",
+                        "--show-error",
+                        "-o",
+                        str(chunk),
+                        url,
+                    ]
+                )
                 with _in_flight_lock:
                     _in_flight.add(proc)
                 try:
@@ -575,12 +637,16 @@ def download(shard: str, work: Path) -> Path:
                 if code == 0 and got == want:
                     break
                 wait = min(15 * attempt, 120)
-                print(f"    {shard} @{done}: chunk {got}/{want} bytes (curl {code}, "
-                      f"attempt {attempt}/{CHUNK_ATTEMPTS}), waiting {wait} s", flush=True)
+                print(
+                    f"    {shard} @{done}: chunk {got}/{want} bytes (curl {code}, "
+                    f"attempt {attempt}/{CHUNK_ATTEMPTS}), waiting {wait} s",
+                    flush=True,
+                )
                 time.sleep(wait)
             else:
-                raise RuntimeError(f"{shard}: chunk at {done} failed after "
-                                   f"{CHUNK_ATTEMPTS} attempts")
+                raise RuntimeError(
+                    f"{shard}: chunk at {done} failed after {CHUNK_ATTEMPTS} attempts"
+                )
             out.write(chunk.read_bytes())
             out.flush()
             chunk.unlink()
@@ -614,8 +680,9 @@ PREFETCH_DEPTH = 3
 FETCHERS = 3
 
 
-def prefetch_shards(shards: list[str], fetch, fetchers: int = FETCHERS,
-                    depth: int = PREFETCH_DEPTH):
+def prefetch_shards(
+    shards: list[str], fetch, fetchers: int = FETCHERS, depth: int = PREFETCH_DEPTH
+):
     """Yield downloaded shards as they arrive, fetching the next ones meanwhile.
 
     A generator so the caller converts on its own thread while the pool keeps
@@ -638,10 +705,10 @@ def prefetch_shards(shards: list[str], fetch, fetchers: int = FETCHERS,
             while True:
                 try:
                     shard = pending.get_nowait()
-                except Exception:                        # noqa: BLE001
+                except Exception:  # noqa: BLE001
                     break
                 ready.put(fetch(shard))
-        except Exception as exc:                         # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             ready.put(exc)
         finally:
             ready.put(None)
@@ -669,12 +736,14 @@ def prefetch_shards(shards: list[str], fetch, fetchers: int = FETCHERS,
 
 def fetch_tokenizer(out: Path) -> None:
     for name, required in TOKENIZER_FILES:
-        result = subprocess.run(["curl", "-sfL", "--max-time", "300", *RETRY, f"{BASE}/{name}"],
-                                capture_output=True)
+        result = subprocess.run(
+            ["curl", "-sfL", "--max-time", "300", *RETRY, f"{BASE}/{name}"], capture_output=True
+        )
         if result.returncode != 0 or not result.stdout:
             if required:
-                raise SystemExit(f"cannot fetch {name} from {REPO}; the "
-                                 "snapshot would be rejected at repack")
+                raise SystemExit(
+                    f"cannot fetch {name} from {REPO}; the snapshot would be rejected at repack"
+                )
             continue
         (out / name).write_bytes(result.stdout)
         print(f"  {name} ({len(result.stdout) / 1e6:.2f} MB)")
@@ -710,8 +779,9 @@ class OutputWriter:
         save_file(self.block, str(self.out / name))
         for key in self.block:
             self.index[key] = name
-        print(f"    wrote {name} ({self.bytes / 1e9:.2f} GB, {len(self.block)} tensors)",
-              flush=True)
+        print(
+            f"    wrote {name} ({self.bytes / 1e9:.2f} GB, {len(self.block)} tensors)", flush=True
+        )
         self.block.clear()
         self.bytes = 0
 
@@ -724,12 +794,14 @@ class OutputWriter:
         for n in range(1, self.shard_no + 1):
             src = self.out / f"model-{n:05d}.safetensors"
             src.rename(self.out / f"model-{n:05d}-of-{self.shard_no:05d}.safetensors")
-        (self.out / "model.safetensors.index.json").write_text(json.dumps(
-            {"metadata": {"total_size": self.total}, "weight_map": final}, indent=1))
+        (self.out / "model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {"total_size": self.total}, "weight_map": final}, indent=1)
+        )
 
 
-def convert_shard(path: Path, writers: dict[int, OutputWriter],
-                  fused: FusedExperts, experts_per_layer: int) -> None:
+def convert_shard(
+    path: Path, writers: dict[int, OutputWriter], fused: FusedExperts, experts_per_layer: int
+) -> None:
     """One source shard into every requested width; the tensor is read once."""
     with safe_open(path, framework="np") as src:
         for name in src.keys():
@@ -747,7 +819,7 @@ def convert_shard(path: Path, writers: dict[int, OutputWriter],
                 if out_name.endswith("switch_mlp.gate_proj.weight"):
                     piece = value[:, : value.shape[1] // 2, :]
                 elif out_name.endswith("switch_mlp.up_proj.weight"):
-                    piece = value[:, value.shape[1] // 2:, :]
+                    piece = value[:, value.shape[1] // 2 :, :]
                 else:
                     piece = value
                 piece = np.ascontiguousarray(piece)
@@ -773,7 +845,7 @@ def plan(index: dict, width: int) -> None:
     bf16_bytes = 0
     total_out = 0
     fused_sources = 0
-    for shard, header in headers.items():
+    for _shard, header in headers.items():
         for name, meta in header.items():
             if name == "__metadata__" or skipped(name):
                 continue
@@ -791,14 +863,17 @@ def plan(index: dict, width: int) -> None:
                     total_out += n * 2
                 else:
                     if out_shape[-1] % GROUP_SIZE:
-                        raise SystemExit(f"{out_name}: last dim {out_shape[-1]} "
-                                         f"not a multiple of {GROUP_SIZE}")
+                        raise SystemExit(
+                            f"{out_name}: last dim {out_shape[-1]} not a multiple of {GROUP_SIZE}"
+                        )
                     kind = f"{bits}-bit"
                     total_out += n * bits // 8 + (n // GROUP_SIZE) * 4
                 counts[kind] = counts.get(kind, 0) + 1
     if fused_sources:
-        print(f"  routed experts: {fused_sources} per-expert sources are fused "
-              f"into one tensor per layer and role by the converter")
+        print(
+            f"  routed experts: {fused_sources} per-expert sources are fused "
+            f"into one tensor per layer and role by the converter"
+        )
     print(f"{len(shards)} shards, {sum(len(h) - 1 for h in headers.values())} tensors")
     for kind, n in sorted(counts.items()):
         print(f"  {kind:>6}: {n} tensors")
@@ -808,18 +883,39 @@ def plan(index: dict, width: int) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", choices=sorted(MODELS), default="agentworld",
-                    help="which release to convert (pinned repo and commit)")
-    ap.add_argument("--head-bits", type=int, choices=(4, 8), default=8,
-                    help="embedding and lm_head width (default 8; the head is ~0.5 GB "
-                         "at 8-bit and ~3.5 ms of every 35B token)")
-    ap.add_argument("--draft-head", action="store_true",
-                    help="convert the mtp.* draft head only, as a qwen3_5_mtp sidecar snapshot")
+    ap.add_argument(
+        "--model",
+        choices=sorted(MODELS),
+        default="agentworld",
+        help="which release to convert (pinned repo and commit)",
+    )
+    ap.add_argument(
+        "--head-bits",
+        type=int,
+        choices=(4, 8),
+        default=8,
+        help="embedding and lm_head width (default 8; the head is ~0.5 GB "
+        "at 8-bit and ~3.5 ms of every 35B token)",
+    )
+    ap.add_argument(
+        "--draft-head",
+        action="store_true",
+        help="convert the mtp.* draft head only, as a qwen3_5_mtp sidecar snapshot",
+    )
     ap.add_argument("--plan", action="store_true", help="classify from the index, download nothing")
-    ap.add_argument("--bits", type=int, choices=(4, 8), nargs="+", default=[4],
-                    help="one width, or both to write two snapshots from one download")
-    ap.add_argument("--output", type=Path,
-                    help="snapshot directory; with two widths, a prefix that gets -4bit/-8bit")
+    ap.add_argument(
+        "--bits",
+        type=int,
+        choices=(4, 8),
+        nargs="+",
+        default=[4],
+        help="one width, or both to write two snapshots from one download",
+    )
+    ap.add_argument(
+        "--output",
+        type=Path,
+        help="snapshot directory; with two widths, a prefix that gets -4bit/-8bit",
+    )
     ap.add_argument("--work", type=Path, help="scratch for in-flight shards")
     args = ap.parse_args()
     select_model(args.model)
@@ -879,13 +975,12 @@ def main() -> int:
         # A layer whose experts did not all arrive would otherwise be dropped,
         # and the repacker would plan an install with an incomplete expert set
         # -- or silently treat the layer as resident. Fail before the index.
-        raise SystemExit("incomplete routed-expert layers: "
-                         + "; ".join(leftovers))
+        raise SystemExit("incomplete routed-expert layers: " + "; ".join(leftovers))
     for width, writer in writers.items():
         out = outputs[width]
         writer.finish()
         write_config(config, out, writer.index.keys(), width)
-        if not DRAFT_HEAD:            # a draft is prompted through its target's tokenizer
+        if not DRAFT_HEAD:  # a draft is prompted through its target's tokenizer
             print(f"tokenizer ({width}-bit):")
             fetch_tokenizer(out)
         print(f"\naffine snapshot written to {out}")

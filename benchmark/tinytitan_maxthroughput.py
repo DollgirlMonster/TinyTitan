@@ -4,6 +4,7 @@ Prompts rank from diverse routing (code) to maximally repetitive (digit
 cycles). 512-token greedy, server-footer rates, warmup + 2 measured runs per
 prompt. Usage: python3 benchmark/tinytitan_maxthroughput.py
 """
+
 import http.client
 import json
 import os
@@ -12,8 +13,11 @@ import sys
 import time
 
 from tinytitan_profile import (
-    DEFAULT_MODEL_PATH, benchmark_log_path, resolve_api_model,
-    server_command, server_environment,
+    DEFAULT_MODEL_PATH,
+    benchmark_log_path,
+    resolve_api_model,
+    server_command,
+    server_environment,
 )
 
 BASE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -21,10 +25,16 @@ BIN = os.path.join(BASE, ".build", "release", "TinyTitanServer")
 MODEL = str(DEFAULT_MODEL_PATH)
 PORT = 8117
 PROMPTS = [
-    ("code", "Write a Python function that computes the Levenshtein distance between two strings with a detailed docstring, then a second function using it to find the closest match in a list, with a demo main."),
+    (
+        "code",
+        "Write a Python function that computes the Levenshtein distance between two strings with a detailed docstring, then a second function using it to find the closest match in a list, with a demo main.",
+    ),
     ("essay", "Write a detailed essay about the history of computing."),
     ("count", "Count from 1 to 1000, writing only the numbers separated by single spaces."),
-    ("digits", "Write the digits 1,2,3,4,5,6,7,8,9,0 over and over in sequence, separated by commas, without stopping."),
+    (
+        "digits",
+        "Write the digits 1,2,3,4,5,6,7,8,9,0 over and over in sequence, separated by commas, without stopping.",
+    ),
 ]
 
 
@@ -37,8 +47,7 @@ if _wanted:
     _keep = {p.strip() for p in _wanted.split(",") if p.strip()}
     PROMPTS = [p for p in PROMPTS if p[0] in _keep]
     if not PROMPTS:
-        raise SystemExit(f"no prompt matches {sorted(_keep)}; "
-                         f"known: code, essay, count, digits")
+        raise SystemExit(f"no prompt matches {sorted(_keep)}; known: code, essay, count, digits")
 
 
 def main():
@@ -54,15 +63,15 @@ def main():
     if "--mtp" in args:
         i = args.index("--mtp")
         mtp = args[i + 1]
-        del args[i:i + 2]
+        del args[i : i + 2]
     engine = "gpu"
     if "--engine" in args:
         i = args.index("--engine")
         try:
             engine = args[i + 1]
         except IndexError:
-            raise SystemExit("--engine needs cpu or gpu")
-        del args[i:i + 2]
+            raise SystemExit("--engine needs cpu or gpu") from None
+        del args[i : i + 2]
     if engine not in ("cpu", "gpu"):
         raise SystemExit(f"--engine must be cpu or gpu, not {engine}")
     models = args or [str(DEFAULT_MODEL_PATH)]
@@ -81,7 +90,10 @@ def run_quant(model, label, mtp_model=None, engine="gpu"):
     log = open(log_path, "w")
     proc = subprocess.Popen(
         server_command(BIN, PORT, model=model, mtp_model=mtp_model, engine=engine),
-        env=server_environment(), stdout=log, stderr=subprocess.STDOUT)
+        env=server_environment(),
+        stdout=log,
+        stderr=subprocess.STDOUT,
+    )
     start = time.time()
     # A 125B install streams off SSD for minutes before it serves. The old 120s
     # budget was sized for a model that is no longer the default and turned a
@@ -103,15 +115,25 @@ def run_quant(model, label, mtp_model=None, engine="gpu"):
     api_model = resolve_api_model(PORT)
 
     def request(prompt):
-        payload = json.dumps({
-            "model": api_model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0, "top_p": 0.95, "top_k": 20,
-            "presence_penalty": 0.0, "max_completion_tokens": 512, "stream": True,
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": api_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "top_p": 0.95,
+                "top_k": 20,
+                "presence_penalty": 0.0,
+                "max_completion_tokens": 512,
+                "stream": True,
+            }
+        ).encode()
         conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=1800)
-        conn.request("POST", "/v1/chat/completions", body=payload,
-                     headers={"Content-Type": "application/json"})
+        conn.request(
+            "POST",
+            "/v1/chat/completions",
+            body=payload,
+            headers={"Content-Type": "application/json"},
+        )
         resp = conn.getresponse()
         while resp.read(8192):
             pass
@@ -133,19 +155,19 @@ def run_quant(model, label, mtp_model=None, engine="gpu"):
     rates, cts = [], []
     with open(log_path) as f:
         for line in f:
-            if (("TinyTitan generation" in line or "TinyTitan mtp " in line)
-                    and "decode_tok_s=" in line):
+            if (
+                "TinyTitan generation" in line or "TinyTitan mtp " in line
+            ) and "decode_tok_s=" in line:
                 rates.append(float(line.split("decode_tok_s=")[1].split()[0]))
             if "completed in" in line and "completion=" in line:
                 cts.append(int(line.split("completion=")[1].split()[0]))
 
     idx = 0
     for pname, _ in PROMPTS:
-        r = rates[idx:idx + 2]
-        c = cts[idx:idx + 2]
+        r = rates[idx : idx + 2]
+        c = cts[idx : idx + 2]
         if len(r) == 2:
-            print(f"{label} {pname}: measured={r[1]:.2f} (warmup {r[0]:.2f}) "
-                  f"ct={c}", flush=True)
+            print(f"{label} {pname}: measured={r[1]:.2f} (warmup {r[0]:.2f}) ct={c}", flush=True)
         else:
             print(f"{label} {pname}: missing rate footer (request failed?)", flush=True)
         idx += 2

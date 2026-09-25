@@ -14,6 +14,7 @@ against a float32 NumPy reference of the same math with the same real weights.
 
   ~/.venvs/coreml-py311/bin/python benchmark/tinytitan_ane_realweight_rehearsal.py
 """
+
 from __future__ import annotations
 
 import json
@@ -27,9 +28,9 @@ import tinytitan_ane_attention_probe as probe
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODEL_BIN = str(ROOT / "models/ornith-1.5_35B_A3B_4Bit/model_weights.bin")
-FULL_LAYERS = list(range(3, 40, 4))          # (i + 1) % 4 == 0
-CHUNKS = [(4096, 0), (2007, 4096)]           # the 6,103-token prefill
-GPU_REFERENCE_S = 84.3                       # measured, same machine, same shape
+FULL_LAYERS = list(range(3, 40, 4))  # (i + 1) % 4 == 0
+CHUNKS = [(4096, 0), (2007, 4096)]  # the 6,103-token prefill
+GPU_REFERENCE_S = 84.3  # measured, same machine, same shape
 
 
 def read_index(path: str) -> dict[str, dict]:
@@ -41,14 +42,18 @@ def read_index(path: str) -> dict[str, dict]:
     for i in range(entry_count):
         off = 24 + i * 72
         name_off, name_len = struct.unpack_from("<IH", region, off)
-        name = region[name_off:name_off + name_len].decode()
+        name = region[name_off : name_off + name_len].decode()
         file_off, size = struct.unpack_from("<QQ", region, off + 8)
         shape = struct.unpack_from("<4I", region, off + 24)
-        scale_off, scale_size, bias_off, bias_size = struct.unpack_from(
-            "<QQQQ", region, off + 40)
-        entries[name] = dict(dtype=region[off + 6], offset=file_off, size=size,
-                             shape=shape, scale=(scale_off, scale_size),
-                             bias=(bias_off, bias_size))
+        scale_off, scale_size, bias_off, bias_size = struct.unpack_from("<QQQQ", region, off + 40)
+        entries[name] = dict(
+            dtype=region[off + 6],
+            offset=file_off,
+            size=size,
+            shape=shape,
+            scale=(scale_off, scale_size),
+            bias=(bias_off, bias_size),
+        )
     return entries
 
 
@@ -59,7 +64,7 @@ def bf16_to_f32(raw: bytes) -> np.ndarray:
 
 def load_tensor(handle, entry) -> np.ndarray:
     rows, cols = entry["shape"][0], entry["shape"][1]
-    if entry["dtype"] == 1:                                   # bf16
+    if entry["dtype"] == 1:  # bf16
         handle.seek(entry["offset"])
         flat = bf16_to_f32(handle.read(entry["size"]))
         return flat.reshape([d for d in entry["shape"] if d] or [flat.size])
@@ -83,8 +88,10 @@ def load_tensor(handle, entry) -> np.ndarray:
 
 def load_layer_weights(handle, entries, layer: int) -> dict[str, np.ndarray]:
     prefix = f"language_model.model.layers.{layer}.self_attn."
+
     def get(name):
         return load_tensor(handle, entries[prefix + name])
+
     return {
         "wq": get("q_proj.weight").astype(np.float16),
         "wk": get("k_proj.weight").astype(np.float16),
@@ -108,10 +115,12 @@ def main() -> int:
         for t, hist in CHUNKS:
             model = probe.build_block(t, hist, weights)
             hidden = (rng.standard_normal((t, probe.D)) * 0.5).astype(np.float16)
-            k_hist = (rng.standard_normal(
-                (1, probe.N_KV_HEADS, hist, probe.HEAD_DIM)) * 0.5).astype(np.float16)
-            v_hist = (rng.standard_normal(
-                (1, probe.N_KV_HEADS, hist, probe.HEAD_DIM)) * 0.5).astype(np.float16)
+            k_hist = (
+                rng.standard_normal((1, probe.N_KV_HEADS, hist, probe.HEAD_DIM)) * 0.5
+            ).astype(np.float16)
+            v_hist = (
+                rng.standard_normal((1, probe.N_KV_HEADS, hist, probe.HEAD_DIM)) * 0.5
+            ).astype(np.float16)
             cos_t, sin_t = probe.rope_tables(hist, t)
             mask = probe.causal_mask(t, hist)
             feed = {"hidden": hidden, "cos_t": cos_t, "sin_t": sin_t, "mask": mask}
@@ -119,9 +128,12 @@ def main() -> int:
                 feed.update(k_hist=k_hist, v_hist=v_hist)
             spec = model.get_spec()
             names = [o.name for o in spec.description.output]
-            out_name = next(n for n in names if tuple(
-                spec.description.output[names.index(n)]
-                .type.multiArrayType.shape) == (t, probe.D))
+            out_name = next(
+                n
+                for n in names
+                if tuple(spec.description.output[names.index(n)].type.multiArrayType.shape)
+                == (t, probe.D)
+            )
             # Warmup once (first predict pays one-time setup), then time.
             model.predict(feed)
             times = []
@@ -131,44 +143,54 @@ def main() -> int:
                 times.append(time.perf_counter() - start)
             elapsed = sorted(times)[1]
             total_predict_s += elapsed
-            ref = probe.reference(hidden, k_hist, v_hist, cos_t, sin_t,
-                                  mask, weights)
+            ref = probe.reference(hidden, k_hist, v_hist, cos_t, sin_t, mask, weights)
             got = np.asarray(out[out_name], dtype=np.float32)
             rel = float(np.abs(got - ref).mean() / max(np.abs(ref).mean(), 1e-9))
             bad = int(np.isnan(got).sum() + np.isinf(got).sum())
             layer_row["chunks"].append(
-                {"chunk": t, "history": hist,
-                 "ane_ms": round(elapsed * 1000, 1),
-                 "rel_err": round(rel, 5), "nan_inf": bad})
-            print(f"layer {layer:2d} chunk {t}:{hist}  "
-                  f"{elapsed * 1000:8.1f} ms  rel {rel:.4f}  nan/inf {bad}",
-                  flush=True)
+                {
+                    "chunk": t,
+                    "history": hist,
+                    "ane_ms": round(elapsed * 1000, 1),
+                    "rel_err": round(rel, 5),
+                    "nan_inf": bad,
+                }
+            )
+            print(
+                f"layer {layer:2d} chunk {t}:{hist}  "
+                f"{elapsed * 1000:8.1f} ms  rel {rel:.4f}  nan/inf {bad}",
+                flush=True,
+            )
             del model
         results.append(layer_row)
     handle.close()
 
     print("\n" + "=" * 66)
-    print("REAL-WEIGHT ANE REHEARSAL — 10 full-attention layers, "
-          "6,103-token prefill shape")
+    print("REAL-WEIGHT ANE REHEARSAL — 10 full-attention layers, 6,103-token prefill shape")
     print("=" * 66)
-    print(f"  ANE, 20 layer-chunks:  {total_predict_s:8.2f} s "
-          f"(prediction wall, marshaling included)")
+    print(
+        f"  ANE, 20 layer-chunks:  {total_predict_s:8.2f} s (prediction wall, marshaling included)"
+    )
     print(f"  GPU, same layer-chunks: {GPU_REFERENCE_S:7.1f} s (measured)")
-    print(f"  speedup on the offloadable block: "
-          f"{GPU_REFERENCE_S / total_predict_s:.1f}x")
+    print(f"  speedup on the offloadable block: {GPU_REFERENCE_S / total_predict_s:.1f}x")
     remainder = 133.2 - GPU_REFERENCE_S
     projected = remainder + total_predict_s
-    print(f"  projected end-to-end prefill: 133.2 s -> "
-          f"{projected:.1f} s ({133.2 / projected:.2f}x)")
+    print(
+        f"  projected end-to-end prefill: 133.2 s -> {projected:.1f} s ({133.2 / projected:.2f}x)"
+    )
     worst = max(c["rel_err"] for r in results for c in r["chunks"])
     bad = sum(c["nan_inf"] for r in results for c in r["chunks"])
-    print(f"  worst per-layer rel err vs fp32 reference: {worst:.4f}   "
-          f"total nan/inf: {bad}")
-    with open(ROOT / ".build/benchmark-results/ane-realweight-rehearsal.json",
-              "w") as fh:
-        json.dump({"results": results,
-                   "ane_total_s": round(total_predict_s, 3),
-                   "gpu_reference_s": GPU_REFERENCE_S}, fh, indent=2)
+    print(f"  worst per-layer rel err vs fp32 reference: {worst:.4f}   total nan/inf: {bad}")
+    with open(ROOT / ".build/benchmark-results/ane-realweight-rehearsal.json", "w") as fh:
+        json.dump(
+            {
+                "results": results,
+                "ane_total_s": round(total_predict_s, 3),
+                "gpu_reference_s": GPU_REFERENCE_S,
+            },
+            fh,
+            indent=2,
+        )
     print("wrote .build/benchmark-results/ane-realweight-rehearsal.json")
     return 0
 

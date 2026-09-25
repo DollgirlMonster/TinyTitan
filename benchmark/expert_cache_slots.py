@@ -19,6 +19,7 @@ count.
 
   python3 benchmark/expert_cache_slots.py --slots 64,96,128 --rounds 2 --record
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,13 +38,19 @@ CLI = ROOT / ".build/release/TinyTitanCLI"
 RESULTS = ROOT / "benchmark/expert-cache"
 
 DEFAULT_SOURCE = "docs/qwen38-flash-next-port.md"
-INSTRUCTION = ("\n\nContinue this document, writing at least 300 more words in the same "
-               "style. Do not summarize and do not stop early.\n")
+INSTRUCTION = (
+    "\n\nContinue this document, writing at least 300 more words in the same "
+    "style. Do not summarize and do not stop early.\n"
+)
 
-IO = re.compile(r"\[decode expert io\] hits (\d+) misses (\d+) \(([\d.]+)% hit\) "
-                r"([\d.]+) GiB(?: = ([\d.]+) MiB/token)?")
-FOOTER = re.compile(r"\[stop=(\S+) prefill=(\d+)tok/([\d.]+)s new=(\d+)tok "
-                    r"decode=([\d.]+)s tok/s=([\d.]+)\]")
+IO = re.compile(
+    r"\[decode expert io\] hits (\d+) misses (\d+) \(([\d.]+)% hit\) "
+    r"([\d.]+) GiB(?: = ([\d.]+) MiB/token)?"
+)
+FOOTER = re.compile(
+    r"\[stop=(\S+) prefill=(\d+)tok/([\d.]+)s new=(\d+)tok "
+    r"decode=([\d.]+)s tok/s=([\d.]+)\]"
+)
 MAXRSS = re.compile(r"(\d+)\s+maximum resident set size")
 
 
@@ -68,27 +75,56 @@ def run_once(model: pathlib.Path, messages: pathlib.Path, slots: int, max_new: i
     env = dict(os.environ)
     env["TINYTITAN_DECODE_IO_TRACE"] = "1"
     proc = subprocess.run(
-        ["/usr/bin/time", "-l", str(CLI), "--model", str(model),
-         "--messages-file", str(messages), "--expert-cache-slots", str(slots),
-         "--max-new", str(max_new), "--temperature", "0"],
-        env=env, cwd=ROOT, capture_output=True, text=True, timeout=3600)
+        [
+            "/usr/bin/time",
+            "-l",
+            str(CLI),
+            "--model",
+            str(model),
+            "--messages-file",
+            str(messages),
+            "--expert-cache-slots",
+            str(slots),
+            "--max-new",
+            str(max_new),
+            "--temperature",
+            "0",
+        ],
+        env=env,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=3600,
+    )
     after = swap_used_gib()
     err = proc.stderr
-    row: dict = {"slots": slots, "swap_before_gib": round(before, 2),
-                 "swap_after_gib": round(after, 2),
-                 "swap_delta_gib": round(after - before, 2)}
+    row: dict = {
+        "slots": slots,
+        "swap_before_gib": round(before, 2),
+        "swap_after_gib": round(after, 2),
+        "swap_delta_gib": round(after - before, 2),
+    }
     io = IO.search(err)
     if io:
         hits, misses, hit_pct, gib, per_token = io.groups()
-        row.update(hits=int(hits), misses=int(misses), hit_pct=float(hit_pct),
-                   read_gib=float(gib),
-                   mib_per_token=float(per_token) if per_token else None)
+        row.update(
+            hits=int(hits),
+            misses=int(misses),
+            hit_pct=float(hit_pct),
+            read_gib=float(gib),
+            mib_per_token=float(per_token) if per_token else None,
+        )
     footer = FOOTER.search(err)
     if footer:
         stop, prefill_tokens, prefill_s, new, decode_s, rate = footer.groups()
-        row.update(stop=stop, prompt_tokens=int(prefill_tokens),
-                   prefill_s=float(prefill_s), new_tokens=int(new),
-                   decode_s=float(decode_s), decode_tok_s=float(rate))
+        row.update(
+            stop=stop,
+            prompt_tokens=int(prefill_tokens),
+            prefill_s=float(prefill_s),
+            new_tokens=int(new),
+            decode_s=float(decode_s),
+            decode_tok_s=float(rate),
+        )
     rss = MAXRSS.search(err)
     if rss:
         row["max_rss_gib"] = round(int(rss.group(1)) / 1_073_741_824, 2)
@@ -101,10 +137,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="models/qwen3.8-flash-next_125B_A6B_4Bit")
     parser.add_argument("--slots", default="64,96,128")
-    parser.add_argument("--rounds", type=int, default=2,
-                        help="each round is the sweep ascending then descending")
-    parser.add_argument("--characters", type=int, default=24_000,
-                        help="prompt body slice; ~4,500 tokens at ~5.3 chars/token")
+    parser.add_argument(
+        "--rounds", type=int, default=2, help="each round is the sweep ascending then descending"
+    )
+    parser.add_argument(
+        "--characters",
+        type=int,
+        default=24_000,
+        help="prompt body slice; ~4,500 tokens at ~5.3 chars/token",
+    )
     parser.add_argument("--source", default=DEFAULT_SOURCE)
     parser.add_argument("--max-new", type=int, default=256)
     parser.add_argument("--label", default="qwen38-4bit")
@@ -114,8 +155,9 @@ def main() -> int:
     model = (ROOT / args.model).resolve()
     if not (model / "verified-install.json").exists():
         raise SystemExit(f"not an installed model: {model}")
-    busy = subprocess.run(["pgrep", "-fl", "TinyTitanCLI|TinyTitanServer"],
-                          capture_output=True, text=True).stdout.strip()
+    busy = subprocess.run(
+        ["pgrep", "-fl", "TinyTitanCLI|TinyTitanServer"], capture_output=True, text=True
+    ).stdout.strip()
     if busy:
         raise SystemExit(f"a model process is already running:\n{busy}")
 
@@ -130,9 +172,11 @@ def main() -> int:
     messages.write_text(json.dumps([{"role": "user", "content": prompt}]))
 
     rows: list[dict] = []
-    print(f"[tt011] {model.name}: slots {slots}, prompt {len(prompt)} chars "
-          f"(sha {digest}), {args.max_new} new tokens, swap now {swap_used_gib():.2f} GiB",
-          flush=True)
+    print(
+        f"[tt011] {model.name}: slots {slots}, prompt {len(prompt)} chars "
+        f"(sha {digest}), {args.max_new} new tokens, swap now {swap_used_gib():.2f} GiB",
+        flush=True,
+    )
     for round_index in range(args.rounds):
         order = slots if round_index % 2 == 0 else list(reversed(slots))
         for slot_count in order:
@@ -141,46 +185,69 @@ def main() -> int:
             if row.get("failed"):
                 print(f"[{slot_count:>3} slots] FAILED: {row['failed']}", flush=True)
                 continue
-            print(f"[{slot_count:>3} slots] cache {footprint[slot_count]:5.2f} GiB  "
-                  f"hit {row.get('hit_pct', 0):5.1f}%  "
-                  f"{row.get('decode_tok_s', 0):5.2f} tok/s  "
-                  f"io {row.get('mib_per_token', 0):6.1f} MiB/tok  "
-                  f"rss {row.get('max_rss_gib', 0):5.2f} GiB  "
-                  f"swap {row.get('swap_delta_gib', 0):+5.2f} GiB", flush=True)
+            print(
+                f"[{slot_count:>3} slots] cache {footprint[slot_count]:5.2f} GiB  "
+                f"hit {row.get('hit_pct', 0):5.1f}%  "
+                f"{row.get('decode_tok_s', 0):5.2f} tok/s  "
+                f"io {row.get('mib_per_token', 0):6.1f} MiB/tok  "
+                f"rss {row.get('max_rss_gib', 0):5.2f} GiB  "
+                f"swap {row.get('swap_delta_gib', 0):+5.2f} GiB",
+                flush=True,
+            )
 
     ok = [r for r in rows if not r.get("failed")]
     print("\n" + "=" * 78)
-    print(f"EXPERT-CACHE SLOT SWEEP — {model.name}, {ok[0]['prompt_tokens'] if ok else '?'} "
-          f"prompt tokens, {args.max_new} new tokens, greedy")
+    print(
+        f"EXPERT-CACHE SLOT SWEEP — {model.name}, {ok[0]['prompt_tokens'] if ok else '?'} "
+        f"prompt tokens, {args.max_new} new tokens, greedy"
+    )
     print("=" * 78)
-    print(f"  {'slots':>5} {'cache GiB':>9} {'hit %':>7} {'tok/s':>7} "
-          f"{'MiB/token':>10} {'max RSS':>8} {'swap Δ':>7}")
+    print(
+        f"  {'slots':>5} {'cache GiB':>9} {'hit %':>7} {'tok/s':>7} "
+        f"{'MiB/token':>10} {'max RSS':>8} {'swap Δ':>7}"
+    )
     for slot_count in slots:
         group = [r for r in ok if r["slots"] == slot_count]
         if not group:
             continue
-        med = lambda key: statistics.median([r[key] for r in group if r.get(key) is not None])
-        print(f"  {slot_count:>5} {footprint[slot_count]:>9.2f} {med('hit_pct'):>7.1f} "
-              f"{med('decode_tok_s'):>7.2f} {med('mib_per_token'):>10.1f} "
-              f"{med('max_rss_gib'):>8.2f} {med('swap_delta_gib'):>+7.2f}")
+
+        def med(key, group=group):
+            return statistics.median([r[key] for r in group if r.get(key) is not None])
+
+        print(
+            f"  {slot_count:>5} {footprint[slot_count]:>9.2f} {med('hit_pct'):>7.1f} "
+            f"{med('decode_tok_s'):>7.2f} {med('mib_per_token'):>10.1f} "
+            f"{med('max_rss_gib'):>8.2f} {med('swap_delta_gib'):>+7.2f}"
+        )
     by_slot = {s: [r for r in ok if r["slots"] == s] for s in slots}
-    for lower, higher in zip(slots, slots[1:]):
+    for lower, higher in zip(slots, slots[1:], strict=False):
         lo = [r["hit_pct"] for r in by_slot[lower] if "hit_pct" in r]
         hi = [r["hit_pct"] for r in by_slot[higher] if "hit_pct" in r]
         if lo and hi:
-            print(f"  {higher} slots vs {lower}: hit "
-                  f"{statistics.median(hi) - statistics.median(lo):+.1f} points, "
-                  f"tok/s {statistics.median([r['decode_tok_s'] for r in by_slot[higher]]) - statistics.median([r['decode_tok_s'] for r in by_slot[lower]]):+.2f}")
+            print(
+                f"  {higher} slots vs {lower}: hit "
+                f"{statistics.median(hi) - statistics.median(lo):+.1f} points, "
+                f"tok/s {statistics.median([r['decode_tok_s'] for r in by_slot[higher]]) - statistics.median([r['decode_tok_s'] for r in by_slot[lower]]):+.2f}"
+            )
 
     if args.record:
         RESULTS.mkdir(parents=True, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M")
         out = RESULTS / f"slots-{args.label}-{stamp}.json"
-        out.write_text(json.dumps({
-            "model": model.name, "prompt_sha": digest, "source": args.source,
-            "characters": args.characters, "max_new": args.max_new,
-            "slots": slots, "rows": rows,
-        }, indent=2))
+        out.write_text(
+            json.dumps(
+                {
+                    "model": model.name,
+                    "prompt_sha": digest,
+                    "source": args.source,
+                    "characters": args.characters,
+                    "max_new": args.max_new,
+                    "slots": slots,
+                    "rows": rows,
+                },
+                indent=2,
+            )
+        )
         print(f"\nwrote {out.relative_to(ROOT)}")
     try:
         messages.unlink()

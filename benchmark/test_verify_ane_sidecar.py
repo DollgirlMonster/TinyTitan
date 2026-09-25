@@ -13,6 +13,7 @@ so it skips where that is not installed (the CI python does not have it;
     cd benchmark && ~/.venvs/coreml-py311/bin/python -m unittest \
         test_verify_ane_sidecar -v
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -24,6 +25,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 try:
     import verify_ane_sidecar as verify
+
     IMPORT_ERROR = ""
 except Exception as exc:  # coremltools or numpy absent
     verify = None
@@ -44,10 +46,9 @@ class SelectionMaskTests(unittest.TestCase):
         mask, kept = verify.selection_mask(16, 4, 2, seed=1)
         row = 15
         visible = row + 1
-        self.assertEqual(kept[row], 5)          # budget + ratio - 1
+        self.assertEqual(kept[row], 5)  # budget + ratio - 1
         # Dropped keys are masked, not merely absent.
-        self.assertEqual(int((mask[0, 0, row, :visible] == verify.ex.NEG).sum()),
-                         visible - 5)
+        self.assertEqual(int((mask[0, 0, row, :visible] == verify.ex.NEG).sum()), visible - 5)
         # Nothing past the query's own position is ever visible.
         self.assertTrue((mask[0, 0, row, visible:] == verify.ex.NEG).all())
 
@@ -57,8 +58,7 @@ class SelectionMaskTests(unittest.TestCase):
             visible = row + 1
             complete = (visible // 2) * 2
             tail = mask[0, 0, row, complete:visible]
-            self.assertTrue((tail == 0.0).all(),
-                            f"row {row} dropped its own block's tail")
+            self.assertTrue((tail == 0.0).all(), f"row {row} dropped its own block's tail")
 
     def test_the_kept_count_matches_the_mask(self):
         mask, kept = verify.selection_mask(32, 6, 4, seed=5)
@@ -66,8 +66,7 @@ class SelectionMaskTests(unittest.TestCase):
             visible = row + 1
             row_mask = mask[0, 0, row, :visible]
             self.assertEqual(int((row_mask == 0.0).sum()), kept[row])
-            self.assertEqual(int((row_mask == verify.ex.NEG).sum()),
-                             visible - kept[row])
+            self.assertEqual(int((row_mask == verify.ex.NEG).sum()), visible - kept[row])
 
     def test_the_budget_is_never_exceeded(self):
         budget, ratio = 8, 4

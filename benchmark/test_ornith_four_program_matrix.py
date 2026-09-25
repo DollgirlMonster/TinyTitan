@@ -29,7 +29,8 @@ class OrnithFourProgramMatrixTests(unittest.TestCase):
             workspace = pathlib.Path(directory)
             (workspace / "diagnostic.txt").write_text("shape=3x3\n")
             read = benchmark.execute_tool(
-                "read_workspace_file", {"path": "diagnostic.txt"}, workspace)
+                "read_workspace_file", {"path": "diagnostic.txt"}, workspace
+            )
             write = benchmark.execute_tool(
                 "write_workspace_file",
                 {"path": "diagnostic.txt", "content": "forged\n"},
@@ -40,8 +41,7 @@ class OrnithFourProgramMatrixTests(unittest.TestCase):
 
     def test_expected_hidden_outputs_form_the_final_result(self) -> None:
         combined = " | ".join(
-            benchmark.EXPECTED_HIDDEN[name].strip()
-            for name in benchmark.PROGRAM_ORDER
+            benchmark.EXPECTED_HIDDEN[name].strip() for name in benchmark.PROGRAM_ORDER
         )
         self.assertEqual(combined, benchmark.EXPECTED_FINAL)
 

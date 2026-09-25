@@ -27,6 +27,7 @@ a measurement.
     python3 benchmark/memory_book.py summary
     python3 benchmark/memory_book.py report
 """
+
 from __future__ import annotations
 
 import json
@@ -93,6 +94,7 @@ def wait_for_consolidation(before: tuple[int, int], limit: float = 300) -> float
     print("  (no consolidation decision within the wait)")
     return time.time() - started
 
+
 BIBLE = """\
 You are writing THE PHOTOGRAPH, a novel of exactly 100 chapters, over many
 sessions. This is the bible. Nothing written later may contradict it.
@@ -125,10 +127,20 @@ EVENTS = {
 }
 
 QUIZ_KEYS = (
-    "marcus_eyes", "ines_eyes", "halvorsen_eyes", "rosa_eyes", "aldo_eyes",
-    "town", "weather_rule", "ferry_day",
-    "marcus_knows_photo", "tomas_status", "inn_status",
-    "halvorsen_confessed", "ferry_running", "anyone_left_ashgrove",
+    "marcus_eyes",
+    "ines_eyes",
+    "halvorsen_eyes",
+    "rosa_eyes",
+    "aldo_eyes",
+    "town",
+    "weather_rule",
+    "ferry_day",
+    "marcus_knows_photo",
+    "tomas_status",
+    "inn_status",
+    "halvorsen_confessed",
+    "ferry_running",
+    "anyone_left_ashgrove",
 )
 
 QUIZ = (
@@ -137,8 +149,8 @@ QUIZ = (
     "marcus_eyes, ines_eyes, halvorsen_eyes, rosa_eyes, aldo_eyes (colour "
     "words); town (name); weather_rule (a few words); ferry_day (a weekday); "
     "marcus_knows_photo (true/false: does Marcus know what the photograph "
-    "shows?); tomas_status (\"missing\" or \"found\"); inn_status (\"standing\" "
-    "or \"burned\"); halvorsen_confessed (true/false); ferry_running "
+    'shows?); tomas_status ("missing" or "found"); inn_status ("standing" '
+    'or "burned"); halvorsen_confessed (true/false); ferry_running '
     "(true/false); anyone_left_ashgrove (true/false)."
 )
 
@@ -147,9 +159,14 @@ def truth(session: int) -> dict:
     """What the quiz answers should be after this session."""
     last = session * 10
     return {
-        "marcus_eyes": "grey", "ines_eyes": "green", "halvorsen_eyes": "brown",
-        "rosa_eyes": "hazel", "aldo_eyes": "blue",
-        "town": "ashgrove", "weather_rule": "never rains", "ferry_day": "sunday",
+        "marcus_eyes": "grey",
+        "ines_eyes": "green",
+        "halvorsen_eyes": "brown",
+        "rosa_eyes": "hazel",
+        "aldo_eyes": "blue",
+        "town": "ashgrove",
+        "weather_rule": "never rains",
+        "ferry_day": "sunday",
         "marcus_knows_photo": last >= 60,
         "tomas_status": "found" if last >= 58 else "missing",
         "inn_status": "burned" if last >= 34 else "standing",
@@ -187,20 +204,23 @@ SUMMARY_PROMPT = (
 
 
 def post(messages, model, max_tokens=2500):
-    body = json.dumps({"model": model, "messages": messages,
-                       "max_completion_tokens": max_tokens,
-                       **sampling()}).encode()
-    request = urllib.request.Request(f"{BASE}/chat/completions", data=body,
-                                     headers={"Content-Type": "application/json"})
+    body = json.dumps(
+        {"model": model, "messages": messages, "max_completion_tokens": max_tokens, **sampling()}
+    ).encode()
+    request = urllib.request.Request(
+        f"{BASE}/chat/completions", data=body, headers={"Content-Type": "application/json"}
+    )
     started = time.time()
     with urllib.request.urlopen(request, timeout=3600) as response:
         payload = json.load(response)
     choice = payload["choices"][0]["message"]
     usage = payload.get("usage", {})
-    return {"content": choice.get("content") or "",
-            "prompt_tokens": usage.get("prompt_tokens", 0),
-            "completion_tokens": usage.get("completion_tokens", 0),
-            "seconds": time.time() - started}
+    return {
+        "content": choice.get("content") or "",
+        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "completion_tokens": usage.get("completion_tokens", 0),
+        "seconds": time.time() - started,
+    }
 
 
 def model_id():
@@ -219,7 +239,8 @@ def assert_arm_is_real(arm: str, prompt_tokens: int):
             f"ABORT: arm '{arm}' saw {prompt_tokens} prompt tokens in session 1; "
             f"expected {floor}..{ceiling}. The server is not running what this "
             f"arm claims. Rebuild the release binary and check TINYTITAN_MEMORY / "
-            f"TINYTITAN_MEMORY_TOOLS.")
+            f"TINYTITAN_MEMORY_TOOLS."
+        )
 
 
 def extract_quiz(text: str) -> dict:
@@ -241,8 +262,12 @@ def normalise(key: str, value) -> str | bool | None:
     if isinstance(value, bool):
         return value
     text = str(value).strip().lower()
-    if key in ("marcus_knows_photo", "halvorsen_confessed", "ferry_running",
-               "anyone_left_ashgrove"):
+    if key in (
+        "marcus_knows_photo",
+        "halvorsen_confessed",
+        "ferry_running",
+        "anyone_left_ashgrove",
+    ):
         if text in ("true", "yes"):
             return True
         if text in ("false", "no"):
@@ -294,16 +319,23 @@ def run_arm(arm: str):
         correct, total = score(session, answers)
         result.update(session=session, answers=answers, correct=correct, total=total)
         (OUT / f"{arm}-r{RUN}-{session:02d}.md").write_text(result["content"])
-        print(f"{arm}/session {session:2d}: {result['completion_tokens']} tokens, "
-              f"{result['seconds']:.0f}s, prompt {result['prompt_tokens']}, "
-              f"quiz {correct}/{total}")
+        print(
+            f"{arm}/session {session:2d}: {result['completion_tokens']} tokens, "
+            f"{result['seconds']:.0f}s, prompt {result['prompt_tokens']}, "
+            f"quiz {correct}/{total}"
+        )
         if session == 1:
             assert_arm_is_real(arm, result["prompt_tokens"])
         if arm == "summary":
-            summary = post([{"role": "user", "content": prompt},
-                            {"role": "assistant", "content": result["content"]},
-                            {"role": "user", "content": SUMMARY_PROMPT}], model,
-                           max_tokens=600)
+            summary = post(
+                [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": result["content"]},
+                    {"role": "user", "content": SUMMARY_PROMPT},
+                ],
+                model,
+                max_tokens=600,
+            )
             carried = summary["content"]
             result["summary_prompt_tokens"] = summary["prompt_tokens"]
             result["summary_completion_tokens"] = summary["completion_tokens"]
@@ -323,8 +355,10 @@ def report():
         if arm in ARMS:
             runs.setdefault(arm, {})[run] = json.loads(path.read_text())
 
-    print(f"\n{'arm':8s} {'run':>3s} {'session':>7s} {'prompt':>7s} {'completion':>11s} "
-          f"{'seconds':>8s} {'wait':>5s} {'quiz':>6s}  wrong")
+    print(
+        f"\n{'arm':8s} {'run':>3s} {'session':>7s} {'prompt':>7s} {'completion':>11s} "
+        f"{'seconds':>8s} {'wait':>5s} {'quiz':>6s}  wrong"
+    )
     summary_rows = []
     for arm in ARMS:
         for run, results in sorted(runs.get(arm, {}).items()):
@@ -341,22 +375,32 @@ def report():
                 if not result["answers"]:
                     detail = "(no quiz answered)"
                 else:
-                    detail = ", ".join(k for k in QUIZ_KEYS
-                                       if normalise(k, result["answers"].get(k)) != expected[k])
-                print(f"{arm:8s} {run:>3s} {session:7d} {result['prompt_tokens']:7d} "
-                      f"{result['completion_tokens']:11d} {result['seconds']:8.0f} "
-                      f"{result.get('consolidation_wait', 0):5.0f} "
-                      f"{result['correct']:3d}/{result['total']:<2d}  {detail}")
+                    detail = ", ".join(
+                        k
+                        for k in QUIZ_KEYS
+                        if normalise(k, result["answers"].get(k)) != expected[k]
+                    )
+                print(
+                    f"{arm:8s} {run:>3s} {session:7d} {result['prompt_tokens']:7d} "
+                    f"{result['completion_tokens']:11d} {result['seconds']:8.0f} "
+                    f"{result.get('consolidation_wait', 0):5.0f} "
+                    f"{result['correct']:3d}/{result['total']:<2d}  {detail}"
+                )
                 if session > 1:
                     carried_correct += result["correct"]
                     carried_total += result["total"]
                 prompt += result["prompt_tokens"] + result.get("summary_prompt_tokens", 0)
-                completion += (result["completion_tokens"]
-                               + result.get("summary_completion_tokens", 0))
-                seconds += (result["seconds"] + result.get("summary_seconds", 0)
-                            + result.get("consolidation_wait", 0))
-            summary_rows.append((arm, run, carried_correct, carried_total,
-                                 prompt, completion, seconds))
+                completion += result["completion_tokens"] + result.get(
+                    "summary_completion_tokens", 0
+                )
+                seconds += (
+                    result["seconds"]
+                    + result.get("summary_seconds", 0)
+                    + result.get("consolidation_wait", 0)
+                )
+            summary_rows.append(
+                (arm, run, carried_correct, carried_total, prompt, completion, seconds)
+            )
 
     print("\nCarried over sessions 2-10, per run, and the mean:")
     for arm in ARMS:

@@ -32,6 +32,7 @@ Exits non-zero when the mean relative error exceeds `--max-relative-error`
 (default 2%; the design documents ~1% fp16 deviation from fp32), or when the
 folded check finds that the mask barely matters (a vacuous check).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,14 +47,16 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import importlib.util
 
 _spec = importlib.util.spec_from_file_location(
-    "export_ane_prefill", pathlib.Path(__file__).resolve().parent / "export_ane_prefill.py")
+    "export_ane_prefill", pathlib.Path(__file__).resolve().parent / "export_ane_prefill.py"
+)
 ex = importlib.util.module_from_spec(_spec)
-sys.modules["export_ane_prefill"] = ex          # dataclasses resolves the module here
+sys.modules["export_ane_prefill"] = ex  # dataclasses resolves the module here
 _spec.loader.exec_module(ex)
 
 
-def reference(normed: np.ndarray, weights: dict, geom, mask: np.ndarray,
-              t: int, block_rows: int = 512) -> np.ndarray:
+def reference(
+    normed: np.ndarray, weights: dict, geom, mask: np.ndarray, t: int, block_rows: int = 512
+) -> np.ndarray:
     """The graph's arithmetic, in float32, from the graph's own definition.
 
     The attention is accumulated in query blocks: at a 4,096-token chunk the
@@ -61,6 +64,7 @@ def reference(normed: np.ndarray, weights: dict, geom, mask: np.ndarray,
     would hold two more copies of it. Blocking changes no arithmetic and keeps
     the check runnable beside everything else on a 24 GB machine.
     """
+
     def rms_head(x, weight):
         x = x.astype(np.float32)
         ms = (x * x).mean(-1, keepdims=True)
@@ -70,12 +74,17 @@ def reference(normed: np.ndarray, weights: dict, geom, mask: np.ndarray,
     cos = cos.astype(np.float32)
     sin = sin.astype(np.float32)
 
-    def rope(x):                       # x: [t, heads, hd]
+    def rope(x):  # x: [t, heads, hd]
         r = geom.rotary // 2
-        r1, r2, rest = x[..., :r], x[..., r:2 * r], x[..., 2 * r:]
-        return np.concatenate([r1 * cos[:, None, :] - r2 * sin[:, None, :],
-                               r2 * cos[:, None, :] + r1 * sin[:, None, :],
-                               rest], axis=-1)
+        r1, r2, rest = x[..., :r], x[..., r : 2 * r], x[..., 2 * r :]
+        return np.concatenate(
+            [
+                r1 * cos[:, None, :] - r2 * sin[:, None, :],
+                r2 * cos[:, None, :] + r1 * sin[:, None, :],
+                rest,
+            ],
+            axis=-1,
+        )
 
     hd, qh, kvh = geom.head_dim, geom.q_heads, geom.kv_heads
     xn = normed.astype(np.float32)
@@ -111,7 +120,7 @@ def reference(normed: np.ndarray, weights: dict, geom, mask: np.ndarray,
 def causal_mask(t: int) -> np.ndarray:
     mask = np.full((1, 1, t, t), ex.NEG, dtype=np.float32)
     for row in range(t):
-        mask[0, 0, row, :row + 1] = 0.0
+        mask[0, 0, row, : row + 1] = 0.0
     return mask
 
 
@@ -142,13 +151,12 @@ def selection_mask(t: int, budget: int, compress_ratio: int, seed: int):
         remaining = selection_width - (visible - complete)
         if remaining > 0:
             blocks = complete // compress_ratio
-            for block in sorted(range(blocks),
-                                key=lambda b: (-scores[b], b)):
+            for block in sorted(range(blocks), key=lambda b: (-scores[b], b)):
                 if remaining <= 0:
                     break
                 take = min(compress_ratio, remaining)
                 base = block * compress_ratio
-                row_mask[base:base + take] = 0.0
+                row_mask[base : base + take] = 0.0
                 remaining -= take
         kept[row] = int((row_mask[:visible] == 0.0).sum())
     return mask, kept
@@ -156,26 +164,37 @@ def selection_mask(t: int, budget: int, compress_ratio: int, seed: int):
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True,
-                        help="path to an installed .gturbo directory")
-    parser.add_argument("--layer", type=int, default=None,
-                        help="full-attention layer to check (default: the first)")
-    parser.add_argument("--chunk", type=int, default=ex.CHUNK,
-                        help=f"which sidecar width to check (default "
-                             f"{ex.CHUNK}). A model can carry several — "
-                             f"ane_prefill-1024 beside ane_prefill — and "
-                             f"checking the wrong one would report a pass for a "
-                             f"graph nobody asked about")
+    parser.add_argument("--model", required=True, help="path to an installed .gturbo directory")
+    parser.add_argument(
+        "--layer", type=int, default=None, help="full-attention layer to check (default: the first)"
+    )
+    parser.add_argument(
+        "--chunk",
+        type=int,
+        default=ex.CHUNK,
+        help=f"which sidecar width to check (default "
+        f"{ex.CHUNK}). A model can carry several — "
+        f"ane_prefill-1024 beside ane_prefill — and "
+        f"checking the wrong one would report a pass for a "
+        f"graph nobody asked about",
+    )
     parser.add_argument("--max-relative-error", type=float, default=2.0)
-    parser.add_argument("--min-selection-effect", type=float, default=1.0,
-                        help="the fold check fails when a synthetic QSA "
-                             "selection changes the reference by less than this "
-                             "percent of its mean magnitude, which would make "
-                             "the check vacuous")
-    parser.add_argument("--selection", action="store_true",
-                        help="run the folded-mask check even where the sidecar "
-                             "does not record selectionFolded (it runs "
-                             "automatically where it does)")
+    parser.add_argument(
+        "--min-selection-effect",
+        type=float,
+        default=1.0,
+        help="the fold check fails when a synthetic QSA "
+        "selection changes the reference by less than this "
+        "percent of its mean magnitude, which would make "
+        "the check vacuous",
+    )
+    parser.add_argument(
+        "--selection",
+        action="store_true",
+        help="run the folded-mask check even where the sidecar "
+        "does not record selectionFolded (it runs "
+        "automatically where it does)",
+    )
     parser.add_argument("--seed", type=int, default=7)
     args = parser.parse_args()
 
@@ -184,28 +203,32 @@ def main() -> int:
     model = pathlib.Path(args.model)
     directory = model / ex.sidecar_directory(args.chunk)
     if not (directory / "ane_prefill.json").exists():
-        raise SystemExit(f"{model} has no sidecar for chunk {args.chunk} "
-                         f"({directory.name}); export one first")
+        raise SystemExit(
+            f"{model} has no sidecar for chunk {args.chunk} ({directory.name}); export one first"
+        )
     manifest = json.loads((model / "manifest.json").read_text())
     entries = ex.read_index(model / "model_weights.bin")
     # The chunk is part of the geometry the graph was built for, so it comes
     # from the request, not from the manifest: `--chunk` selects both the
     # directory and the shapes the reference must use.
-    geom = dataclasses.replace(ex.geometry_for(manifest, entries),
-                               chunk=args.chunk)
+    geom = dataclasses.replace(ex.geometry_for(manifest, entries), chunk=args.chunk)
     sidecar = json.loads((directory / "ane_prefill.json").read_text())
     if sidecar.get("chunkTokens") != args.chunk:
-        raise SystemExit(f"{directory.name} holds a "
-                         f"{sidecar.get('chunkTokens')}-token sidecar, not "
-                         f"{args.chunk}; checking it would validate the wrong "
-                         f"graph")
+        raise SystemExit(
+            f"{directory.name} holds a "
+            f"{sidecar.get('chunkTokens')}-token sidecar, not "
+            f"{args.chunk}; checking it would validate the wrong "
+            f"graph"
+        )
     layer = args.layer if args.layer is not None else sidecar["layers"][0]
     if layer not in sidecar["layers"]:
         raise SystemExit(f"layer {layer} is not in the sidecar {sidecar['layers']}")
 
-    print(f"{model.name}: {geom.family}, hidden {geom.hidden}, "
-          f"{geom.q_heads}q/{geom.kv_heads}kv x{geom.head_dim}, "
-          f"rope {geom.rotary}, layer {layer}")
+    print(
+        f"{model.name}: {geom.family}, hidden {geom.hidden}, "
+        f"{geom.q_heads}q/{geom.kv_heads}kv x{geom.head_dim}, "
+        f"rope {geom.rotary}, layer {layer}"
+    )
 
     t = geom.chunk
     rng = np.random.default_rng(args.seed)
@@ -216,22 +239,21 @@ def main() -> int:
     expected = reference(normed, weights, geom, mask, t)
 
     package = directory / f"layer_{layer}.mlpackage"
-    model_ml = ct.models.MLModel(str(package),
-                                 compute_units=ct.ComputeUnit.CPU_AND_NE,
-                                 function_name="h0")
-    got = model_ml.predict({"normed": normed,
-                            "mask": mask.astype(np.float16)})["out"]
+    model_ml = ct.models.MLModel(
+        str(package), compute_units=ct.ComputeUnit.CPU_AND_NE, function_name="h0"
+    )
+    got = model_ml.predict({"normed": normed, "mask": mask.astype(np.float16)})["out"]
     got = np.asarray(got, dtype=np.float32).reshape(expected.shape)
 
     mean_expected = float(np.abs(expected).mean())
     relative = float(np.abs(got - expected).mean() / mean_expected * 100.0)
     peak = float(np.abs(got - expected).max() / np.abs(expected).max() * 100.0)
-    print(f"  mean |expected| {mean_expected:.4f} | mean |diff| "
-          f"{np.abs(got - expected).mean():.5f}")
+    print(
+        f"  mean |expected| {mean_expected:.4f} | mean |diff| {np.abs(got - expected).mean():.5f}"
+    )
     print(f"  relative error {relative:.3f} % (peak {peak:.3f} %)")
     if relative > args.max_relative_error:
-        print(f"FAIL: above --max-relative-error {args.max_relative_error} %",
-              file=sys.stderr)
+        print(f"FAIL: above --max-relative-error {args.max_relative_error} %", file=sys.stderr)
         return 1
 
     # A sparse-indexed family's graph is only correct because the runtime folds
@@ -246,38 +268,44 @@ def main() -> int:
             raise SystemExit(
                 "--selection/folded check needs an indexer geometry "
                 "(indexerBudget, indexerCompressRatio) and this manifest has "
-                "none")
+                "none"
+            )
         folded, kept = selection_mask(t, budget, ratio, args.seed)
         expected_folded = reference(normed, weights, geom, folded, t)
-        got_folded = model_ml.predict({"normed": normed,
-                                       "mask": folded.astype(np.float16)})["out"]
-        got_folded = np.asarray(got_folded,
-                                dtype=np.float32).reshape(expected_folded.shape)
+        got_folded = model_ml.predict({"normed": normed, "mask": folded.astype(np.float16)})["out"]
+        got_folded = np.asarray(got_folded, dtype=np.float32).reshape(expected_folded.shape)
         base = float(np.abs(expected_folded).mean())
-        folded_error = float(np.abs(got_folded - expected_folded).mean()
-                             / base * 100.0)
+        folded_error = float(np.abs(got_folded - expected_folded).mean() / base * 100.0)
         # How much the selection changes the attention at all, and what an ANE
         # run that forgot to fold would have produced against the causal
         # reference: the two should agree, and both must be visible.
-        effect = float(np.abs(expected_folded - expected).mean()
-                       / mean_expected * 100.0)
-        causal_error = float(np.abs(got_folded - expected).mean()
-                             / mean_expected * 100.0)
-        print(f"  folded mask: {kept.mean():.0f} of {t} keys kept on average "
-              f"({kept.min()}–{kept.max()})")
-        print(f"  folded relative error {folded_error:.3f} % "
-              f"(against reference under the same mask)")
-        print(f"  selection changes the reference by {effect:.3f} %, and a "
-              f"causal-only mask is off by {causal_error:.3f} %")
+        effect = float(np.abs(expected_folded - expected).mean() / mean_expected * 100.0)
+        causal_error = float(np.abs(got_folded - expected).mean() / mean_expected * 100.0)
+        print(
+            f"  folded mask: {kept.mean():.0f} of {t} keys kept on average "
+            f"({kept.min()}–{kept.max()})"
+        )
+        print(
+            f"  folded relative error {folded_error:.3f} % (against reference under the same mask)"
+        )
+        print(
+            f"  selection changes the reference by {effect:.3f} %, and a "
+            f"causal-only mask is off by {causal_error:.3f} %"
+        )
         if folded_error > args.max_relative_error:
-            print(f"FAIL: folded error above --max-relative-error "
-                  f"{args.max_relative_error} %", file=sys.stderr)
+            print(
+                f"FAIL: folded error above --max-relative-error {args.max_relative_error} %",
+                file=sys.stderr,
+            )
             return 1
         if effect < args.min_selection_effect:
-            print(f"FAIL: the synthetic selection moves the reference by only "
-                  f"{effect:.3f} % (< --min-selection-effect "
-                  f"{args.min_selection_effect} %); this check would pass "
-                  f"whatever the graph did with the mask", file=sys.stderr)
+            print(
+                f"FAIL: the synthetic selection moves the reference by only "
+                f"{effect:.3f} % (< --min-selection-effect "
+                f"{args.min_selection_effect} %); this check would pass "
+                f"whatever the graph did with the mask",
+                file=sys.stderr,
+            )
             return 1
         print("  ok — the graph honours the folded QSA selection")
 

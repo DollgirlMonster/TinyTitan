@@ -34,6 +34,7 @@ What is measured, and why it differs by store:
     python3 benchmark/memory_value.py memory
     python3 benchmark/memory_value.py report
 """
+
 from __future__ import annotations
 
 import json
@@ -103,6 +104,7 @@ def wait_for_consolidation(before: tuple[int, int], limit: float = 300) -> float
     print("  (no consolidation decision within the wait)")
     return time.time() - started
 
+
 # The parameters stage 1 is free to choose and stages 2 and 3 must match if
 # anything carried. The model states them as JSON, by name, so the harness
 # never has to guess what a number in prose refers to. The first version of
@@ -110,8 +112,12 @@ def wait_for_consolidation(before: tuple[int, int], limit: float = 300) -> float
 # ±70°" register as a field height; the second was tightened until it
 # matched nothing. A named field is the only thing that measures.
 PARAMETERS = (
-    "field_width", "field_height", "win_score",
-    "ball_start_speed", "ball_speed_increment", "ball_max_speed",
+    "field_width",
+    "field_height",
+    "win_score",
+    "ball_start_speed",
+    "ball_speed_increment",
+    "ball_max_speed",
     "paddle_speed",
 )
 
@@ -157,8 +163,8 @@ def post(messages, model, max_tokens=5200):
         }
     ).encode()
     request = urllib.request.Request(
-        f"{BASE}/chat/completions", data=body,
-        headers={"Content-Type": "application/json"})
+        f"{BASE}/chat/completions", data=body, headers={"Content-Type": "application/json"}
+    )
     started = time.time()
     with urllib.request.urlopen(request, timeout=3600) as response:
         payload = json.load(response)
@@ -191,8 +197,10 @@ def run_arm(arm: str):
         result = post([{"role": "user", "content": prompt}], model)
         result["stage"] = stage
         (OUT / f"{arm}-r{RUN}-{stage}.md").write_text(result["content"])
-        print(f"{arm}/{stage}: {result['completion_tokens']} tokens, "
-              f"{result['seconds']:.1f}s, prompt {result['prompt_tokens']}")
+        print(
+            f"{arm}/{stage}: {result['completion_tokens']} tokens, "
+            f"{result['seconds']:.1f}s, prompt {result['prompt_tokens']}"
+        )
         if stage == "swift":
             assert_arm_is_real(arm, result["prompt_tokens"])
         # The session is over. With consolidation on, the server distils it
@@ -220,7 +228,8 @@ def assert_arm_is_real(arm: str, prompt_tokens: int):
             f"ABORT: arm '{arm}' saw {prompt_tokens} prompt tokens at stage 1; "
             f"expected {floor}..{ceiling}. The server is not running the "
             f"configuration this arm claims. Rebuild the release binary and "
-            f"check TINYTITAN_MEMORY / TINYTITAN_MEMORY_TOOLS.")
+            f"check TINYTITAN_MEMORY / TINYTITAN_MEMORY_TOOLS."
+        )
 
 
 def extract(text: str) -> dict:
@@ -246,7 +255,7 @@ def extract(text: str) -> dict:
                 continue
             try:
                 found[name] = float(value)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 continue
         if found:
             return found
@@ -268,20 +277,23 @@ def compiles(stage: str, code: str) -> bool | None:
         if stage == "swift":
             path = work / "pong.swift"
             path.write_text(code)
-            done = subprocess.run(["swiftc", "-typecheck", str(path)],
-                                  capture_output=True, timeout=180)
+            done = subprocess.run(
+                ["swiftc", "-typecheck", str(path)], capture_output=True, timeout=180
+            )
             return done.returncode == 0
         if stage == "python":
             path = work / "pong.py"
             path.write_text(code)
-            done = subprocess.run([sys.executable, "-m", "py_compile", str(path)],
-                                  capture_output=True, timeout=120)
+            done = subprocess.run(
+                [sys.executable, "-m", "py_compile", str(path)], capture_output=True, timeout=120
+            )
             return done.returncode == 0
         if stage == "c99":
             path = work / "pong.c"
             path.write_text(code)
-            done = subprocess.run(["cc", "-std=c99", "-fsyntax-only", str(path)],
-                                  capture_output=True, timeout=180)
+            done = subprocess.run(
+                ["cc", "-std=c99", "-fsyntax-only", str(path)], capture_output=True, timeout=180
+            )
             return done.returncode == 0
     except Exception:
         return False
@@ -295,8 +307,10 @@ def report():
         if arm in ARMS:
             runs.setdefault(arm, {})[run] = json.loads(path.read_text())
 
-    print(f"\n{'arm':8s} {'run':>3s} {'stage':8s} {'prompt':>7s} {'completion':>11s} "
-          f"{'seconds':>8s} {'wait':>5s}  parameters")
+    print(
+        f"\n{'arm':8s} {'run':>3s} {'stage':8s} {'prompt':>7s} {'completion':>11s} "
+        f"{'seconds':>8s} {'wait':>5s}  parameters"
+    )
     carry = {}
     for arm in ARMS:
         for run, results in sorted(runs.get(arm, {}).items()):
@@ -304,9 +318,11 @@ def report():
             for result in results:
                 stage = result["stage"]
                 values = extract(result["content"])
-                print(f"{arm:8s} {run:>3s} {stage:8s} {result['prompt_tokens']:7d} "
-                      f"{result['completion_tokens']:11d} {result['seconds']:8.1f} "
-                      f"{result.get('consolidation_wait', 0):5.0f}  {values}")
+                print(
+                    f"{arm:8s} {run:>3s} {stage:8s} {result['prompt_tokens']:7d} "
+                    f"{result['completion_tokens']:11d} {result['seconds']:8.1f} "
+                    f"{result.get('consolidation_wait', 0):5.0f}  {values}"
+                )
                 if stage == "swift":
                     baseline = values
                 else:
@@ -316,8 +332,10 @@ def report():
                     carry[arm][run][0] += agreed
                     carry[arm][run][1] += len(shared)
 
-    print("\nCarry-over per run: parameters fixed in the Swift stage that the later "
-          "stages reproduce, without the prompt restating them.")
+    print(
+        "\nCarry-over per run: parameters fixed in the Swift stage that the later "
+        "stages reproduce, without the prompt restating them."
+    )
     for arm in ARMS:
         per_run = carry.get(arm, {})
         if not per_run:

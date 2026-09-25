@@ -24,7 +24,9 @@ DEFAULT_PROMPT_CACHE_MEMORY_MIB = 256
 # 12 GiB that Qwen3.8-Flash-Next now ships with, and the published protocol would
 # stop measuring what a user actually gets. Pass ram_budget= explicitly to probe
 # a specific size.
-DEFAULT_EXPERT_CACHE_BUDGET = os.environ.get("TINYTITAN_BENCH_RAM_BUDGET")  # None: the shipped default
+DEFAULT_EXPERT_CACHE_BUDGET = os.environ.get(
+    "TINYTITAN_BENCH_RAM_BUDGET"
+)  # None: the shipped default
 DEFAULT_KV_BITS = 8
 DEFAULT_CONCISE = False
 DEFAULT_FAST_ALIAS = False
@@ -39,8 +41,12 @@ def configured_thinking_mode(
     source = os.environ if environment is None else environment
     value = source.get("TINYTITAN_THINKING_MODE", "off").lower()
     aliases = {
-        "0": "off", "false": "off", "no": "off",
-        "1": "on", "true": "on", "yes": "on",
+        "0": "off",
+        "false": "off",
+        "no": "off",
+        "1": "on",
+        "true": "on",
+        "yes": "on",
     }
     value = aliases.get(value, value)
     if value not in SUPPORTED_THINKING_MODES:
@@ -78,9 +84,7 @@ def catalog_id_for(model: str | os.PathLike[str]) -> str:
     model_id = data.get("modelID")
     bits = data.get("quant", {}).get("routedExpert", {}).get("weightBits")
     if not isinstance(model_id, str) or not isinstance(bits, int):
-        raise ValueError(
-            f"{manifest} declares no modelID / routedExpert.weightBits"
-        )
+        raise ValueError(f"{manifest} declares no modelID / routedExpert.weightBits")
     return f"{model_id}_{bits}-Bit"
 
 
@@ -125,12 +129,18 @@ def server_command(
     command = [
         "bash",
         str(LAUNCHER),
-        "--client", "server",
-        "--model", catalog_id_for(model),
-        "--port", str(port),
-        "--thinking", thinking_mode,
-        "--engine", engine,
-        "--kv", str(DEFAULT_KV_BITS),
+        "--client",
+        "server",
+        "--model",
+        catalog_id_for(model),
+        "--port",
+        str(port),
+        "--thinking",
+        thinking_mode,
+        "--engine",
+        engine,
+        "--kv",
+        str(DEFAULT_KV_BITS),
     ]
     # multi-prefix is the launcher's default, so only the off arm is sent; both
     # are spelled out in the launcher and neither is a hidden default here.
@@ -169,21 +179,20 @@ def resolve_api_model(port, *, timeout=5):
     to one install -- which is what it did.
     """
     import http.client
+
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
         conn.request("GET", "/v1/models")
         data = json.loads(conn.getresponse().read().decode())
         conn.close()
-        ids = [row["id"] for row in data.get("data", [])
-               if not row["id"].endswith("-fast")]
+        ids = [row["id"] for row in data.get("data", []) if not row["id"].endswith("-fast")]
         if ids:
             return ids[0]
-    except (OSError, ValueError, KeyError):
+    except OSError, ValueError, KeyError:
         pass
     return DEFAULT_API_MODEL
 
 
-def request_model(*, fast: bool = DEFAULT_FAST_ALIAS,
-                  base: str | None = None) -> str:
+def request_model(*, fast: bool = DEFAULT_FAST_ALIAS, base: str | None = None) -> str:
     """Return the base API model unless an experiment explicitly asks for fast."""
     return (base or DEFAULT_API_MODEL) + ("-fast" if fast else "")

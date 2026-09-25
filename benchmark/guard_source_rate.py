@@ -42,6 +42,7 @@ the user never said anywhere fails. That direction is the safe one: it
 under-reports mislabels, so a rate this measures as low could be lower still
 but never higher.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -61,19 +62,67 @@ _spec.loader.exec_module(sim)
 # Words that carry no claim. A fact grounded only in these is grounded in
 # nothing, so they are removed before the overlap is taken.
 SCAFFOLD = {
-    "the", "a", "an", "is", "are", "was", "were", "has", "have", "had", "in",
-    "on", "at", "of", "to", "and", "or", "but", "that", "this", "it", "its",
-    "as", "by", "for", "with", "from", "not", "no", "be", "been", "being",
-    "he", "she", "they", "his", "her", "their", "who", "which", "what",
-    "when", "where", "chapter", "character", "story", "book", "novel",
-    "user", "assistant", "model", "fact", "facts", "memory", "session",
+    "the",
+    "a",
+    "an",
+    "is",
+    "are",
+    "was",
+    "were",
+    "has",
+    "have",
+    "had",
+    "in",
+    "on",
+    "at",
+    "of",
+    "to",
+    "and",
+    "or",
+    "but",
+    "that",
+    "this",
+    "it",
+    "its",
+    "as",
+    "by",
+    "for",
+    "with",
+    "from",
+    "not",
+    "no",
+    "be",
+    "been",
+    "being",
+    "he",
+    "she",
+    "they",
+    "his",
+    "her",
+    "their",
+    "who",
+    "which",
+    "what",
+    "when",
+    "where",
+    "chapter",
+    "character",
+    "story",
+    "book",
+    "novel",
+    "user",
+    "assistant",
+    "model",
+    "fact",
+    "facts",
+    "memory",
+    "session",
 }
 WORD = re.compile(r"[a-z0-9]+")
 
 
 def significant(text: str) -> set[str]:
-    return {w for w in WORD.findall(text.lower())
-            if w not in SCAFFOLD and len(w) > 2}
+    return {w for w in WORD.findall(text.lower()) if w not in SCAFFOLD and len(w) > 2}
 
 
 # Inflection, not paraphrase. The first two candidates this script produced
@@ -118,16 +167,19 @@ def stems(words: set[str]) -> set[str]:
 
 
 def newest_label() -> str | None:
-    runs = sorted(LOGS.glob("memval-scratch-*/book-auto-r*"),
-                  key=lambda p: p.stat().st_mtime, reverse=True)
+    runs = sorted(
+        LOGS.glob("memval-scratch-*/book-auto-r*"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
     if not runs:
         return None
     return runs[0].parent.name.removeprefix("memval-scratch-")
 
 
 def journal_for(label: str) -> Path | None:
-    paths = [Path(p) for p in glob.glob(
-        str(LOGS / f"memval-scratch-{label}/book-auto-r*/tinytitan/*/*.ndjson"))]
+    paths = [
+        Path(p)
+        for p in glob.glob(str(LOGS / f"memval-scratch-{label}/book-auto-r*/tinytitan/*/*.ndjson"))
+    ]
     real = [p for p in paths if "_global" not in p.name and p.stat().st_size > 0]
     return max(real, key=lambda p: p.stat().st_size) if real else None
 
@@ -148,17 +200,19 @@ def facts(journal: Path) -> list[dict]:
         if not item:
             continue
         provenance = item.get("provenance") or {}
-        written.append({
-            "session_id": provenance.get("sessionID", ""),
-            "address": f"{item['namespace'].removeprefix('k.')}/{item['key']}",
-            "value": str(item.get("value", "")),
-            # The record's `isUserAsserted` is not stored as a field: the
-            # store translates it into the provenance author, which is what
-            # the guard reads back on the next write. So that is what has to
-            # be scored -- reading the record field here would silently find
-            # nothing and report a perfect run.
-            "user_asserted": (provenance.get("author") == "user"),
-        })
+        written.append(
+            {
+                "session_id": provenance.get("sessionID", ""),
+                "address": f"{item['namespace'].removeprefix('k.')}/{item['key']}",
+                "value": str(item.get("value", "")),
+                # The record's `isUserAsserted` is not stored as a field: the
+                # store translates it into the provenance author, which is what
+                # the guard reads back on the next write. So that is what has to
+                # be scored -- reading the record field here would silently find
+                # nothing and report a perfect run.
+                "user_asserted": (provenance.get("author") == "user"),
+            }
+        )
     order: list[str] = []
     for fact in written:
         if fact["session_id"] not in order:
@@ -173,9 +227,12 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", default=None)
     ap.add_argument("--show", action="store_true")
-    ap.add_argument("--threshold", type=float, default=0.5,
-                    help="fraction of a value's distinctive words that must "
-                         "appear in the user's own text")
+    ap.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="fraction of a value's distinctive words that must appear in the user's own text",
+    )
     args = ap.parse_args()
 
     label = args.label or newest_label()
@@ -236,38 +293,46 @@ def main() -> int:
 
     print(f"{label}: {journal.name}\n")
     print(f"  facts written                {len(written):5d}")
-    print(f"  labelled user                {len(labelled):5d}  "
-          f"({len(labelled) / len(written):.0%})")
+    print(
+        f"  labelled user                {len(labelled):5d}  ({len(labelled) / len(written):.0%})"
+    )
     print(f"  labelled model               {len(written) - len(labelled):5d}")
-    print(f"  demoted, value not atomic    {demoted:5d}  "
-          f"(a composite cannot have one source)")
+    print(f"  demoted, value not atomic    {demoted:5d}  (a composite cannot have one source)")
     print(f"  carrying authority           {len(claimed):5d}")
     if claimed:
         rate = len(mislabelled) / len(claimed)
         print(f"  of those, mislabelled        {len(mislabelled):5d}  ({rate:.1%})")
         if derived_scores:
-            print(f"\n  control: model-labelled facts that would also score as "
-                  f"the user's: {derived_grounded}/{len(derived_scores)} "
-                  f"({derived_grounded / len(derived_scores):.0%})")
-            print("  (a rate near the user rate would mean the test does not "
-                  "discriminate)")
-        print(f"\n  {len(mislabelled)} candidate(s) below the grounding "
-              f"threshold -- read them; the count is not the verdict")
+            print(
+                f"\n  control: model-labelled facts that would also score as "
+                f"the user's: {derived_grounded}/{len(derived_scores)} "
+                f"({derived_grounded / len(derived_scores):.0%})"
+            )
+            print("  (a rate near the user rate would mean the test does not discriminate)")
+        print(
+            f"\n  {len(mislabelled)} candidate(s) below the grounding "
+            f"threshold -- read them; the count is not the verdict"
+        )
     else:
-        print("\n  nothing was labelled user; the guard would never fire, "
-              "and the gate cannot be judged from this run")
+        print(
+            "\n  nothing was labelled user; the guard would never fire, "
+            "and the gate cannot be judged from this run"
+        )
 
     if mislabelled:
-        print(f"\n{len(mislabelled)} facts claiming the user's authority "
-              f"that the user never said:")
+        print(f"\n{len(mislabelled)} facts claiming the user's authority that the user never said:")
         for fact in mislabelled:
-            print(f"  s{fact['session']:<2d} {fact['address']:38s} "
-                  f"overlap={fact['overlap']:.0%}  {fact['value'][:70]}")
+            print(
+                f"  s{fact['session']:<2d} {fact['address']:38s} "
+                f"overlap={fact['overlap']:.0%}  {fact['value'][:70]}"
+            )
     if args.show:
         print(f"\n{len(grounded)} grounded:")
         for fact in grounded:
-            print(f"  s{fact['session']:<2d} {fact['address']:38s} "
-                  f"overlap={fact['overlap']:.0%}  {fact['value'][:70]}")
+            print(
+                f"  s{fact['session']:<2d} {fact['address']:38s} "
+                f"overlap={fact['overlap']:.0%}  {fact['value'][:70]}"
+            )
     return 0 if claimed and not mislabelled else 2
 
 

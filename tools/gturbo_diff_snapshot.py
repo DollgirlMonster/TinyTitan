@@ -15,6 +15,7 @@ Reads the `.gturbo` resident index directly (layout: `GTurboEncoders.swift`,
 24-byte header and 72-byte entries) and the snapshot's safetensors shards, so
 it needs neither the Swift runtime nor a model in memory.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,12 +50,12 @@ def read_resident(gturbo: Path) -> dict[str, list[tuple[str, bytes]]]:
         bias_off, bias_size = struct.unpack_from("<QQ", raw, off + 56)
         # `nameOffset` is file-absolute (ResidentWriter adds the string-table
         # base itself), not relative to the table.
-        name = raw[name_off:name_off + name_len].decode()
-        parts: list[tuple[str, bytes]] = [("weight", raw[file_off:file_off + size])]
+        name = raw[name_off : name_off + name_len].decode()
+        parts: list[tuple[str, bytes]] = [("weight", raw[file_off : file_off + size])]
         if scale_size:
-            parts.append(("scales", raw[scale_off:scale_off + scale_size]))
+            parts.append(("scales", raw[scale_off : scale_off + scale_size]))
         if bias_size:
-            parts.append(("biases", raw[bias_off:bias_off + bias_size]))
+            parts.append(("biases", raw[bias_off : bias_off + bias_size]))
         out[name] = parts
         _ = (resident_size, s0, s1, s2, s3)
     return out
@@ -64,14 +65,14 @@ def read_safetensors(path: Path) -> dict[str, tuple[int, bytes]]:
     """name -> (data_offset, data_bytes) for one shard."""
     raw = path.read_bytes()
     header_len = struct.unpack_from("<Q", raw, 0)[0]
-    header = json.loads(raw[8:8 + header_len])
+    header = json.loads(raw[8 : 8 + header_len])
     data_base = 8 + header_len
     out: dict[str, tuple[int, bytes]] = {}
     for name, spec in header.items():
         if name == "__metadata__":
             continue
         begin, end = spec["data_offsets"]
-        out[name] = (data_base + begin, raw[data_base + begin:data_base + end])
+        out[name] = (data_base + begin, raw[data_base + begin : data_base + end])
         _ = end
     return out
 
@@ -86,10 +87,9 @@ def main(argv: list[str]) -> int:
 
     index = json.loads((snapshot / "model.safetensors.index.json").read_text())
     shards: dict[str, dict[str, bytes]] = {}
-    for tensor_name, shard in index["weight_map"].items():
+    for _tensor_name, shard in index["weight_map"].items():
         if shard not in shards:
-            shards[shard] = {n: b for n, (_o, b) in
-                             read_safetensors(snapshot / shard).items()}
+            shards[shard] = {n: b for n, (_o, b) in read_safetensors(snapshot / shard).items()}
     source = {name: data for shard in shards.values() for name, data in shard.items()}
 
     # A destination name is the source name with the family's prefixing applied;
@@ -111,8 +111,9 @@ def main(argv: list[str]) -> int:
             hits = [(n, d) for n, d in source.items() if n.endswith(tail)]
             if len(hits) != 1:
                 missing += 1
-                problems.append(f"{name}: no source tensor (suffix {tail!r}, "
-                                f"{len(hits)} candidates)")
+                problems.append(
+                    f"{name}: no source tensor (suffix {tail!r}, {len(hits)} candidates)"
+                )
                 continue
             candidate = hits[0]
         source_name, data = candidate
@@ -120,13 +121,15 @@ def main(argv: list[str]) -> int:
         if weight != data:
             mismatched += 1
             problems.append(
-                f"{name}: {len(weight)} bytes != source {source_name} "
-                f"{len(data)} bytes")
+                f"{name}: {len(weight)} bytes != source {source_name} {len(data)} bytes"
+            )
 
     for line in problems[:40]:
         print(f"  {line}")
-    print(f"\nresidents={len(resident)} compared={checked} "
-          f"mismatched={mismatched} unmatched={missing}")
+    print(
+        f"\nresidents={len(resident)} compared={checked} "
+        f"mismatched={mismatched} unmatched={missing}"
+    )
     if mismatched or missing:
         print("FAIL: the repack is not byte-identical to its source snapshot")
         return 1

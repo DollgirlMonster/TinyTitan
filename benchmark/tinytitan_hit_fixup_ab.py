@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import http.client
 import json
-import os
 import pathlib
 import platform
 import re
@@ -21,11 +20,11 @@ import sys
 import time
 
 from tinytitan_profile import (
-    DEFAULT_API_MODEL,
     DEFAULT_MODEL_PATH,
     benchmark_log_path,
     server_command,
-    server_environment, resolve_api_model,
+    server_environment,
+    resolve_api_model,
 )
 
 
@@ -39,7 +38,7 @@ PROCESS_PATTERN = (
 PROMPTS = {
     "short": "Explain why a mutex protects shared state in one short paragraph.",
     "medium": "Explain how an SSD-backed sparse mixture-of-experts cache can bound memory "
-              "while preserving inference correctness. Include hits, misses, and eviction.",
+    "while preserving inference correctness. Include hits, misses, and eviction.",
     "long": (ROOT / "AGENTS.md").read_text(),
 }
 
@@ -56,11 +55,13 @@ def preflight() -> dict[str, object]:
             raise RuntimeError(f"incomplete model installation: missing {required}")
     process_listing = command_output(["ps", "-axo", "pid=,command="])
     process_pattern = re.compile(PROCESS_PATTERN)
-    processes = [line.strip() for line in process_listing.splitlines()
-                 if process_pattern.search(line)]
+    processes = [
+        line.strip() for line in process_listing.splitlines() if process_pattern.search(line)
+    ]
     if processes:
-        raise RuntimeError("model process already running; refusing to benchmark:\n"
-                           + "\n".join(processes))
+        raise RuntimeError(
+            "model process already running; refusing to benchmark:\n" + "\n".join(processes)
+        )
     pressure = command_output(["memory_pressure", "-Q"])
     free = re.search(r"free percentage:\s*(\d+)%", pressure)
     if not free or int(free.group(1)) < 10:
@@ -104,21 +105,24 @@ def memory_snapshot(process_id: int) -> dict[str, object]:
 
 
 def request(prompt: str) -> dict[str, object]:
-    payload = json.dumps({
-        "model": resolve_api_model(PORT),
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.6,
-        "top_p": 0.95,
-        "top_k": 20,
-        "presence_penalty": 0.0,
-        "seed": 41,
-        "max_completion_tokens": 128,
-        "stream": False,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": resolve_api_model(PORT),
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.6,
+            "top_p": 0.95,
+            "top_k": 20,
+            "presence_penalty": 0.0,
+            "seed": 41,
+            "max_completion_tokens": 128,
+            "stream": False,
+        }
+    ).encode()
     started = time.monotonic()
     connection = http.client.HTTPConnection("127.0.0.1", PORT, timeout=1800)
-    connection.request("POST", "/v1/chat/completions", body=payload,
-                       headers={"Content-Type": "application/json"})
+    connection.request(
+        "POST", "/v1/chat/completions", body=payload, headers={"Content-Type": "application/json"}
+    )
     response = connection.getresponse()
     body = response.read()
     connection.close()
@@ -143,9 +147,14 @@ def parse_footers(log_path: pathlib.Path) -> tuple[list[str], list[str]]:
     return generation, runner
 
 
-def run_case(mode: str, prompt_name: str, prompt: str,
-             io_backend: str = "pread", io_sync: str = "host",
-             io_submission: str = "deferred") -> tuple[list[dict[str, object]], pathlib.Path]:
+def run_case(
+    mode: str,
+    prompt_name: str,
+    prompt: str,
+    io_backend: str = "pread",
+    io_sync: str = "host",
+    io_submission: str = "deferred",
+) -> tuple[list[dict[str, object]], pathlib.Path]:
     environment = server_environment()
     environment["TINYTITAN_DECODE_EXPERT_EXECUTION"] = mode
     environment["TINYTITAN_EXPERT_IO_BACKEND"] = io_backend
@@ -153,8 +162,11 @@ def run_case(mode: str, prompt_name: str, prompt: str,
     environment["TINYTITAN_EXPERT_IO_SUBMISSION"] = io_submission
     environment["TINYTITAN_RUNNER_STATS"] = "1"
     environment["TINYTITAN_KERNEL_STATS"] = "1"
-    log_path = pathlib.Path(benchmark_log_path(
-        f"expert-ab-{mode}-{io_backend}-{io_sync}-{io_submission}-{prompt_name}.log"))
+    log_path = pathlib.Path(
+        benchmark_log_path(
+            f"expert-ab-{mode}-{io_backend}-{io_sync}-{io_submission}-{prompt_name}.log"
+        )
+    )
     with log_path.open("w") as log:
         process = subprocess.Popen(
             server_command(SERVER, PORT),
@@ -169,17 +181,19 @@ def run_case(mode: str, prompt_name: str, prompt: str,
             results = []
             for warmth in ("cold", "warm"):
                 print(f"{mode:9s} {prompt_name:6s} {warmth}", flush=True)
-                results.append({
-                    "mode": mode,
-                    "io_backend": io_backend,
-                    "io_sync": io_sync,
-                    "io_submission": io_submission,
-                    "prompt": prompt_name,
-                    "warmth": warmth,
-                    "baseline_memory": baseline_memory,
-                    **request(prompt),
-                    "memory_after": memory_snapshot(process.pid),
-                })
+                results.append(
+                    {
+                        "mode": mode,
+                        "io_backend": io_backend,
+                        "io_sync": io_sync,
+                        "io_submission": io_submission,
+                        "prompt": prompt_name,
+                        "warmth": warmth,
+                        "baseline_memory": baseline_memory,
+                        **request(prompt),
+                        "memory_after": memory_snapshot(process.pid),
+                    }
+                )
         finally:
             process.terminate()
             try:
@@ -191,7 +205,8 @@ def run_case(mode: str, prompt_name: str, prompt: str,
     if len(generation) != len(results) or len(runner) != len(results):
         raise RuntimeError(
             f"missing benchmark footers in {log_path}: "
-            f"generation={len(generation)} runner={len(runner)} expected={len(results)}")
+            f"generation={len(generation)} runner={len(runner)} expected={len(results)}"
+        )
     for index, result in enumerate(results):
         result["generation_footer"] = generation[index]
         result["runner_footer"] = runner[index]
@@ -222,21 +237,27 @@ def main() -> int:
 
     output = ROOT / ".build/benchmark-results/hit-fixup-ab.json"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps({
-        "metadata": metadata,
-        "configuration": {
-            "temperature": 0.6,
-            "top_p": 0.95,
-            "top_k": 20,
-            "presence_penalty": 0.0,
-            "seed": 41,
-            "max_completion_tokens": 128,
-        },
-        "logs": logs,
-        "results": all_results,
-        "response_mismatches": mismatches,
-        "passed": not mismatches,
-    }, indent=2) + "\n")
+    output.write_text(
+        json.dumps(
+            {
+                "metadata": metadata,
+                "configuration": {
+                    "temperature": 0.6,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                    "presence_penalty": 0.0,
+                    "seed": 41,
+                    "max_completion_tokens": 128,
+                },
+                "logs": logs,
+                "results": all_results,
+                "response_mismatches": mismatches,
+                "passed": not mismatches,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(f"results: {output}")
     if mismatches:
         print("ERROR: response mismatches: " + ", ".join(mismatches), file=sys.stderr)

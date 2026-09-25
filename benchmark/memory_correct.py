@@ -39,6 +39,7 @@ Two arms, identical prompts:
     python3 benchmark/memory_correct.py control
     python3 benchmark/memory_correct.py report
 """
+
 from __future__ import annotations
 
 import json
@@ -51,7 +52,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ARMS = ("control", "auto")
-OUT = Path(os.environ.get("TINYTITAN_MEMVAL_RESULTS", ROOT / ".build/benchmark-logs/memory-correct"))
+OUT = Path(
+    os.environ.get("TINYTITAN_MEMVAL_RESULTS", ROOT / ".build/benchmark-logs/memory-correct")
+)
 PORT = int(os.environ.get("TINYTITAN_PORT", "8096"))
 BASE = f"http://127.0.0.1:{PORT}/v1"
 # Which run of the arm this is; results are kept per run so repeats can be
@@ -133,44 +136,51 @@ is the project brief. Every decision in it holds until I say otherwise.
 # be re-briefing the model, not testing memory.
 WORK = {
     1: "Sketch the module layout for the service: list the files and give one "
-       "line each on what belongs in them.",
+    "line each on what belongs in them.",
     2: "Write the accounts table definition and the query that fetches one "
-       "account by tenant and account id, plus the migration file that "
-       "creates the table.",
+    "account by tenant and account id, plus the migration file that "
+    "creates the table.",
     3: "Write the helper that delivers an outbound webhook with three "
-       "attempts and a growing delay between them, including the log line it "
-       "emits per attempt.",
+    "attempts and a growing delay between them, including the log line it "
+    "emits per attempt.",
     4: "We are moving off the file-based store. The storage engine is now "
-       "Postgres, one schema per tenant -- not SQLite. Rewrite the accounts "
-       "table definition and the fetch-by-id query for it.",
+    "Postgres, one schema per tenant -- not SQLite. Rewrite the accounts "
+    "table definition and the fetch-by-id query for it.",
     5: "I changed my mind about error handling. Nothing throws any more: "
-       "every fallible function returns a value that is either an ok case or "
-       "an err case, and the caller has to check which. Convert the webhook "
-       "helper you wrote earlier to that shape.",
+    "every fallible function returns a value that is either an ok case or "
+    "an err case, and the caller has to check which. Convert the webhook "
+    "helper you wrote earlier to that shape.",
     6: "One more change: the naming convention is camelCase from now on -- "
-       "columns, JSON fields and function names. Then write the transfer "
-       "module: one function that moves an amount between two accounts "
-       "inside a single transaction.",
+    "columns, JSON fields and function names. Then write the transfer "
+    "module: one function that moves an amount between two accounts "
+    "inside a single transaction.",
     7: "Write the ledger entry append path: one row per side of a transfer, "
-       "returning the pair that was written. Follow every decision that is "
-       "currently in force.",
+    "returning the pair that was written. Follow every decision that is "
+    "currently in force.",
     8: "Write the test file for the transfer module, covering a successful "
-       "transfer and an insufficient-funds failure.",
+    "transfer and an insufficient-funds failure.",
 }
 
 QUIZ_KEYS = (
-    "project_name", "language", "storage_engine", "naming_convention",
-    "concurrency_model", "target_platform", "errors_are_thrown",
-    "logging_format", "test_framework", "revisions_count",
+    "project_name",
+    "language",
+    "storage_engine",
+    "naming_convention",
+    "concurrency_model",
+    "target_platform",
+    "errors_are_thrown",
+    "logging_format",
+    "test_framework",
+    "revisions_count",
 )
 
 # The session from which each key's answer changes. A key absent here was
 # never revised. This drives both truth() and the revised/unrevised split, so
 # the two can never disagree about which keys are which.
 REVISED_AT = {
-    "storage_engine": 4,      # SQLite -> Postgres
-    "errors_are_thrown": 5,   # throw -> return an ok/err value
-    "naming_convention": 6,   # snake_case -> camelCase
+    "storage_engine": 4,  # SQLite -> Postgres
+    "errors_are_thrown": 5,  # throw -> return an ok/err value
+    "naming_convention": 6,  # snake_case -> camelCase
     # Not a decision of its own: the count of decisions changed so far. It is
     # in the revised bucket because it is only ever wrong for the same reason
     # the others are -- the model was handed a past that never changed.
@@ -196,7 +206,7 @@ QUIZ = (
     "project_name; language; storage_engine; naming_convention; "
     "concurrency_model (a few words); target_platform (an operating system); "
     "errors_are_thrown (true/false: does a failing operation throw?); "
-    "logging_format (\"json\" or \"text\"); test_framework; revisions_count "
+    'logging_format ("json" or "text"); test_framework; revisions_count '
     "(an integer: how many of my earlier decisions have I since changed?). "
     "Answer with what is in force now, not with what was decided first."
 )
@@ -249,20 +259,23 @@ def session_prompt(session: int) -> str:
 
 
 def post(messages, model, max_tokens=2500):
-    body = json.dumps({"model": model, "messages": messages,
-                       "max_completion_tokens": max_tokens,
-                       **sampling()}).encode()
-    request = urllib.request.Request(f"{BASE}/chat/completions", data=body,
-                                     headers={"Content-Type": "application/json"})
+    body = json.dumps(
+        {"model": model, "messages": messages, "max_completion_tokens": max_tokens, **sampling()}
+    ).encode()
+    request = urllib.request.Request(
+        f"{BASE}/chat/completions", data=body, headers={"Content-Type": "application/json"}
+    )
     started = time.time()
     with urllib.request.urlopen(request, timeout=3600) as response:
         payload = json.load(response)
     choice = payload["choices"][0]["message"]
     usage = payload.get("usage", {})
-    return {"content": choice.get("content") or "",
-            "prompt_tokens": usage.get("prompt_tokens", 0),
-            "completion_tokens": usage.get("completion_tokens", 0),
-            "seconds": time.time() - started}
+    return {
+        "content": choice.get("content") or "",
+        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "completion_tokens": usage.get("completion_tokens", 0),
+        "seconds": time.time() - started,
+    }
 
 
 def model_id():
@@ -296,9 +309,11 @@ def assert_arm_is_real(arm: str, prompt_tokens: int):
             raise SystemExit(
                 f"ABORT: arm '{arm}' wants memory={'on' if wants else 'off'} and "
                 f"the server log says {'on' if enabled else 'off'}. Rebuild the "
-                f"release binary and check TINYTITAN_MEMORY.")
-        print(f"  arm '{arm}' verified against the server log "
-              f"(memory {'on' if enabled else 'off'})")
+                f"release binary and check TINYTITAN_MEMORY."
+            )
+        print(
+            f"  arm '{arm}' verified against the server log (memory {'on' if enabled else 'off'})"
+        )
         return
     # No log: a band wide enough that only a genuinely wrong configuration
     # trips it. The control cannot exceed the bare prompt by much; the memory
@@ -309,9 +324,12 @@ def assert_arm_is_real(arm: str, prompt_tokens: int):
         raise SystemExit(
             f"ABORT: arm '{arm}' saw {prompt_tokens} prompt tokens in session 1; "
             f"expected {floor}..{ceiling}, and no server log was available to "
-            f"check exactly. Set TINYTITAN_MEMVAL_SERVER_LOG.")
-    print(f"  arm '{arm}' plausible on prompt size ({prompt_tokens} tokens); "
-          f"set TINYTITAN_MEMVAL_SERVER_LOG for an exact check")
+            f"check exactly. Set TINYTITAN_MEMVAL_SERVER_LOG."
+        )
+    print(
+        f"  arm '{arm}' plausible on prompt size ({prompt_tokens} tokens); "
+        f"set TINYTITAN_MEMVAL_SERVER_LOG for an exact check"
+    )
 
 
 def extract_quiz(text: str) -> dict:
@@ -419,8 +437,7 @@ def score(session: int, answers: dict) -> tuple[int, int, int, int, int, int]:
         elif where == "derived":
             derived_total += 1
             derived_correct += hit
-    return (correct, len(QUIZ_KEYS), revised_correct, revised_total,
-            derived_correct, derived_total)
+    return (correct, len(QUIZ_KEYS), revised_correct, revised_total, derived_correct, derived_total)
 
 
 def resurrected(session: int, answers: dict) -> list[str]:
@@ -447,15 +464,23 @@ def run_arm(arm: str):
         result = post([{"role": "user", "content": session_prompt(session)}], model)
         answers = extract_quiz(result["content"])
         correct, total, revised_correct, revised_total = score(session, answers)
-        result.update(session=session, answers=answers, correct=correct, total=total,
-                      revised_correct=revised_correct, revised_total=revised_total,
-                      resurrected=resurrected(session, answers))
+        result.update(
+            session=session,
+            answers=answers,
+            correct=correct,
+            total=total,
+            revised_correct=revised_correct,
+            revised_total=revised_total,
+            resurrected=resurrected(session, answers),
+        )
         (OUT / f"{arm}-r{RUN}-{session:02d}.md").write_text(result["content"])
         stale = ",".join(result["resurrected"]) or "-"
-        print(f"{arm}/session {session}: {result['completion_tokens']} tokens, "
-              f"{result['seconds']:.0f}s, prompt {result['prompt_tokens']}, "
-              f"quiz {correct}/{total}, revised {revised_correct}/{revised_total}, "
-              f"stale {stale}")
+        print(
+            f"{arm}/session {session}: {result['completion_tokens']} tokens, "
+            f"{result['seconds']:.0f}s, prompt {result['prompt_tokens']}, "
+            f"quiz {correct}/{total}, revised {revised_correct}/{revised_total}, "
+            f"stale {stale}"
+        )
         if session == 1:
             assert_arm_is_real(arm, result["prompt_tokens"])
         # The session is over; with consolidation on the server distils it in
@@ -474,18 +499,29 @@ def report():
             if arm in ARMS:
                 runs.setdefault(arm, {})[run] = json.loads(path.read_text())
     if not runs:
-        print(f"No results in {OUT}. Run an arm first: "
-              f"python3 benchmark/memory_correct.py {ARMS[0]}")
+        print(
+            f"No results in {OUT}. Run an arm first: python3 benchmark/memory_correct.py {ARMS[0]}"
+        )
         return
 
-    print(f"\n{'arm':8s} {'run':>3s} {'session':>7s} {'prompt':>7s} {'completion':>11s} "
-          f"{'seconds':>8s} {'wait':>5s} {'quiz':>6s} {'revised':>8s}  wrong")
+    print(
+        f"\n{'arm':8s} {'run':>3s} {'session':>7s} {'prompt':>7s} {'completion':>11s} "
+        f"{'seconds':>8s} {'wait':>5s} {'quiz':>6s} {'revised':>8s}  wrong"
+    )
     summary_rows = []
     for arm in ARMS:
         for run, results in sorted(runs.get(arm, {}).items()):
-            totals = dict(correct=0, total=0, revised_correct=0, revised_total=0,
-                          unrevised_correct=0, unrevised_total=0,
-                          derived_correct=0, derived_total=0, stale=0)
+            totals = dict(
+                correct=0,
+                total=0,
+                revised_correct=0,
+                revised_total=0,
+                unrevised_correct=0,
+                unrevised_total=0,
+                derived_correct=0,
+                derived_total=0,
+                stale=0,
+            )
             prompt = completion = seconds = 0
             for result in results:
                 session = result["session"]
@@ -494,19 +530,27 @@ def report():
                 # Rescored from the stored answers, never from the numbers the
                 # run wrote down, so a scoring fix applies to every version
                 # identically.
-                (correct, total, rev_correct, rev_total,
-                 der_correct, der_total) = score(session, answers)
+                (correct, total, rev_correct, rev_total, der_correct, der_total) = score(
+                    session, answers
+                )
                 stale = resurrected(session, answers)
                 if not answers:
                     detail = "(no quiz answered)"
                 else:
-                    detail = ", ".join(
-                        k + ("!" if k in stale else "") for k in QUIZ_KEYS
-                        if normalise(k, answers.get(k)) != expected[k]) or "-"
-                print(f"{arm:8s} {run:>3s} {session:7d} {result['prompt_tokens']:7d} "
-                      f"{result['completion_tokens']:11d} {result['seconds']:8.0f} "
-                      f"{result.get('consolidation_wait', 0):5.0f} "
-                      f"{correct:3d}/{total:<2d} {rev_correct:4d}/{rev_total:<3d}  {detail}")
+                    detail = (
+                        ", ".join(
+                            k + ("!" if k in stale else "")
+                            for k in QUIZ_KEYS
+                            if normalise(k, answers.get(k)) != expected[k]
+                        )
+                        or "-"
+                    )
+                print(
+                    f"{arm:8s} {run:>3s} {session:7d} {result['prompt_tokens']:7d} "
+                    f"{result['completion_tokens']:11d} {result['seconds']:8.0f} "
+                    f"{result.get('consolidation_wait', 0):5.0f} "
+                    f"{correct:3d}/{total:<2d} {rev_correct:4d}/{rev_total:<3d}  {detail}"
+                )
                 totals["correct"] += correct
                 totals["total"] += total
                 totals["revised_correct"] += rev_correct
@@ -527,25 +571,31 @@ def report():
     # A "!" in the wrong-list above marks a revised key answered with the value
     # it replaced. The stale column counts those: an arm can lose the revised
     # half by guessing, but only a memory system loses it by remembering.
-    print(f"\n{'arm':8s} {'run':>3s} {'overall':>8s} {'revised':>8s} {'unrevised':>10s} "
-          f"{'derived':>8s} {'stale':>6s}")
+    print(
+        f"\n{'arm':8s} {'run':>3s} {'overall':>8s} {'revised':>8s} {'unrevised':>10s} "
+        f"{'derived':>8s} {'stale':>6s}"
+    )
     for arm, run, t, *_ in summary_rows:
-        print(f"{arm:8s} {run:>3s} "
-              f"{percent(t['correct'], t['total']):>8s} "
-              f"{percent(t['revised_correct'], t['revised_total']):>8s} "
-              f"{percent(t['unrevised_correct'], t['unrevised_total']):>10s} "
-              f"{percent(t['derived_correct'], t['derived_total']):>8s} "
-              f"{t['stale']:6d}")
+        print(
+            f"{arm:8s} {run:>3s} "
+            f"{percent(t['correct'], t['total']):>8s} "
+            f"{percent(t['revised_correct'], t['revised_total']):>8s} "
+            f"{percent(t['unrevised_correct'], t['unrevised_total']):>10s} "
+            f"{percent(t['derived_correct'], t['derived_total']):>8s} "
+            f"{t['stale']:6d}"
+        )
     print("\nPooled over runs:")
     for arm in ARMS:
         rows = [r for r in summary_rows if r[0] == arm]
         if not rows:
             continue
         pooled = {k: sum(r[2][k] for r in rows) for k in rows[0][2]}
-        print(f"  {arm:8s} overall {percent(pooled['correct'], pooled['total']):>4s}   "
-              f"revised {percent(pooled['revised_correct'], pooled['revised_total']):>4s}   "
-              f"unrevised {percent(pooled['unrevised_correct'], pooled['unrevised_total']):>4s}   "
-              f"stale answers {pooled['stale']}")
+        print(
+            f"  {arm:8s} overall {percent(pooled['correct'], pooled['total']):>4s}   "
+            f"revised {percent(pooled['revised_correct'], pooled['revised_total']):>4s}   "
+            f"unrevised {percent(pooled['unrevised_correct'], pooled['unrevised_total']):>4s}   "
+            f"stale answers {pooled['stale']}"
+        )
     print("\nCost per run (prompt + completion tokens, seconds incl. waits):")
     for arm, run, _, prompt, completion, seconds in summary_rows:
         print(f"  {arm:8s} r{run}: {prompt} + {completion}, {seconds:.0f}s")

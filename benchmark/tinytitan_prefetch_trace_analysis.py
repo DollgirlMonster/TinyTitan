@@ -44,11 +44,10 @@ class Counters:
             "predicted_nonresident": self.predicted,
             "useful_prefetches": self.useful,
             "raw_topk_agreement": self.overlap / self.actual_experts
-            if self.actual_experts else 0.0,
-            "actual_miss_recall": self.useful / self.actual_misses
-            if self.actual_misses else 0.0,
-            "prefetch_precision": self.useful / self.predicted
-            if self.predicted else 0.0,
+            if self.actual_experts
+            else 0.0,
+            "actual_miss_recall": self.useful / self.actual_misses if self.actual_misses else 0.0,
+            "prefetch_precision": self.useful / self.predicted if self.predicted else 0.0,
         }
 
 
@@ -59,15 +58,18 @@ def load_trace(path: pathlib.Path) -> list[Observation]:
             continue
         try:
             value = json.loads(line)
-            observations.append(Observation(
-                position=int(value["position"]),
-                layer=int(value["layer"]),
-                experts=tuple(int(expert) for expert in value["experts"]),
-                misses=frozenset(int(expert) for expert in value["misses"]),
-                resident=frozenset(int(expert) for expert in value["resident"]),
-                next_layer_prediction=tuple(
-                    int(expert) for expert in value.get("next_layer_prediction", [])),
-            ))
+            observations.append(
+                Observation(
+                    position=int(value["position"]),
+                    layer=int(value["layer"]),
+                    experts=tuple(int(expert) for expert in value["experts"]),
+                    misses=frozenset(int(expert) for expert in value["misses"]),
+                    resident=frozenset(int(expert) for expert in value["resident"]),
+                    next_layer_prediction=tuple(
+                        int(expert) for expert in value.get("next_layer_prediction", [])
+                    ),
+                )
+            )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise ValueError(f"{path}:{number}: invalid trace observation: {error}") from error
     return sorted(observations, key=lambda item: (item.position, item.layer))
@@ -84,15 +86,17 @@ def ranked_transition_prediction(
     return [expert for expert, _ in scores.most_common(top_m)]
 
 
-def analyze(observations: Iterable[Observation], top_m: int,
-            predictor: str = "transition") -> dict[str, object]:
+def analyze(
+    observations: Iterable[Observation], top_m: int, predictor: str = "transition"
+) -> dict[str, object]:
     """Evaluate a trace-only L -> L+1 predictor without future leakage."""
     by_position: dict[int, dict[int, Observation]] = collections.defaultdict(dict)
     for observation in observations:
         by_position[observation.position][observation.layer] = observation
 
     counts: dict[int, dict[int, collections.Counter[int]]] = collections.defaultdict(
-        lambda: collections.defaultdict(collections.Counter))
+        lambda: collections.defaultdict(collections.Counter)
+    )
     overall = Counters()
     per_link: dict[int, Counters] = collections.defaultdict(Counters)
     for position in sorted(by_position):
@@ -134,8 +138,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=pathlib.Path)
     parser.add_argument("--top-m", type=int, default=4)
-    parser.add_argument("--predictor", choices=("recorded", "transition"),
-                        default="recorded")
+    parser.add_argument("--predictor", choices=("recorded", "transition"), default="recorded")
     parser.add_argument("--output", type=pathlib.Path)
     args = parser.parse_args()
     if args.top_m < 1:

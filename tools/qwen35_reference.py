@@ -25,6 +25,7 @@ sparse-attention indexer or the mixture of experts.
     python3.13 tools/qwen35_reference.py --dump acts.npz --tokens 5
     python3.13 tools/qwen35_reference.py --snapshot .build/qwen35-2b-affine-4bit
 """
+
 from __future__ import annotations
 
 import argparse
@@ -73,11 +74,19 @@ class Shard:
         meta = self.header[name]
         start, end = meta["data_offsets"]
         shape = meta["shape"]
-        dtype = {"BF16": np.uint16, "F32": np.float32, "U32": np.uint32,
-                 "F16": np.float16, "I32": np.int32}[meta["dtype"]]
-        block = np.frombuffer(self.map, dtype=dtype,
-                              count=(end - start) // np.dtype(dtype).itemsize,
-                              offset=self.base + start).reshape(shape)
+        dtype = {
+            "BF16": np.uint16,
+            "F32": np.float32,
+            "U32": np.uint32,
+            "F16": np.float16,
+            "I32": np.int32,
+        }[meta["dtype"]]
+        block = np.frombuffer(
+            self.map,
+            dtype=dtype,
+            count=(end - start) // np.dtype(dtype).itemsize,
+            offset=self.base + start,
+        ).reshape(shape)
         if rows is not None:
             block = block[rows]
         return block
@@ -125,10 +134,13 @@ class Weights:
         stem = name.removesuffix(".weight")
         shard = self.shard(name)
         if stem + ".scales" in self.map:
-            value = dequantize(shard.raw(name),
-                               self.shard(stem + ".scales").get(stem + ".scales"),
-                               self.shard(stem + ".biases").get(stem + ".biases"),
-                               self._bits(stem), self.quantization["group_size"])
+            value = dequantize(
+                shard.raw(name),
+                self.shard(stem + ".scales").get(stem + ".scales"),
+                self.shard(stem + ".biases").get(stem + ".biases"),
+                self._bits(stem),
+                self.quantization["group_size"],
+            )
         else:
             value = shard.get(name).astype(np.float32)
         self.cache[name] = value
@@ -142,7 +154,9 @@ class Weights:
             self.shard(name).raw(name, window),
             self.shard(stem + ".scales").get(stem + ".scales", window),
             self.shard(stem + ".biases").get(stem + ".biases", window),
-            self._bits(stem), self.quantization["group_size"])
+            self._bits(stem),
+            self.quantization["group_size"],
+        )
 
     def row(self, name: str, index: int) -> np.ndarray:
         return self.rows(name, index, index + 1)[0]
@@ -158,8 +172,9 @@ def dequantize(packed, scales, biases, bits: int, group: int) -> np.ndarray:
     for lane in range(lanes):
         out[:, lane::lanes] = ((packed >> (bits * lane)) & mask).astype(np.float32)
     grouped = out.reshape(rows, -1, group)
-    return (grouped * scales.astype(np.float32)[..., None]
-            + biases.astype(np.float32)[..., None]).reshape(rows, -1)
+    return (
+        grouped * scales.astype(np.float32)[..., None] + biases.astype(np.float32)[..., None]
+    ).reshape(rows, -1)
 
 
 class Reference:
@@ -192,7 +207,7 @@ class Reference:
         self.kv: dict[int, tuple[np.ndarray, np.ndarray]] = {}
 
     def rms_norm(self, x, gamma):
-        return x / np.sqrt((x ** 2).mean(axis=-1, keepdims=True) + self.eps) * gamma
+        return x / np.sqrt((x**2).mean(axis=-1, keepdims=True) + self.eps) * gamma
 
     def rope(self, vec, position):
         """NeoX rotation over the first `rotary` dimensions only.
@@ -206,9 +221,9 @@ class Reference:
         angle = position * inv
         cos, sin = np.cos(angle), np.sin(angle)
         a = vec[..., :half]
-        b = vec[..., half:self.rotary]
+        b = vec[..., half : self.rotary]
         out[..., :half] = a * cos - b * sin
-        out[..., half:self.rotary] = a * sin + b * cos
+        out[..., half : self.rotary] = a * sin + b * cos
         return out
 
     # ---------------------------------------------------------------- blocks
@@ -232,18 +247,19 @@ class Reference:
 
         key_dim = self.hk * self.dk
         q = conv_out[:key_dim].reshape(self.hk, self.dk)
-        k = conv_out[key_dim:2 * key_dim].reshape(self.hk, self.dk)
-        v = conv_out[2 * key_dim:].reshape(self.hv, self.dv)
+        k = conv_out[key_dim : 2 * key_dim].reshape(self.hk, self.dk)
+        v = conv_out[2 * key_dim :].reshape(self.hv, self.dv)
 
         def l2(t):
-            return t / np.sqrt((t ** 2).sum(axis=-1, keepdims=True) + self.eps)
+            return t / np.sqrt((t**2).sum(axis=-1, keepdims=True) + self.eps)
 
         q = np.repeat(l2(q), self.hv // self.hk, axis=0)
         k = np.repeat(l2(k), self.hv // self.hk, axis=0)
 
         beta = sigmoid(b)
-        decay = np.exp(-np.exp(g(prefix + "A_log").astype(np.float64))
-                       * softplus(a + g(prefix + "dt_bias")))
+        decay = np.exp(
+            -np.exp(g(prefix + "A_log").astype(np.float64)) * softplus(a + g(prefix + "dt_bias"))
+        )
         state = self.gdn_state.get(layer)
         if state is None:
             state = np.zeros((self.hv, self.dv, self.dk), np.float32)
@@ -309,7 +325,8 @@ class Reference:
         prefix = f"{P}layers.{layer}.mlp."
         g = self.w.get
         return g(prefix + "down_proj.weight") @ (
-            silu(g(prefix + "gate_proj.weight") @ x) * (g(prefix + "up_proj.weight") @ x))
+            silu(g(prefix + "gate_proj.weight") @ x) * (g(prefix + "up_proj.weight") @ x)
+        )
 
     # ---------------------------------------------------------------- forward
 
@@ -321,8 +338,7 @@ class Reference:
         for layer in range(self.layers):
             prefix = f"{P}layers.{layer}."
             xn = self.rms_norm(h, g(prefix + "input_layernorm.weight"))
-            mixed = (self.attention(layer, xn) if self.is_attention(layer)
-                     else self.gdn(layer, xn))
+            mixed = self.attention(layer, xn) if self.is_attention(layer) else self.gdn(layer, xn)
             h = h + mixed
             xn = self.rms_norm(h, g(prefix + "post_attention_layernorm.weight"))
             h = h + self.mlp(layer, xn)
@@ -361,8 +377,19 @@ class Reference:
 CHECKS = [
     (["Once", "\u0120upon", "\u0120a"], "\u0120time"),
     (["The", "\u0120capital", "\u0120of", "\u0120France", "\u0120is"], "\u0120Paris"),
-    (["The", "\u0120quick", "\u0120brown", "\u0120fox", "\u0120jumps",
-      "\u0120over", "\u0120the", "\u0120lazy"], "\u0120dog"),
+    (
+        [
+            "The",
+            "\u0120quick",
+            "\u0120brown",
+            "\u0120fox",
+            "\u0120jumps",
+            "\u0120over",
+            "\u0120the",
+            "\u0120lazy",
+        ],
+        "\u0120dog",
+    ),
 ]
 
 
@@ -379,10 +406,8 @@ def check(snapshot: Path) -> int:
         prompt = "".join(w.replace("\u0120", " ") for w in words)
         mark = "ok " if top == vocab[expected] else "FAIL"
         failures += top != vocab[expected]
-        print(f"  {mark} {prompt:44s} -> {inverse[top]!r} ({logits[top]:.2f}), "
-              f"wanted {expected!r}")
-    print("all continuations correct" if not failures
-          else f"{failures} of {len(CHECKS)} wrong")
+        print(f"  {mark} {prompt:44s} -> {inverse[top]!r} ({logits[top]:.2f}), wanted {expected!r}")
+    print("all continuations correct" if not failures else f"{failures} of {len(CHECKS)} wrong")
     return 0 if not failures else 2
 
 
@@ -393,24 +418,27 @@ def main() -> int:
     ap.add_argument("--tokens", type=int, default=1, help="steps to run")
     ap.add_argument("--dump", default=None, help="write per-layer activations here")
     ap.add_argument("--top", type=int, default=8)
-    ap.add_argument("--check", action="store_true",
-                    help="run known continuations as a self-test")
+    ap.add_argument("--check", action="store_true", help="run known continuations as a self-test")
     args = ap.parse_args()
 
     if args.check:
         return check(Path(args.snapshot))
 
     reference = Reference(Path(args.snapshot))
-    print(f"{args.snapshot}: {reference.layers} layers, hidden {reference.hidden}, "
-          f"attention at "
-          f"{[l for l in range(reference.layers) if reference.is_attention(l)]}")
+    print(
+        f"{args.snapshot}: {reference.layers} layers, hidden {reference.hidden}, "
+        f"attention at "
+        f"{[layer for layer in range(reference.layers) if reference.is_attention(layer)]}"
+    )
     token = args.token
     dump: dict | None = {} if args.dump else None
     for step in range(args.tokens):
         logits = reference.step(token, dump=dump if step == 0 else None)
         order = np.argsort(-logits)[: args.top]
-        print(f"  position {step}: token {token} -> "
-              + ", ".join(f"{int(i)}:{logits[i]:.3f}" for i in order))
+        print(
+            f"  position {step}: token {token} -> "
+            + ", ".join(f"{int(i)}:{logits[i]:.3f}" for i in order)
+        )
         token = int(order[0])
     if args.dump:
         np.savez(args.dump, **dump)

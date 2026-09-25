@@ -11,6 +11,7 @@ Run from this directory, like the other benchmark tests:
 
     cd benchmark && python3 -m unittest test_launcher_port -v
 """
+
 from __future__ import annotations
 
 import json
@@ -30,15 +31,25 @@ INSTALLED = ROOT / "models/qwen3.8-flash-next_125B_A6B_4Bit"
 # Flags that answer every other question, so the port is the only prompt left.
 # `--concurrency` is one of them: it is asked before the port, so leaving it
 # unanswered would consume the newline these tests mean for the port.
-QUIET_ANSWERS = ("--answers", "default", "--thinking", "off", "--ram", "9",
-                 "--engine", "gpu", "--concurrency", "1")
+QUIET_ANSWERS = (
+    "--answers",
+    "default",
+    "--thinking",
+    "off",
+    "--ram",
+    "9",
+    "--engine",
+    "gpu",
+    "--concurrency",
+    "1",
+)
 
 
 def shared_default() -> int:
     """The one default, read from where the scripts read it."""
-    match = re.search(r"^TINYTITAN_DEFAULT_PORT=(\d+)$", MODELS_SH.read_text(),
-                      re.MULTILINE)
-    assert match, "tinytitan_models.sh no longer declares TINYTITAN_DEFAULT_PORT"
+    match = re.search(r"^TINYTITAN_DEFAULT_PORT=(\d+)$", MODELS_SH.read_text(), re.MULTILINE)
+    if match is None:
+        raise AssertionError("tinytitan_models.sh no longer declares TINYTITAN_DEFAULT_PORT")
     return int(match.group(1))
 
 
@@ -49,15 +60,20 @@ def served_model() -> str | None:
     try:
         listing = subprocess.run(
             [str(SERVER), "--catalog", "--models-dir", str(MODELS)],
-            text=True, capture_output=True, check=True, timeout=120).stdout
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=120,
+        ).stdout
         models = json.loads(listing)["models"]
     except Exception:
         return None
     return models[0]["id"] if models else None
 
 
-def run_launcher(*args: str, env: dict | None = None, stdin: str = "",
-                 interactive: bool = False) -> subprocess.CompletedProcess[str]:
+def run_launcher(
+    *args: str, env: dict | None = None, stdin: str = "", interactive: bool = False
+) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["TINYTITAN_LAUNCHER_DRY_RUN"] = "1"
     if interactive:
@@ -69,13 +85,19 @@ def run_launcher(*args: str, env: dict | None = None, stdin: str = "",
         environment.update(env)
     return subprocess.run(
         ["bash", str(LAUNCHER), "--dry-run", *args],
-        input=stdin, text=True, capture_output=True, check=False,
-        env=environment, timeout=120)
+        input=stdin,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
+        timeout=120,
+    )
 
 
 def reported_port(run: subprocess.CompletedProcess[str]) -> str:
     match = re.search(r"\| Port: (\d+) \|", run.stdout)
-    assert match, f"no port in the summary:\n{run.stdout}\n{run.stderr}"
+    if match is None:
+        raise AssertionError(f"no port in the summary:\n{run.stdout}\n{run.stderr}")
     return match.group(1)
 
 
@@ -109,8 +131,7 @@ class PortChoiceTests(unittest.TestCase):
         self.assertIn("TINYTITAN_PORT=9321 tools/dsh_route.sh --write", run.stdout)
 
     def test_a_flag_beats_the_environment(self) -> None:
-        run = run_launcher(*self.base, "--port", "9123",
-                           env={"TINYTITAN_PORT": "9321"})
+        run = run_launcher(*self.base, "--port", "9123", env={"TINYTITAN_PORT": "9321"})
         self.assertEqual(reported_port(run), "9123")
 
     def test_a_port_the_default_does_not_need_no_hint(self) -> None:
@@ -158,8 +179,7 @@ class PortQuestionTests(unittest.TestCase):
         self.assertIn("unknown port", run.stderr)
 
     def test_a_flagged_port_skips_the_question(self) -> None:
-        run = run_launcher(*self.base, "--port", "9123", stdin="\n",
-                           interactive=True)
+        run = run_launcher(*self.base, "--port", "9123", stdin="\n", interactive=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertNotIn("Port for the server?", run.stdout)
         self.assertEqual(reported_port(run), "9123")

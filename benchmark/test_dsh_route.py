@@ -14,6 +14,7 @@ Run from this directory, like the other benchmark tests:
 
     cd benchmark && python3 -m unittest test_dsh_route -v
 """
+
 from __future__ import annotations
 
 import json
@@ -39,18 +40,21 @@ def catalog_models() -> list[dict]:
     return json.loads(CATALOG.read_text())["models"]
 
 
-def run_route(*args: str, catalog: pathlib.Path | None = CATALOG,
-              expect: int = 0) -> subprocess.CompletedProcess[str]:
+def run_route(
+    *args: str, catalog: pathlib.Path | None = CATALOG, expect: int = 0
+) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     if catalog is None:
         environment.pop("TINYTITAN_CATALOG_JSON", None)
     else:
         environment["TINYTITAN_CATALOG_JSON"] = str(catalog)
     environment.pop("TINYTITAN_MODELS_DIR", None)
-    run = subprocess.run(["bash", str(SCRIPT), *args], text=True,
-                         capture_output=True, check=False, env=environment)
+    run = subprocess.run(
+        ["bash", str(SCRIPT), *args], text=True, capture_output=True, check=False, env=environment
+    )
     if expect is not None:
-        assert run.returncode == expect, run.stderr
+        if run.returncode != expect:
+            raise AssertionError(run.stderr)
     return run
 
 
@@ -68,7 +72,8 @@ def parsed_levels(model_block: str) -> dict[str, str | None]:
     string `off`.
     """
     section = re.search(r"reasoningEfforts:\n((?:            .*\n)+)", model_block)
-    assert section is not None, model_block
+    if section is None:
+        raise AssertionError(model_block)
     keys = [line.strip().split(":")[0].strip('"') for line in section.group(1).splitlines()]
     return {key: None for key in keys}
 
@@ -107,8 +112,18 @@ class RouteBlockTests(unittest.TestCase):
         self.assertIn("            supportsUsageInStreaming: true", block)
 
     def test_options_reach_the_block(self) -> None:
-        block = run_route("--models", "qwen38", "--port", "8096", "--reasoning", "off",
-                          "--context", "131072", "--max-tokens", "4096").stdout
+        block = run_route(
+            "--models",
+            "qwen38",
+            "--port",
+            "8096",
+            "--reasoning",
+            "off",
+            "--context",
+            "131072",
+            "--max-tokens",
+            "4096",
+        ).stdout
         self.assertIn("      baseURL: http://127.0.0.1:8096/v1", block)
         self.assertIn("      reasoning: off", block)
         self.assertIn("          contextWindow: 131072", block)
@@ -133,7 +148,8 @@ class SettingsSurgeryTests(unittest.TestCase):
     def test_write_replaces_the_section_and_keeps_everything_else(self) -> None:
         path = self.settings(
             "ui-theme:\n  preference: dark\nagent-presets:\n  default: qwen38\n"
-            "llm-pi-ai:\n  providers:\n    stale-route:\n      displayName: old\n")
+            "llm-pi-ai:\n  providers:\n    stale-route:\n      displayName: old\n"
+        )
         run = run_route("--models", "qwen38", "--write", "--settings", str(path))
         self.assertIn("replaced", run.stdout)
         text = path.read_text()
@@ -141,8 +157,9 @@ class SettingsSurgeryTests(unittest.TestCase):
         self.assertIn("  preference: dark", text)
         self.assertIn("  default: qwen38", text)
         self.assertNotIn("stale-route", text)
-        self.assertEqual(declared_ids(text), ["qwen3.8-flash-next_4-Bit",
-                                             "qwen3.8-flash-next_8-Bit"])
+        self.assertEqual(
+            declared_ids(text), ["qwen3.8-flash-next_4-Bit", "qwen3.8-flash-next_8-Bit"]
+        )
         backups = list(path.parent.glob("settings.yaml.bak-*"))
         self.assertEqual(len(backups), 1)
         self.assertIn("stale-route", backups[0].read_text())
@@ -219,8 +236,9 @@ class InstalledLayoutTests(unittest.TestCase):
         catalog = self.root / "stub-catalog.json"
         catalog.write_text(catalog_body)
         stub = self.root / "bin" / "TinyTitanServer"
-        stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{self.root}/engine-args.txt"\n'
-                        f'cat "{catalog}"\n')
+        stub.write_text(
+            f'#!/bin/sh\nprintf "%s\\n" "$@" > "{self.root}/engine-args.txt"\ncat "{catalog}"\n'
+        )
         stub.chmod(0o755)
 
     def engine_arguments(self) -> list[str]:
@@ -231,7 +249,11 @@ class InstalledLayoutTests(unittest.TestCase):
         environment = {"PATH": os.environ["PATH"], "HOME": str(self.root)}
         return subprocess.run(
             ["bash", str(self.root / "src" / "tools" / "dsh_route.sh"), *args],
-            text=True, capture_output=True, check=False, env=environment)
+            text=True,
+            capture_output=True,
+            check=False,
+            env=environment,
+        )
 
     def test_it_finds_both_the_engine_and_the_models_directory(self) -> None:
         run = self.run_installed("--models", "qwen38")
@@ -241,8 +263,7 @@ class InstalledLayoutTests(unittest.TestCase):
         # installed `models/`: neither came from an environment variable.
         arguments = self.engine_arguments()
         self.assertIn("--models-dir", arguments)
-        self.assertEqual(arguments[arguments.index("--models-dir") + 1],
-                         str(self.root / "models"))
+        self.assertEqual(arguments[arguments.index("--models-dir") + 1], str(self.root / "models"))
 
     def test_an_empty_catalog_is_not_reported_as_a_missing_binary(self) -> None:
         self.stub_engine('{"models":[]}')

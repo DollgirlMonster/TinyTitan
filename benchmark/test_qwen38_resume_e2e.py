@@ -32,6 +32,7 @@ skip rather than fail. Run it with:
 
 It never contacts the network: every URL it fetches points at 127.0.0.1.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -69,6 +70,7 @@ else:
 
 try:
     import prepare_qwen38 as prepare
+
     PREPARE_ERROR = ""
 except SystemExit as exc:  # the module exits when a dependency is missing
     prepare = None
@@ -111,8 +113,7 @@ def _float(tag: str, shape) -> "np.ndarray":
 
 
 def ngram_name(index: int) -> str:
-    return (f"model.language_model.layers.0.ple.ngram_embedding."
-            f"shard_{index}.weight")
+    return f"model.language_model.layers.0.ple.ngram_embedding.shard_{index}.weight"
 
 
 def ngram_sizes() -> list[int]:
@@ -126,7 +127,7 @@ def head_dim() -> int:
 def ngram_block(index: int, size: int, dim: int) -> "np.ndarray":
     """One n-gram table shard, in bf16 like the checkpoint's."""
     rng = np.random.default_rng(1000 + index)
-    values = (rng.random((size, dim), dtype=np.float32) * 2.0 - 1.0)
+    values = rng.random((size, dim), dtype=np.float32) * 2.0 - 1.0
     return values.astype(ml_dtypes.bfloat16)
 
 
@@ -160,17 +161,19 @@ def checkpoint() -> tuple[dict[str, bytes], dict[str, dict[str, "np.ndarray"]]]:
             "model.language_model.layers.0.mlp.gate.weight": _float("gate", (32, 64)),
         },
         "model-00002-of-00005.safetensors": {
-            "model.language_model.layers.0.mlp.experts.gate_up_proj":
-                _float("gateup", (3, 128, 64)),
-            "model.language_model.layers.0.mlp.experts.down_proj":
-                _float("down", (3, 64, 64)),
+            "model.language_model.layers.0.mlp.experts.gate_up_proj": _float(
+                "gateup", (3, 128, 64)
+            ),
+            "model.language_model.layers.0.mlp.experts.down_proj": _float("down", (3, 64, 64)),
             "model.visual.patch_embed.weight": _float("visual", (8, 8)),
         },
         "model-00003-of-00005.safetensors": {
-            "model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight":
-                _float("qk", (prepare.INDEXER_QUERY_ROWS + 64, 64)),
-            "model.language_model.layers.0.ple.ple_embedding.layer_multipliers":
-                np.arange(3, dtype=np.int64),
+            "model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight": _float(
+                "qk", (prepare.INDEXER_QUERY_ROWS + 64, 64)
+            ),
+            "model.language_model.layers.0.ple.ple_embedding.layer_multipliers": np.arange(
+                3, dtype=np.int64
+            ),
         },
         # shard_10 and shard_11 arrive before shard_0: NgramTable must buffer by
         # index, not concatenate in arrival or lexical order.
@@ -198,11 +201,12 @@ def checkpoint() -> tuple[dict[str, bytes], dict[str, dict[str, "np.ndarray"]]]:
                 weight_map[name] = shard
                 total += value.nbytes
         files["model.safetensors.index.json"] = json.dumps(
-            {"metadata": {"total_size": total}, "weight_map": weight_map},
-            indent=1).encode()
+            {"metadata": {"total_size": total}, "weight_map": weight_map}, indent=1
+        ).encode()
         files["config.json"] = json.dumps(
-            {"architectures": ["Qwen3.8FlashNextForCausalLM"],
-             "text_config": text_config()}, indent=1).encode()
+            {"architectures": ["Qwen3.8FlashNextForCausalLM"], "text_config": text_config()},
+            indent=1,
+        ).encode()
         for name, _required in prepare.TOKENIZER_FILES:
             files[name] = f"{{}}  // {name}\n".encode()
         return files, shards
@@ -313,11 +317,10 @@ class _MirrorHandler(http.server.BaseHTTPRequestHandler):
         header = self.headers.get("Range")
         start = end = None
         if header and header.startswith("bytes="):
-            first, _, last = header[len("bytes="):].split(",")[0].partition("-")
+            first, _, last = header[len("bytes=") :].split(",")[0].partition("-")
             start = int(first) if first else 0
             end = int(last) if last else len(data) - 1
-        self.server.record({"file": name, "path": path, "range": header,
-                            "behaviour": behaviour})
+        self.server.record({"file": name, "path": path, "range": header, "behaviour": behaviour})
 
         if behaviour == "404":
             self.send_error(404)
@@ -327,7 +330,7 @@ class _MirrorHandler(http.server.BaseHTTPRequestHandler):
             behaviour = "refuse_range"
 
         ranged = header is not None and start is not None and behaviour != "refuse_range"
-        body = data[start:end + 1] if ranged else data
+        body = data[start : end + 1] if ranged else data
         status = 206 if ranged else 200
         declared = len(body)
         content_range = f"bytes {start}-{start + declared - 1}/{len(data)}" if ranged else None
@@ -335,8 +338,7 @@ class _MirrorHandler(http.server.BaseHTTPRequestHandler):
             body = body[: max(1, declared // 2)]
         self._send(status, body, declared, content_range)
 
-    def _send(self, status: int, body: bytes, declared: int,
-              content_range: str | None) -> None:
+    def _send(self, status: int, body: bytes, declared: int, content_range: str | None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(declared))
@@ -363,16 +365,29 @@ def mirror(files: dict[str, bytes]):
 # --- running the converter --------------------------------------------------
 
 
-def run_converter(out: pathlib.Path, work: pathlib.Path, endpoint: str,
-                  extra: tuple = (), patches: dict | None = None,
-                  patch_sleep: bool = True) -> tuple[int, str]:
+def run_converter(
+    out: pathlib.Path,
+    work: pathlib.Path,
+    endpoint: str,
+    extra: tuple = (),
+    patches: dict | None = None,
+    patch_sleep: bool = True,
+) -> tuple[int, str]:
     """`main()` in this process, against `endpoint`, with output captured.
 
     `time.sleep` is replaced inside the converter only (a retry backoff is
     5-120 s); the mirror keeps the real clock, so a `stall` is still a stall.
     """
-    argv = ["prepare_qwen38.py", "--output", str(out), "--work", str(work),
-            "--endpoint", endpoint, *[str(item) for item in extra]]
+    argv = [
+        "prepare_qwen38.py",
+        "--output",
+        str(out),
+        "--work",
+        str(work),
+        "--endpoint",
+        endpoint,
+        *[str(item) for item in extra],
+    ]
     saved = (prepare.HF_ENDPOINT, prepare.BASE)
     buffer = io.StringIO()
     stack = contextlib.ExitStack()
@@ -382,15 +397,19 @@ def run_converter(out: pathlib.Path, work: pathlib.Path, endpoint: str,
         stack.enter_context(redirect_stderr(buffer))
         if patch_sleep:
             stack.enter_context(
-                mock.patch.object(prepare, "time", mock.Mock(sleep=lambda *_: None)))
+                mock.patch.object(prepare, "time", mock.Mock(sleep=lambda *_: None))
+            )
         # curl writes its diagnostics to a real file descriptor, which
         # `redirect_stderr` does not touch. Capture them into the log so a
         # failure reads in one place (and so the test output stays readable).
         real_run = subprocess.run
 
         def run_captured(command, **kwargs):
-            kwargs = {key: value for key, value in kwargs.items()
-                      if key not in ("capture_output", "stdout", "stderr")}
+            kwargs = {
+                key: value
+                for key, value in kwargs.items()
+                if key not in ("capture_output", "stdout", "stderr")
+            }
             result = real_run(command, capture_output=True, **kwargs)
             if result.stderr:
                 print(result.stderr.decode("utf-8", "replace").rstrip(), file=buffer)
@@ -409,6 +428,7 @@ def run_converter(out: pathlib.Path, work: pathlib.Path, endpoint: str,
                 raise
             code = 1
             import traceback
+
             traceback.print_exc(file=buffer)
     finally:
         stack.close()
@@ -423,8 +443,11 @@ def fingerprint(out: pathlib.Path) -> dict:
     for name, shard in index["weight_map"].items():
         with safe_open(out / shard, framework="np") as handle:
             value = handle.get_tensor(name)
-        tensors[name] = (str(value.dtype), tuple(value.shape),
-                         hashlib.sha256(np.ascontiguousarray(value).tobytes()).hexdigest())
+        tensors[name] = (
+            str(value.dtype),
+            tuple(value.shape),
+            hashlib.sha256(np.ascontiguousarray(value).tobytes()).hexdigest(),
+        )
     return {
         "tensors": tensors,
         "table": hashlib.sha256((out / "ngram_table.bin").read_bytes()).hexdigest(),
@@ -443,8 +466,9 @@ def baseline_fingerprint() -> dict:
         root = pathlib.Path(tempfile.mkdtemp(prefix="tt-baseline-"))
         try:
             with mirror(files) as server:
-                code, log = run_converter(root / "out", root / "work", server.base,
-                                          patch_sleep=False)
+                code, log = run_converter(
+                    root / "out", root / "work", server.base, patch_sleep=False
+                )
             if code != 0:
                 raise AssertionError(f"the clean baseline run failed:\n{log}")
             _BASELINE = fingerprint(root / "out")
@@ -460,10 +484,8 @@ def dequantise(packed, scales, biases, bits: int, group: int = 64):
     shifts = np.arange(lanes, dtype=np.uint32) * np.uint32(bits)
     values = (packed.astype(np.uint32)[..., None] >> shifts) & mask
     values = values.reshape(*packed.shape[:-1], packed.shape[-1] * lanes)
-    flat = values.astype(np.float32).reshape(*values.shape[:-1],
-                                             values.shape[-1] // group, group)
-    scaled = (flat * scales.astype(np.float32)[..., None]
-              + biases.astype(np.float32)[..., None])
+    flat = values.astype(np.float32).reshape(*values.shape[:-1], values.shape[-1] // group, group)
+    scaled = flat * scales.astype(np.float32)[..., None] + biases.astype(np.float32)[..., None]
     return scaled.reshape(values.shape)
 
 
@@ -486,8 +508,9 @@ class SnapshotContractTests(unittest.TestCase):
         cls.root = pathlib.Path(tempfile.mkdtemp(prefix="tt-e2e-contract-"))
         cls.server_ctx = mirror(cls.files)
         cls.server = cls.server_ctx.__enter__()
-        cls.code, cls.log = run_converter(cls.root / "out", cls.root / "work",
-                                          cls.server.base, patch_sleep=False)
+        cls.code, cls.log = run_converter(
+            cls.root / "out", cls.root / "work", cls.server.base, patch_sleep=False
+        )
         cls.out = cls.root / "out"
 
     @classmethod
@@ -504,10 +527,16 @@ class SnapshotContractTests(unittest.TestCase):
         self.assertEqual(fingerprint(self.out), baseline_fingerprint())
 
     def test_no_partial_or_orphan_shard_is_left_behind(self) -> None:
-        leftovers = [p.name for p in self.out.iterdir()
-                     if p.name.endswith(".partial")
-                     or (p.name.startswith("model-") and p.name.endswith(".safetensors")
-                         and "-of-" not in p.name)]
+        leftovers = [
+            p.name
+            for p in self.out.iterdir()
+            if p.name.endswith(".partial")
+            or (
+                p.name.startswith("model-")
+                and p.name.endswith(".safetensors")
+                and "-of-" not in p.name
+            )
+        ]
         self.assertEqual(leftovers, [])
 
     def test_the_index_only_names_shards_that_exist(self) -> None:
@@ -524,56 +553,81 @@ class SnapshotContractTests(unittest.TestCase):
         # fused tensor: gate from the first half, up from the second. A swap
         # keeps every shape and size correct and is otherwise invisible.
         fused = self.plan["model-00002-of-00005.safetensors"][
-            "model.language_model.layers.0.mlp.experts.gate_up_proj"]
+            "model.language_model.layers.0.mlp.experts.gate_up_proj"
+        ]
         half = fused.shape[1] // 2
-        for suffix, piece in (("gate_proj", fused[:, :half, :]),
-                              ("up_proj", fused[:, half:, :])):
+        for suffix, piece in (("gate_proj", fused[:, :half, :]), ("up_proj", fused[:, half:, :])):
             stem = f"model.language_model.layers.0.mlp.switch_mlp.{suffix}"
-            rebuilt = dequantise(read_tensor(self.out, stem + ".weight"),
-                                 read_tensor(self.out, stem + ".scales"),
-                                 read_tensor(self.out, stem + ".biases"), 4)
+            rebuilt = dequantise(
+                read_tensor(self.out, stem + ".weight"),
+                read_tensor(self.out, stem + ".scales"),
+                read_tensor(self.out, stem + ".biases"),
+                4,
+            )
             error = float(np.abs(rebuilt - piece).max())
             limit = 2 * float(read_tensor(self.out, stem + ".scales").astype(np.float32).max())
             self.assertLessEqual(error, limit + 1e-6, stem)
 
     def test_the_routed_expert_and_indexer_round_trip(self) -> None:
         cases = [
-            ("model.language_model.layers.0.mlp.switch_mlp.down_proj",
-             self.plan["model-00002-of-00005.safetensors"][
-                 "model.language_model.layers.0.mlp.experts.down_proj"], 4),
-            ("model.language_model.layers.0.self_attn.indexer.index_q_proj",
-             self.plan["model-00003-of-00005.safetensors"][
-                 "model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight"][
-                     :prepare.INDEXER_QUERY_ROWS], 4),
-            ("model.language_model.layers.0.self_attn.indexer.index_k_proj",
-             self.plan["model-00003-of-00005.safetensors"][
-                 "model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight"][
-                     prepare.INDEXER_QUERY_ROWS:], 4),
-            ("model.language_model.embed_tokens",
-             self.plan["model-00001-of-00005.safetensors"][
-                 "model.language_model.embed_tokens.weight"], 8),
+            (
+                "model.language_model.layers.0.mlp.switch_mlp.down_proj",
+                self.plan["model-00002-of-00005.safetensors"][
+                    "model.language_model.layers.0.mlp.experts.down_proj"
+                ],
+                4,
+            ),
+            (
+                "model.language_model.layers.0.self_attn.indexer.index_q_proj",
+                self.plan["model-00003-of-00005.safetensors"][
+                    "model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight"
+                ][: prepare.INDEXER_QUERY_ROWS],
+                4,
+            ),
+            (
+                "model.language_model.layers.0.self_attn.indexer.index_k_proj",
+                self.plan["model-00003-of-00005.safetensors"][
+                    "model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight"
+                ][prepare.INDEXER_QUERY_ROWS :],
+                4,
+            ),
+            (
+                "model.language_model.embed_tokens",
+                self.plan["model-00001-of-00005.safetensors"][
+                    "model.language_model.embed_tokens.weight"
+                ],
+                8,
+            ),
         ]
         for stem, piece, bits in cases:
             with self.subTest(stem=stem):
                 scales = read_tensor(self.out, stem + ".scales")
-                rebuilt = dequantise(read_tensor(self.out, stem + ".weight"),
-                                     scales, read_tensor(self.out, stem + ".biases"),
-                                     bits)
+                rebuilt = dequantise(
+                    read_tensor(self.out, stem + ".weight"),
+                    scales,
+                    read_tensor(self.out, stem + ".biases"),
+                    bits,
+                )
                 self.assertEqual(rebuilt.shape, piece.shape)
                 limit = 2 * float(scales.astype(np.float32).max())
                 self.assertLessEqual(float(np.abs(rebuilt - piece).max()), limit + 1e-6)
 
     def test_the_unit_offset_norm_is_folded_and_renamed(self) -> None:
         original = self.plan["model-00001-of-00005.safetensors"][
-            "model.language_model.layers.0.self_attn.q_norm.weight"]
+            "model.language_model.layers.0.self_attn.q_norm.weight"
+        ]
         stored = read_tensor(self.out, "model.language_model.layers.0.self_attn.q_norm")
         np.testing.assert_allclose(stored.astype(np.float32), original + 1.0, rtol=0, atol=0)
         # And a plain norm must not be touched.
         plain = self.plan["model-00001-of-00005.safetensors"][
-            "model.language_model.layers.0.input_layernorm.weight"]
+            "model.language_model.layers.0.input_layernorm.weight"
+        ]
         np.testing.assert_allclose(
             read_tensor(self.out, "model.language_model.layers.0.input_layernorm.weight"),
-            plain, rtol=0, atol=0)
+            plain,
+            rtol=0,
+            atol=0,
+        )
 
     def test_the_8_bit_slot_carries_a_per_tensor_override(self) -> None:
         config = json.loads((self.out / "config.json").read_text())
@@ -609,8 +663,7 @@ class SnapshotContractTests(unittest.TestCase):
         for name, _required in prepare.TOKENIZER_FILES:
             self.assertIn(name, fetched, "tokenizer file was not fetched from the endpoint")
         weights = {name for name in fetched if name.endswith(".safetensors")}
-        self.assertEqual(weights, {name for name in self.files
-                                   if name.endswith(".safetensors")})
+        self.assertEqual(weights, {name for name in self.files if name.endswith(".safetensors")})
 
 
 @requires_deps
@@ -628,8 +681,13 @@ class TransportFaultTests(unittest.TestCase):
         self.work = self.root / "work"
         self.shard = "model-00002-of-00005.safetensors"
 
-    def run_converter(self, extra: tuple = (), patches: dict | None = None,
-                      work: pathlib.Path | None = None, curl_retries: bool = False):
+    def run_converter(
+        self,
+        extra: tuple = (),
+        patches: dict | None = None,
+        work: pathlib.Path | None = None,
+        curl_retries: bool = False,
+    ):
         """One conversion with the injected fault reaching `download()`'s loop.
 
         curl has a retry loop of its own; with it on, a single injected fault is
@@ -714,8 +772,11 @@ class TransportFaultTests(unittest.TestCase):
 
     def test_a_schedule_of_faults_still_produces_the_snapshot(self) -> None:
         schedule = ["404", "drop", "short", "refuse_range", "ok"]
-        shards = [name for name in self.files
-                  if name.startswith("model-") and name.endswith(".safetensors")]
+        shards = [
+            name
+            for name in self.files
+            if name.startswith("model-") and name.endswith(".safetensors")
+        ]
         for name in shards:
             self.server.faults[name] = list(schedule)
         code, log = self.run_converter()
@@ -758,16 +819,20 @@ class ResumeTests(unittest.TestCase):
         real_run = subprocess.run
 
         def swallow(command, **kwargs):
-            kwargs = {key: value for key, value in kwargs.items()
-                      if key not in ("capture_output", "stdout", "stderr")}
+            kwargs = {
+                key: value
+                for key, value in kwargs.items()
+                if key not in ("capture_output", "stdout", "stderr")
+            }
             return real_run(command, capture_output=True, **kwargs)
 
         stray_patch = mock.patch.object(prepare.subprocess, "run", swallow)
         stray_patch.start()
         self.addCleanup(stray_patch.stop)
 
-    def run_converter(self, extra: tuple = (), patches: dict | None = None,
-                      work: pathlib.Path | None = None):
+    def run_converter(
+        self, extra: tuple = (), patches: dict | None = None, work: pathlib.Path | None = None
+    ):
         return run_converter(self.out, work or self.work, self.server.base, extra, patches)
 
     def interrupt_after_shards(self, count: int) -> None:
@@ -794,9 +859,13 @@ class ResumeTests(unittest.TestCase):
             return real_convert(path, writer, ngram, width)
 
         with self.assertRaises(KeyboardInterrupt):
-            self.run_converter(patches={"convert_shard": wrapped,
-                                        "NgramTable": RecordingTable,
-                                        "OUTPUT_SHARD_BYTES": 512})
+            self.run_converter(
+                patches={
+                    "convert_shard": wrapped,
+                    "NgramTable": RecordingTable,
+                    "OUTPUT_SHARD_BYTES": 512,
+                }
+            )
         # The in-process interrupt leaves the table's handle open, exactly as a
         # kill would (there is no cleanup path); close the test's copy so it
         # does not leak a descriptor or warn about it. The half-written file
@@ -818,8 +887,8 @@ class ResumeTests(unittest.TestCase):
             with safe_open(shard, framework="np") as handle:
                 for name in handle.keys():
                     self.assertNotIn(
-                        name, seen,
-                        f"{name} is in both {seen.get(name)} and {shard.name}")
+                        name, seen, f"{name} is in both {seen.get(name)} and {shard.name}"
+                    )
                     seen[name] = shard.name
         self.assertEqual(set(seen), expected_output_names(), log)
 
@@ -828,8 +897,7 @@ class ResumeTests(unittest.TestCase):
         self.assertFalse((self.out / "model.safetensors.index.json").exists())
         adopted = sorted(self.out.glob("model-[0-9][0-9][0-9][0-9][0-9].safetensors"))
         self.assertTrue(adopted, "the interrupted run left no output shard to adopt")
-        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512},
-                                       work=self.resume_work)
+        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512}, work=self.resume_work)
         self.assertEqual(code, 0, log)
         self.assertIn("resuming from", log)
         self.assertIn("already converted", log)
@@ -843,8 +911,7 @@ class ResumeTests(unittest.TestCase):
         # the resume must neither fetch them nor convert them again.
         self.interrupt_after_shards(2)
         mark = len(self.server.requests)
-        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512},
-                                       work=self.resume_work)
+        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512}, work=self.resume_work)
         self.assertEqual(code, 0, log)
         second_round = {request["file"] for request in self.server.requests[mark:]}
         self.assertNotIn("model-00001-of-00005.safetensors", second_round, log)
@@ -856,9 +923,8 @@ class ResumeTests(unittest.TestCase):
         self.interrupt_after_shards(2)
         victim = sorted(self.out.glob("model-[0-9][0-9][0-9][0-9][0-9].safetensors"))[0]
         payload = victim.read_bytes()
-        victim.write_bytes(payload[: len(payload) - 8])   # header parses, payload short
-        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512},
-                                       work=self.resume_work)
+        victim.write_bytes(payload[: len(payload) - 8])  # header parses, payload short
+        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512}, work=self.resume_work)
         self.assertEqual(code, 0, log)
         self.assertIn("discarding an incomplete output shard", log)
         self.assert_no_duplicate_tensors(log)
@@ -871,11 +937,12 @@ class ResumeTests(unittest.TestCase):
         victim = sorted(self.out.glob("model-[0-9][0-9][0-9][0-9][0-9].safetensors"))[0]
         payload = victim.read_bytes()
         victim.write_bytes(payload[: len(payload) - 8])
-        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512},
-                                       work=self.resume_work)
+        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512}, work=self.resume_work)
         self.assertEqual(code, 0, log)
-        numbers = sorted(int(p.name.split("-")[1].split(".")[0])
-                         for p in self.out.glob("model-*-of-*.safetensors"))
+        numbers = sorted(
+            int(p.name.split("-")[1].split(".")[0])
+            for p in self.out.glob("model-*-of-*.safetensors")
+        )
         self.assertEqual(numbers, list(range(1, len(numbers) + 1)), log)
         self.assertEqual(fingerprint(self.out), baseline_fingerprint())
 
@@ -885,8 +952,7 @@ class ResumeTests(unittest.TestCase):
         # builds the resume path exists for.
         self.interrupt_after_shards(1)
         (self.out / "conversion.json").unlink()
-        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512},
-                                       work=self.resume_work)
+        code, log = self.run_converter(patches={"OUTPUT_SHARD_BYTES": 512}, work=self.resume_work)
         self.assertEqual(code, 0, log)
         self.assertIn("resuming from", log)
         self.assert_no_duplicate_tensors(log)
@@ -900,8 +966,11 @@ class ResumeTests(unittest.TestCase):
         code, log = self.run_converter(extra=("--bits", "8"), work=self.resume_work)
         self.assertEqual(code, 1, log)
         self.assertIn("two widths in one snapshot", log)
-        self.assertEqual(sorted(path.name for path in self.out.iterdir()), before,
-                         f"the refusal still wrote into the snapshot: {log}")
+        self.assertEqual(
+            sorted(path.name for path in self.out.iterdir()),
+            before,
+            f"the refusal still wrote into the snapshot: {log}",
+        )
 
     def test_a_leftover_partial_file_is_removed(self) -> None:
         self.out.mkdir(parents=True, exist_ok=True)
@@ -927,8 +996,7 @@ class ResumeTests(unittest.TestCase):
         code, log = self.run_converter()
         self.assertNotEqual(code, 0)
         self.assertIn("finished output shards but no", log)
-        self.assertEqual((self.out / "model-00001-of-00003.safetensors").read_bytes(),
-                         b"finished")
+        self.assertEqual((self.out / "model-00001-of-00003.safetensors").read_bytes(), b"finished")
 
     def test_a_completed_local_table_is_reused_in_place(self) -> None:
         # A previous run (or the older tool) left a whole table here. Reusing it
@@ -937,7 +1005,8 @@ class ResumeTests(unittest.TestCase):
         table = self.out / "ngram_table.bin"
         table.write_bytes(expected_table_bytes())
         (self.out / "ple_constants.json").write_text(
-            json.dumps(prepare.ple_constants(text_config())))
+            json.dumps(prepare.ple_constants(text_config()))
+        )
         inode = table.stat().st_ino
         code, log = self.run_converter()
         self.assertEqual(code, 0, log)
@@ -951,12 +1020,16 @@ class ResumeTests(unittest.TestCase):
         self.out.mkdir(parents=True, exist_ok=True)
         (self.out / "ngram_table.bin").write_bytes(expected_table_bytes())
         (self.out / "ple_constants.json").write_text(
-            json.dumps(prepare.ple_constants(text_config())))
+            json.dumps(prepare.ple_constants(text_config()))
+        )
         code, log = self.run_converter()
         self.assertEqual(code, 0, log)
         fetched = {request["file"] for request in self.server.requests}
-        self.assertNotIn("model-00005-of-00005.safetensors", fetched,
-                         "the n-gram-only shard was fetched despite the reused table")
+        self.assertNotIn(
+            "model-00005-of-00005.safetensors",
+            fetched,
+            "the n-gram-only shard was fetched despite the reused table",
+        )
         # The mixed shard is still fetched, and its n-gram rows are ignored.
         self.assertIn("model-00004-of-00005.safetensors", fetched)
         self.assertIn("already in the linked table", log)
@@ -966,7 +1039,8 @@ class ResumeTests(unittest.TestCase):
         self.out.mkdir(parents=True, exist_ok=True)
         (self.out / "ngram_table.bin").write_bytes(b"short")
         (self.out / "ple_constants.json").write_text(
-            json.dumps(prepare.ple_constants(text_config())))
+            json.dumps(prepare.ple_constants(text_config()))
+        )
         code, log = self.run_converter()
         self.assertEqual(code, 0, log)
         self.assertIn("ignoring the ngram_table.bin already here", log)
@@ -1019,13 +1093,24 @@ class KilledProcessTests(unittest.TestCase):
             f"sys.path.insert(0, {str(ROOT / 'tools')!r})\n"
             "import prepare_qwen38 as prepare\n"
             "prepare.OUTPUT_SHARD_BYTES = 512\n"
-            "raise SystemExit(prepare.main())\n")
+            "raise SystemExit(prepare.main())\n"
+        )
         log_path = self.root / "killed.log"
         with log_path.open("w") as log_handle:
             process = subprocess.Popen(
-                [sys.executable, str(driver), "--output", str(self.out),
-                 "--work", str(self.work), "--endpoint", self.server.base],
-                stdout=log_handle, stderr=subprocess.STDOUT)
+                [
+                    sys.executable,
+                    str(driver),
+                    "--output",
+                    str(self.out),
+                    "--work",
+                    str(self.work),
+                    "--endpoint",
+                    self.server.base,
+                ],
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+            )
             deadline = time.time() + 60
             while time.time() < deadline:
                 if (self.out / "model-00001.safetensors").exists():
@@ -1038,16 +1123,20 @@ class KilledProcessTests(unittest.TestCase):
                 process.send_signal(signal.SIGKILL)
             process.wait(timeout=15)
         killed_log = log_path.read_text()
-        self.assertTrue(still_running,
-                        f"the conversion finished before it could be killed:\n{killed_log}")
+        self.assertTrue(
+            still_running, f"the conversion finished before it could be killed:\n{killed_log}"
+        )
         self.assertEqual(process.returncode, -signal.SIGKILL)
-        self.assertFalse((self.out / "model.safetensors.index.json").exists(),
-                         "a killed run left a finished index")
+        self.assertFalse(
+            (self.out / "model.safetensors.index.json").exists(),
+            "a killed run left a finished index",
+        )
         adopted = sorted(self.out.glob("model-[0-9][0-9][0-9][0-9][0-9].safetensors"))
         self.assertTrue(adopted, killed_log)
 
-        code, log = run_converter(self.out, self.work, self.server.base,
-                                  patches={"OUTPUT_SHARD_BYTES": 512})
+        code, log = run_converter(
+            self.out, self.work, self.server.base, patches={"OUTPUT_SHARD_BYTES": 512}
+        )
         self.assertEqual(code, 0, log)
         self.assertIn("resuming from", log)
         self.assertFalse(list(self.out.glob("*.partial")), log)
@@ -1073,26 +1162,56 @@ class CrossFilesystemTests(unittest.TestCase):
         self.mount.mkdir()
         self.image = self.root / "volume.dmg"
         try:
-            subprocess.run(["hdiutil", "create", "-size", "64m", "-fs", "APFS",
-                            "-volname", "TinyTitanTest", str(self.image)],
-                           check=True, capture_output=True)
-            subprocess.run(["hdiutil", "attach", str(self.image),
-                            "-mountpoint", str(self.mount), "-nobrowse", "-quiet"],
-                           check=True, capture_output=True)
+            subprocess.run(
+                [
+                    "hdiutil",
+                    "create",
+                    "-size",
+                    "64m",
+                    "-fs",
+                    "APFS",
+                    "-volname",
+                    "TinyTitanTest",
+                    str(self.image),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "hdiutil",
+                    "attach",
+                    str(self.image),
+                    "-mountpoint",
+                    str(self.mount),
+                    "-nobrowse",
+                    "-quiet",
+                ],
+                check=True,
+                capture_output=True,
+            )
         except (subprocess.CalledProcessError, OSError) as exc:
             self.skipTest(f"cannot attach a disk image here: {exc}")
-        self.addCleanup(subprocess.run, ["hdiutil", "detach", str(self.mount),
-                                         "-quiet"], capture_output=True)
+        self.addCleanup(
+            subprocess.run, ["hdiutil", "detach", str(self.mount), "-quiet"], capture_output=True
+        )
 
     def test_a_table_on_another_filesystem_is_copied(self) -> None:
         source = self.root / "source-table.bin"
         source.write_bytes(expected_table_bytes())
-        self.assertNotEqual(source.stat().st_dev, self.mount.stat().st_dev,
-                            "the mounted image is not a different filesystem")
+        self.assertNotEqual(
+            source.stat().st_dev,
+            self.mount.stat().st_dev,
+            "the mounted image is not a different filesystem",
+        )
         out = self.mount / "out"
-        code, log = run_converter(out, self.root / "work", self.server.base,
-                                  extra=("--reuse-ngram-table", str(source)),
-                                  patch_sleep=False)
+        code, log = run_converter(
+            out,
+            self.root / "work",
+            self.server.base,
+            extra=("--reuse-ngram-table", str(source)),
+            patch_sleep=False,
+        )
         self.assertEqual(code, 0, log)
         self.assertIn("another filesystem", log)
         table = out / "ngram_table.bin"

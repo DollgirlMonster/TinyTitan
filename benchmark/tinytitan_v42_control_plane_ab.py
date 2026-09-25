@@ -27,27 +27,38 @@ CASES = (
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Compare v4.2 expert scheduling, event, pool, and residency modes")
-    parser.add_argument("--prompt", choices=tuple(benchmark.PROMPTS) + ("all",),
-                        default="all")
-    parser.add_argument("--case", action="append", dest="selected_cases",
-                        choices=tuple(case[0] for case in CASES),
-                        help="run only this case (repeatable)")
+        description="Compare v4.2 expert scheduling, event, pool, and residency modes"
+    )
+    parser.add_argument("--prompt", choices=tuple(benchmark.PROMPTS) + ("all",), default="all")
+    parser.add_argument(
+        "--case",
+        action="append",
+        dest="selected_cases",
+        choices=tuple(case[0] for case in CASES),
+        help="run only this case (repeatable)",
+    )
     args = parser.parse_args()
     metadata = benchmark.preflight()
-    prompts = benchmark.PROMPTS if args.prompt == "all" else {
-        args.prompt: benchmark.PROMPTS[args.prompt]
-    }
+    prompts = (
+        benchmark.PROMPTS if args.prompt == "all" else {args.prompt: benchmark.PROMPTS[args.prompt]}
+    )
     results: list[dict[str, object]] = []
     logs: dict[str, str] = {}
-    cases = tuple(case for case in CASES
-                  if not args.selected_cases or case[0] in args.selected_cases)
+    cases = tuple(
+        case for case in CASES if not args.selected_cases or case[0] in args.selected_cases
+    )
     for name, mode, backend, sync, layout, policy, submission in cases:
         for prompt_name, prompt in prompts.items():
             rows, log = benchmark.run_case(
-                mode, prompt_name, prompt, io_backend=backend,
-                io_sync=sync, cache_layout=layout, cache_policy=policy,
-                io_submission=submission)
+                mode,
+                prompt_name,
+                prompt,
+                io_backend=backend,
+                io_sync=sync,
+                cache_layout=layout,
+                cache_policy=policy,
+                io_submission=submission,
+            )
             for row in rows:
                 row["case"] = name
             results.extend(rows)
@@ -59,29 +70,37 @@ def main() -> int:
     for name, *_ in cases[1:]:
         for prompt_name in prompts:
             for warmth in ("cold", "warm"):
-                if grouped[(name, prompt_name, warmth)]["content"] != grouped[
-                        (reference, prompt_name, warmth)]["content"]:
+                if (
+                    grouped[(name, prompt_name, warmth)]["content"]
+                    != grouped[(reference, prompt_name, warmth)]["content"]
+                ):
                     mismatches.append(f"{name}/{prompt_name}/{warmth}")
 
     output = benchmark.ROOT / ".build/benchmark-results/v4.2-control-plane-ab.json"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps({
-        "metadata": metadata,
-        "configuration": {
-            "model": str(benchmark.DEFAULT_MODEL_PATH),
-            "temperature": 0.6,
-            "top_p": 0.95,
-            "top_k": 20,
-            "presence_penalty": 0.0,
-            "seed": 41,
-            "max_completion_tokens": 128,
-        },
-        "cases": [case[0] for case in cases],
-        "logs": logs,
-        "results": results,
-        "response_mismatches": mismatches,
-        "passed": not mismatches,
-    }, indent=2) + "\n")
+    output.write_text(
+        json.dumps(
+            {
+                "metadata": metadata,
+                "configuration": {
+                    "model": str(benchmark.DEFAULT_MODEL_PATH),
+                    "temperature": 0.6,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                    "presence_penalty": 0.0,
+                    "seed": 41,
+                    "max_completion_tokens": 128,
+                },
+                "cases": [case[0] for case in cases],
+                "logs": logs,
+                "results": results,
+                "response_mismatches": mismatches,
+                "passed": not mismatches,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(f"results: {output}")
     return 1 if mismatches else 0
 

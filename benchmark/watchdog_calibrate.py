@@ -26,6 +26,7 @@ Two watchdogs are not calibrated here, for reasons rather than by omission:
     histories. Those are replayed from the journal files when present, and
     reported as unavailable when not.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,8 +58,7 @@ MINIMUM_PERIOD = 8
 MINIMUM_DISTINCT = 12
 
 
-def loop_trip(text: str, window: int = 64, history: int = 1200,
-              repeats: int = 6) -> dict | None:
+def loop_trip(text: str, window: int = 64, history: int = 1200, repeats: int = 6) -> dict | None:
     """A port of `LoopWatchdog`: a rolling hash over a fixed window, counting
     non-overlapping repeats inside a recent history, ignoring windows too
     uniform to be a phrase."""
@@ -103,14 +103,17 @@ def loop_trip(text: str, window: int = 64, history: int = 1200,
     return None
 
 
-def stub_trip(text: str, finish_reason: str, request_bytes: int,
-              threshold: int = 96, asked: int = 200) -> dict | None:
-    return stub_trip_bytes(len(text.encode("utf-8")), finish_reason,
-                           request_bytes, threshold, asked)
+def stub_trip(
+    text: str, finish_reason: str, request_bytes: int, threshold: int = 96, asked: int = 200
+) -> dict | None:
+    return stub_trip_bytes(
+        len(text.encode("utf-8")), finish_reason, request_bytes, threshold, asked
+    )
 
 
-def stub_trip_bytes(visible: int, finish_reason: str, request_bytes: int,
-                    threshold: int = 96, asked: int = 200) -> dict | None:
+def stub_trip_bytes(
+    visible: int, finish_reason: str, request_bytes: int, threshold: int = 96, asked: int = 200
+) -> dict | None:
     """A port of `StubWatchdog`: something substantial was asked for, and the
     reply finished normally with nothing in it.
 
@@ -131,7 +134,7 @@ def replies() -> list[dict]:
     for path in sorted(LOGS.glob("memory-*/*.json")):
         try:
             records = json.loads(path.read_text())
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             continue
         if not isinstance(records, list):
             continue
@@ -141,15 +144,17 @@ def replies() -> list[dict]:
             content = record.get("content")
             if not isinstance(content, str) or not content:
                 continue
-            found.append({
-                "source": f"{path.parent.name}/{path.name}",
-                "label": str(record.get("session") or record.get("task") or ""),
-                "text": content,
-                # These runs all completed and were scored; a truncated one
-                # would have been thrown out of the benchmark, so a normal
-                # stop is the right assumption for the stub rule.
-                "finish": "stop",
-            })
+            found.append(
+                {
+                    "source": f"{path.parent.name}/{path.name}",
+                    "label": str(record.get("session") or record.get("task") or ""),
+                    "text": content,
+                    # These runs all completed and were scored; a truncated one
+                    # would have been thrown out of the benchmark, so a normal
+                    # stop is the right assumption for the stub rule.
+                    "finish": "stop",
+                }
+            )
     return found
 
 
@@ -191,13 +196,15 @@ def exchanges() -> list[dict]:
                 pending = ((event.get("payload") or {}).get("text") or {}).get("_0")
             elif event.get("kind") == "assistantResponse" and pending is not None:
                 reply = ((event.get("payload") or {}).get("response") or {}).get("_0") or {}
-                found.append({
-                    "source": path.parent.parent.parent.name,
-                    "request_bytes": len(pending.encode("utf-8")),
-                    "text": reply.get("text") or reply.get("content") or "",
-                    "elided": True,
-                    "finish": reply.get("finishReason") or "stop",
-                })
+                found.append(
+                    {
+                        "source": path.parent.parent.parent.name,
+                        "request_bytes": len(pending.encode("utf-8")),
+                        "text": reply.get("text") or reply.get("content") or "",
+                        "elided": True,
+                        "finish": reply.get("finishReason") or "stop",
+                    }
+                )
                 pending = None
     return found
 
@@ -233,14 +240,19 @@ def main() -> int:
     ap.add_argument("--history", type=int, default=1200)
     ap.add_argument("--repeats", type=int, default=6)
     ap.add_argument("--stub-bytes", type=int, default=96)
-    ap.add_argument("--stub-asked", type=int, default=200,
-                    help="bytes the last user message must reach before a "
-                         "short reply counts as a stub")
+    ap.add_argument(
+        "--stub-asked",
+        type=int,
+        default=200,
+        help="bytes the last user message must reach before a short reply counts as a stub",
+    )
     ap.add_argument("--pingpong-repeats", type=int, default=3)
-    ap.add_argument("--show", type=int, default=0,
-                    help="print this many tripped replies in full")
-    ap.add_argument("--selftest", action="store_true",
-                    help="check this port against the Swift unit-test fixture")
+    ap.add_argument("--show", type=int, default=0, help="print this many tripped replies in full")
+    ap.add_argument(
+        "--selftest",
+        action="store_true",
+        help="check this port against the Swift unit-test fixture",
+    )
     args = ap.parse_args()
 
     if args.selftest:
@@ -263,25 +275,35 @@ def main() -> int:
         # stub rule cannot be applied to it. It is judged on `exchanges()`
         # below instead, and counted here only for the loop.
 
-    print(f"{len(corpus)} recorded replies, {total_bytes / 1e6:.1f} MB, "
-          f"from {len({r['source'].split('/')[0] for r in corpus})} runs\n")
-    print(f"  window={args.window} history={args.history} repeats={args.repeats} "
-          f"stub_bytes={args.stub_bytes}\n")
+    print(
+        f"{len(corpus)} recorded replies, {total_bytes / 1e6:.1f} MB, "
+        f"from {len({r['source'].split('/')[0] for r in corpus})} runs\n"
+    )
+    print(
+        f"  window={args.window} history={args.history} repeats={args.repeats} "
+        f"stub_bytes={args.stub_bytes}\n"
+    )
     print(f"  {'watchdog':10s} {'false positives':>16s} {'rate':>8s}")
     rate = len(loop_hits) / len(corpus)
     print(f"  {'loop':10s} {len(loop_hits):16d} {rate:7.1%}")
 
     pairs = exchanges()
     for pair in pairs:
-        trip = stub_trip_bytes(reply_bytes(pair["text"]), pair["finish"],
-                               pair["request_bytes"], args.stub_bytes,
-                               args.stub_asked)
+        trip = stub_trip_bytes(
+            reply_bytes(pair["text"]),
+            pair["finish"],
+            pair["request_bytes"],
+            args.stub_bytes,
+            args.stub_asked,
+        )
         if trip:
             stub_hits.append((pair, trip))
     if pairs:
-        print(f"  {'stub':10s} {len(stub_hits):16d} "
-              f"{len(stub_hits) / len(pairs):7.1%}   "
-              f"over {len(pairs)} recorded exchanges")
+        print(
+            f"  {'stub':10s} {len(stub_hits):16d} "
+            f"{len(stub_hits) / len(pairs):7.1%}   "
+            f"over {len(pairs)} recorded exchanges"
+        )
     else:
         print(f"  {'stub':10s} {'no corpus':>16s}")
 
@@ -294,25 +316,26 @@ def main() -> int:
                 counts[call] = counts.get(call, 0) + 1
             if counts and max(counts.values()) >= args.pingpong_repeats:
                 pingpong += 1
-        print(f"  {'pingpong':10s} {pingpong:16d} "
-              f"{pingpong / len(conversations):7.1%}")
+        print(f"  {'pingpong':10s} {pingpong:16d} {pingpong / len(conversations):7.1%}")
     else:
         print(f"  {'pingpong':10s} {'no corpus':>16s}")
-    print(f"  {'stall':10s} {'not applicable':>16s}   "
-          f"(no timings recorded; see the module docstring)")
+    print(
+        f"  {'stall':10s} {'not applicable':>16s}   (no timings recorded; see the module docstring)"
+    )
     print(f"\n  {len(caught)} of {len(KNOWN_LOOPS)} known-bad replies caught")
 
     if loop_hits:
         print(f"\n{len(loop_hits)} loop trips:")
         for reply, trip in loop_hits[:20]:
-            print(f"  {reply['source']} {reply['label']:>10s} "
-                  f"count={trip['count']} period={trip['period']} at={trip['at']} "
-                  f"of {len(reply['text'])}")
+            print(
+                f"  {reply['source']} {reply['label']:>10s} "
+                f"count={trip['count']} period={trip['period']} at={trip['at']} "
+                f"of {len(reply['text'])}"
+            )
     if stub_hits:
         print(f"\n{len(stub_hits)} stub trips:")
         for reply, trip in stub_hits[:20]:
-            print(f"  {reply['source']:34s} asked={trip['asked']}B "
-                  f"visible={trip['visible']}B")
+            print(f"  {reply['source']:34s} asked={trip['asked']}B visible={trip['visible']}B")
 
     for reply, trip in loop_hits[: args.show]:
         start = max(0, trip["at"] - 4 * trip["period"])
@@ -321,8 +344,7 @@ def main() -> int:
 
     clean = not loop_hits and not stub_hits
     if clean:
-        print("\nzero false positives on "
-              f"{len(corpus)} replies; {len(caught)} true catches")
+        print(f"\nzero false positives on {len(corpus)} replies; {len(caught)} true catches")
     else:
         print("\nNOT clean: raise a threshold, or keep the watchdog observing only")
     return 0 if clean else 2
@@ -341,8 +363,7 @@ def selftest() -> int:
         tripped = loop_trip(text, repeats=case.get("repeats", 6)) is not None
         if tripped != case["loopTrips"]:
             failures += 1
-            print(f"  MISMATCH {case['name']}: python={tripped} "
-                  f"swift={case['loopTrips']}")
+            print(f"  MISMATCH {case['name']}: python={tripped} swift={case['loopTrips']}")
     print(f"{len(cases)} fixture cases, {failures} mismatches")
     return 1 if failures else 0
 

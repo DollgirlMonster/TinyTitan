@@ -2,6 +2,7 @@
 """Bisect the unmeasured wall: length sweep (fixed vs per-token overhead) and
 an rdadvise-off comparison, using authoritative server footers.
 """
+
 import http.client
 import json
 import os
@@ -10,8 +11,11 @@ import time
 import sys
 
 from tinytitan_profile import (
-    DEFAULT_API_MODEL, DEFAULT_MODEL_PATH, benchmark_log_path,
-    server_command, server_environment, resolve_api_model,
+    DEFAULT_MODEL_PATH,
+    benchmark_log_path,
+    server_command,
+    server_environment,
+    resolve_api_model,
 )
 
 BASE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -30,8 +34,8 @@ def run(max_tokens, tag, extra_env=None):
     log_path = benchmark_log_path(f"tinytitan_gap_{tag}.log")
     log = open(log_path, "w")
     proc = subprocess.Popen(
-        server_command(BIN, PORT, model=MODEL),
-        env=env, stdout=log, stderr=subprocess.STDOUT)
+        server_command(BIN, PORT, model=MODEL), env=env, stdout=log, stderr=subprocess.STDOUT
+    )
     start = time.time()
     while time.time() - start < 120:
         if proc.poll() is not None:
@@ -47,17 +51,27 @@ def run(max_tokens, tag, extra_env=None):
         except OSError:
             pass
         time.sleep(0.05)
-    payload = json.dumps({
-        "model": resolve_api_model(PORT),
-        "messages": [{"role": "user", "content": PROMPT}],
-        "temperature": 0, "top_p": 0.95, "top_k": 20,
-        "presence_penalty": 0.0, "max_completion_tokens": max_tokens, "stream": True,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": resolve_api_model(PORT),
+            "messages": [{"role": "user", "content": PROMPT}],
+            "temperature": 0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "presence_penalty": 0.0,
+            "max_completion_tokens": max_tokens,
+            "stream": True,
+        }
+    ).encode()
     # one warm request then the measured one
-    for i in range(2):
+    for _i in range(2):
         conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=3600)
-        conn.request("POST", "/v1/chat/completions", body=payload,
-                     headers={"Content-Type": "application/json"})
+        conn.request(
+            "POST",
+            "/v1/chat/completions",
+            body=payload,
+            headers={"Content-Type": "application/json"},
+        )
         resp = conn.getresponse()
         while resp.read(8192):
             pass
@@ -80,9 +94,12 @@ def run(max_tokens, tag, extra_env=None):
             if "TinyTitan kernel total_gpu_ms=" in line:
                 out["gpu"].append(line.strip())
     print(f"--- {tag} (max_tokens={max_tokens}) ---")
-    for l in out["gen"]: print(l)
-    for l in out["runner"]: print(l)
-    for l in out["gpu"]: print(l)
+    for line in out["gen"]:
+        print(line)
+    for line in out["runner"]:
+        print(line)
+    for line in out["gpu"]:
+        print(line)
 
 
 run(128, "len128")

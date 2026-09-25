@@ -25,6 +25,7 @@ re-filing `characters/marcus/eyes = grey` as `characters/marcus/eye_colour`,
 or setting two characters' eyes against each other, are what a consolidation
 really produces.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,44 +47,89 @@ tasks = _load("side_engine_tasks", "benchmark/side_engine_tasks.py")
 
 # (existing key, existing value, new key, new value, truth, note)
 T5_CASES = [
-    ("characters/marcus/eyes", "grey",
-     "characters/marcus/eye_colour", "grey", "YES", "re-filed eyes"),
-    ("setting/town", "Ashgrove",
-     "setting/town_name", "Ashgrove", "YES", "re-filed town"),
-    ("rules/ferry", "runs only on Sundays",
-     "rules/ferry_schedule", "only Sundays", "YES", "re-filed ferry rule"),
-    ("characters/ines/role", "the town archivist",
-     "characters/ines/job", "archivist", "YES", "re-filed role"),
-    ("state/inn", "burned to the ground",
-     "state/inn_status", "destroyed by fire", "YES", "re-filed inn state"),
-    ("characters/marcus/eyes", "grey",
-     "characters/ines/eyes", "green", "NO", "two characters"),
-    ("setting/town", "Ashgrove",
-     "rules/ferry", "runs only on Sundays", "NO", "different subjects"),
-    ("characters/marcus/role", "the lighthouse keeper's son",
-     "characters/marcus/eyes", "grey", "NO", "different attributes"),
+    (
+        "characters/marcus/eyes",
+        "grey",
+        "characters/marcus/eye_colour",
+        "grey",
+        "YES",
+        "re-filed eyes",
+    ),
+    ("setting/town", "Ashgrove", "setting/town_name", "Ashgrove", "YES", "re-filed town"),
+    (
+        "rules/ferry",
+        "runs only on Sundays",
+        "rules/ferry_schedule",
+        "only Sundays",
+        "YES",
+        "re-filed ferry rule",
+    ),
+    (
+        "characters/ines/role",
+        "the town archivist",
+        "characters/ines/job",
+        "archivist",
+        "YES",
+        "re-filed role",
+    ),
+    (
+        "state/inn",
+        "burned to the ground",
+        "state/inn_status",
+        "destroyed by fire",
+        "YES",
+        "re-filed inn state",
+    ),
+    ("characters/marcus/eyes", "grey", "characters/ines/eyes", "green", "NO", "two characters"),
+    ("setting/town", "Ashgrove", "rules/ferry", "runs only on Sundays", "NO", "different subjects"),
+    (
+        "characters/marcus/role",
+        "the lighthouse keeper's son",
+        "characters/marcus/eyes",
+        "grey",
+        "NO",
+        "different attributes",
+    ),
 ]
 
 T3_CASES = [
-    ("characters/marcus/eyes", "grey",
-     "characters/marcus/eye_colour", "hazel", "YES", "same fact, two values"),
-    ("setting/town", "Ashgrove",
-     "setting/town_name", "Millbrook", "YES", "same fact, two values"),
-    ("characters/marcus/eyes", "grey",
-     "characters/ines/eyes", "green", "NO", "two characters"),
-    ("characters/marcus/eye_colour", "grey",
-     "characters/marcus/eyes", "grey", "NO", "same fact, two keys"),
+    (
+        "characters/marcus/eyes",
+        "grey",
+        "characters/marcus/eye_colour",
+        "hazel",
+        "YES",
+        "same fact, two values",
+    ),
+    ("setting/town", "Ashgrove", "setting/town_name", "Millbrook", "YES", "same fact, two values"),
+    ("characters/marcus/eyes", "grey", "characters/ines/eyes", "green", "NO", "two characters"),
+    (
+        "characters/marcus/eye_colour",
+        "grey",
+        "characters/marcus/eyes",
+        "grey",
+        "NO",
+        "same fact, two keys",
+    ),
 ]
 
 
 def cases() -> list[dict]:
     jobs: list[dict] = []
-    for task, question, rows in (("T5", "Same fact?", T5_CASES),
-                                 ("T3", "Do A and B disagree?", T3_CASES)):
+    for task, question, rows in (
+        ("T5", "Same fact?", T5_CASES),
+        ("T3", "Do A and B disagree?", T3_CASES),
+    ):
         for a_key, a_value, b_key, b_value, truth, note in rows:
-            jobs.append(tasks.job(
-                task, f"A: {a_key} = {a_value}\nB: {b_key} = {b_value}\n{question}",
-                truth, note, authored=True))
+            jobs.append(
+                tasks.job(
+                    task,
+                    f"A: {a_key} = {a_value}\nB: {b_key} = {b_value}\n{question}",
+                    truth,
+                    note,
+                    authored=True,
+                )
+            )
     return jobs
 
 
@@ -109,8 +155,9 @@ def score(path: Path) -> int:
         entry = by_task.setdefault(row["task"], [0, 0])
         entry[0] += hit
         entry[1] += 1
-        print(f"{row['task']:5s} {row['truth']:6s} {answer:8s} "
-              f"{'' if hit else 'MISS '}{row['note']}")
+        print(
+            f"{row['task']:5s} {row['truth']:6s} {answer:8s} {'' if hit else 'MISS '}{row['note']}"
+        )
     print()
     failures = 0
     for task, (correct, total) in sorted(by_task.items()):
