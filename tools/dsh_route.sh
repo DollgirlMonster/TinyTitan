@@ -55,10 +55,32 @@ usage() { sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-# A checkout builds into `.build/release`; an install from the release tarball
-# keeps its binaries in `~/.tinytitan/bin` and says so with TINYTITAN_BIN_DIR.
-BINARY="${TINYTITAN_BIN_DIR:-$BASE_DIR/.build/release}/TinyTitanServer"
-MODELS_DIR="${TINYTITAN_MODELS_DIR:-$BASE_DIR/models}"
+# A checkout builds into `.build/release` and keeps models in `models/`; an
+# install from the release tarball keeps both one level up (`~/.tinytitan/bin`,
+# `~/.tinytitan/models`) and names them through TINYTITAN_BIN_DIR and
+# TINYTITAN_MODELS_DIR. The launcher the installer writes sets those, but the
+# installer also tells a person to "re-run tools/dsh_local.sh ensure" from a
+# shell, where they are unset — so the installed layout is checked before giving
+# up, and the failure a user sees is about a missing model rather than a missing
+# path the installer put somewhere else.
+if [[ -n "${TINYTITAN_BIN_DIR:-}" ]]; then
+  BINARY="$TINYTITAN_BIN_DIR/TinyTitanServer"
+elif [[ -x "$BASE_DIR/.build/release/TinyTitanServer" ]]; then
+  BINARY="$BASE_DIR/.build/release/TinyTitanServer"
+elif [[ -x "$BASE_DIR/../bin/TinyTitanServer" ]]; then
+  BINARY="$(cd "$BASE_DIR/.." && pwd)/bin/TinyTitanServer"
+else
+  BINARY="$BASE_DIR/.build/release/TinyTitanServer"
+fi
+if [[ -n "${TINYTITAN_MODELS_DIR:-}" ]]; then
+  MODELS_DIR="$TINYTITAN_MODELS_DIR"
+elif [[ -d "$BASE_DIR/models" ]]; then
+  MODELS_DIR="$BASE_DIR/models"
+elif [[ -d "$BASE_DIR/../models" ]]; then
+  MODELS_DIR="$(cd "$BASE_DIR/.." && pwd)/models"
+else
+  MODELS_DIR="$BASE_DIR/models"
+fi
 # shellcheck source=tools/tinytitan_models.sh
 source "$SCRIPT_DIR/tinytitan_models.sh"
 

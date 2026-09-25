@@ -20,6 +20,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -189,6 +190,66 @@ class RefusalTests(unittest.TestCase):
         missing = pathlib.Path(tempfile.mkdtemp()) / "absent.yaml"
         run = run_route("--models", "qwen38", "--write", "--settings", str(missing), expect=2)
         self.assertIn("no DSH settings file", run.stderr)
+
+
+class InstalledLayoutTests(unittest.TestCase):
+    """It finds the engine and the models where an *installed* copy keeps them.
+
+    A checkout builds into `.build/release` and models into `models/`; an install
+    from the release tarball keeps both one level above the tools (`bin/`,
+    `models/`) and normally has `TINYTITAN_BIN_DIR`/`TINYTITAN_MODELS_DIR` set by
+    the launcher it wrote. The installer's own advice after a model lands is to
+    re-run `tools/dsh_local.sh ensure` from a shell, where neither variable is
+    set: before 2026-09-25 that run died with "no server binary at
+    …/.build/release/TinyTitanServer", which a user reads as "no model".
+    """
+
+    def setUp(self) -> None:
+        self.root = pathlib.Path(tempfile.mkdtemp(prefix="tt-installed-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        tools = self.root / "src" / "tools"
+        tools.mkdir(parents=True)
+        shutil.copytree(ROOT / "tools", tools, dirs_exist_ok=True)
+        (self.root / "bin").mkdir()
+        (self.root / "models").mkdir()
+        self.stub_engine(CATALOG.read_text())
+
+    def stub_engine(self, catalog_body: str) -> None:
+        """An engine that records the arguments it was called with."""
+        catalog = self.root / "stub-catalog.json"
+        catalog.write_text(catalog_body)
+        stub = self.root / "bin" / "TinyTitanServer"
+        stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{self.root}/engine-args.txt"\n'
+                        f'cat "{catalog}"\n')
+        stub.chmod(0o755)
+
+    def engine_arguments(self) -> list[str]:
+        return (self.root / "engine-args.txt").read_text().splitlines()
+
+    def run_installed(self, *args: str) -> subprocess.CompletedProcess[str]:
+        # A deliberately bare environment: no TINYTITAN_* variables at all.
+        environment = {"PATH": os.environ["PATH"], "HOME": str(self.root)}
+        return subprocess.run(
+            ["bash", str(self.root / "src" / "tools" / "dsh_route.sh"), *args],
+            text=True, capture_output=True, check=False, env=environment)
+
+    def test_it_finds_both_the_engine_and_the_models_directory(self) -> None:
+        run = self.run_installed("--models", "qwen38")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(declared_ids(run.stdout))
+        # The engine came from the installed `bin/` and was pointed at the
+        # installed `models/`: neither came from an environment variable.
+        arguments = self.engine_arguments()
+        self.assertIn("--models-dir", arguments)
+        self.assertEqual(arguments[arguments.index("--models-dir") + 1],
+                         str(self.root / "models"))
+
+    def test_an_empty_catalog_is_not_reported_as_a_missing_binary(self) -> None:
+        self.stub_engine('{"models":[]}')
+        run = self.run_installed("--models", "qwen38")
+        self.assertEqual(run.returncode, 2)
+        self.assertIn("no catalog", run.stderr)
+        self.assertNotIn("no server binary", run.stderr)
 
 
 if __name__ == "__main__":

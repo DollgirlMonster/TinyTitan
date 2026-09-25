@@ -411,10 +411,13 @@ PY
   ok "Workspace seeded: $ws"
 }
 
-# The plugin is installed from this checkout on purpose: it is project-internal,
-# not published to npm, so there is no registry package to depend on and no
-# second copy to keep in step. A `file:` install is a copy, so re-running `add`
-# is how a plugin edit reaches the private home.
+# The plugin is installed from the tools tree on purpose. It is deliberately
+# **not** published to npm (decided 2026-09-25): the installer already downloads
+# this project's source archive for the release tag, so the bundle arrives from
+# the web with the tools and nobody needs a registry account — ours or the
+# user's. There is no registry package to depend on and no second copy to keep in
+# step. A `file:` install is a copy, so re-running `add` is how a plugin edit
+# reaches the private home; for an installed copy, re-run `ensure`.
 install_plugin() {
   [[ -d "$PLUGIN_DIR" ]] || die "plugin not found at $PLUGIN_DIR"
   private_env

@@ -113,12 +113,16 @@ The [Project Tracker](https://github.com/Pummelchen/TinyTitan/wiki/Project-Track
 is the authority, and it holds one table with no Open row. Two items are Blocked
 on other people:
 
-1. **TT-018 — publishing `plugins/dsh-tinytitan`.** The catalogue half is
-   **done**: [#5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396)
-   merged 2026-09-19 (merge commit `4d136c1`) and `dsh-tinytitan` is listed. Only
-   the npm publish remains, on the operator's account. The
-   `Pummelchen/awesome-dsh-plugin` fork is now inert; it **cannot be deleted from
-   this checkout** because the token lacks `delete_repo`.
+1. **TT-018 — the plugin's delivery is settled, one chore is not.** `dsh-tinytitan`
+   **is not published to npm and will not be** (decided 2026-09-25): the installer
+   fetches this project's source archive for the release tag, which carries
+   `plugins/`, and installs the bundle from there, so the code reaches a user from
+   the web with no registry account on either side. The catalogue half is done
+   ([#5396](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5396)
+   merged 2026-09-19, `dsh-tinytitan` listed, and the listing points at the repo).
+   What is left of the row is the inert `Pummelchen/awesome-dsh-plugin` fork: it
+   **cannot be deleted from this checkout** because the token lacks `delete_repo`,
+   so remove it in the web UI or `gh auth refresh -h github.com -s delete_repo`.
 2. **TT-020 — reaching the LAN manager from another machine.**
    [Discussion #7111](https://github.com/deepseek-ai/deepseek-harness/discussions/7111)
    was **answered 2026-09-19 by `PerryLink`**: the gate is the webserver schema,
