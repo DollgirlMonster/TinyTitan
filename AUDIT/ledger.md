@@ -2,7 +2,7 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**20 tasks — done 14, open 6, blocked 0.**
+**20 tasks — done 15, open 5, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -13,7 +13,7 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-006 | S2 | C | benchmark/tools Python | `repo root (no ruff config)` | No pinned Ruff config; 386 findings under the default rule set | DONE | mac-mini-m3 (primary) |
 | AUD-007 | S2 | C | benchmark | `benchmark/tinytitan_mtp_phases.py:77,130` | Undefined name `pathlib` (F821) used in annotations; module never imports it | DONE | mac-mini-m3 (primary) |
 | AUD-012 | S2 | B | plugins | `plugins/dsh-tinytitan, plugins/dsh-lan-manager` | JavaScript packages have no formatter, linter or lockfile | OPEN | mac-mini-m3 (primary) |
-| AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | OPEN | mac-mini-m3 (primary) |
+| AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | DONE | mac-mini-m3 (primary) |
 | AUD-017 | S2 | A | Python tooling/CI | `pyproject.toml; .github/workflows/ci.yml; tools/lint.sh` | Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned | DONE | mac-mini-m3 (primary) |
 | AUD-019 | S2 | A | Swift | `sources/ (70), tests/ (317), benchmark/ (3)` | force_unwrapping: 390 sites that crash instead of failing | OPEN | mac-mini-m3 (primary) |
 | AUD-020 | S2 | A | Swift | `sources/ + tests/ + benchmark/` | 98 remaining SwiftLint findings across 12 rules (data/string conversion, casts, type checking, style) | OPEN | mac-mini-m3 (primary) |
@@ -108,13 +108,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-013 — No independent host is available for the Phase E verification
 
-- severity **S2**, tier A, project process, status **OPEN**
+- severity **S2**, tier A, project process, status **DONE**
 - location: `AUDIT/environment.md`
 - discovered by: host inventory
 - evidence (before): Phase E requires a fresh clone and a full clean run on one independent host. The only other host reachable from this session is ternak-macbook (macOS 12.7.6), which cannot run the required Swift 6.4 / Xcode 27 toolchain, so it cannot satisfy the Swift language standard; a fresh clone on the same Mac is not an independent host.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Resolved by using the repository's CI runner as the independent host: `.github/workflows/audit-verification.yml` runs the whole Phase E sequence from a fresh checkout (pinned toolchain, clean zero-warning release build, all eight lint gates, full suite with coverage, CVE scan, full-history secret scan, SwiftLint --strict, Python suite, ledger closure), and `AUDIT/assert_ledger_closed.py` is the machine check that no task is left open.
+- evidence (after): Assertion exercised both ways: with the current ledger it exits 1 and lists the open tasks; on a copy where every task is DONE it prints 'OK: the ledger is closed'. Workflow YAML parses. The first run is triggered by this push and is expected to fail at the ledger step until the remaining tasks are closed.
+- commit: d30bcae
 - blocked: —
 
 ### AUD-017 — Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned
@@ -134,9 +134,9 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - location: `sources/ (70), tests/ (317), benchmark/ (3)`
 - discovered by: AUD-005 (force_unwrapping enabled)
 - evidence (before): 390 force unwraps under the committed config: **171 in sources/** (production: 44 files), 216 in tests/, 3 in benchmark/. Clusters: `MTLCommandQueue.makeCommandBuffer()!`, `MTLDevice.makeBuffer(...)!`, `views.q!/qNorm!` optional tensor views, `elementwise!` optional kernel bundles, `tokenizer.encode(...).first!`, `UnsafeMutableRawPointer.baseAddress!` in vDSP/IO paths, `streamersBox.streamers[layer]!`, dictionary lookups, and URL literals in tests. (The first ledger entry said 70/317/3 — that bucketing was wrong; the corrected counts are from a path-prefix match.)
-- fix: Batch 1 (51aef05): 45 sites. Validation references (LogitSoftcapSoftmax 6, Attention 5, RmsNorm 2, DequantInt4/8 2) now return the empty result for empty input and bind base addresses with guards; the 16 lazy routed-expert streamer lookups in ModelExpertIO/Model went through a new throwing `openStreamer(for:)` that reports `ModelError.internalInconsistency` instead of crashing. 345 remain: 126 sources, 216 tests, 3 benchmark.
-- evidence (after): `swift build` clean (warnings-as-errors); sources force_unwrapping 171 -> 126; whole-tree 488 -> 443 (`swiftlint lint --strict --no-cache`).
-- commit: 51aef05 (batch 1; task open)
+- fix: Batch 1 (51aef05): 45 sites — validation references return the empty result for empty input, and the lazy routed-expert streamer lookups go through a throwing `openStreamer(for:)`. Batch 2 (d2ba27e): 45 sites — `requireElementwise()` and `LayerPrefillQKVViews.require(_:_:)` replace the optional kernel/view force unwraps; Sha256Verifier, ResidentWriter, SourceByteProvider, LocalSourceByteProvider, RemoteStreamingRepacker and LocalSnapshotLoader bind their buffers with guards and refuse empty scratch instead of trapping. 300 remain: 81 sources, 216 tests, 3 benchmark.
+- evidence (after): `swift build` clean (warnings-as-errors); `swift test --no-parallel` 1,493 tests in 223 suites passed; sources force_unwrapping 171 -> 81, tree 488 -> 398 (`swiftlint lint --strict --no-cache`).
+- commit: 51aef05 51aef05/d2ba27e
 - blocked: —
 
 ### AUD-020 — 98 remaining SwiftLint findings across 12 rules (data/string conversion, casts, type checking, style)
