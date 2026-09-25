@@ -8,25 +8,27 @@ import Metal
 ///   gate: [F, D]   up:   [F, D]   down: [D, F]
 public struct SharedExpertProjection {
     public let weights: MTLBuffer
-    public let scales:  MTLBuffer
-    public let biases:  MTLBuffer
+    public let scales: MTLBuffer
+    public let biases: MTLBuffer
     public let weightsOffset: Int
-    public let scalesOffset:  Int
-    public let biasesOffset:  Int
+    public let scalesOffset: Int
+    public let biasesOffset: Int
     public let rows: UInt32
     public let cols: UInt32
 
-    public init(weights: MTLBuffer, scales: MTLBuffer, biases: MTLBuffer,
-                weightsOffset: Int = 0, scalesOffset: Int = 0, biasesOffset: Int = 0,
-                rows: UInt32, cols: UInt32) {
-        self.weights       = weights
-        self.scales        = scales
-        self.biases        = biases
+    public init(
+        weights: MTLBuffer, scales: MTLBuffer, biases: MTLBuffer,
+        weightsOffset: Int = 0, scalesOffset: Int = 0, biasesOffset: Int = 0,
+        rows: UInt32, cols: UInt32
+    ) {
+        self.weights = weights
+        self.scales = scales
+        self.biases = biases
         self.weightsOffset = weightsOffset
-        self.scalesOffset  = scalesOffset
-        self.biasesOffset  = biasesOffset
-        self.rows          = rows
-        self.cols          = cols
+        self.scalesOffset = scalesOffset
+        self.biasesOffset = biasesOffset
+        self.rows = rows
+        self.cols = cols
     }
 }
 
@@ -39,7 +41,7 @@ enum SharedExpertInt8Error: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .dimensionMismatch(let s): return "SharedExpertInt8 dimension mismatch: \(s)"
-        case .scratchTooSmall(let s):   return "SharedExpertInt8 scratch too small: \(s)"
+        case .scratchTooSmall(let s): return "SharedExpertInt8 scratch too small: \(s)"
         }
     }
 }
@@ -59,7 +61,8 @@ final class SharedExpertInt8 {
 
     init(context: MetalContext, siluActivation: Bool = false) throws {
         self.int8 = try DequantInt8GEMV(context: context)
-        let activationConstants: [MetalFunctionConstant] = siluActivation
+        let activationConstants: [MetalFunctionConstant] =
+            siluActivation
             ? [MetalFunctionConstant(index: 74, value: .bool(true))]
             : []
         self.fusedGateUpActPSO = try context.pipeline(
@@ -75,16 +78,19 @@ final class SharedExpertInt8 {
             ] + activationConstants)
     }
 
-    func encode(commandBuffer cb: MTLCommandBuffer,
-                       x: MTLBuffer, xOffset: Int = 0,
-                       gate: SharedExpertInt8Proj,
-                       up:   SharedExpertInt8Proj,
-                       down: SharedExpertInt8Proj,
-                       y: MTLBuffer, yOffset: Int = 0,
-                       scratchAct:  MTLBuffer, scratchActOffset:  Int = 0) throws {
+    func encode(
+        commandBuffer cb: MTLCommandBuffer,
+        x: MTLBuffer, xOffset: Int = 0,
+        gate: SharedExpertInt8Proj,
+        up: SharedExpertInt8Proj,
+        down: SharedExpertInt8Proj,
+        y: MTLBuffer, yOffset: Int = 0,
+        scratchAct: MTLBuffer, scratchActOffset: Int = 0
+    ) throws {
         guard gate.rows == up.rows, gate.cols == up.cols else {
             throw SharedExpertInt8Error.dimensionMismatch(
-                "gate/up shapes differ: gate=(\(gate.rows),\(gate.cols)) up=(\(up.rows),\(up.cols))")
+                "gate/up shapes differ: gate=(\(gate.rows),\(gate.cols)) up=(\(up.rows),\(up.cols))"
+            )
         }
         guard down.rows == gate.cols, down.cols == gate.rows else {
             throw SharedExpertInt8Error.dimensionMismatch(
@@ -93,7 +99,8 @@ final class SharedExpertInt8 {
         let needBytes = Int(gate.rows) * MemoryLayout<Float16>.size
         guard scratchActOffset >= 0, scratchActOffset + needBytes <= scratchAct.length else {
             throw SharedExpertInt8Error.scratchTooSmall(
-                "scratchAct offset \(scratchActOffset) + needed \(needBytes) exceeds length \(scratchAct.length)")
+                "scratchAct offset \(scratchActOffset) + needed \(needBytes) exceeds length \(scratchAct.length)"
+            )
         }
         let inputBytes = Int(gate.cols) * MemoryLayout<Float16>.size
         let outputBytes = Int(down.rows) * MemoryLayout<Float16>.size
@@ -106,37 +113,43 @@ final class SharedExpertInt8 {
                 "y offset \(yOffset) + needed \(outputBytes) exceeds length \(y.length)")
         }
 
-        try encodePhase1(commandBuffer: cb,
-                         x: x,
-                         xOffset: xOffset,
-                         gate: gate,
-                         up: up,
-                         scratchAct: scratchAct,
-                         scratchActOffset: scratchActOffset)
+        try encodePhase1(
+            commandBuffer: cb,
+            x: x,
+            xOffset: xOffset,
+            gate: gate,
+            up: up,
+            scratchAct: scratchAct,
+            scratchActOffset: scratchActOffset)
 
-        try encodeDown(commandBuffer: cb,
-                       down: down,
-                       y: y,
-                       yOffset: yOffset,
-                       scratchAct: scratchAct,
-                       scratchActOffset: scratchActOffset)
+        try encodeDown(
+            commandBuffer: cb,
+            down: down,
+            y: y,
+            yOffset: yOffset,
+            scratchAct: scratchAct,
+            scratchActOffset: scratchActOffset)
     }
 
-    func encodePhase1(commandBuffer cb: MTLCommandBuffer,
-                             x: MTLBuffer,
-                             xOffset: Int = 0,
-                             gate: SharedExpertInt8Proj,
-                             up: SharedExpertInt8Proj,
-                             scratchAct: MTLBuffer,
-                             scratchActOffset: Int = 0) throws {
+    func encodePhase1(
+        commandBuffer cb: MTLCommandBuffer,
+        x: MTLBuffer,
+        xOffset: Int = 0,
+        gate: SharedExpertInt8Proj,
+        up: SharedExpertInt8Proj,
+        scratchAct: MTLBuffer,
+        scratchActOffset: Int = 0
+    ) throws {
         guard gate.rows == up.rows, gate.cols == up.cols else {
             throw SharedExpertInt8Error.dimensionMismatch(
-                "gate/up shapes differ: gate=(\(gate.rows),\(gate.cols)) up=(\(up.rows),\(up.cols))")
+                "gate/up shapes differ: gate=(\(gate.rows),\(gate.cols)) up=(\(up.rows),\(up.cols))"
+            )
         }
         let needBytes = Int(gate.rows) * MemoryLayout<Float16>.size
         guard scratchActOffset >= 0, scratchActOffset + needBytes <= scratchAct.length else {
             throw SharedExpertInt8Error.scratchTooSmall(
-                "scratchAct offset \(scratchActOffset) + needed \(needBytes) exceeds length \(scratchAct.length)")
+                "scratchAct offset \(scratchActOffset) + needed \(needBytes) exceeds length \(scratchAct.length)"
+            )
         }
         let inputBytes = Int(gate.cols) * MemoryLayout<Float16>.size
         guard xOffset >= 0, xOffset + inputBytes <= x.length else {
@@ -144,59 +157,66 @@ final class SharedExpertInt8 {
                 "x offset \(xOffset) + needed \(inputBytes) exceeds length \(x.length)")
         }
 
-        try encodeFusedGateUpAct(commandBuffer: cb,
-                                 x: x,
-                                 xOffset: xOffset,
-                                 gate: gate,
-                                 up: up,
-                                 scratchAct: scratchAct,
-                                 scratchActOffset: scratchActOffset)
+        try encodeFusedGateUpAct(
+            commandBuffer: cb,
+            x: x,
+            xOffset: xOffset,
+            gate: gate,
+            up: up,
+            scratchAct: scratchAct,
+            scratchActOffset: scratchActOffset)
     }
 
-    func encodeDown(commandBuffer cb: MTLCommandBuffer,
-                           down: SharedExpertInt8Proj,
-                           y: MTLBuffer,
-                           yOffset: Int = 0,
-                           scratchAct: MTLBuffer,
-                           scratchActOffset: Int = 0) throws {
+    func encodeDown(
+        commandBuffer cb: MTLCommandBuffer,
+        down: SharedExpertInt8Proj,
+        y: MTLBuffer,
+        yOffset: Int = 0,
+        scratchAct: MTLBuffer,
+        scratchActOffset: Int = 0
+    ) throws {
         let inputBytes = Int(down.cols) * MemoryLayout<Float16>.size
         let outputBytes = Int(down.rows) * MemoryLayout<Float16>.size
         guard scratchActOffset >= 0, scratchActOffset + inputBytes <= scratchAct.length else {
             throw SharedExpertInt8Error.scratchTooSmall(
-                "scratchAct offset \(scratchActOffset) + needed \(inputBytes) exceeds length \(scratchAct.length)")
+                "scratchAct offset \(scratchActOffset) + needed \(inputBytes) exceeds length \(scratchAct.length)"
+            )
         }
         guard yOffset >= 0, yOffset + outputBytes <= y.length else {
             throw SharedExpertInt8Error.scratchTooSmall(
                 "y offset \(yOffset) + needed \(outputBytes) exceeds length \(y.length)")
         }
-        try int8.encode(commandBuffer: cb,
-                    weights: down.weights, weightsOffset: down.weightsOffset,
-                    scales:  down.scales,  scalesOffset:  down.scalesOffset,
-                    biases:  down.biases,  biasesOffset:  down.biasesOffset,
-                    x: scratchAct, xOffset: scratchActOffset,
-                    y: y, yOffset: yOffset,
-                    m: down.rows, n: down.cols)
+        try int8.encode(
+            commandBuffer: cb,
+            weights: down.weights, weightsOffset: down.weightsOffset,
+            scales: down.scales, scalesOffset: down.scalesOffset,
+            biases: down.biases, biasesOffset: down.biasesOffset,
+            x: scratchAct, xOffset: scratchActOffset,
+            y: y, yOffset: yOffset,
+            m: down.rows, n: down.cols)
     }
 
-    private func encodeFusedGateUpAct(commandBuffer cb: MTLCommandBuffer,
-                                      x: MTLBuffer,
-                                      xOffset: Int,
-                                      gate: SharedExpertInt8Proj,
-                                      up: SharedExpertInt8Proj,
-                                      scratchAct: MTLBuffer,
-                                      scratchActOffset: Int) throws {
+    private func encodeFusedGateUpAct(
+        commandBuffer cb: MTLCommandBuffer,
+        x: MTLBuffer,
+        xOffset: Int,
+        gate: SharedExpertInt8Proj,
+        up: SharedExpertInt8Proj,
+        scratchAct: MTLBuffer,
+        scratchActOffset: Int
+    ) throws {
         guard let enc = cb.makeComputeCommandEncoder() else {
             throw SharedExpertInt8Error.dimensionMismatch("encoder alloc failed")
         }
         enc.setComputePipelineState(
             (gate.rows == 2112 && gate.cols == 2816 ? specializedFusedGateUpActPSO : nil)
-            ?? fusedGateUpActPSO)
+                ?? fusedGateUpActPSO)
         enc.setBuffer(gate.weights, offset: gate.weightsOffset, index: 0)
-        enc.setBuffer(gate.scales,  offset: gate.scalesOffset,  index: 1)
-        enc.setBuffer(gate.biases,  offset: gate.biasesOffset,  index: 2)
-        enc.setBuffer(up.weights,   offset: up.weightsOffset,   index: 3)
-        enc.setBuffer(up.scales,    offset: up.scalesOffset,    index: 4)
-        enc.setBuffer(up.biases,    offset: up.biasesOffset,    index: 5)
+        enc.setBuffer(gate.scales, offset: gate.scalesOffset, index: 1)
+        enc.setBuffer(gate.biases, offset: gate.biasesOffset, index: 2)
+        enc.setBuffer(up.weights, offset: up.weightsOffset, index: 3)
+        enc.setBuffer(up.scales, offset: up.scalesOffset, index: 4)
+        enc.setBuffer(up.biases, offset: up.biasesOffset, index: 5)
         enc.setBuffer(x, offset: xOffset, index: 6)
         enc.setBuffer(scratchAct, offset: scratchActOffset, index: 7)
         var rows = gate.rows
@@ -206,10 +226,12 @@ final class SharedExpertInt8 {
 
         let rowsPerTG = 8
         let groups = (Int(gate.rows) + rowsPerTG - 1) / rowsPerTG
-        enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
-                                 threadsPerThreadgroup: MTLSize(width: 32 * rowsPerTG,
-                                                                height: 1,
-                                                                depth: 1))
+        enc.dispatchThreadgroups(
+            MTLSize(width: groups, height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(
+                width: 32 * rowsPerTG,
+                height: 1,
+                depth: 1))
         enc.endEncoding()
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanServerCore
 
 /// The stored-response store behind `previous_response_id`, `GET` and `DELETE`.
@@ -7,8 +8,9 @@ import Testing
 /// "the oldest entry goes when the cap is reached".
 @Suite struct ResponseStoreTests {
     private func entry(_ text: String) -> ResponseStore.Entry {
-        ResponseStore.Entry(responseJSON: Data(text.utf8),
-                            inputItems: [], outputItems: [], created: Date())
+        ResponseStore.Entry(
+            responseJSON: Data(text.utf8),
+            inputItems: [], outputItems: [], created: Date())
     }
 
     @Test func theCapDropsTheOldestEntry() {
@@ -34,11 +36,13 @@ import Testing
         store.put(id: "a", entry: entry("a2"))
         store.put(id: "c", entry: entry("c"))
 
-        #expect(store.get("a")?.responseJSON == Data("a2".utf8),
-                "the re-put did not replace the entry")
+        #expect(
+            store.get("a")?.responseJSON == Data("a2".utf8),
+            "the re-put did not replace the entry")
         #expect(store.get("c") != nil)
-        #expect(store.get("b") == nil,
-                "the cap dropped the re-stored entry instead of the oldest one")
+        #expect(
+            store.get("b") == nil,
+            "the cap dropped the re-stored entry instead of the oldest one")
         #expect(store.count == 2)
     }
 

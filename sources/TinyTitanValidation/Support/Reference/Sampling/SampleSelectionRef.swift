@@ -40,11 +40,13 @@ public enum SampleSelectionRef {
     ///   - temperature: `0` selects greedy argmax, matching the kernel.
     ///   - topK: `0` means "no explicit cap"; the kernel then works over the
     ///     whole vocabulary.
-    public static func select(probs: [Float],
-                              temperature: Float,
-                              topK: Int,
-                              topP: Float,
-                              seed: UInt64) -> UInt32 {
+    public static func select(
+        probs: [Float],
+        temperature: Float,
+        topK: Int,
+        topP: Float,
+        seed: UInt64
+    ) -> UInt32 {
         precondition(!probs.isEmpty, "probs must be non-empty")
         if temperature == 0 {
             // Greedy: argmax, lowest index wins a tie (simd_min on the index).
@@ -82,7 +84,10 @@ public enum SampleSelectionRef {
             var cut = kept
             for i in 0..<kept {
                 cumulative += val[i]
-                if cumulative >= topP { cut = i + 1; break }
+                if cumulative >= topP {
+                    cut = i + 1
+                    break
+                }
             }
             kept = cut
         }
@@ -105,7 +110,10 @@ public enum SampleSelectionRef {
         var picked = idx[0]
         for i in 0..<kept {
             run += weights[i]
-            if u <= run { picked = idx[i]; break }
+            if u <= run {
+                picked = idx[i]
+                break
+            }
         }
         return UInt32(picked)
     }

@@ -12,9 +12,11 @@ public struct ServedModel: Sendable, Equatable {
     public let sampling: GenerationDefaults.Sampling
     public let reasoningProfile: ServerReasoningProfile
 
-    public init(id: String, displayName: String, maximumContext: Int,
-                sampling: GenerationDefaults.Sampling,
-                reasoningProfile: ServerReasoningProfile) {
+    public init(
+        id: String, displayName: String, maximumContext: Int,
+        sampling: GenerationDefaults.Sampling,
+        reasoningProfile: ServerReasoningProfile
+    ) {
         self.id = id
         self.displayName = displayName
         self.maximumContext = maximumContext
@@ -31,11 +33,11 @@ public protocol ModelRouting: Sendable {
     var servedModels: [ServedModel] { get }
 }
 
-public extension ModelRouting {
+extension ModelRouting {
     /// The model a request's `model` field names, or nil for an unknown name.
     /// An exact id wins over the "<model>-fast" alias, so a catalog id that
     /// itself ends in "-fast" stays reachable.
-    func servedModel(named name: String) -> ServedModel? {
+    public func servedModel(named name: String) -> ServedModel? {
         if let exact = servedModels.first(where: { $0.id == name }) { return exact }
         guard name.hasSuffix("-fast") else { return nil }
         let base = String(name.dropLast("-fast".count))
@@ -61,9 +63,11 @@ public struct ReasoningChoice: Sendable, Equatable {
 public enum ReasoningFallback {
     /// `whenOn` is what the model's template does when thinking is switched
     /// on with no effort named; `ModelCatalog.Kind.levelWhenOn` supplies it.
-    public static func effectiveLevel(_ requested: ReasoningLevel,
-                                      supported: [ReasoningLevel],
-                                      whenOn: ReasoningLevel? = nil) -> ReasoningLevel {
+    public static func effectiveLevel(
+        _ requested: ReasoningLevel,
+        supported: [ReasoningLevel],
+        whenOn: ReasoningLevel? = nil
+    ) -> ReasoningLevel {
         if supported.contains(requested) || requested == .off { return requested }
         let efforts = supported.filter { $0 != .off && $0 != .on }
         // An on/off model: any effort means "think".
@@ -83,18 +87,23 @@ public enum ReasoningFallback {
         let rank = { (level: ReasoningLevel) in order.firstIndex(of: level) ?? 0 }
         let target = rank(requested)
         return efforts.min { lhs, rhs in
-            let left = abs(rank(lhs) - target), right = abs(rank(rhs) - target)
+            let left = abs(rank(lhs) - target)
+            let right = abs(rank(rhs) - target)
             return left == right ? rank(lhs) < rank(rhs) : left < right
         } ?? .on
     }
 
-    public static func choice(for kind: ModelCatalog.Kind,
-                              requested: ReasoningLevel) throws -> ReasoningChoice {
-        let effective = effectiveLevel(requested, supported: kind.supportedReasoningLevels,
-                                       whenOn: kind.levelWhenOn)
+    public static func choice(
+        for kind: ModelCatalog.Kind,
+        requested: ReasoningLevel
+    ) throws -> ReasoningChoice {
+        let effective = effectiveLevel(
+            requested, supported: kind.supportedReasoningLevels,
+            whenOn: kind.levelWhenOn)
         let runtime = try kind.runtimeReasoning(for: effective)
-        return ReasoningChoice(requested: requested, effective: effective,
-                               thinking: runtime.thinking, effort: runtime.effort)
+        return ReasoningChoice(
+            requested: requested, effective: effective,
+            thinking: runtime.thinking, effort: runtime.effort)
     }
 }
 
@@ -122,7 +131,9 @@ public enum ModelRouterError: Error, CustomStringConvertible {
 /// The router does not rely on it: token counting and memory consolidation
 /// reach the backend outside the coordinator, so residency is guarded here by
 /// an in-flight count, exactly as `ManagedModelBackend` guards its unloads.
-public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptTokenCounting, ModelRouting {
+public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptTokenCounting,
+    ModelRouting
+{
     /// Builds a backend for one catalog entry. Injectable so switching can be
     /// tested against stubs without a model on disk.
     public typealias Loader =
@@ -166,12 +177,14 @@ public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptToken
     private var pendingSwitches = 0
     private var waiters: [Waiter] = []
 
-    public init(catalog: ModelCatalog,
-                initialModelID: String,
-                reasoning: ReasoningLevel,
-                maximumContext: Int,
-                loader: @escaping Loader,
-                counter: @escaping Counter = ModelRouter.standardCounter) throws {
+    public init(
+        catalog: ModelCatalog,
+        initialModelID: String,
+        reasoning: ReasoningLevel,
+        maximumContext: Int,
+        loader: @escaping Loader,
+        counter: @escaping Counter = ModelRouter.standardCounter
+    ) throws {
         var served: [ServedModel] = []
         var choices: [String: ReasoningChoice] = [:]
         var entries: [String: ModelCatalog.Entry] = [:]
@@ -181,12 +194,13 @@ public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptToken
             let choice = try ReasoningFallback.choice(for: entry.kind, requested: reasoning)
             choices[entry.id] = choice
             entries[entry.id] = entry
-            servedList.append(ServedModel(
-                id: entry.id,
-                displayName: entry.name,
-                maximumContext: Self.context(for: entry, configured: maximumContext),
-                sampling: entry.sampling,
-                reasoningProfile: Self.profile(for: entry, choice: choice)))
+            servedList.append(
+                ServedModel(
+                    id: entry.id,
+                    displayName: entry.name,
+                    maximumContext: Self.context(for: entry, configured: maximumContext),
+                    sampling: entry.sampling,
+                    reasoningProfile: Self.profile(for: entry, choice: choice)))
         }
         for entry in catalog.entries {
             try register(entry, into: &served)
@@ -197,7 +211,8 @@ public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptToken
             for engine in entry.engines {
                 let aliasID = "\(entry.id)@\(engine.rawValue)"
                 guard aliasID != entry.id,
-                      let alias = entry.served(by: engine, id: aliasID) else { continue }
+                    let alias = entry.served(by: engine, id: aliasID)
+                else { continue }
                 // A single-engine install gets the alias so the explicit
                 // spelling resolves, but it is not *listed*: it names the same
                 // engine as the bare id, and two entries for one model in
@@ -206,8 +221,9 @@ public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptToken
                 if entry.engines.count > 1, engine != entry.backend {
                     try register(alias, into: &served)
                 } else {
-                    let choice = try ReasoningFallback.choice(for: alias.kind,
-                                                              requested: reasoning)
+                    let choice = try ReasoningFallback.choice(
+                        for: alias.kind,
+                        requested: reasoning)
                     choices[alias.id] = choice
                     entries[alias.id] = alias
                 }
@@ -230,22 +246,27 @@ public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptToken
     static func context(for entry: ModelCatalog.Entry, configured: Int) -> Int {
         switch entry.backend {
         case .gpu: configured
-        case .cpu: min(configured, entry.contextLimit ?? CPUModelBackend.contextCeiling,
-                       CPUModelBackend.contextCeiling)
+        case .cpu:
+            min(
+                configured, entry.contextLimit ?? CPUModelBackend.contextCeiling,
+                CPUModelBackend.contextCeiling)
         }
     }
 
     /// A CPU family's template has the binary switch Qwen 3.6 has, so it is
     /// validated as that family, as the single-model CPU path already does.
-    static func profile(for entry: ModelCatalog.Entry,
-                        choice: ReasoningChoice) -> ServerReasoningProfile {
+    static func profile(
+        for entry: ModelCatalog.Entry,
+        choice: ReasoningChoice
+    ) -> ServerReasoningProfile {
         let family: ModelFamily
         switch entry.kind {
         case .gpu(let gpuFamily): family = gpuFamily
         case .cpu: family = .qwen36
         }
-        return ServerReasoningProfile(family: family, thinkingMode: choice.thinking,
-                                      reasoningEffort: choice.effort)
+        return ServerReasoningProfile(
+            family: family, thinkingMode: choice.thinking,
+            reasoningEffort: choice.effort)
     }
 
     public func reasoningChoice(for id: String) -> ReasoningChoice? { choices[id] }
@@ -345,8 +366,10 @@ public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptToken
         }
     }
 
-    private func switchTo(_ entry: ModelCatalog.Entry,
-                          choice: ReasoningChoice) async throws -> any ServerInferenceBackend {
+    private func switchTo(
+        _ entry: ModelCatalog.Entry,
+        choice: ReasoningChoice
+    ) async throws -> any ServerInferenceBackend {
         switching = true
         defer {
             switching = false
@@ -364,11 +387,13 @@ public actor ModelRouter: ServerInferenceBackend, ResidencyManaging, PromptToken
         let loaded = try await Task { try await loader(entry, choice) }.value
         resident = Resident(id: entry.id, backend: loaded)
         inFlight += 1
-        let fitted = choice.effective == choice.requested
+        let fitted =
+            choice.effective == choice.requested
             ? "" : " (server level \(choice.requested.rawValue))"
-        ServerLog.residency("loaded \(entry.id) on the \(entry.backend.rawValue)"
-            + ServerLog.promptCacheField(for: loaded)
-            + " reasoning=\(choice.effective.rawValue)\(fitted)")
+        ServerLog.residency(
+            "loaded \(entry.id) on the \(entry.backend.rawValue)"
+                + ServerLog.promptCacheField(for: loaded)
+                + " reasoning=\(choice.effective.rawValue)\(fitted)")
         return loaded
     }
 
@@ -454,21 +479,25 @@ extension ModelRouter {
             guard let folder = GFTokenizer.tokenizerFolder(forModelDirectory: entry.path) else {
                 throw GFTokenizerError.missingToolTemplate
             }
-            let tokenizer = try await GFTokenizer.load(from: folder,
-                                                       thinkingMode: choice.thinking,
-                                                       reasoningEffort: choice.effort)
+            let tokenizer = try await GFTokenizer.load(
+                from: folder,
+                thinkingMode: choice.thinking,
+                reasoningEffort: choice.effort)
             return try ServerModelSession.promptTokenCount(request, tokenizer: tokenizer)
         case .cpu:
             // The folder, not the model directory: a `.gturbo` install keeps
             // `tokenizer.json` in a `tokenizer/` sidecar, so handing
             // `load(from:)` the model directory fails for every installed CPU
             // model (the GPU branch above resolves the same way).
-            guard let folder = GFTokenizer.resolvedTokenizerFolder(
-                forModelDirectory: entry.path) else {
+            guard
+                let folder = GFTokenizer.resolvedTokenizerFolder(
+                    forModelDirectory: entry.path)
+            else {
                 throw GFTokenizerError.missingToolTemplate
             }
-            let tokenizer = try await GFTokenizer.load(from: folder,
-                                                       thinkingMode: choice.thinking)
+            let tokenizer = try await GFTokenizer.load(
+                from: folder,
+                thinkingMode: choice.thinking)
             return try CPUModelBackend.promptTokenCount(request, tokenizer: tokenizer)
         }
     }
@@ -497,12 +526,15 @@ extension ServerArguments {
         directory: URL
     ) throws -> (thinking: ModelThinkingMode, effort: ModelReasoningEffort?) {
         guard let reasoningLevel else { return (thinkingMode, reasoningEffort) }
-        let kind: ModelCatalog.Kind = cpu
+        let kind: ModelCatalog.Kind =
+            cpu
             ? .cpu(try ModelCatalog.snapshotFamily(directory))
             : .gpu(try ManifestReader.peekFamily(directoryURL: directory))
         let choice = try ReasoningFallback.choice(for: kind, requested: reasoningLevel)
-        ServerLog.residency("reasoning=\(choice.effective.rawValue)"
-            + (choice.effective == reasoningLevel ? "" : " (server level \(reasoningLevel.rawValue))"))
+        ServerLog.residency(
+            "reasoning=\(choice.effective.rawValue)"
+                + (choice.effective == reasoningLevel
+                    ? "" : " (server level \(reasoningLevel.rawValue))"))
         return (choice.thinking, choice.effort)
     }
 }

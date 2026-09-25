@@ -85,8 +85,12 @@ function fileDependencyRoots(moduleUrl) {
  * @param options - `explicit` root, `env`, `moduleUrl`.
  * @returns `{root, found}` — `root` is the first candidate even when none matched.
  */
-export function findRepoRoot({ explicit, env = process.env, moduleUrl = import.meta.url,
-                                cwd = process.cwd() } = {}) {
+export function findRepoRoot({
+  explicit,
+  env = process.env,
+  moduleUrl = import.meta.url,
+  cwd = process.cwd(),
+} = {}) {
   const candidates = [];
   if (explicit) candidates.push(String(explicit));
   if (env.TINYTITAN_REPO) candidates.push(String(env.TINYTITAN_REPO));
@@ -141,7 +145,8 @@ export function resolveConfig(config = {}) {
   // `tools/dsh_route.sh` defaults to `medium`, so a route refreshed at boot
   // would silently put back a level the caller had chosen against.
   const reasoning = String(
-    config.reasoning ?? process.env.TINYTITAN_REASONING ?? DEFAULT_REASONING).trim();
+    config.reasoning ?? process.env.TINYTITAN_REASONING ?? DEFAULT_REASONING,
+  ).trim();
   if (reasoning.length === 0) throw new Error("dsh-tinytitan: reasoning must not be empty");
   const presetId = String(config.presetId ?? DEFAULT_PRESET_ID).trim();
   if (presetId.length === 0) throw new Error("dsh-tinytitan: presetId must not be empty");

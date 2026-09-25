@@ -1,16 +1,18 @@
 import CryptoKit
 import Foundation
-import TinyTitan
 import Synchronization
+import TinyTitan
 
 struct ServerPromptCacheStorageConfiguration: Sendable, Equatable {
     let memoryLimitBytes: Int
     let diskDirectory: URL?
     let diskLimitBytes: Int
 
-    init(memoryLimitBytes: Int,
-         diskDirectory: URL?,
-         diskLimitBytes: Int) {
+    init(
+        memoryLimitBytes: Int,
+        diskDirectory: URL?,
+        diskLimitBytes: Int
+    ) {
         precondition(memoryLimitBytes >= 0)
         precondition(diskLimitBytes >= 0)
         self.memoryLimitBytes = memoryLimitBytes
@@ -93,13 +95,17 @@ final class ServerPromptStateStore: @unchecked Sendable {
         qos: .utility)
 
     var maximumSnapshotBytes: Int {
-        min(max(configuration.memoryLimitBytes,
+        min(
+            max(
+                configuration.memoryLimitBytes,
                 configuration.diskDirectory == nil ? 0 : configuration.diskLimitBytes),
             Self.maximumCaptureBytes)
     }
 
-    init(configuration: ServerPromptCacheStorageConfiguration,
-         fileManager: FileManager = .default) throws {
+    init(
+        configuration: ServerPromptCacheStorageConfiguration,
+        fileManager: FileManager = .default
+    ) throws {
         self.configuration = configuration
         self.fileManager = fileManager
         if let root = configuration.diskDirectory {
@@ -120,54 +126,61 @@ final class ServerPromptStateStore: @unchecked Sendable {
             state.diskBytes = 0
         }
         guard let root = configuration.diskDirectory,
-              configuration.diskLimitBytes > 0 else { return [] }
+            configuration.diskLimitBytes > 0
+        else { return [] }
         let keys: Set<URLResourceKey> = [
             .isDirectoryKey,
             .isSymbolicLinkKey,
             .contentModificationDateKey,
             .fileSizeKey,
         ]
-        guard let children = try? fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles]) else { return [] }
+        guard
+            let children = try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: Array(keys),
+                options: [.skipsHiddenFiles])
+        else { return [] }
 
         var loaded: [DiskRecord] = []
         for directory in children {
             guard let directoryID = UUID(uuidString: directory.lastPathComponent),
-                  let values = try? directory.resourceValues(forKeys: keys),
-                  values.isDirectory == true,
-                  values.isSymbolicLink != true else { continue }
+                let values = try? directory.resourceValues(forKeys: keys),
+                values.isDirectory == true,
+                values.isSymbolicLink != true
+            else { continue }
             let metadataURL = directory.appendingPathComponent(Self.metadataName)
             let payloadURL = directory.appendingPathComponent(Self.payloadName)
-            guard let metadataValues = try? metadataURL.resourceValues(
-                forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),
-                  metadataValues.isRegularFile == true,
-                  metadataValues.isSymbolicLink != true,
-                  let metadataSize = metadataValues.fileSize,
-                  metadataSize <= Self.maximumMetadataBytes,
-                  let metadataData = try? Data(contentsOf: metadataURL),
-                  let metadata = try? JSONDecoder().decode(
+            guard
+                let metadataValues = try? metadataURL.resourceValues(
+                    forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),
+                metadataValues.isRegularFile == true,
+                metadataValues.isSymbolicLink != true,
+                let metadataSize = metadataValues.fileSize,
+                metadataSize <= Self.maximumMetadataBytes,
+                let metadataData = try? Data(contentsOf: metadataURL),
+                let metadata = try? JSONDecoder().decode(
                     DiskMetadata.self,
                     from: metadataData),
-                  metadata.version == DiskMetadata.currentVersion,
-                  metadata.entry.id == directoryID,
-                  metadata.descriptor.version
+                metadata.version == DiskMetadata.currentVersion,
+                metadata.entry.id == directoryID,
+                metadata.descriptor.version
                     == InferenceStateSnapshotDescriptor.currentVersion,
-                  metadata.entry.kvPosition == metadata.descriptor.position,
-                  (try? metadata.descriptor.validatedPayloadBytes()) != nil,
-                  let payloadValues = try? payloadURL.resourceValues(
+                metadata.entry.kvPosition == metadata.descriptor.position,
+                (try? metadata.descriptor.validatedPayloadBytes()) != nil,
+                let payloadValues = try? payloadURL.resourceValues(
                     forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),
-                  payloadValues.isRegularFile == true,
-                  payloadValues.isSymbolicLink != true,
-                  payloadValues.fileSize == metadata.descriptor.payloadBytes else {
+                payloadValues.isRegularFile == true,
+                payloadValues.isSymbolicLink != true,
+                payloadValues.fileSize == metadata.descriptor.payloadBytes
+            else {
                 continue
             }
-            loaded.append(DiskRecord(
-                metadata: metadata,
-                directory: directory,
-                payload: payloadURL,
-                modificationDate: values.contentModificationDate ?? .distantPast))
+            loaded.append(
+                DiskRecord(
+                    metadata: metadata,
+                    directory: directory,
+                    payload: payloadURL,
+                    modificationDate: values.contentModificationDate ?? .distantPast))
         }
 
         loaded.sort { $0.modificationDate < $1.modificationDate }
@@ -183,7 +196,8 @@ final class ServerPromptStateStore: @unchecked Sendable {
         return state.withLock { state in
             state.diskLRU.compactMap {
                 guard let entry = state.disk[$0]?.metadata.entry,
-                      entry.domain == domain else { return nil }
+                    entry.domain == domain
+                else { return nil }
                 return entry
             }
         }
@@ -192,8 +206,10 @@ final class ServerPromptStateStore: @unchecked Sendable {
     /// Persist a snapshot. Async: the write (SHA-256 + state.bin +
     /// metadata.json) runs on the store's serial disk queue, never on the
     /// caller's actor, so a multi-GiB write does not stall the session.
-    func save(entry: ServerPromptCacheEntry,
-              snapshot: InferenceStateSnapshot) async -> ServerPromptStateSaveResult {
+    func save(
+        entry: ServerPromptCacheEntry,
+        snapshot: InferenceStateSnapshot
+    ) async -> ServerPromptStateSaveResult {
         await withCheckedContinuation { continuation in
             diskQueue.async { [self] in
                 continuation.resume(returning: saveSync(entry: entry, snapshot: snapshot))
@@ -201,20 +217,24 @@ final class ServerPromptStateStore: @unchecked Sendable {
         }
     }
 
-    private func saveSync(entry: ServerPromptCacheEntry,
-                          snapshot: InferenceStateSnapshot) -> ServerPromptStateSaveResult {
+    private func saveSync(
+        entry: ServerPromptCacheEntry,
+        snapshot: InferenceStateSnapshot
+    ) -> ServerPromptStateSaveResult {
         precondition(entry.kvPosition == snapshot.descriptor.position)
         var unbacked: [UUID] = []
         var diskError: String?
 
         if snapshot.payload.count <= configuration.memoryLimitBytes,
-           configuration.memoryLimitBytes > 0 {
+            configuration.memoryLimitBytes > 0
+        {
             insertMemory(snapshot, id: entry.id)
         }
 
         if configuration.diskDirectory != nil,
-           configuration.diskLimitBytes > 0,
-           snapshot.payload.count <= configuration.diskLimitBytes {
+            configuration.diskLimitBytes > 0,
+            snapshot.payload.count <= configuration.diskLimitBytes
+        {
             do {
                 try writeDisk(entry: entry, snapshot: snapshot)
             } catch {
@@ -239,8 +259,10 @@ final class ServerPromptStateStore: @unchecked Sendable {
             diskBytes: bytes.1)
     }
 
-    func restore(entryID: UUID,
-                 into runner: RealForwardRunner) async throws -> String {
+    func restore(
+        entryID: UUID,
+        into runner: RealForwardRunner
+    ) async throws -> String {
         // S3: the disk read + SHA-256 verification run off the caller's actor
         // (detached task, awaited here); only the Metal-buffer restore stays on
         // the actor.
@@ -276,7 +298,8 @@ final class ServerPromptStateStore: @unchecked Sendable {
                 descriptor: record.metadata.descriptor,
                 payload: payload)
             if payload.count <= configuration.memoryLimitBytes,
-               configuration.memoryLimitBytes > 0 {
+                configuration.memoryLimitBytes > 0
+            {
                 insertMemory(snapshot, id: entryID)
                 _ = evictMemoryIfNeeded()
             }
@@ -300,7 +323,8 @@ final class ServerPromptStateStore: @unchecked Sendable {
         payload.reserveCapacity(expected)
         while true {
             guard let chunk = try handle.read(upToCount: 1_048_576),
-                  !chunk.isEmpty else { break }
+                !chunk.isEmpty
+            else { break }
             hasher.update(data: chunk)
             payload.append(chunk)
         }
@@ -379,7 +403,8 @@ final class ServerPromptStateStore: @unchecked Sendable {
         state.withLock { state -> [UUID] in
             var evicted: [UUID] = []
             while state.memoryBytes > configuration.memoryLimitBytes,
-                  let id = state.memoryLRU.first {
+                let id = state.memoryLRU.first
+            {
                 state.memoryLRU.removeFirst()
                 if let snapshot = state.memory.removeValue(forKey: id) {
                     state.memoryBytes -= snapshot.payload.count
@@ -395,7 +420,8 @@ final class ServerPromptStateStore: @unchecked Sendable {
         let evicted = state.withLock { state -> [UUID] in
             var evicted: [UUID] = []
             while state.diskBytes > configuration.diskLimitBytes,
-                  let id = state.diskLRU.first {
+                let id = state.diskLRU.first
+            {
                 state.diskLRU.removeFirst()
                 if let record = state.disk.removeValue(forKey: id) {
                     state.diskBytes -= record.metadata.descriptor.payloadBytes
@@ -411,8 +437,10 @@ final class ServerPromptStateStore: @unchecked Sendable {
         return evicted
     }
 
-    private func writeDisk(entry: ServerPromptCacheEntry,
-                           snapshot: InferenceStateSnapshot) throws {
+    private func writeDisk(
+        entry: ServerPromptCacheEntry,
+        snapshot: InferenceStateSnapshot
+    ) throws {
         guard let root = configuration.diskDirectory else { return }
         let id = entry.id
         let finalDirectory = root.appendingPathComponent(id.uuidString.lowercased())

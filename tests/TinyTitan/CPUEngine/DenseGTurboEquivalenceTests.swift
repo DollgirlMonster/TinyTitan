@@ -39,14 +39,17 @@ struct DenseGTurboEquivalenceTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TINYTITAN_DENSE_EQUIV"] != nil))
     func denseInstallMatchesItsSnapshot() throws {
         let pairs = Self.pairs
-        try #require(!pairs.isEmpty,
-                      "set TINYTITAN_DENSE_EQUIV_PAIRS to <snapshot>:<install>[,<snapshot>:<install>]")
+        try #require(
+            !pairs.isEmpty,
+            "set TINYTITAN_DENSE_EQUIV_PAIRS to <snapshot>:<install>[,<snapshot>:<install>]")
 
         for pair in pairs {
-            try #require(FileManager.default.fileExists(atPath: pair.snapshot.path),
-                         "snapshot is missing: \(pair.snapshot.path)")
-            try #require(FileManager.default.fileExists(atPath: pair.install.path),
-                         "install is missing: \(pair.install.path)")
+            try #require(
+                FileManager.default.fileExists(atPath: pair.snapshot.path),
+                "snapshot is missing: \(pair.snapshot.path)")
+            try #require(
+                FileManager.default.fileExists(atPath: pair.install.path),
+                "install is missing: \(pair.install.path)")
 
             let snapshot = try CPUQwen35(
                 snapshot: try AffineSnapshot(directory: pair.snapshot), threads: 4)
@@ -57,17 +60,22 @@ struct DenseGTurboEquivalenceTests {
             for token in Self.tokens {
                 let fromSnapshot = try snapshot.step(token: token)
                 let fromInstall = try install.step(token: token)
-                #expect(fromSnapshot.count == fromInstall.count,
-                        "\(pair.install.lastPathComponent): vocabulary width changed")
-                let difference = zip(fromSnapshot, fromInstall)
+                #expect(
+                    fromSnapshot.count == fromInstall.count,
+                    "\(pair.install.lastPathComponent): vocabulary width changed")
+                let difference =
+                    zip(fromSnapshot, fromInstall)
                     .map { abs($0 - $1) }.max() ?? 0
                 worst = max(worst, difference)
             }
-            #expect(worst == 0, Comment(rawValue:
-                    "\(pair.install.lastPathComponent) is not byte-equivalent to "
-                    + "\(pair.snapshot.lastPathComponent): largest logit difference "
-                    + "\(worst). A repack is a byte copy, so this is a wrong "
-                    + "width or a wrong offset, not rounding."))
+            #expect(
+                worst == 0,
+                Comment(
+                    rawValue:
+                        "\(pair.install.lastPathComponent) is not byte-equivalent to "
+                        + "\(pair.snapshot.lastPathComponent): largest logit difference "
+                        + "\(worst). A repack is a byte copy, so this is a wrong "
+                        + "width or a wrong offset, not rounding."))
         }
     }
 }

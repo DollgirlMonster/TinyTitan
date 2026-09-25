@@ -1,7 +1,8 @@
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct RoPETests {
     @Test func defaultNeoxMatchesSWAReference() throws {
@@ -53,9 +54,10 @@ import TinyTitanValidationSupport
         let context = try MetalContext()
         let kernel = try RoPE(context: context)
         let buffer = try #require(Fp16Buffer.make(context.device, values: input))
-        let before = Array(UnsafeBufferPointer(
-            start: buffer.contents().assumingMemoryBound(to: UInt8.self),
-            count: count * MemoryLayout<Float16>.size))
+        let before = Array(
+            UnsafeBufferPointer(
+                start: buffer.contents().assumingMemoryBound(to: UInt8.self),
+                count: count * MemoryLayout<Float16>.size))
         let commandBuffer = try #require(context.queue.makeCommandBuffer())
 
         try kernel.encodeProportionalNeox(
@@ -101,9 +103,11 @@ import TinyTitanValidationSupport
         }
     }
 
-    private static func randomInputs(count: Int,
-                                     seed: UInt64,
-                                     label: String) -> [Float] {
+    private static func randomInputs(
+        count: Int,
+        seed: UInt64,
+        label: String
+    ) -> [Float] {
         var random = SeedTree(seed).key(label)
         return (0..<count).map { _ in random.uniform(-1, 1) }
     }

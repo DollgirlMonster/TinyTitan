@@ -77,9 +77,9 @@ public final class CPUQwen35 {
     // Carried state. Every one of these is a place a wrong hand-off between
     // tokens can hide, which is why sequence parity is a separate gate from
     // position 0.
-    private var recurrent: [Int: [Float]] = [:]     // [Hv][Dv][Dk]
-    private var convolution: [Int: [Float]] = [:]   // [K-1][convDim]
-    private var keys: [Int: [Float]] = [:]          // [position][kvHeads * headDim]
+    private var recurrent: [Int: [Float]] = [:]  // [Hv][Dv][Dk]
+    private var convolution: [Int: [Float]] = [:]  // [K-1][convDim]
+    private var keys: [Int: [Float]] = [:]  // [position][kvHeads * headDim]
     private var values: [Int: [Float]] = [:]
 
     public init(snapshot: AffineSnapshot, threads: Int? = nil) throws {
@@ -91,8 +91,10 @@ public final class CPUQwen35 {
         // implement, so it is refused here, by name.
         for (wide, narrow, what) in [
             (configuration.heads, configuration.keyValueHeads, "attention heads over KV heads"),
-            (configuration.linearValueHeads, configuration.linearKeyHeads,
-             "delta-rule value heads over key heads"),
+            (
+                configuration.linearValueHeads, configuration.linearKeyHeads,
+                "delta-rule value heads over key heads"
+            ),
         ] where narrow <= 0 || wide < narrow || wide % narrow != 0 {
             throw SafeTensorsFile.Failure.malformed("\(what) is \(wide)/\(narrow), not whole")
         }
@@ -100,8 +102,9 @@ public final class CPUQwen35 {
         idleThreads = threads ?? Int8AffineGEMV.preferredThreads
         for layer in 0..<configuration.layers {
             inputNorm.append(try snapshot.floats("\(prefix)layers.\(layer).input_layernorm.weight"))
-            postNorm.append(try snapshot.floats(
-                "\(prefix)layers.\(layer).post_attention_layernorm.weight"))
+            postNorm.append(
+                try snapshot.floats(
+                    "\(prefix)layers.\(layer).post_attention_layernorm.weight"))
             if configuration.isAttention(layer) {
                 queryNorm[layer] = try snapshot.floats(
                     "\(prefix)layers.\(layer).self_attn.q_norm.weight")
@@ -152,16 +155,19 @@ public final class CPUQwen35 {
         var h = try embedding(of: token)
         for layer in 0..<configuration.layers {
             var normalized = h
-            CPUOps.rmsNorm(&normalized, gamma: inputNorm[layer],
-                           epsilon: configuration.normEpsilon)
-            let mixed = configuration.isAttention(layer)
+            CPUOps.rmsNorm(
+                &normalized, gamma: inputNorm[layer],
+                epsilon: configuration.normEpsilon)
+            let mixed =
+                configuration.isAttention(layer)
                 ? try attention(layer: layer, x: normalized)
                 : try gatedDeltaNet(layer: layer, x: normalized)
             for index in h.indices { h[index] += mixed[index] }
 
             normalized = h
-            CPUOps.rmsNorm(&normalized, gamma: postNorm[layer],
-                           epsilon: configuration.normEpsilon)
+            CPUOps.rmsNorm(
+                &normalized, gamma: postNorm[layer],
+                epsilon: configuration.normEpsilon)
             let feed = try mlp(layer: layer, x: normalized)
             for index in h.indices { h[index] += feed[index] }
         }
@@ -183,12 +189,16 @@ public final class CPUQwen35 {
         try snapshot.matrix(name)
     }
 
-    private func project(_ matrix: AffineSnapshot.Matrix, _ x: [Float]) -> [Float] {
+    private func project(_ matrix: AffineSnapshot.Matrix, _ x: [Float]) throws -> [Float] {
         var out = [Float](repeating: 0, count: matrix.rows)
-        x.withUnsafeBufferPointer { input in
-            out.withUnsafeMutableBufferPointer { output in
-                CPUOps.gemv(matrix, x: input.baseAddress!,
-                            out: output.baseAddress!, threads: threads)
+        try x.withUnsafeBufferPointer { input in
+            try out.withUnsafeMutableBufferPointer { output in
+                // An empty input or a zero-row matrix has no base address and
+                // nothing to compute; the force unwrap made that a crash.
+                guard let inputBase = input.baseAddress, let outputBase = output.baseAddress else {
+                    return
+                }
+                try CPUOps.gemv(matrix, x: inputBase, out: outputBase, threads: threads)
             }
         }
         return out
@@ -232,15 +242,15 @@ public final class CPUQwen35 {
     }
 
     private func head(_ h: [Float]) throws -> [Float] {
-        project(try matrix(headWeightName()), h)
+        try project(try matrix(headWeightName()), h)
     }
 
     private func mlp(layer: Int, x: [Float]) throws -> [Float] {
         let stem = "\(prefix)layers.\(layer).mlp."
-        var gate = project(try matrix(stem + "gate_proj.weight"), x)
-        let up = project(try matrix(stem + "up_proj.weight"), x)
+        var gate = try project(try matrix(stem + "gate_proj.weight"), x)
+        let up = try project(try matrix(stem + "up_proj.weight"), x)
         for index in gate.indices { gate[index] = CPUOps.silu(gate[index]) * up[index] }
-        return project(try matrix(stem + "down_proj.weight"), gate)
+        return try project(try matrix(stem + "down_proj.weight"), gate)
     }
 
     private func attention(layer: Int, x: [Float]) throws -> [Float] {
@@ -252,7 +262,7 @@ public final class CPUQwen35 {
         // q_proj is twice as wide: the output gate is fused into it, packed
         // per head as [query ; gate]. Reading it as a plain query projection
         // gives a model that runs and is wrong.
-        let packed = project(try matrix(stem + "q_proj.weight"), x)
+        let packed = try project(try matrix(stem + "q_proj.weight"), x)
         var query = [Float](repeating: 0, count: heads * dim)
         var gate = [Float](repeating: 0, count: heads * dim)
         for head in 0..<heads {
@@ -262,17 +272,29 @@ public final class CPUQwen35 {
                 gate[head * dim + index] = packed[source + dim + index]
             }
         }
-        var key = project(try matrix(stem + "k_proj.weight"), x)
-        let value = project(try matrix(stem + "v_proj.weight"), x)
+        var key = try project(try matrix(stem + "k_proj.weight"), x)
+        let value = try project(try matrix(stem + "v_proj.weight"), x)
 
-        CPUOps.rmsNormPerSlice(&query, width: dim, gamma: queryNorm[layer]!,
-                               epsilon: configuration.normEpsilon)
-        CPUOps.rmsNormPerSlice(&key, width: dim, gamma: keyNorm[layer]!,
-                               epsilon: configuration.normEpsilon)
-        CPUOps.applyRoPE(&query, headDim: dim, rotaryDim: configuration.rotaryDim,
-                         position: position, theta: configuration.ropeTheta)
-        CPUOps.applyRoPE(&key, headDim: dim, rotaryDim: configuration.rotaryDim,
-                         position: position, theta: configuration.ropeTheta)
+        // The per-layer norm weights must be in the snapshot; the force
+        // unwraps below made a missing tensor a crash instead of an error.
+        guard let queryNormWeights = queryNorm[layer],
+            let keyNormWeights = keyNorm[layer]
+        else {
+            throw ModelError.internalInconsistency(
+                detail: "attention layer \(layer) is missing its query/key norm weights")
+        }
+        CPUOps.rmsNormPerSlice(
+            &query, width: dim, gamma: queryNormWeights,
+            epsilon: configuration.normEpsilon)
+        CPUOps.rmsNormPerSlice(
+            &key, width: dim, gamma: keyNormWeights,
+            epsilon: configuration.normEpsilon)
+        CPUOps.applyRoPE(
+            &query, headDim: dim, rotaryDim: configuration.rotaryDim,
+            position: position, theta: configuration.ropeTheta)
+        CPUOps.applyRoPE(
+            &key, headDim: dim, rotaryDim: configuration.rotaryDim,
+            position: position, theta: configuration.ropeTheta)
 
         // Taken out of the dictionary and put back after. Indexing
         // `keys[layer]!` inside the inner loop is a dictionary lookup and a
@@ -324,7 +346,7 @@ public final class CPUQwen35 {
         keys[layer] = cachedKeys
         values[layer] = cachedValues
         for index in out.indices { out[index] *= CPUOps.sigmoid(gate[index]) }
-        return project(try matrix(stem + "o_proj.weight"), out)
+        return try project(try matrix(stem + "o_proj.weight"), out)
     }
 
     private func gatedDeltaNet(layer: Int, x: [Float]) throws -> [Float] {
@@ -335,17 +357,28 @@ public final class CPUQwen35 {
         let dv = configuration.linearValueHeadDim
         let kernel = configuration.convKernel
 
-        let mixed = project(try matrix(stem + "in_proj_qkv.weight"), x)
-        let z = project(try matrix(stem + "in_proj_z.weight"), x)
-        let a = dense(deltaA[layer]!, rows: hv, x: x)
-        let b = dense(deltaB[layer]!, rows: hv, x: x)
+        let mixed = try project(try matrix(stem + "in_proj_qkv.weight"), x)
+        let z = try project(try matrix(stem + "in_proj_z.weight"), x)
+        // Every per-layer tensor this path needs, checked once: the force
+        // unwraps below made a missing tensor a crash.
+        guard let deltaWeightsA = deltaA[layer],
+            let deltaWeightsB = deltaB[layer],
+            let taps = convTaps[layer],
+            let decayLog = aLog[layer],
+            let decayBias = dtBias[layer],
+            let normGamma = gdnNorm[layer]
+        else {
+            throw ModelError.internalInconsistency(
+                detail: "linear-attention layer \(layer) is missing delta-rule or norm weights")
+        }
+        let a = dense(deltaWeightsA, rows: hv, x: x)
+        let b = dense(deltaWeightsB, rows: hv, x: x)
         let convDim = mixed.count
 
         // Causal depthwise convolution over the last `kernel` tokens. Tap
         // `k` reads `kernel - 1 - k` positions back, so the last tap is this
         // token.
         var tail = convolution[layer] ?? [Float](repeating: 0, count: (kernel - 1) * convDim)
-        let taps = convTaps[layer]!
         var convolved = [Float](repeating: 0, count: convDim)
         for channel in 0..<convDim {
             var total: Float = 0
@@ -378,8 +411,9 @@ public final class CPUQwen35 {
         for head in 0..<hv {
             let keyHead = head / repeats
             let beta = CPUOps.sigmoid(b[head])
-            let decay = expf(-expf(aLog[layer]![head])
-                             * CPUOps.softplus(a[head] + dtBias[layer]![head]))
+            let decay = expf(
+                -expf(decayLog[head])
+                    * CPUOps.softplus(a[head] + decayBias[head]))
             let stateBase = head * dv * dk
             let keyBase = keyHead * dk
             for row in 0..<dv {
@@ -407,14 +441,15 @@ public final class CPUQwen35 {
 
         let inverse = 1 / Float(dv).squareRoot()
         for index in readout.indices { readout[index] *= inverse }
-        CPUOps.rmsNormPerSlice(&readout, width: dv, gamma: gdnNorm[layer]!,
-                               epsilon: configuration.normEpsilon)
+        CPUOps.rmsNormPerSlice(
+            &readout, width: dv, gamma: normGamma,
+            epsilon: configuration.normEpsilon)
         // SiLU, not sigmoid. The gate is `silu` in this lineage and
         // `sigmoid` in Qwen3.8-Flash-Next; getting it wrong produces a model
         // that runs, keeps healthy activations, and predicts a bare space
         // for "Once upon a".
         for index in readout.indices { readout[index] *= CPUOps.silu(z[index]) }
-        return project(try matrix(stem + "out_proj.weight"), readout)
+        return try project(try matrix(stem + "out_proj.weight"), readout)
     }
 
     // MARK: - generation
@@ -430,10 +465,12 @@ public final class CPUQwen35 {
     /// `onToken` sees each generated id as it is produced, so a caller can
     /// stream or stop early; returning false ends the generation.
     @discardableResult
-    public func generate(prompt: [Int],
-                         maximumTokens: Int,
-                         stopping: Set<Int> = [],
-                         onToken: ((Int) -> Bool)? = nil) throws -> [Int] {
+    public func generate(
+        prompt: [Int],
+        maximumTokens: Int,
+        stopping: Set<Int> = [],
+        onToken: ((Int) -> Bool)? = nil
+    ) throws -> [Int] {
         precondition(!prompt.isEmpty, "a generation needs a prompt")
         var logits: [Float] = []
         for (index, token) in prompt.enumerated() {
@@ -461,15 +498,23 @@ public final class CPUQwen35 {
         let wordsPerRow = matrix.columns / lanes
         let groupsPerRow = matrix.columns / matrix.groupSize
         var out = [Float](repeating: 0, count: matrix.columns)
-        let words = matrix.weights.baseAddress!.assumingMemoryBound(to: UInt32.self)
-        for word in 0..<wordsPerRow {
-            let packed = words[row * wordsPerRow + word]
-            for lane in 0..<lanes {
-                let column = word * lanes + lane
-                let level = Float((packed >> (matrix.bits * lane)) & mask)
-                let group = row * groupsPerRow + column / matrix.groupSize
-                out[column] = level * bfloat(matrix.scales[group])
-                    + bfloat(matrix.biases[group])
+        // The words are read through the buffer's own lifetime rather than an
+        // escaping base address, and an empty weights block leaves `out` zero
+        // instead of trapping.
+        matrix.weights.withUnsafeBytes { raw in
+            guard let words = raw.baseAddress?.assumingMemoryBound(to: UInt32.self) else {
+                return
+            }
+            for word in 0..<wordsPerRow {
+                let packed = words[row * wordsPerRow + word]
+                for lane in 0..<lanes {
+                    let column = word * lanes + lane
+                    let level = Float((packed >> (matrix.bits * lane)) & mask)
+                    let group = row * groupsPerRow + column / matrix.groupSize
+                    out[column] =
+                        level * bfloat(matrix.scales[group])
+                        + bfloat(matrix.biases[group])
+                }
             }
         }
         return out

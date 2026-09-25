@@ -6,6 +6,7 @@ comparison rests on. Both are pinned here, with no model and no server.
 
     cd benchmark && python3 -m unittest test_side_engine_judges -v
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -29,12 +30,15 @@ judges = _load("side_engine_judges", "benchmark/side_engine_judges.py")
 
 class ParseJudgeTests(unittest.TestCase):
     def test_a_cpu_judge_is_an_install(self):
-        self.assertEqual(judges.parse_judge("cpu:models/qwen3.5_4B_4Bit"),
-                         ("cpu", "models/qwen3.5_4B_4Bit", None))
+        self.assertEqual(
+            judges.parse_judge("cpu:models/qwen3.5_4B_4Bit"),
+            ("cpu", "models/qwen3.5_4B_4Bit", None),
+        )
 
     def test_a_server_judge_keeps_the_url_whole(self):
         kind, url, model = judges.parse_judge(
-            "server:http://127.0.0.1:8080/v1:qwen3.6-35b-a3b_4-Bit")
+            "server:http://127.0.0.1:8080/v1:qwen3.6-35b-a3b_4-Bit"
+        )
         self.assertEqual(kind, "server")
         self.assertEqual(url, "http://127.0.0.1:8080/v1")
         self.assertEqual(model, "qwen3.6-35b-a3b_4-Bit")
@@ -65,7 +69,7 @@ class SummarizeTests(unittest.TestCase):
         finally:
             path.unlink(missing_ok=True)
         self.assertEqual(per_task["T2"]["total"], 3)
-        self.assertEqual(per_task["T2"]["correct"], 1)          # YES; "No." is NO
+        self.assertEqual(per_task["T2"]["correct"], 1)  # YES; "No." is NO
         self.assertEqual(per_task["T2"]["halves"]["YES"], [1, 2])
         self.assertEqual(per_task["T2"]["halves"]["NO"], [0, 1])  # "maybe" refused
         self.assertEqual(per_task["T5"]["correct"], 2)

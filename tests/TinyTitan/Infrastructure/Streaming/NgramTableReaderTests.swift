@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 /// Row gather over the n-gram table, against a synthetic file whose contents
@@ -30,8 +31,9 @@ struct NgramTableReaderTests {
     private static func reader(_ url: URL) throws -> NgramTableReader {
         // Page cache left on for the test: the synthetic file is tiny and
         // F_NOCACHE on a just-written temp file measures nothing useful.
-        try NgramTableReader(path: url.path, rowDim: rowDim,
-                             rowCount: rowCount, bypassCache: false)
+        try NgramTableReader(
+            path: url.path, rowDim: rowDim,
+            rowCount: rowCount, bypassCache: false)
     }
 
     @Test("Gathers the requested rows in the requested order")
@@ -41,11 +43,14 @@ struct NgramTableReaderTests {
         let r = try Self.reader(url)
         let want: [UInt32] = [7, 0, 63, 31, 7]
         var out = [Float16](repeating: 0, count: want.count * Self.rowDim)
-        try out.withUnsafeMutableBytes { try r.gather(rows: want, into: $0.baseAddress!) }
+        try out.withUnsafeMutableBytes { buffer in
+            try r.gather(rows: want, into: try #require(buffer.baseAddress))
+        }
         for (i, row) in want.enumerated() {
             for lane in 0..<Self.rowDim {
-                #expect(out[i * Self.rowDim + lane] == Float16(row),
-                        "slot \(i) lane \(lane) should hold row \(row)")
+                #expect(
+                    out[i * Self.rowDim + lane] == Float16(row),
+                    "slot \(i) lane \(lane) should hold row \(row)")
             }
         }
     }
@@ -57,8 +62,10 @@ struct NgramTableReaderTests {
         let r = try Self.reader(url)
         var out = [Float16](repeating: 0, count: Self.rowDim)
         #expect(throws: NgramTableReader.Failure.self) {
-            try out.withUnsafeMutableBytes {
-                try r.gather(rows: [UInt32(Self.rowCount)], into: $0.baseAddress!)
+            try out.withUnsafeMutableBytes { buffer in
+                try r.gather(
+                    rows: [UInt32(Self.rowCount)],
+                    into: try #require(buffer.baseAddress))
             }
         }
     }
@@ -70,23 +77,26 @@ struct NgramTableReaderTests {
         // Claiming more rows than the file holds would otherwise read
         // plausible values from wrong offsets rather than failing.
         #expect(throws: NgramTableReader.Failure.self) {
-            _ = try NgramTableReader(path: url.path, rowDim: Self.rowDim,
-                                     rowCount: Self.rowCount + 1,
-                                     bypassCache: false)
+            _ = try NgramTableReader(
+                path: url.path, rowDim: Self.rowDim,
+                rowCount: Self.rowCount + 1,
+                bypassCache: false)
         }
         // A wrong row width is the same class of error.
         #expect(throws: NgramTableReader.Failure.self) {
-            _ = try NgramTableReader(path: url.path, rowDim: Self.rowDim * 2,
-                                     rowCount: Self.rowCount,
-                                     bypassCache: false)
+            _ = try NgramTableReader(
+                path: url.path, rowDim: Self.rowDim * 2,
+                rowCount: Self.rowCount,
+                bypassCache: false)
         }
     }
 
     @Test("A missing table fails at open rather than at first gather")
     func rejectsMissingFile() {
         #expect(throws: NgramTableReader.Failure.self) {
-            _ = try NgramTableReader(path: "/nonexistent/ngram_table.bin",
-                                     rowDim: 160, rowCount: 1, bypassCache: false)
+            _ = try NgramTableReader(
+                path: "/nonexistent/ngram_table.bin",
+                rowDim: 160, rowCount: 1, bypassCache: false)
         }
     }
 
@@ -115,8 +125,9 @@ extension NgramTableReaderTests {
 
         for (rowDim, rowCount) in [(0, UInt64(64)), (8, UInt64(0))] {
             #expect(throws: NgramTableReader.Failure.self) {
-                _ = try NgramTableReader(path: url.path, rowDim: rowDim,
-                                         rowCount: rowCount, bypassCache: false)
+                _ = try NgramTableReader(
+                    path: url.path, rowDim: rowDim,
+                    rowCount: rowCount, bypassCache: false)
             }
         }
         // The multiplication that sizes the table must not wrap: with a row
@@ -124,8 +135,9 @@ extension NgramTableReaderTests {
         // small number and the size guard below would accept a table built for
         // a different geometry.
         #expect(throws: NgramTableReader.Failure.self) {
-            _ = try NgramTableReader(path: url.path, rowDim: Int.max,
-                                     rowCount: UInt64.max, bypassCache: false)
+            _ = try NgramTableReader(
+                path: url.path, rowDim: Int.max,
+                rowCount: UInt64.max, bypassCache: false)
         }
     }
 }

@@ -1,5 +1,5 @@
-import Testing
 import Foundation
+import Testing
 import TinyTitanValidationSupport
 
 /// Cross-validates `RmsNormRef.apply` (Accelerate-vector form) against a
@@ -21,11 +21,13 @@ import TinyTitanValidationSupport
         return zip(x, weight).map { $0 * inv * $1 }
     }
 
-    @Test("Accelerate ref matches scalar ref", arguments: [
-        (256, UInt64(0xA1)),
-        (512, UInt64(0xB2)),
-        (2816, UInt64(0xC3)),
-    ])
+    @Test(
+        "Accelerate ref matches scalar ref",
+        arguments: [
+            (256, UInt64(0xA1)),
+            (512, UInt64(0xB2)),
+            (2816, UInt64(0xC3)),
+        ])
     func acceleratedMatchesScalar(d: Int, seed: UInt64) {
         var rng = SeedTree(seed).key("rmsnorm-ref")
         let x = (0..<d).map { _ in rng.uniform(-1.0, 1.0) }
@@ -36,8 +38,9 @@ import TinyTitanValidationSupport
         let scalar = Self.scalarRef(x: x, weight: w, eps: eps)
 
         let relErr = RelError.compute(actual: accel, reference: scalar)
-        #expect(relErr < Tolerance.identity,
-                "D=\(d): relErr=\(relErr)")
+        #expect(
+            relErr < Tolerance.identity,
+            "D=\(d): relErr=\(relErr)")
     }
 
     @Test("Reference handles zero-mean small magnitudes")
@@ -53,6 +56,6 @@ import TinyTitanValidationSupport
     func mismatchedLengthsTrap() async {
         // Documentation-only: this would precondition-fail. We can't catch
         // preconditions in Swift Testing, but we record the contract here.
-        let _ = (RmsNormRef.apply, "precondition on x.count == weight.count")
+        _ = (RmsNormRef.apply, "precondition on x.count == weight.count")
     }
 }

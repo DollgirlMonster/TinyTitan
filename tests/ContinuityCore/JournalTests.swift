@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContinuityCore
 
 /// The persistence layer on its own: the workspace lock, durability, and what
@@ -30,14 +31,16 @@ import Testing
         let writer = try FileJournal(url: url)
         try await writer.append(.task(ContinuityTask(title: "kept")))
         defer {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                                   ofItemAtPath: url.path)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: url.path)
         }
 
         // The journal is already open; `replay` reads through its own
         // descriptor, and that is what fails with the file unreadable.
-        try FileManager.default.setAttributes([.posixPermissions: 0o000],
-                                              ofItemAtPath: url.path)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o000],
+            ofItemAtPath: url.path)
         do {
             _ = try await writer.replay()
             Issue.record("an unreadable journal replayed as if it were readable")
@@ -53,8 +56,9 @@ import Testing
 
         // With the permissions back the record is still there: nothing rewrote
         // or truncated the file on the way through.
-        try FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                              ofItemAtPath: url.path)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path)
         #expect(try FileJournal.read(contentsOf: url).count == 1)
         try await writer.shutDown()
     }
@@ -135,9 +139,13 @@ import Testing
         let url = directory.appendingPathComponent("journal.ndjson")
         let journal = try FileJournal(url: url, synchronizesEveryWrite: true)
         let task = ContinuityTask(title: "ordered")
-        try await journal.append([.task(task),
-                                  .memory(MemoryItem(taskID: task.id, namespace: "n",
-                                                     key: "k", value: "one"))])
+        try await journal.append([
+            .task(task),
+            .memory(
+                MemoryItem(
+                    taskID: task.id, namespace: "n",
+                    key: "k", value: "one")),
+        ])
         try await journal.sync()
         try await journal.shutDown()
 
@@ -208,12 +216,14 @@ import Testing
         let manager = FileManager.default
         for path in [url.path, url.appendingPathExtension("lock").path] {
             let attributes = try manager.attributesOfItem(atPath: path)
-            #expect((attributes[.posixPermissions] as? NSNumber)?.int16Value == 0o600,
-                    "\(path) should be owner-only")
+            #expect(
+                (attributes[.posixPermissions] as? NSNumber)?.int16Value == 0o600,
+                "\(path) should be owner-only")
         }
         // The directory the engine created is owner-only too, or the
         // permissions on the file inside it are decorative.
-        let directoryAttributes = try manager
+        let directoryAttributes =
+            try manager
             .attributesOfItem(atPath: url.deletingLastPathComponent().path)
         #expect((directoryAttributes[.posixPermissions] as? NSNumber)?.int16Value == 0o700)
         try await journal.shutDown()
@@ -242,8 +252,11 @@ import Testing
         let journal = try FileJournal(url: url)
         let big = String(repeating: "x", count: 2 << 20)
         let task = UUID()
-        try await journal.append(.memory(MemoryItem(taskID: task, namespace: "n",
-                                                    key: "k", value: big)))
+        try await journal.append(
+            .memory(
+                MemoryItem(
+                    taskID: task, namespace: "n",
+                    key: "k", value: big)))
         try await journal.sync()
         try await journal.shutDown()
 
@@ -295,7 +308,10 @@ import Testing
         var settled = false
         for _ in 0..<40 {
             try await Task.sleep(for: .milliseconds(25))
-            if await journal.pendingRecords == 0 { settled = true; break }
+            if await journal.pendingRecords == 0 {
+                settled = true
+                break
+            }
         }
         #expect(settled, "the idle barrier never ran")
         try await journal.shutDown()
@@ -306,8 +322,9 @@ import Testing
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         // Appends every 10 ms with a 1 s idle delay would never go idle. The
         // maximum latency forces a barrier anyway.
-        let journal = try FileJournal(url: url, idleDelay: .seconds(1),
-                                      maximumLatency: .milliseconds(100))
+        let journal = try FileJournal(
+            url: url, idleDelay: .seconds(1),
+            maximumLatency: .milliseconds(100))
         var sawSettle = false
         for index in 0..<40 {
             try await journal.append(.task(ContinuityTask(title: "t\(index)")))

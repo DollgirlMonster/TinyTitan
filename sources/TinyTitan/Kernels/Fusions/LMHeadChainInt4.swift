@@ -23,9 +23,11 @@ final class LMHeadChainInt4 {
     private let maxD: Int
     private let maxVocab: Int
 
-    init(context: MetalContext,
-         maxD: Int = 2816,
-         maxVocab: Int = 262144) throws {
+    init(
+        context: MetalContext,
+        maxD: Int = 2816,
+        maxVocab: Int = 262144
+    ) throws {
         self.rms = try RMSNorm(context: context)
         self.rowGreedy = try context.pipeline("lm_head_greedy_int4_rows_chunk_raw")
         self.specializedD = UInt32(maxD)
@@ -44,52 +46,61 @@ final class LMHeadChainInt4 {
         let rowGroups = (maxVocab + Self.rowsPerThreadgroup - 1) / Self.rowsPerThreadgroup
         let xLength = max(maxD, 1) * MemoryLayout<Float16>.size
         let summaryLength = rowGroups * Self.rowSummaryStride * MemoryLayout<Float>.size
-        guard let xNormedBuffer = context.device.makeBuffer(
-                  length: xLength,
-                  options: .storageModePrivate),
-              let rowSummariesBuffer = context.device.makeBuffer(
-                  length: summaryLength,
-                  options: .storageModePrivate) else {
+        guard
+            let xNormedBuffer = context.device.makeBuffer(
+                length: xLength,
+                options: .storageModePrivate),
+            let rowSummariesBuffer = context.device.makeBuffer(
+                length: summaryLength,
+                options: .storageModePrivate)
+        else {
             throw MetalError.noDevice
         }
         self.xNormedBuffer = xNormedBuffer
         self.rowSummariesBuffer = rowSummariesBuffer
     }
 
-    func encodeGreedyDecode(commandBuffer: MTLCommandBuffer,
-                            hidden: MTLBuffer,
-                            hiddenOffset: Int = 0,
-                            normWeight: MTLBuffer,
-                            normOffset: Int = 0,
-                            weights: MTLBuffer,
-                            weightsOffset: Int = 0,
-                            scales: MTLBuffer,
-                            scalesOffset: Int = 0,
-                            biases: MTLBuffer,
-                            biasesOffset: Int = 0,
-                            outToken: MTLBuffer,
-                            d: UInt32,
-                            vocab: UInt32,
-                            rmsEps: Float = 1e-6) throws {
+    func encodeGreedyDecode(
+        commandBuffer: MTLCommandBuffer,
+        hidden: MTLBuffer,
+        hiddenOffset: Int = 0,
+        normWeight: MTLBuffer,
+        normOffset: Int = 0,
+        weights: MTLBuffer,
+        weightsOffset: Int = 0,
+        scales: MTLBuffer,
+        scalesOffset: Int = 0,
+        biases: MTLBuffer,
+        biasesOffset: Int = 0,
+        outToken: MTLBuffer,
+        d: UInt32,
+        vocab: UInt32,
+        rmsEps: Float = 1e-6
+    ) throws {
         precondition(Int(d) <= maxD, "d=\(d) exceeds wrapper maxD=\(maxD)")
-        precondition(Int(vocab) <= maxVocab,
-                     "vocab=\(vocab) exceeds wrapper maxVocab=\(maxVocab)")
-        precondition(Int(d) % Quantization.groupSize == 0,
-                     "d must be a multiple of \(Quantization.groupSize)")
+        precondition(
+            Int(vocab) <= maxVocab,
+            "vocab=\(vocab) exceeds wrapper maxVocab=\(maxVocab)")
+        precondition(
+            Int(d) % Quantization.groupSize == 0,
+            "d must be a multiple of \(Quantization.groupSize)")
         precondition(hiddenOffset >= 0, "hiddenOffset must be non-negative")
-        precondition(weightsOffset % 2 == 0,
-                     "lm_head_greedy_int4_rows_chunk_raw needs a 2-aligned weightsOffset")
+        precondition(
+            weightsOffset % 2 == 0,
+            "lm_head_greedy_int4_rows_chunk_raw needs a 2-aligned weightsOffset")
 
-        let rowGroups = (Int(vocab) + Self.rowsPerThreadgroup - 1)
+        let rowGroups =
+            (Int(vocab) + Self.rowsPerThreadgroup - 1)
             / Self.rowsPerThreadgroup
-        try rms.encodeBF16W(commandBuffer: commandBuffer,
-                        x: hidden,
-                        xOffset: hiddenOffset,
-                        weight: normWeight,
-                        weightOffset: normOffset,
-                        out: xNormedBuffer,
-                        d: d,
-                        eps: rmsEps)
+        try rms.encodeBF16W(
+            commandBuffer: commandBuffer,
+            x: hidden,
+            xOffset: hiddenOffset,
+            weight: normWeight,
+            weightOffset: normOffset,
+            out: xNormedBuffer,
+            d: d,
+            eps: rmsEps)
 
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed

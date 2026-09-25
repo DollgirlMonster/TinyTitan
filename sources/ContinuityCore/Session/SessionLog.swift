@@ -41,12 +41,15 @@ public actor SessionLog {
     // MARK: - Tasks
 
     @discardableResult
-    public func createTask(title: String,
-                           objective: String = "",
-                           id: UUID = UUID(),
-                           now: Date = Date()) -> ContinuityTask {
-        let task = ContinuityTask(id: id, title: title, objective: objective,
-                                  createdAt: now, updatedAt: now)
+    public func createTask(
+        title: String,
+        objective: String = "",
+        id: UUID = UUID(),
+        now: Date = Date()
+    ) -> ContinuityTask {
+        let task = ContinuityTask(
+            id: id, title: title, objective: objective,
+            createdAt: now, updatedAt: now)
         tasks[task.id] = task
         return task
     }
@@ -61,10 +64,12 @@ public actor SessionLog {
     }
 
     @discardableResult
-    public func updateTask(_ id: UUID,
-                           title: String? = nil,
-                           objective: String? = nil,
-                           now: Date = Date()) throws -> ContinuityTask {
+    public func updateTask(
+        _ id: UUID,
+        title: String? = nil,
+        objective: String? = nil,
+        now: Date = Date()
+    ) throws -> ContinuityTask {
         guard var task = tasks[id] else { throw ContinuityError.unknownTask(id) }
         if let title { task.title = title }
         if let objective { task.objective = objective }
@@ -76,21 +81,26 @@ public actor SessionLog {
     // MARK: - Sessions
 
     @discardableResult
-    public func beginSession(taskID: UUID,
-                             model: String? = nil,
-                             externalID: String? = nil,
-                             tag: String? = nil,
-                             id: UUID = UUID(),
-                             now: Date = Date()) async throws -> Session {
+    public func beginSession(
+        taskID: UUID,
+        model: String? = nil,
+        externalID: String? = nil,
+        tag: String? = nil,
+        id: UUID = UUID(),
+        now: Date = Date()
+    ) async throws -> Session {
         guard tasks[taskID] != nil else { throw ContinuityError.unknownTask(taskID) }
-        let session = Session(id: id, taskID: taskID, startedAt: now, model: model,
-                              externalID: externalID, tag: tag)
+        let session = Session(
+            id: id, taskID: taskID, startedAt: now, model: model,
+            externalID: externalID, tag: tag)
         sessions[session.id] = session
         sessionsByTask[taskID, default: []].append(session.id)
         events[session.id] = []
-        await append(SessionEvent(sessionID: session.id, taskID: taskID, timestamp: now,
-                                  kind: .sessionStarted,
-                                  payload: model.map { .text($0) } ?? .none))
+        await append(
+            SessionEvent(
+                sessionID: session.id, taskID: taskID, timestamp: now,
+                kind: .sessionStarted,
+                payload: model.map { .text($0) } ?? .none))
         return session
     }
 
@@ -105,8 +115,10 @@ public actor SessionLog {
         }
         session.endedAt = now
         sessions[id] = session
-        await append(SessionEvent(sessionID: id, taskID: session.taskID, timestamp: now,
-                                  kind: .sessionEnded, payload: .none))
+        await append(
+            SessionEvent(
+                sessionID: id, taskID: session.taskID, timestamp: now,
+                kind: .sessionEnded, payload: .none))
         return session
     }
 
@@ -126,25 +138,31 @@ public actor SessionLog {
     // MARK: - Recording
 
     @discardableResult
-    public func recordUserPrompt(sessionID: UUID,
-                                 text: String,
-                                 now: Date = Date()) async throws -> SessionEvent {
+    public func recordUserPrompt(
+        sessionID: UUID,
+        text: String,
+        now: Date = Date()
+    ) async throws -> SessionEvent {
         let session = try requireOpenSession(sessionID)
-        let event = SessionEvent(sessionID: sessionID, taskID: session.taskID,
-                                 timestamp: now, kind: .userPrompt, payload: .text(text))
+        let event = SessionEvent(
+            sessionID: sessionID, taskID: session.taskID,
+            timestamp: now, kind: .userPrompt, payload: .text(text))
         await append(event)
         return event
     }
 
     /// Record a reply that is already complete.
     @discardableResult
-    public func recordAssistantResponse(sessionID: UUID,
-                                        _ record: ResponseRecord,
-                                        now: Date = Date()) async throws -> SessionEvent {
+    public func recordAssistantResponse(
+        sessionID: UUID,
+        _ record: ResponseRecord,
+        now: Date = Date()
+    ) async throws -> SessionEvent {
         let session = try requireOpenSession(sessionID)
-        let event = SessionEvent(sessionID: sessionID, taskID: session.taskID,
-                                 timestamp: now, kind: .assistantResponse,
-                                 payload: .response(record))
+        let event = SessionEvent(
+            sessionID: sessionID, taskID: session.taskID,
+            timestamp: now, kind: .assistantResponse,
+            payload: .response(record))
         await append(event)
         return event
     }
@@ -153,19 +171,23 @@ public actor SessionLog {
 
     /// Open a streamed reply and return the identifier its chunks belong to.
     @discardableResult
-    public func beginAssistantResponse(sessionID: UUID,
-                                       model: String? = nil,
-                                       requestID: String? = nil,
-                                       now: Date = Date()) async throws -> UUID {
+    public func beginAssistantResponse(
+        sessionID: UUID,
+        model: String? = nil,
+        requestID: String? = nil,
+        now: Date = Date()
+    ) async throws -> UUID {
         let session = try requireOpenSession(sessionID)
-        let event = SessionEvent(sessionID: sessionID, taskID: session.taskID,
-                                 timestamp: now, kind: .assistantResponseStarted,
-                                 payload: .none)
-        openResponses[event.id] = OpenResponse(sessionID: sessionID,
-                                               taskID: session.taskID,
-                                               model: model,
-                                               requestID: requestID,
-                                               startedAt: now)
+        let event = SessionEvent(
+            sessionID: sessionID, taskID: session.taskID,
+            timestamp: now, kind: .assistantResponseStarted,
+            payload: .none)
+        openResponses[event.id] = OpenResponse(
+            sessionID: sessionID,
+            taskID: session.taskID,
+            model: model,
+            requestID: requestID,
+            startedAt: now)
         await append(event.withResponseID(event.id))
         return event.id
     }
@@ -176,9 +198,11 @@ public actor SessionLog {
     /// appears exactly once in the log. A chunk event is written only when
     /// `SessionLogOptions.persistsChunks` is set, and readers then ignore
     /// chunks for any response that also has a completion.
-    public func appendAssistantChunk(responseID: UUID,
-                                     text: String,
-                                     now: Date = Date()) async throws {
+    public func appendAssistantChunk(
+        responseID: UUID,
+        text: String,
+        now: Date = Date()
+    ) async throws {
         guard var open = openResponses[responseID] else {
             throw ContinuityError.unknownSession(responseID)
         }
@@ -186,63 +210,77 @@ public actor SessionLog {
         open.chunkCount += 1
         openResponses[responseID] = open
         guard options.persistsChunks else { return }
-        await append(SessionEvent(sessionID: open.sessionID, taskID: open.taskID,
-                                  timestamp: now, kind: .assistantResponseChunk,
-                                  payload: .text(text), responseID: responseID))
+        await append(
+            SessionEvent(
+                sessionID: open.sessionID, taskID: open.taskID,
+                timestamp: now, kind: .assistantResponseChunk,
+                payload: .text(text), responseID: responseID))
     }
 
     /// Close a streamed reply, writing the assembled text as one event.
     @discardableResult
-    public func completeAssistantResponse(responseID: UUID,
-                                          inputTokens: Int? = nil,
-                                          outputTokens: Int? = nil,
-                                          finishReason: String? = nil,
-                                          responseIdentifier: String? = nil,
-                                          now: Date = Date()) async throws -> SessionEvent {
+    public func completeAssistantResponse(
+        responseID: UUID,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        finishReason: String? = nil,
+        responseIdentifier: String? = nil,
+        now: Date = Date()
+    ) async throws -> SessionEvent {
         guard let open = openResponses.removeValue(forKey: responseID) else {
             throw ContinuityError.unknownSession(responseID)
         }
         let latency = Int(now.timeIntervalSince(open.startedAt) * 1000)
-        let record = ResponseRecord(text: open.buffer,
-                                    model: open.model,
-                                    requestID: open.requestID,
-                                    responseID: responseIdentifier,
-                                    inputTokens: inputTokens,
-                                    outputTokens: outputTokens,
-                                    latencyMilliseconds: latency,
-                                    finishReason: finishReason)
-        let event = SessionEvent(sessionID: open.sessionID, taskID: open.taskID,
-                                 timestamp: now, kind: .assistantResponseCompleted,
-                                 payload: .response(record), responseID: responseID)
+        let record = ResponseRecord(
+            text: open.buffer,
+            model: open.model,
+            requestID: open.requestID,
+            responseID: responseIdentifier,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            latencyMilliseconds: latency,
+            finishReason: finishReason)
+        let event = SessionEvent(
+            sessionID: open.sessionID, taskID: open.taskID,
+            timestamp: now, kind: .assistantResponseCompleted,
+            payload: .response(record), responseID: responseID)
         await append(event)
         return event
     }
 
     @discardableResult
-    public func recordMemoryWrite(sessionID: UUID,
-                                  item: MemoryItem,
-                                  now: Date = Date()) async throws -> SessionEvent {
+    public func recordMemoryWrite(
+        sessionID: UUID,
+        item: MemoryItem,
+        now: Date = Date()
+    ) async throws -> SessionEvent {
         let session = try requireSession(sessionID)
-        let event = SessionEvent(sessionID: sessionID, taskID: session.taskID,
-                                 timestamp: now, kind: .memoryWritten,
-                                 payload: .memory(namespace: item.namespace,
-                                                  key: item.key,
-                                                  version: item.version,
-                                                  itemID: item.id))
+        let event = SessionEvent(
+            sessionID: sessionID, taskID: session.taskID,
+            timestamp: now, kind: .memoryWritten,
+            payload: .memory(
+                namespace: item.namespace,
+                key: item.key,
+                version: item.version,
+                itemID: item.id))
         await append(event)
         return event
     }
 
     @discardableResult
-    public func recordContextAssembled(sessionID: UUID,
-                                       snapshot: ContextSnapshot,
-                                       now: Date = Date()) async throws -> SessionEvent {
+    public func recordContextAssembled(
+        sessionID: UUID,
+        snapshot: ContextSnapshot,
+        now: Date = Date()
+    ) async throws -> SessionEvent {
         let session = try requireSession(sessionID)
-        let event = SessionEvent(sessionID: sessionID, taskID: session.taskID,
-                                 timestamp: now, kind: .contextAssembled,
-                                 payload: .context(snapshotID: snapshot.id,
-                                                   itemCount: snapshot.memoryItemIDs.count,
-                                                   estimatedTokens: snapshot.estimatedTokenCount))
+        let event = SessionEvent(
+            sessionID: sessionID, taskID: session.taskID,
+            timestamp: now, kind: .contextAssembled,
+            payload: .context(
+                snapshotID: snapshot.id,
+                itemCount: snapshot.memoryItemIDs.count,
+                estimatedTokens: snapshot.estimatedTokenCount))
         await append(event)
         return event
     }
@@ -280,24 +318,28 @@ public actor SessionLog {
             switch event.kind {
             case .userPrompt:
                 if let prompt = pendingPrompts.removeValue(forKey: event.sessionID) {
-                    turns.append(SessionTurn(sessionID: prompt.sessionID,
-                                             promptEventID: prompt.id,
-                                             prompt: prompt.payload.text ?? "",
-                                             response: nil,
-                                             timestamp: prompt.timestamp))
+                    turns.append(
+                        SessionTurn(
+                            sessionID: prompt.sessionID,
+                            promptEventID: prompt.id,
+                            prompt: prompt.payload.text ?? "",
+                            response: nil,
+                            timestamp: prompt.timestamp))
                 }
                 pendingPrompts[event.sessionID] = event
             case .assistantResponse, .assistantResponseCompleted:
                 let prompt = pendingPrompts.removeValue(forKey: event.sessionID)
                 var record: ResponseRecord?
                 if case .response(let value) = event.payload { record = value }
-                turns.append(SessionTurn(sessionID: event.sessionID,
-                                         promptEventID: prompt?.id,
-                                         prompt: prompt?.payload.text ?? "",
-                                         response: event.payload.text,
-                                         responseRecord: record,
-                                         completedAt: event.timestamp,
-                                         timestamp: prompt?.timestamp ?? event.timestamp))
+                turns.append(
+                    SessionTurn(
+                        sessionID: event.sessionID,
+                        promptEventID: prompt?.id,
+                        prompt: prompt?.payload.text ?? "",
+                        response: event.payload.text,
+                        responseRecord: record,
+                        completedAt: event.timestamp,
+                        timestamp: prompt?.timestamp ?? event.timestamp))
             default:
                 continue
             }
@@ -305,11 +347,13 @@ public actor SessionLog {
         // Anything still unanswered, oldest first, so the list stays ordered by
         // time and the "newest last" contract below keeps its meaning.
         for prompt in pendingPrompts.values.sorted(by: { $0.timestamp < $1.timestamp }) {
-            turns.append(SessionTurn(sessionID: prompt.sessionID,
-                                     promptEventID: prompt.id,
-                                     prompt: prompt.payload.text ?? "",
-                                     response: nil,
-                                     timestamp: prompt.timestamp))
+            turns.append(
+                SessionTurn(
+                    sessionID: prompt.sessionID,
+                    promptEventID: prompt.id,
+                    prompt: prompt.payload.text ?? "",
+                    response: nil,
+                    timestamp: prompt.timestamp))
         }
         // Sort rather than trusting the fold's output order. An unanswered
         // prompt is only known to be unanswered once the fold ends, so it is
@@ -325,9 +369,10 @@ public actor SessionLog {
     /// Drops chunk events for any reply that also has a completion, so text
     /// that was streamed appears once.
     static func fold(_ input: [SessionEvent]) -> [SessionEvent] {
-        let completed = Set(input.compactMap { event -> UUID? in
-            event.kind == .assistantResponseCompleted ? event.responseID : nil
-        })
+        let completed = Set(
+            input.compactMap { event -> UUID? in
+                event.kind == .assistantResponseCompleted ? event.responseID : nil
+            })
         return input.filter { event in
             switch event.kind {
             case .assistantResponseChunk:
@@ -344,11 +389,12 @@ public actor SessionLog {
     // MARK: - Snapshot and restore
 
     public func snapshot() -> SessionLogSnapshot {
-        SessionLogSnapshot(tasks: Array(tasks.values),
-                           sessions: Array(sessions.values),
-                           events: sessionsByTask.values.flatMap { ids in
-                               ids.flatMap { events[$0] ?? [] }
-                           })
+        SessionLogSnapshot(
+            tasks: Array(tasks.values),
+            sessions: Array(sessions.values),
+            events: sessionsByTask.values.flatMap { ids in
+                ids.flatMap { events[$0] ?? [] }
+            })
     }
 
     public func restore(_ snapshot: SessionLogSnapshot) {
@@ -476,7 +522,8 @@ public actor SessionLog {
     private func enforceByteBudget(taskID: UUID) {
         guard options.maxBytesPerTask > 0 else { return }
         while (bytes[taskID] ?? 0) > options.maxBytesPerTask,
-              let ordered = sessionsByTask[taskID], ordered.count > 1 {
+            let ordered = sessionsByTask[taskID], ordered.count > 1
+        {
             drop(sessionID: ordered[0], taskID: taskID)
         }
     }
@@ -528,8 +575,10 @@ public struct SessionLogOptions: Sendable, Equatable {
     /// must fold, which `transcript` and `turns` already do.
     public var persistsChunks: Bool
 
-    public init(persistsChunks: Bool = false,
-                maxBytesPerTask: Int = 64 << 20) {
+    public init(
+        persistsChunks: Bool = false,
+        maxBytesPerTask: Int = 64 << 20
+    ) {
         self.persistsChunks = persistsChunks
         self.maxBytesPerTask = maxBytesPerTask
     }
@@ -549,13 +598,15 @@ public struct SessionTurn: Sendable, Equatable {
     /// When the prompt arrived.
     public let timestamp: Date
 
-    public init(sessionID: UUID,
-                promptEventID: UUID?,
-                prompt: String,
-                response: String?,
-                responseRecord: ResponseRecord? = nil,
-                completedAt: Date? = nil,
-                timestamp: Date) {
+    public init(
+        sessionID: UUID,
+        promptEventID: UUID?,
+        prompt: String,
+        response: String?,
+        responseRecord: ResponseRecord? = nil,
+        completedAt: Date? = nil,
+        timestamp: Date
+    ) {
         self.sessionID = sessionID
         self.promptEventID = promptEventID
         self.prompt = prompt
@@ -571,9 +622,11 @@ public struct SessionLogSnapshot: Codable, Sendable, Equatable {
     public var sessions: [Session]
     public var events: [SessionEvent]
 
-    public init(tasks: [ContinuityTask] = [],
-                sessions: [Session] = [],
-                events: [SessionEvent] = []) {
+    public init(
+        tasks: [ContinuityTask] = [],
+        sessions: [Session] = [],
+        events: [SessionEvent] = []
+    ) {
         self.tasks = tasks
         self.sessions = sessions
         self.events = events
@@ -582,7 +635,8 @@ public struct SessionLogSnapshot: Codable, Sendable, Equatable {
 
 extension SessionEvent {
     func withResponseID(_ id: UUID) -> SessionEvent {
-        SessionEvent(id: self.id, sessionID: sessionID, taskID: taskID,
-                     timestamp: timestamp, kind: kind, payload: payload, responseID: id)
+        SessionEvent(
+            id: self.id, sessionID: sessionID, taskID: taskID,
+            timestamp: timestamp, kind: kind, payload: payload, responseID: id)
     }
 }

@@ -5,6 +5,7 @@ io_ms is the decisive counter: a higher hit rate must shrink the pread wall
 on the critical path (the pread window is GPU-idle except shared+phase-1).
 Usage: python3 benchmark/tinytitan_slots_ab.py [slots...]
 """
+
 import http.client
 import json
 import os
@@ -13,14 +14,16 @@ import sys
 import time
 
 from tinytitan_profile import (
-    DEFAULT_API_MODEL, DEFAULT_MODEL_PATH, benchmark_log_path,
-    server_command, server_environment, resolve_api_model,
+    DEFAULT_MODEL_PATH,
+    benchmark_log_path,
+    server_command,
+    server_environment,
+    resolve_api_model,
 )
 
 BASE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 BIN = os.path.join(BASE, ".build", "release", "TinyTitanServer")
-MODEL = os.environ.get("TINYTITAN_BENCH_MODEL",
-                       str(DEFAULT_MODEL_PATH))
+MODEL = os.environ.get("TINYTITAN_BENCH_MODEL", str(DEFAULT_MODEL_PATH))
 PORT = 8115
 PROMPT = "Write a detailed essay about the history of computing."
 MAX_TOKENS = int(os.environ.get("TINYTITAN_AB_TOKENS", "512"))
@@ -40,8 +43,8 @@ def run(slots, pin=None):
     log = open(log_path, "w")
     boot = time.time()
     proc = subprocess.Popen(
-        server_command(BIN, PORT, model=MODEL),
-        env=env, stdout=log, stderr=subprocess.STDOUT)
+        server_command(BIN, PORT, model=MODEL), env=env, stdout=log, stderr=subprocess.STDOUT
+    )
     start = time.time()
     while time.time() - start < 120:
         if proc.poll() is not None:
@@ -59,16 +62,26 @@ def run(slots, pin=None):
         time.sleep(0.05)
     boot_s = time.time() - boot
     print(f"--- slots={slots} pin={pin} boot_s={boot_s:.1f} ---")
-    payload = json.dumps({
-        "model": resolve_api_model(PORT),
-        "messages": [{"role": "user", "content": PROMPT}],
-        "temperature": 0, "top_p": 0.95, "top_k": 20,
-        "presence_penalty": 0.0, "max_completion_tokens": MAX_TOKENS, "stream": True,
-    }).encode()
-    for i in range(2):
+    payload = json.dumps(
+        {
+            "model": resolve_api_model(PORT),
+            "messages": [{"role": "user", "content": PROMPT}],
+            "temperature": 0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "presence_penalty": 0.0,
+            "max_completion_tokens": MAX_TOKENS,
+            "stream": True,
+        }
+    ).encode()
+    for _i in range(2):
         conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=1800)
-        conn.request("POST", "/v1/chat/completions", body=payload,
-                     headers={"Content-Type": "application/json"})
+        conn.request(
+            "POST",
+            "/v1/chat/completions",
+            body=payload,
+            headers={"Content-Type": "application/json"},
+        )
         resp = conn.getresponse()
         while resp.read(8192):
             pass
@@ -88,9 +101,12 @@ def run(slots, pin=None):
                 runner.append(line.strip())
             if "TinyTitan kernel total_gpu_ms=" in line:
                 gpu.append(line.strip())
-    for l in gen: print(l)
-    for l in runner: print(l)
-    for l in gpu: print(l)
+    for line in gen:
+        print(line)
+    for line in runner:
+        print(line)
+    for line in gpu:
+        print(line)
 
 
 def main():

@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 
 /// Shared building blocks for the resident LM and routed-expert layer writers.
 public enum WriterCore {
@@ -12,9 +12,11 @@ public enum WriterCore {
     /// Compute SHA-256 of an entire (presumed-written) file by streaming it
     /// through `tileBytes` pread chunks. Drops pages with `F_NOCACHE` style
     /// behaviour via fcntl. Allocates one bounded scratch buffer.
-    public static func hashEntireFile(path: String, size: UInt64,
-                                      audit: RepackAudit,
-                                      cancellationCheck: () throws -> Void = {}) throws -> String {
+    public static func hashEntireFile(
+        path: String, size: UInt64,
+        audit: RepackAudit,
+        cancellationCheck: () throws -> Void = {}
+    ) throws -> String {
         guard size <= UInt64(Int.max) else {
             throw RepackError.configurationInvalid(
                 detail: "file \(path) size \(size) exceeds the hashing range")
@@ -26,8 +28,9 @@ public enum WriterCore {
         // up the dev box.
         _ = fcntl(fd, F_NOCACHE, 1)
 
-        let buf = UnsafeMutableRawBufferPointer.allocate(byteCount: WriterCore.tileBytes,
-                                                         alignment: 16_384)
+        let buf = UnsafeMutableRawBufferPointer.allocate(
+            byteCount: WriterCore.tileBytes,
+            alignment: 16_384)
         defer { buf.deallocate() }
         if buf.count > audit.largestScratchBytes {
             audit.largestScratchBytes = buf.count

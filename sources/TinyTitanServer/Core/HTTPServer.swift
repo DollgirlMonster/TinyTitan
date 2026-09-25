@@ -62,23 +62,28 @@ public actor TinyTitanHTTPServer {
     private var channel: Channel?
     private var shutdownTask: Task<Void, any Error>?
 
-    public init(modelID: String,
-                queueLimit: Int,
-                maxConcurrentSequences: Int = 1,
-                backend: any ServerInferenceBackend,
-                heartbeatInterval: TimeAmount = .seconds(5),
-                reasoningProfile: ServerReasoningProfile = .default,
-                group: MultiThreadedEventLoopGroup = .init(numberOfThreads: 1),
-                router: (any ModelRouting)? = nil,
-                coordinator: ServerCoordinator? = nil) {
+    public init(
+        modelID: String,
+        queueLimit: Int,
+        maxConcurrentSequences: Int = 1,
+        backend: any ServerInferenceBackend,
+        heartbeatInterval: TimeAmount = .seconds(5),
+        reasoningProfile: ServerReasoningProfile = .default,
+        group: MultiThreadedEventLoopGroup = .init(numberOfThreads: 1),
+        router: (any ModelRouting)? = nil,
+        coordinator: ServerCoordinator? = nil
+    ) {
         self.group = group
         self.modelID = modelID
         self.backend = backend
         // Injectable so a resident side-engine can read the same
         // `generating` signal the coordinator raises for every client
         // generation, which is how it chooses its width.
-        self.coordinator = coordinator ?? ServerCoordinator(queueLimit: queueLimit,
-                                                            width: maxConcurrentSequences)
+        self.coordinator =
+            coordinator
+            ?? ServerCoordinator(
+                queueLimit: queueLimit,
+                width: maxConcurrentSequences)
         self.heartbeatInterval = heartbeatInterval
         self.reasoningProfile = reasoningProfile
         self.router = router
@@ -102,19 +107,20 @@ public actor TinyTitanHTTPServer {
                     withPipeliningAssistance: true,
                     withErrorHandling: true
                 ).flatMap {
-                    channel.pipeline.addHandler(ServerHTTPHandler(
-                        modelID: modelID,
-                        backend: backend,
-                        coordinator: coordinator,
-                        heartbeatInterval: heartbeatInterval,
-                        reasoningProfile: reasoningProfile,
-                        router: router,
-                        childChannels: childChannels,
-                        responseStore: responseStore))
+                    channel.pipeline.addHandler(
+                        ServerHTTPHandler(
+                            modelID: modelID,
+                            backend: backend,
+                            coordinator: coordinator,
+                            heartbeatInterval: heartbeatInterval,
+                            reasoningProfile: reasoningProfile,
+                            router: router,
+                            childChannels: childChannels,
+                            responseStore: responseStore))
                 }
             }
-            // S29: so_reuseaddr belongs on the listening socket only, not on
-            // accepted sockets.
+        // S29: so_reuseaddr belongs on the listening socket only, not on
+        // accepted sockets.
         let channel = try await bootstrap.bind(host: "127.0.0.1", port: port).get()
         self.channel = channel
         return channel
@@ -195,4 +201,3 @@ enum WorkspaceHeader {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
-

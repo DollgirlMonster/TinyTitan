@@ -34,7 +34,8 @@ private actor TextBackend: ServerInferenceBackend, PromptTokenCounting {
         onEvent(.content("lo"))
         return ServerCompletion(
             content: "hello", toolCalls: [], finishReason: finishReason,
-            usage: OpenAIUsage(promptTokens: 12, completionTokens: 2, totalTokens: 14, cachedTokens: 4),
+            usage: OpenAIUsage(
+                promptTokens: 12, completionTokens: 2, totalTokens: 14, cachedTokens: 4),
             stopSequence: stopSequence)
     }
 
@@ -68,7 +69,8 @@ private actor FailingBackend: ServerInferenceBackend {
         onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void
     ) async throws -> ServerCompletion {
         onEvent(.content("partial"))
-        throw ServerRequestError.invalid(message: "synthetic failure", param: "messages", code: "synthetic")
+        throw ServerRequestError.invalid(
+            message: "synthetic failure", param: "messages", code: "synthetic")
     }
 }
 
@@ -86,14 +88,17 @@ private func sseEvents(_ text: String) throws -> [SSEEvent] {
             if line.hasPrefix("data: ") { data = String(line.dropFirst(6)) }
         }
         guard let data, data != "[DONE]" else { return nil }
-        let object = try #require(JSONSerialization.jsonObject(with: Data(data.utf8)) as? [String: Any])
+        let object = try #require(
+            JSONSerialization.jsonObject(with: Data(data.utf8)) as? [String: Any])
         return SSEEvent(name: name, object: object)
     }
 }
 
-private func post(_ port: Int, _ path: String, _ json: String,
-                  headers: [String: String] = [:]) async throws -> (Data, HTTPURLResponse) {
-    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+private func post(
+    _ port: Int, _ path: String, _ json: String,
+    headers: [String: String] = [:]
+) async throws -> (Data, HTTPURLResponse) {
+    var request = URLRequest(url: try localURL(port: port, path))
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "content-type")
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
@@ -102,9 +107,11 @@ private func post(_ port: Int, _ path: String, _ json: String,
     return (data, try #require(response as? HTTPURLResponse))
 }
 
-private func call(_ port: Int, _ method: String, _ path: String,
-                  headers: [String: String] = [:]) async throws -> (Data, HTTPURLResponse) {
-    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+private func call(
+    _ port: Int, _ method: String, _ path: String,
+    headers: [String: String] = [:]
+) async throws -> (Data, HTTPURLResponse) {
+    var request = URLRequest(url: try localURL(port: port, path))
     request.httpMethod = method
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
     let (data, response) = try await URLSession.shared.data(for: request)
@@ -115,8 +122,10 @@ private func json(_ data: Data) throws -> [String: Any] {
     try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 }
 
-private func withServer<T>(_ backend: any ServerInferenceBackend,
-                           _ body: (Int) async throws -> T) async throws -> T {
+private func withServer<T>(
+    _ backend: any ServerInferenceBackend,
+    _ body: (Int) async throws -> T
+) async throws -> T {
     let server = TinyTitanHTTPServer(modelID: "test-model", queueLimit: 2, backend: backend)
     let channel = try await server.start(port: 0)
     let port = try #require(channel.localAddress?.port)
@@ -135,10 +144,12 @@ struct ResponsesAPIHTTPTests {
     @Test func stringInputNonStreamingResponseObject() async throws {
         let backend = TextBackend()
         try await withServer(backend) { port in
-            let (data, response) = try await post(port, "/v1/responses", """
-            {"model":"test-model","input":"hi","instructions":"Be brief.","metadata":{"k":"v"},
-             "user":"u1","max_output_tokens":50,"truncation":"auto"}
-            """)
+            let (data, response) = try await post(
+                port, "/v1/responses",
+                """
+                {"model":"test-model","input":"hi","instructions":"Be brief.","metadata":{"k":"v"},
+                 "user":"u1","max_output_tokens":50,"truncation":"auto"}
+                """)
             #expect(response.statusCode == 200)
             let object = try json(data)
             #expect(object["object"] as? String == "response")
@@ -157,11 +168,14 @@ struct ResponsesAPIHTTPTests {
             let content = try #require(output[0]["content"] as? [[String: Any]])
             #expect(content[0]["type"] as? String == "output_text")
             #expect(content[0]["text"] as? String == "hello")
-            #expect(content[0]["logprobs"] as? [Any] != nil)
+            #expect(content[0]["logprobs"] is [Any])
             let usage = try #require(object["usage"] as? [String: Any])
             #expect(usage["input_tokens"] as? Int == 12)
-            #expect((usage["input_tokens_details"] as? [String: Any])?["cached_tokens"] as? Int == 4)
-            #expect((usage["output_tokens_details"] as? [String: Any])?["reasoning_tokens"] as? Int == 0)
+            #expect(
+                (usage["input_tokens_details"] as? [String: Any])?["cached_tokens"] as? Int == 4)
+            #expect(
+                (usage["output_tokens_details"] as? [String: Any])?["reasoning_tokens"] as? Int == 0
+            )
             #expect(usage["total_tokens"] as? Int == 14)
             // The system message carries the instructions; the user turn the string input.
             let seen = backend.log.requests[0].messages
@@ -172,31 +186,36 @@ struct ResponsesAPIHTTPTests {
 
     @Test func streamingEventsAreNumberedAndEndWithoutDone() async throws {
         try await withServer(TextBackend()) { port in
-            let (data, response) = try await post(port, "/v1/responses", """
-            {"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"stream":true}
-            """)
+            let (data, response) = try await post(
+                port, "/v1/responses",
+                """
+                {"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"stream":true}
+                """)
             #expect(response.statusCode == 200)
-            let text = String(decoding: data, as: UTF8.self)
+            let text = data.lossyUTF8String
             #expect(!text.contains("[DONE]"))
             #expect(!text.contains("response.content_part.delta"))
             let events = try sseEvents(text)
             let types = events.compactMap { $0.object["type"] as? String }
-            #expect(types == [
-                "response.created", "response.in_progress",
-                "response.output_item.added", "response.content_part.added",
-                "response.output_text.delta", "response.output_text.delta",
-                "response.output_text.done", "response.content_part.done",
-                "response.output_item.done", "response.completed",
-            ])
+            #expect(
+                types == [
+                    "response.created", "response.in_progress",
+                    "response.output_item.added", "response.content_part.added",
+                    "response.output_text.delta", "response.output_text.delta",
+                    "response.output_text.done", "response.content_part.done",
+                    "response.output_item.done", "response.completed",
+                ])
             #expect(events.map { $0.name } == types)
             let sequence = events.compactMap { $0.object["sequence_number"] as? Int }
             #expect(sequence == Array(0..<events.count))
             let delta = events[4].object
             #expect(delta["delta"] as? String == "hel")
-            #expect(delta["item_id"] as? String == (events[2].object["item"] as? [String: Any])?["id"] as? String)
+            #expect(
+                delta["item_id"] as? String == (events[2].object["item"] as? [String: Any])?["id"]
+                    as? String)
             #expect(delta["output_index"] as? Int == 0)
             #expect(delta["content_index"] as? Int == 0)
-            #expect(delta["logprobs"] as? [Any] != nil)
+            #expect(delta["logprobs"] is [Any])
             let done = events[6].object
             #expect(done["text"] as? String == "hello")
             let completed = try #require(events.last?.object["response"] as? [String: Any])
@@ -207,14 +226,17 @@ struct ResponsesAPIHTTPTests {
 
     @Test func toolCallsStreamTheirWholeLifecycle() async throws {
         try await withServer(ToolBackend()) { port in
-            let (data, _) = try await post(port, "/v1/responses", """
-            {"model":"test-model","input":"read a","stream":true,
-             "tools":[{"type":"function","name":"read","parameters":{"type":"object","properties":{"path":{"type":"string"}}},"strict":true}]}
-            """)
-            let events = try sseEvents(String(decoding: data, as: UTF8.self))
+            let (data, _) = try await post(
+                port, "/v1/responses",
+                """
+                {"model":"test-model","input":"read a","stream":true,
+                 "tools":[{"type":"function","name":"read","parameters":{"type":"object","properties":{"path":{"type":"string"}}},"strict":true}]}
+                """)
+            let events = try sseEvents(data.lossyUTF8String)
             let types = events.compactMap { $0.object["type"] as? String }
             #expect(types.contains("response.function_call_arguments.delta"))
-            let doneIndex = try #require(types.firstIndex(of: "response.function_call_arguments.done"))
+            let doneIndex = try #require(
+                types.firstIndex(of: "response.function_call_arguments.done"))
             #expect(events[doneIndex].object["arguments"] as? String == #"{"path":"/tmp/a"}"#)
             #expect(events[doneIndex].object["name"] as? String == "read")
             #expect(types[doneIndex + 1] == "response.output_item.done")
@@ -236,14 +258,18 @@ struct ResponsesAPIHTTPTests {
 
     @Test func incompleteWhenTheOutputCapEndsGeneration() async throws {
         try await withServer(TextBackend(finishReason: "length")) { port in
-            let (data, _) = try await post(port, "/v1/responses",
-                                           #"{"model":"test-model","input":"hi"}"#)
+            let (data, _) = try await post(
+                port, "/v1/responses",
+                #"{"model":"test-model","input":"hi"}"#)
             let object = try json(data)
             #expect(object["status"] as? String == "incomplete")
-            #expect((object["incomplete_details"] as? [String: Any])?["reason"] as? String == "max_output_tokens")
-            let (stream, _) = try await post(port, "/v1/responses",
-                                             #"{"model":"test-model","input":"hi","stream":true}"#)
-            let events = try sseEvents(String(decoding: stream, as: UTF8.self))
+            #expect(
+                (object["incomplete_details"] as? [String: Any])?["reason"] as? String
+                    == "max_output_tokens")
+            let (stream, _) = try await post(
+                port, "/v1/responses",
+                #"{"model":"test-model","input":"hi","stream":true}"#)
+            let events = try sseEvents(stream.lossyUTF8String)
             #expect(events.last?.object["type"] as? String == "response.incomplete")
         }
     }
@@ -251,13 +277,16 @@ struct ResponsesAPIHTTPTests {
     @Test func storedResponsesChainAndCanBeRetrieved() async throws {
         let backend = TextBackend()
         try await withServer(backend) { port in
-            let (first, _) = try await post(port, "/v1/responses",
-                                            #"{"model":"test-model","input":"first"}"#)
+            let (first, _) = try await post(
+                port, "/v1/responses",
+                #"{"model":"test-model","input":"first"}"#)
             let firstID = try #require(try json(first)["id"] as? String)
 
-            let (second, _) = try await post(port, "/v1/responses", """
-            {"model":"test-model","input":"second","previous_response_id":"\(firstID)"}
-            """)
+            let (second, _) = try await post(
+                port, "/v1/responses",
+                """
+                {"model":"test-model","input":"second","previous_response_id":"\(firstID)"}
+                """)
             let secondObject = try json(second)
             #expect(secondObject["previous_response_id"] as? String == firstID)
             let seen = backend.log.requests[1].messages
@@ -275,22 +304,26 @@ struct ResponsesAPIHTTPTests {
             #expect((list["data"] as? [[String: Any]])?.count == 1)
             #expect(list["has_more"] as? Bool == false)
 
-            let (cancel, cancelStatus) = try await call(port, "POST", "/v1/responses/\(firstID)/cancel")
+            let (cancel, cancelStatus) = try await call(
+                port, "POST", "/v1/responses/\(firstID)/cancel")
             #expect(cancelStatus.statusCode == 400)
-            #expect(String(decoding: cancel, as: UTF8.self).contains("background"))
+            #expect(cancel.lossyUTF8String.contains("background"))
 
             let (deleted, _) = try await call(port, "DELETE", "/v1/responses/\(firstID)")
             #expect(try json(deleted)["deleted"] as? Bool == true)
             let (_, gone) = try await call(port, "GET", "/v1/responses/\(firstID)")
             #expect(gone.statusCode == 404)
 
-            let (_, missing) = try await post(port, "/v1/responses", """
-            {"model":"test-model","input":"x","previous_response_id":"resp_nope"}
-            """)
+            let (_, missing) = try await post(
+                port, "/v1/responses",
+                """
+                {"model":"test-model","input":"x","previous_response_id":"resp_nope"}
+                """)
             #expect(missing.statusCode == 404)
 
-            let (unstored, _) = try await post(port, "/v1/responses",
-                                               #"{"model":"test-model","input":"x","store":false}"#)
+            let (unstored, _) = try await post(
+                port, "/v1/responses",
+                #"{"model":"test-model","input":"x","store":false}"#)
             let unstoredID = try #require(try json(unstored)["id"] as? String)
             let (_, unstoredStatus) = try await call(port, "GET", "/v1/responses/\(unstoredID)")
             #expect(unstoredStatus.statusCode == 404)
@@ -300,15 +333,17 @@ struct ResponsesAPIHTTPTests {
     @Test func replayedReasoningAndOutputTextItemsAreAccepted() async throws {
         let backend = TextBackend()
         try await withServer(backend) { port in
-            let (_, response) = try await post(port, "/v1/responses", """
-            {"model":"test-model","input":[
-               {"type":"message","role":"user","content":"a"},
-               {"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"},
-               {"type":"message","role":"assistant","id":"msg_1","status":"completed",
-                "content":[{"type":"output_text","text":"b","annotations":[]}]},
-               {"type":"message","role":"user","content":"c"}
-             ]}
-            """)
+            let (_, response) = try await post(
+                port, "/v1/responses",
+                """
+                {"model":"test-model","input":[
+                   {"type":"message","role":"user","content":"a"},
+                   {"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"},
+                   {"type":"message","role":"assistant","id":"msg_1","status":"completed",
+                    "content":[{"type":"output_text","text":"b","annotations":[]}]},
+                   {"type":"message","role":"user","content":"c"}
+                 ]}
+                """)
             #expect(response.statusCode == 200)
             let seen = backend.log.requests[0].messages
             #expect(seen.map(\.role) == [.user, .assistant, .user])
@@ -321,12 +356,15 @@ struct ResponsesAPIHTTPTests {
     @Test func aStructuredOutputFormatReachesTheValidator() async throws {
         let backend = TextBackend()
         try await withServer(backend) { port in
-            let (_, response) = try await post(port, "/v1/responses", """
-            {"model":"test-model","input":"x","text":{"format":{"type":"json_object"}}}
-            """)
+            let (_, response) = try await post(
+                port, "/v1/responses",
+                """
+                {"model":"test-model","input":"x","text":{"format":{"type":"json_object"}}}
+                """)
             #expect(response.statusCode == 200)
-            #expect(backend.log.requests[0].jsonSchema
-                        == .object(properties: [:], required: [], additional: true))
+            #expect(
+                backend.log.requests[0].jsonSchema
+                    == .object(properties: [:], required: [], additional: true))
         }
     }
 
@@ -341,16 +379,18 @@ struct ResponsesAPIHTTPTests {
                 let (data, response) = try await post(port, "/v1/responses", body)
                 #expect(response.statusCode == 400, Comment(rawValue: body))
                 let error = try #require(try json(data)["error"] as? [String: Any])
-                #expect(error["type"] as? String == "invalid_request_error", Comment(rawValue: body))
+                #expect(
+                    error["type"] as? String == "invalid_request_error", Comment(rawValue: body))
             }
         }
     }
 
     @Test func failuresMidStreamEndWithResponseFailed() async throws {
         try await withServer(FailingBackend()) { port in
-            let (data, _) = try await post(port, "/v1/responses",
-                                           #"{"model":"test-model","input":"x","stream":true}"#)
-            let text = String(decoding: data, as: UTF8.self)
+            let (data, _) = try await post(
+                port, "/v1/responses",
+                #"{"model":"test-model","input":"x","stream":true}"#)
+            let text = data.lossyUTF8String
             #expect(!text.contains("[DONE]"))
             let events = try sseEvents(text)
             let last = try #require(events.last?.object)
@@ -369,10 +409,12 @@ struct AnthropicMessagesHTTPTests {
     @Test func nonStreamingMessageObject() async throws {
         let backend = TextBackend(stopSequence: "END")
         try await withServer(backend) { port in
-            let (data, response) = try await post(port, "/v1/messages", """
-            {"model":"test-model","max_tokens":32,"system":"Be terse.","stop_sequences":["END"],
-             "messages":[{"role":"user","content":"hi"}]}
-            """, headers: version)
+            let (data, response) = try await post(
+                port, "/v1/messages",
+                """
+                {"model":"test-model","max_tokens":32,"system":"Be terse.","stop_sequences":["END"],
+                 "messages":[{"role":"user","content":"hi"}]}
+                """, headers: version)
             #expect(response.statusCode == 200)
             #expect(response.value(forHTTPHeaderField: "request-id")?.hasPrefix("req_") == true)
             let object = try json(data)
@@ -399,18 +441,25 @@ struct AnthropicMessagesHTTPTests {
 
     @Test func streamingEventOrder() async throws {
         try await withServer(TextBackend()) { port in
-            let (data, response) = try await post(port, "/v1/messages", """
-            {"model":"test-model","max_tokens":32,"stream":true,
-             "messages":[{"role":"user","content":"hi"}]}
-            """, headers: version)
+            let (data, response) = try await post(
+                port, "/v1/messages",
+                """
+                {"model":"test-model","max_tokens":32,"stream":true,
+                 "messages":[{"role":"user","content":"hi"}]}
+                """, headers: version)
             #expect(response.statusCode == 200)
-            #expect(response.value(forHTTPHeaderField: "content-type")?.hasPrefix("text/event-stream") == true)
-            let text = String(decoding: data, as: UTF8.self)
+            #expect(
+                response.value(forHTTPHeaderField: "content-type")?.hasPrefix("text/event-stream")
+                    == true)
+            let text = data.lossyUTF8String
             #expect(!text.contains("[DONE]"))
             let events = try sseEvents(text)
             let types = events.compactMap { $0.object["type"] as? String }
-            #expect(types == ["message_start", "content_block_start", "content_block_delta",
-                              "content_block_delta", "content_block_stop", "message_delta", "message_stop"])
+            #expect(
+                types == [
+                    "message_start", "content_block_start", "content_block_delta",
+                    "content_block_delta", "content_block_stop", "message_delta", "message_stop",
+                ])
             #expect(events.map { $0.name } == types)
             let start = try #require(events[0].object["message"] as? [String: Any])
             #expect(start["type"] as? String == "message")
@@ -423,23 +472,29 @@ struct AnthropicMessagesHTTPTests {
             #expect(delta["type"] as? String == "text_delta")
             #expect(delta["text"] as? String == "hel")
             let messageDelta = events[5].object
-            #expect((messageDelta["delta"] as? [String: Any])?["stop_reason"] as? String == "end_turn")
+            #expect(
+                (messageDelta["delta"] as? [String: Any])?["stop_reason"] as? String == "end_turn")
             #expect((messageDelta["usage"] as? [String: Any])?["output_tokens"] as? Int == 2)
         }
     }
 
     @Test func toolUseStreamsAsItsOwnBlock() async throws {
         try await withServer(ToolBackend()) { port in
-            let (data, _) = try await post(port, "/v1/messages", """
-            {"model":"test-model","max_tokens":32,"stream":true,
-             "tools":[{"name":"read","input_schema":{"type":"object","properties":{"path":{"type":"string"}}}}],
-             "messages":[{"role":"user","content":"read a"}]}
-            """, headers: version)
-            let events = try sseEvents(String(decoding: data, as: UTF8.self))
+            let (data, _) = try await post(
+                port, "/v1/messages",
+                """
+                {"model":"test-model","max_tokens":32,"stream":true,
+                 "tools":[{"name":"read","input_schema":{"type":"object","properties":{"path":{"type":"string"}}}}],
+                 "messages":[{"role":"user","content":"read a"}]}
+                """, headers: version)
+            let events = try sseEvents(data.lossyUTF8String)
             let types = events.compactMap { $0.object["type"] as? String }
-            #expect(types == ["message_start", "content_block_start", "content_block_delta",
-                              "content_block_stop", "content_block_start", "content_block_delta",
-                              "content_block_stop", "message_delta", "message_stop"])
+            #expect(
+                types == [
+                    "message_start", "content_block_start", "content_block_delta",
+                    "content_block_stop", "content_block_start", "content_block_delta",
+                    "content_block_stop", "message_delta", "message_stop",
+                ])
             let toolStart = try #require(events[4].object["content_block"] as? [String: Any])
             #expect(toolStart["type"] as? String == "tool_use")
             #expect(toolStart["name"] as? String == "read")
@@ -448,13 +503,17 @@ struct AnthropicMessagesHTTPTests {
             let jsonDelta = try #require(events[5].object["delta"] as? [String: Any])
             #expect(jsonDelta["type"] as? String == "input_json_delta")
             #expect(jsonDelta["partial_json"] as? String == #"{"path":"/tmp/a"}"#)
-            #expect((events[7].object["delta"] as? [String: Any])?["stop_reason"] as? String == "tool_use")
+            #expect(
+                (events[7].object["delta"] as? [String: Any])?["stop_reason"] as? String
+                    == "tool_use")
 
-            let (plain, _) = try await post(port, "/v1/messages", """
-            {"model":"test-model","max_tokens":32,
-             "tools":[{"name":"read","input_schema":{"type":"object"}}],
-             "messages":[{"role":"user","content":"read a"}]}
-            """, headers: version)
+            let (plain, _) = try await post(
+                port, "/v1/messages",
+                """
+                {"model":"test-model","max_tokens":32,
+                 "tools":[{"name":"read","input_schema":{"type":"object"}}],
+                 "messages":[{"role":"user","content":"read a"}]}
+                """, headers: version)
             let object = try json(plain)
             let content = try #require(object["content"] as? [[String: Any]])
             #expect(content.map { $0["type"] as? String } == ["text", "tool_use"])
@@ -465,9 +524,11 @@ struct AnthropicMessagesHTTPTests {
 
     @Test func errorsUseTheAnthropicEnvelope() async throws {
         try await withServer(TextBackend()) { port in
-            let (missing, missingStatus) = try await post(port, "/v1/messages", """
-            {"model":"test-model","messages":[{"role":"user","content":"hi"}]}
-            """, headers: version)
+            let (missing, missingStatus) = try await post(
+                port, "/v1/messages",
+                """
+                {"model":"test-model","messages":[{"role":"user","content":"hi"}]}
+                """, headers: version)
             #expect(missingStatus.statusCode == 400)
             let envelope = try json(missing)
             #expect(envelope["type"] as? String == "error")
@@ -476,41 +537,54 @@ struct AnthropicMessagesHTTPTests {
             #expect((error["message"] as? String)?.hasPrefix("max_tokens:") == true)
             #expect((envelope["request_id"] as? String)?.hasPrefix("req_") == true)
 
-            let (wrong, wrongStatus) = try await post(port, "/v1/messages", """
-            {"model":"claude-opus-5","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}
-            """, headers: version)
+            let (wrong, wrongStatus) = try await post(
+                port, "/v1/messages",
+                """
+                {"model":"claude-opus-5","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}
+                """, headers: version)
             #expect(wrongStatus.statusCode == 404)
-            #expect((try json(wrong)["error"] as? [String: Any])?["type"] as? String == "not_found_error")
+            #expect(
+                (try json(wrong)["error"] as? [String: Any])?["type"] as? String
+                    == "not_found_error")
 
-            let (malformed, malformedStatus) = try await post(port, "/v1/messages", "{", headers: version)
+            let (malformed, malformedStatus) = try await post(
+                port, "/v1/messages", "{", headers: version)
             #expect(malformedStatus.statusCode == 400)
             #expect(try json(malformed)["type"] as? String == "error")
 
             let (route, routeStatus) = try await call(port, "GET", "/v1/nothing", headers: version)
             #expect(routeStatus.statusCode == 404)
-            #expect((try json(route)["error"] as? [String: Any])?["type"] as? String == "not_found_error")
+            #expect(
+                (try json(route)["error"] as? [String: Any])?["type"] as? String
+                    == "not_found_error")
         }
     }
 
     @Test func failuresMidStreamSendAnErrorEvent() async throws {
         try await withServer(FailingBackend()) { port in
-            let (data, _) = try await post(port, "/v1/messages", """
-            {"model":"test-model","max_tokens":8,"stream":true,"messages":[{"role":"user","content":"hi"}]}
-            """, headers: version)
-            let events = try sseEvents(String(decoding: data, as: UTF8.self))
+            let (data, _) = try await post(
+                port, "/v1/messages",
+                """
+                {"model":"test-model","max_tokens":8,"stream":true,"messages":[{"role":"user","content":"hi"}]}
+                """, headers: version)
+            let events = try sseEvents(data.lossyUTF8String)
             let last = try #require(events.last)
             #expect(last.name == "error")
             #expect(last.object["type"] as? String == "error")
-            #expect((last.object["error"] as? [String: Any])?["type"] as? String == "invalid_request_error")
+            #expect(
+                (last.object["error"] as? [String: Any])?["type"] as? String
+                    == "invalid_request_error")
         }
     }
 
     @Test func countTokensAndModels() async throws {
         let backend = TextBackend()
         try await withServer(backend) { port in
-            let (count, status) = try await post(port, "/v1/messages/count_tokens", """
-            {"model":"test-model","system":"s","messages":[{"role":"user","content":"hi"}]}
-            """, headers: version)
+            let (count, status) = try await post(
+                port, "/v1/messages/count_tokens",
+                """
+                {"model":"test-model","system":"s","messages":[{"role":"user","content":"hi"}]}
+                """, headers: version)
             #expect(status.statusCode == 200)
             #expect(try json(count)["input_tokens"] as? Int == 42)
             #expect(backend.log.requests[0].messages.map(\.role) == [.system, .user])
@@ -523,7 +597,8 @@ struct AnthropicMessagesHTTPTests {
             #expect(data[0]["id"] as? String == "test-model")
             #expect(list["first_id"] as? String == "test-model")
 
-            let (one, oneStatus) = try await call(port, "GET", "/v1/models/test-model", headers: version)
+            let (one, oneStatus) = try await call(
+                port, "GET", "/v1/models/test-model", headers: version)
             #expect(oneStatus.statusCode == 200)
             #expect(try json(one)["display_name"] as? String == "test-model")
 
@@ -535,9 +610,11 @@ struct AnthropicMessagesHTTPTests {
 
     @Test func countTokensWithoutACountingBackendIs501() async throws {
         try await withServer(ToolBackend()) { port in
-            let (data, status) = try await post(port, "/v1/messages/count_tokens", """
-            {"model":"test-model","messages":[{"role":"user","content":"hi"}]}
-            """, headers: version)
+            let (data, status) = try await post(
+                port, "/v1/messages/count_tokens",
+                """
+                {"model":"test-model","messages":[{"role":"user","content":"hi"}]}
+                """, headers: version)
             #expect(status.statusCode == 501)
             #expect((try json(data)["error"] as? [String: Any])?["type"] as? String == "api_error")
         }

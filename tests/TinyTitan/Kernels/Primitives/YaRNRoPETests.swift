@@ -1,7 +1,7 @@
 import Darwin
 import Metal
-import TinyTitanValidationSupport
 import Testing
+import TinyTitanValidationSupport
 
 @testable import TinyTitan
 
@@ -31,14 +31,16 @@ import Testing
         let rope = try RoPE(context: context, yarn: parameters)
         let input = (0..<256).map { Float16(Float($0 % 19) / 19 - 0.5) }
         guard let buffer = Fp16Buffer.make(context.device, halves: input),
-              let commandBuffer = context.queue.makeCommandBuffer() else {
+            let commandBuffer = context.queue.makeCommandBuffer()
+        else {
             Issue.record("buffer allocation failed")
             return
         }
-        try rope.encodeNeoxSubdim(commandBuffer: commandBuffer, data: buffer,
-                                  position: UInt32(position), headDim: 256,
-                                  numHeads: 1, rotaryDim: 64,
-                                  theta: 10_000_000)
+        try rope.encodeNeoxSubdim(
+            commandBuffer: commandBuffer, data: buffer,
+            position: UInt32(position), headDim: 256,
+            numHeads: 1, rotaryDim: 64,
+            theta: 10_000_000)
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         #expect(commandBuffer.error == nil)
@@ -84,8 +86,10 @@ import Testing
                 worstIndex = index
             }
         }
-        #expect(worst <= 0.02,
-                "scalar RoPE differs from the CPU reference by \(worst) at index \(worstIndex) at position \(position)")
+        #expect(
+            worst <= 0.02,
+            "scalar RoPE differs from the CPU reference by \(worst) at index \(worstIndex) at position \(position)"
+        )
     }
 
     @Test func chunkedPrefillMatchesScalarYaRN() throws {
@@ -95,20 +99,24 @@ import Testing
         let context = try MetalContext()
         let scalar = try RoPE(context: context, yarn: parameters)
         let prefill = try PrefillRoPE(context: context, yarn: parameters)
-        let tokens = 3, heads = 2, headDim = 256
+        let tokens = 3
+        let heads = 2
+        let headDim = 256
         let input = (0..<(tokens * heads * headDim)).map {
             Float16(Float($0 % 23) / 23 - 0.5)
         }
         guard let scalarBuffer = Fp16Buffer.make(context.device, halves: input),
-              let prefillBuffer = Fp16Buffer.make(context.device, halves: input),
-              let commandBuffer = context.queue.makeCommandBuffer() else {
+            let prefillBuffer = Fp16Buffer.make(context.device, halves: input),
+            let commandBuffer = context.queue.makeCommandBuffer()
+        else {
             Issue.record("buffer allocation failed")
             return
         }
-        try scalar.encodeNeoxSubdim(commandBuffer: commandBuffer, data: scalarBuffer,
-                                    position: 524_288, headDim: UInt32(headDim),
-                                    numHeads: UInt32(heads), rotaryDim: 64,
-                                    numTokens: UInt32(tokens), theta: 10_000_000)
+        try scalar.encodeNeoxSubdim(
+            commandBuffer: commandBuffer, data: scalarBuffer,
+            position: 524_288, headDim: UInt32(headDim),
+            numHeads: UInt32(heads), rotaryDim: 64,
+            numTokens: UInt32(tokens), theta: 10_000_000)
         try prefill.encodeNeoxSubdim(
             commandBuffer: commandBuffer, data: prefillBuffer,
             startPosition: 524_288, queryCount: UInt32(tokens),
@@ -117,7 +125,8 @@ import Testing
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         #expect(commandBuffer.error == nil)
-        #expect(Fp16Buffer.read(scalarBuffer, count: input.count)
-            == Fp16Buffer.read(prefillBuffer, count: input.count))
+        #expect(
+            Fp16Buffer.read(scalarBuffer, count: input.count)
+                == Fp16Buffer.read(prefillBuffer, count: input.count))
     }
 }

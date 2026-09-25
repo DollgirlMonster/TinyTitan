@@ -17,35 +17,35 @@ import TinyTitanFleetCore
 ///   ttlanmanager workspace delete --workspace ID
 
 let usage = """
-\(FleetBrand.name) (\(FleetBrand.command)) — a control plane for a group of DSH hosts.
+    \(FleetBrand.name) (\(FleetBrand.command)) — a control plane for a group of DSH hosts.
 
-usage: \(FleetBrand.command) [--peer HOST[:PORT]] [--key KEY] [--json] [--timeout SECONDS] <command>
+    usage: \(FleetBrand.command) [--peer HOST[:PORT]] [--key KEY] [--json] [--timeout SECONDS] <command>
 
-  top                                              live dashboard: every member, what it holds, act on it
-  list                                             every Mac in the group, with its workspaces and sessions
-  prompt --session ID --text TEXT                  prompt one session, on the Mac that owns it
-  prompt-all --text TEXT [--limit N] [--concurrency N]
-                                                   prompt every active session in the group
-  workspace create --on NAME --path DIR [--title TITLE]
-                                                   register a folder as a workspace on one Mac
-  session archive --session ID                     hide a session (reversible; history kept)
-  workspace delete --workspace ID [--keep-sessions]
-                                                   remove a workspace from the registry
+      top                                              live dashboard: every member, what it holds, act on it
+      list                                             every Mac in the group, with its workspaces and sessions
+      prompt --session ID --text TEXT                  prompt one session, on the Mac that owns it
+      prompt-all --text TEXT [--limit N] [--concurrency N]
+                                                       prompt every active session in the group
+      workspace create --on NAME --path DIR [--title TITLE]
+                                                       register a folder as a workspace on one Mac
+      session archive --session ID                     hide a session (reversible; history kept)
+      workspace delete --workspace ID [--keep-sessions]
+                                                       remove a workspace from the registry
 
-`top` draws the group live; a scanner on its own task polls the fleet every 30 s
-by default — half the plugin's discovery period, so its polling adds at most half
-a cycle of latency — while the window keeps drawing. It resizes with the window
-and never needs more than 44x6. `--once` prints a single frame instead
-(useful in a pipe, and with --width/--height for a fixed size). `--from FILE`
-renders an inventory JSON taken earlier — or from stdin with `-` — with no fleet
-running.
+    `top` draws the group live; a scanner on its own task polls the fleet every 30 s
+    by default — half the plugin's discovery period, so its polling adds at most half
+    a cycle of latency — while the window keeps drawing. It resizes with the window
+    and never needs more than 44x6. `--once` prints a single frame instead
+    (useful in a pipe, and with --width/--height for a fixed size). `--from FILE`
+    renders an inventory JSON taken earlier — or from stdin with `-` — with no fleet
+    running.
 
---peer is the member the group is *read* from (default 127.0.0.1:3080); --on is
-the member an action is sent to. Every action then goes directly to the Mac that
-owns it — nothing is relayed through another instance. --json prints the raw
-answer. --version prints the name. Keys resolve in this order: --key,
-DSH_LAN_KEY, DSH_LAN_TOKEN, the plugin's shipped default.
-"""
+    --peer is the member the group is *read* from (default 127.0.0.1:3080); --on is
+    the member an action is sent to. Every action then goes directly to the Mac that
+    owns it — nothing is relayed through another instance. --json prints the raw
+    answer. --version prints the name. Keys resolve in this order: --key,
+    DSH_LAN_KEY, DSH_LAN_TOKEN, the plugin's shipped default.
+    """
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data("\(FleetBrand.command): \(message)\n".utf8))
@@ -72,10 +72,12 @@ var arguments = Array(CommandLine.arguments.dropFirst())
 func outcomesJSON(_ outcomes: [FleetOutcome]) -> String {
     let rows = outcomes.map { outcome in
         let detail = outcome.detail.replacingOccurrences(of: "\"", with: "\\\"")
-        return #"{"ok":\#(outcome.ok),"node":"\#(outcome.node)","sessionId":"\#(outcome.sessionId)","detail":"\#(detail)"}"#
+        return
+            #"{"ok":\#(outcome.ok),"node":"\#(outcome.node)","sessionId":"\#(outcome.sessionId)","detail":"\#(detail)"}"#
     }
     let delivered = outcomes.filter(\.ok).count
-    return #"{"ok":\#(delivered == outcomes.count),"delivered":\#(delivered),"considered":\#(outcomes.count),"results":[\#(rows.joined(separator: ","))]}"#
+    return
+        #"{"ok":\#(delivered == outcomes.count),"delivered":\#(delivered),"considered":\#(outcomes.count),"results":[\#(rows.joined(separator: ","))]}"#
 }
 
 if arguments.contains("--help") || arguments.contains("-h") {
@@ -108,7 +110,8 @@ let intervalOption = takeOption("--interval").flatMap(Int.init)
 let fromOption = takeOption("--from")
 
 let environment = ProcessInfo.processInfo.environment
-let key = keyOption
+let key =
+    keyOption
     ?? environment["DSH_LAN_KEY"]
     ?? environment["DSH_LAN_TOKEN"]
     ?? "tinytitan-lan"
@@ -124,11 +127,12 @@ guard let seed = FleetTarget(text: seedText, defaultPort: 3080) else {
     fail("--peer does not name a usable host: \(seedText)")
 }
 
-let runner = FleetRunner(client: FleetClient(
-    token: key,
-    basePath: basePath,
-    transport: URLSessionTransport(timeout: timeout)
-))
+let runner = FleetRunner(
+    client: FleetClient(
+        token: key,
+        basePath: basePath,
+        transport: URLSessionTransport(timeout: timeout)
+    ))
 
 @MainActor func report(_ ack: FleetAck) {
     print(asJSON ? ack.raw : (ack.ok ? "ok" : "refused"))
@@ -226,7 +230,8 @@ func runDashboard(runner: FleetRunner, seed: FleetTarget, scanSeconds: Int) asyn
 ///
 /// An explicit branch rather than `??`: `a ?? b` evaluates both sides here, which
 /// would dial the fleet even when a fixture was supplied.
-func loadGroup(runner: FleetRunner, seed: FleetTarget, from path: String?) async throws -> FleetRead {
+func loadGroup(runner: FleetRunner, seed: FleetTarget, from path: String?) async throws -> FleetRead
+{
     if let path {
         return try localRead(path: path, seed: seed)
     }
@@ -248,7 +253,6 @@ func localRead(path: String, seed: FleetTarget) throws -> FleetRead {
     return FleetRead(group: FleetRunner.assemble(inventory: inventory, seed: seed), raw: data)
 }
 
-
 do {
     switch command {
     case "top", "ui", "dashboard":
@@ -263,18 +267,21 @@ do {
             )
             print(frame.lines.joined(separator: "\n"))
         } else {
-            await runDashboard(runner: runner, seed: seed, scanSeconds: max(2, intervalOption ?? 30))
+            await runDashboard(
+                runner: runner, seed: seed, scanSeconds: max(2, intervalOption ?? 30))
         }
 
     case "list":
         let read = try await loadGroup(runner: runner, seed: seed, from: fromOption)
-        print(asJSON
-            ? String(data: read.raw, encoding: .utf8) ?? "{}"
-            : FleetRenderer.text(read.group))
+        print(
+            asJSON
+                ? String(data: read.raw, encoding: .utf8) ?? "{}"
+                : FleetRenderer.text(read.group))
 
     case "prompt":
         let read = try await runner.read(seed: seed)
-        let outcome = try await runner.prompt(group: read.group, sessionId: requireSession(), text: requireText())
+        let outcome = try await runner.prompt(
+            group: read.group, sessionId: requireSession(), text: requireText())
         print(asJSON ? outcomesJSON([outcome]) : FleetRenderer.outcomes([outcome]))
         exit(outcome.ok ? 0 : 1)
 
@@ -296,13 +303,18 @@ do {
         switch sub {
         case "create":
             guard let pathOption else { fail("workspace create needs --path DIR") }
-            guard let onMember else { fail("workspace create needs --on NAME (the Mac to register it on)") }
-            report(try await runner.createWorkspace(
-                group: read.group, node: onMember, path: pathOption, title: titleOption))
+            guard let onMember else {
+                fail("workspace create needs --on NAME (the Mac to register it on)")
+            }
+            report(
+                try await runner.createWorkspace(
+                    group: read.group, node: onMember, path: pathOption, title: titleOption))
         case "delete":
             guard let workspaceOption else { fail("workspace delete needs --workspace ID") }
-            report(try await runner.deleteWorkspace(
-                group: read.group, workspaceId: workspaceOption, archiveSessions: !keepSessions))
+            report(
+                try await runner.deleteWorkspace(
+                    group: read.group, workspaceId: workspaceOption, archiveSessions: !keepSessions)
+            )
         default:
             fail("workspace needs create or delete, not \(sub)")
         }

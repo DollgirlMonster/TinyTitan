@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
@@ -16,8 +17,9 @@ import Testing
     /// broken, so the backend clamps rather than repeating the checkpoint.
     @Test func theContextCeilingIsEnforcedNotPromised() {
         #expect(CPUModelBackend.contextCeiling < 262_144)
-        #expect(CPUModelBackend.contextCeiling >= 8_192,
-                "and still enough for the work this engine is for")
+        #expect(
+            CPUModelBackend.contextCeiling >= 8_192,
+            "and still enough for the work this engine is for")
     }
 
     // MARK: - a model that says what it is told
@@ -30,8 +32,10 @@ import Testing
     /// `2 * 9^k` against `3 * 9^k` for `chain[k + 1]`, and every row outside
     /// the chain is zero -- so the successor wins at every step, with a
     /// margin that BF16 scales cannot close.
-    private func writeScriptedModel(chain: [Int32], tokenizer: URL,
-                                    sidecar: Bool = false) throws -> URL {
+    private func writeScriptedModel(
+        chain: [Int32], tokenizer: URL,
+        sidecar: Bool = false
+    ) throws -> URL {
         let hidden = 64
         let rows = 248_320
         precondition(chain.count < hidden)
@@ -54,8 +58,10 @@ import Testing
             (stem + "weight", "U32", [rows, hidden / 4], levels),
             (stem + "scales", "BF16", [rows, 1], Self.bf16(scales)),
             (stem + "biases", "BF16", [rows, 1], Self.bf16([Float](repeating: 0, count: rows))),
-            ("language_model.model.norm.weight", "BF16", [hidden],
-             Self.bf16([Float](repeating: 1, count: hidden))),
+            (
+                "language_model.model.norm.weight", "BF16", [hidden],
+                Self.bf16([Float](repeating: 1, count: hidden))
+            ),
         ])
         try shard.write(to: directory.appendingPathComponent("model.safetensors"))
         let config: [String: Any] = [
@@ -70,33 +76,45 @@ import Testing
         ]
         try JSONSerialization.data(withJSONObject: config)
             .write(to: directory.appendingPathComponent("config.json"))
-        let names = [stem + "weight", stem + "scales", stem + "biases",
-                     "language_model.model.norm.weight"]
+        let names = [
+            stem + "weight", stem + "scales", stem + "biases",
+            "language_model.model.norm.weight",
+        ]
         try JSONSerialization.data(withJSONObject: [
-            "weight_map": Dictionary(uniqueKeysWithValues: names.map { ($0, "model.safetensors") })])
-            .write(to: directory.appendingPathComponent("model.safetensors.index.json"))
+            "weight_map": Dictionary(uniqueKeysWithValues: names.map { ($0, "model.safetensors") })
+        ])
+        .write(to: directory.appendingPathComponent("model.safetensors.index.json"))
         // A shipped `.gturbo` install keeps the tokenizer in a `tokenizer/`
         // sidecar; a converter's snapshot keeps it at the root. Both shapes
         // ship, so both are fixtures.
-        let tokenizerDirectory = sidecar
+        let tokenizerDirectory =
+            sidecar
             ? directory.appendingPathComponent("tokenizer")
             : directory
-        try FileManager.default.createDirectory(at: tokenizerDirectory,
-                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: tokenizerDirectory,
+            withIntermediateDirectories: true)
         for file in ["tokenizer.json", "tokenizer_config.json", "chat_template.jinja"] {
-            try FileManager.default.copyItem(at: tokenizer.appendingPathComponent(file),
-                                             to: tokenizerDirectory.appendingPathComponent(file))
+            try FileManager.default.copyItem(
+                at: tokenizer.appendingPathComponent(file),
+                to: tokenizerDirectory.appendingPathComponent(file))
         }
         return directory
     }
 
-    private static func safetensors(_ tensors: [(name: String, dtype: String,
-                                                 shape: [Int], bytes: [UInt8])]) throws -> Data {
+    private static func safetensors(
+        _ tensors: [(
+            name: String, dtype: String,
+            shape: [Int], bytes: [UInt8]
+        )]
+    ) throws -> Data {
         var header: [String: Any] = [:]
         var payload: [UInt8] = []
         for tensor in tensors {
-            header[tensor.name] = ["dtype": tensor.dtype, "shape": tensor.shape,
-                                   "data_offsets": [payload.count, payload.count + tensor.bytes.count]]
+            header[tensor.name] = [
+                "dtype": tensor.dtype, "shape": tensor.shape,
+                "data_offsets": [payload.count, payload.count + tensor.bytes.count],
+            ]
             payload.append(contentsOf: tensor.bytes)
         }
         var json = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
@@ -126,21 +144,25 @@ import Testing
         var all: [ServerInferenceEvent] { lock.withLock { events } }
     }
 
-    private func request(stops: [String] = [],
-                         reasoning: RequestReasoning? = nil) -> ValidatedChatRequest {
+    private func request(
+        stops: [String] = [],
+        reasoning: RequestReasoning? = nil
+    ) -> ValidatedChatRequest {
         var configuration = GenerationConfig(maxNewTokens: 32, temperature: 0)
         configuration.stopStrings = stops
-        return ValidatedChatRequest(messages: [GFTokenizer.Message(role: .user, content: "hi")],
-                                    tools: [], stream: true, includeUsage: false,
-                                    generationConfig: configuration,
-                                    maximumCompletionTokens: 32,
-                                    reasoning: reasoning)
+        return ValidatedChatRequest(
+            messages: [GFTokenizer.Message(role: .user, content: "hi")],
+            tools: [], stream: true, includeUsage: false,
+            generationConfig: configuration,
+            maximumCompletionTokens: 32,
+            reasoning: reasoning)
     }
 
     /// The scripted backend, without running a generation: the tests that ask
     /// the backend about itself need the object, not an answer.
     private func scriptedBackend(thinking: ModelThinkingMode) async throws
-        -> (backend: CPUModelBackend, directory: URL, spoken: [Int32]) {
+        -> (backend: CPUModelBackend, directory: URL, spoken: [Int32])
+    {
         let fixture = try TokenizerFixture.folder()
         let tok = try await GFTokenizer.load(from: fixture, thinkingMode: thinking)
         let prompt = tok.encode(try tok.applyChatTemplate(request().messages), addBOS: false)
@@ -149,14 +171,17 @@ import Testing
             try #require(ids.count == 1)
             return ids[0]
         }
-        let spoken = [try single("h"), try single("m"), try #require(tok.thinkEndID),
-                      try single("o"), try single("k")]
+        let spoken = [
+            try single("h"), try single("m"), try #require(tok.thinkEndID),
+            try single("o"), try single("k"),
+        ]
         let chain = [try #require(prompt.last)] + spoken + [tok.eosID]
         try #require(Set(chain).count == chain.count, "the walk needs distinct tokens")
 
         let directory = try writeScriptedModel(chain: chain, tokenizer: fixture)
-        let backend = try await CPUModelBackend(snapshotDirectory: directory, resident: false,
-                                                thinkingMode: thinking)
+        let backend = try await CPUModelBackend(
+            snapshotDirectory: directory, resident: false,
+            thinkingMode: thinking)
         return (backend, directory, spoken)
     }
 
@@ -167,14 +192,16 @@ import Testing
         let (backend, directory, _) = try await scriptedBackend(thinking: .off)
         defer { try? FileManager.default.removeItem(at: directory) }
         #expect(backend.promptCacheMode == .off)
-        #expect(ServerLog.promptCacheField(for: backend) == " prompt_cache=off",
-                "the field the residency line prints comes from this backend")
+        #expect(
+            ServerLog.promptCacheField(for: backend) == " prompt_cache=off",
+            "the field the residency line prints comes from this backend")
     }
 
     /// Runs the scripted model through the backend: after the prompt it
     /// says "hm", closes its thought, says "ok", and ends the turn.
     private func generate(thinking: ModelThinkingMode, stops: [String] = []) async throws
-        -> (completion: ServerCompletion, events: [ServerInferenceEvent], tokens: [Int32]) {
+        -> (completion: ServerCompletion, events: [ServerInferenceEvent], tokens: [Int32])
+    {
         let (backend, directory, spoken) = try await scriptedBackend(thinking: thinking)
         defer { try? FileManager.default.removeItem(at: directory) }
         let sink = Sink()
@@ -203,8 +230,9 @@ import Testing
         #expect(run.completion.reasoning == "hm")
         #expect(run.completion.content == "ok")
         #expect(run.completion.finishReason == "stop")
-        #expect(run.completion.usage.completionTokens == 5,
-                "thought tokens are generated tokens, and were always counted")
+        #expect(
+            run.completion.usage.completionTokens == 5,
+            "thought tokens are generated tokens, and were always counted")
     }
 
     /// Thinking off, a model that writes a stray `</think>` but no opening: it
@@ -242,15 +270,18 @@ import Testing
         }
         let prompt = tok.encode(try tok.applyChatTemplate(request().messages), addBOS: false)
         // The prompt closed the block; the model opens one anyway.
-        let spoken = [try #require(tok.thinkStartID), try single("m"), try single("h"),
-                      try #require(tok.thinkEndID), try single("o"), try single("k")]
+        let spoken = [
+            try #require(tok.thinkStartID), try single("m"), try single("h"),
+            try #require(tok.thinkEndID), try single("o"), try single("k"),
+        ]
         let chain = [try #require(prompt.last)] + spoken + [tok.eosID]
         try #require(Set(chain).count == chain.count, "the walk needs distinct tokens")
 
         let directory = try writeScriptedModel(chain: chain, tokenizer: fixture)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let backend = try await CPUModelBackend(snapshotDirectory: directory, resident: false,
-                                                thinkingMode: .off)
+        let backend = try await CPUModelBackend(
+            snapshotDirectory: directory, resident: false,
+            thinkingMode: .off)
         let completion = try await backend.generate(request(stops: [])) { _ in }
         #expect(completion.content == "ok")
         #expect(completion.reasoning == "mh")
@@ -277,15 +308,18 @@ import Testing
             try #require(ids.count == 1)
             return ids[0]
         }
-        let spoken = [try single("h"), try single("m"), try #require(tok.thinkEndID),
-                      try single("o"), try single("k")]
+        let spoken = [
+            try single("h"), try single("m"), try #require(tok.thinkEndID),
+            try single("o"), try single("k"),
+        ]
         let chain = [try #require(prompt.last)] + spoken + [tok.eosID]
         try #require(Set(chain).count == chain.count, "the walk needs distinct tokens")
 
         let directory = try writeScriptedModel(chain: chain, tokenizer: fixture, sidecar: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let backend = try await CPUModelBackend(snapshotDirectory: directory, resident: false,
-                                                thinkingMode: .off)
+        let backend = try await CPUModelBackend(
+            snapshotDirectory: directory, resident: false,
+            thinkingMode: .off)
 
         // Counting resolves a tokenizer for the switch without generating.
         let count = try await backend.countPromptTokens(
@@ -296,7 +330,8 @@ import Testing
         // scripted model's "hm" is a thought only while thinking is on.
         let sink = Sink()
         let completion = try await backend.generate(
-            request(reasoning: RequestReasoning(thinkingMode: .on, effort: nil))) { sink.append($0) }
+            request(reasoning: RequestReasoning(thinkingMode: .on, effort: nil))
+        ) { sink.append($0) }
         #expect(completion.reasoning == "hm")
         #expect(completion.content == "ok")
         #expect(completion.finishReason == "stop")

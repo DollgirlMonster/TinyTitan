@@ -21,7 +21,12 @@ The run behind the wiki's `Capital-of-Paris-Smartness` page:
 `<id>@cpu` for the CPU engine and by their bare id for the GPU. `PROMPTS` is a
 JSON array of prompts; a bare `PROMPT` string is still accepted and is one.
 """
-import json, os, time, urllib.request, urllib.error
+
+import json
+import os
+import time
+import urllib.request
+import urllib.error
 
 PORT = int(os.environ.get("PORT", "8091"))
 if "PROMPTS" in os.environ:
@@ -31,15 +36,16 @@ else:
 MAXTOK = int(os.environ.get("MAXTOK", "128"))
 REPEATS = int(os.environ.get("REPEATS", "1"))
 RESULTS = os.environ.get("RESULTS", "/tmp/smartness_results.jsonl")
-RUNS = json.loads(os.environ["RUNS"])   # [[id, engine, model_label, quant], ...]
+RUNS = json.loads(os.environ["RUNS"])  # [[id, engine, model_label, quant], ...]
 
 BASE = f"http://127.0.0.1:{PORT}"
 
 
 def post(payload, timeout=1800):
     body = json.dumps(payload).encode()
-    req = urllib.request.Request(f"{BASE}/v1/chat/completions", data=body,
-                                 headers={"content-type": "application/json"})
+    req = urllib.request.Request(
+        f"{BASE}/v1/chat/completions", data=body, headers={"content-type": "application/json"}
+    )
     return urllib.request.urlopen(req, timeout=timeout)
 
 
@@ -51,16 +57,27 @@ def warm(model, prompt):
     prompt would leave the KV cache holding the wrong prefix.
     """
     t0 = time.monotonic()
-    with post({"model": model, "messages": [{"role": "user", "content": prompt}],
-               "max_tokens": 1, "temperature": 0}) as r:
+    with post(
+        {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 1,
+            "temperature": 0,
+        }
+    ) as r:
         r.read()
     return time.monotonic() - t0
 
 
 def measure(model, prompt):
-    payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
-               "max_tokens": MAXTOK, "temperature": 0, "stream": True,
-               "stream_options": {"include_usage": True}}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": MAXTOK,
+        "temperature": 0,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
     t_send = time.monotonic()
     ttft = None
     t_last = t_send
@@ -96,10 +113,18 @@ def measure(model, prompt):
     decode = None
     if tokens and ttft is not None and t_last > t_send + ttft:
         decode = (tokens - 1) / (t_last - (t_send + ttft))
-    return {"ttft_s": ttft, "total_s": total, "completion_tokens": tokens,
-            "decode_tok_s": decode, "e2e_tok_s": (tokens / total) if tokens else None,
-            "finish": finish, "content": content, "reasoning": reasoning,
-            "content_chars": len(content), "reasoning_chars": len(reasoning)}
+    return {
+        "ttft_s": ttft,
+        "total_s": total,
+        "completion_tokens": tokens,
+        "decode_tok_s": decode,
+        "e2e_tok_s": (tokens / total) if tokens else None,
+        "finish": finish,
+        "content": content,
+        "reasoning": reasoning,
+        "content_chars": len(content),
+        "reasoning_chars": len(reasoning),
+    }
 
 
 def main():
@@ -107,8 +132,14 @@ def main():
     for model, engine, label, quant in RUNS:
         for prompt in PROMPTS:
             for repeat in range(1, REPEATS + 1):
-                row = {"model": model, "engine": engine, "label": label,
-                       "quant": quant, "prompt": prompt, "repeat": repeat}
+                row = {
+                    "model": model,
+                    "engine": engine,
+                    "label": label,
+                    "quant": quant,
+                    "prompt": prompt,
+                    "repeat": repeat,
+                }
                 switched = model != resident
                 try:
                     # Warm only on a switch, so a repeat measures the resident
@@ -121,8 +152,8 @@ def main():
                     row["status"] = "ok"
                 except urllib.error.HTTPError as e:
                     row["status"] = "http_error"
-                    row["error"] = f"{e.code} {e.read()[:300].decode('utf-8','replace')}"
-                except Exception as e:                                    # noqa: BLE001
+                    row["error"] = f"{e.code} {e.read()[:300].decode('utf-8', 'replace')}"
+                except Exception as e:  # noqa: BLE001
                     row["status"] = "error"
                     row["error"] = f"{type(e).__name__}: {e}"
                 for k in ("ttft_s", "total_s", "decode_tok_s", "e2e_tok_s"):
@@ -130,13 +161,15 @@ def main():
                         row[k] = round(row[k], 3)
                 with open(RESULTS, "a") as fh:
                     fh.write(json.dumps(row) + "\n")
-                print(f"{row['status']:10s} {label:26s} {quant}-bit {engine:3s} "
-                      f"repeat={repeat} cold={str(row.get('cold')):5s} "
-                      f"load={row.get('load_s')}s ttft={row.get('ttft_s')}s "
-                      f"tok/s={row.get('decode_tok_s')} tokens={row.get('completion_tokens')} "
-                      f"content={row.get('content_chars')}ch reasoning={row.get('reasoning_chars')}ch "
-                      f"prompt={prompt[:28]!r}",
-                      flush=True)
+                print(
+                    f"{row['status']:10s} {label:26s} {quant}-bit {engine:3s} "
+                    f"repeat={repeat} cold={str(row.get('cold')):5s} "
+                    f"load={row.get('load_s')}s ttft={row.get('ttft_s')}s "
+                    f"tok/s={row.get('decode_tok_s')} tokens={row.get('completion_tokens')} "
+                    f"content={row.get('content_chars')}ch reasoning={row.get('reasoning_chars')}ch "
+                    f"prompt={prompt[:28]!r}",
+                    flush=True,
+                )
                 if row["status"] != "ok":
                     print("           " + str(row.get("error"))[:300], flush=True)
 

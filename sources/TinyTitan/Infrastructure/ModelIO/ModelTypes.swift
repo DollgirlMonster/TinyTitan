@@ -60,8 +60,10 @@ public struct SparseIndexerConfig: Sendable, Equatable {
     public let budget: Int
     public let compressRatio: Int
 
-    public init(numHeads: Int, numKVHeads: Int, headDim: Int,
-                budget: Int, compressRatio: Int) {
+    public init(
+        numHeads: Int, numKVHeads: Int, headDim: Int,
+        budget: Int, compressRatio: Int
+    ) {
         self.numHeads = numHeads
         self.numKVHeads = numKVHeads
         self.headDim = headDim
@@ -91,9 +93,11 @@ public struct PLEConfig: Sendable, Equatable {
     public let vocabDivisor: Int
     public let seed: Int
 
-    public init(layerIndices: [Int], embedDim: Int, convKernelSize: Int,
-                ngramSize: Int, vocabSizeBase: Int, headsPerNgram: Int,
-                vocabDivisor: Int, seed: Int) {
+    public init(
+        layerIndices: [Int], embedDim: Int, convKernelSize: Int,
+        ngramSize: Int, vocabSizeBase: Int, headsPerNgram: Int,
+        vocabDivisor: Int, seed: Int
+    ) {
         self.layerIndices = layerIndices
         self.embedDim = embedDim
         self.convKernelSize = convKernelSize
@@ -135,10 +139,12 @@ public struct LinearAttentionConfig: Sendable, Equatable {
     public let convKernelSize: Int
     public let outputGate: OutputGate
 
-    public init(numKHeads: Int, numVHeads: Int,
-                keyHeadDim: Int, valueHeadDim: Int,
-                convKernelSize: Int,
-                outputGate: OutputGate = .silu) {
+    public init(
+        numKHeads: Int, numVHeads: Int,
+        keyHeadDim: Int, valueHeadDim: Int,
+        convKernelSize: Int,
+        outputGate: OutputGate = .silu
+    ) {
         self.numKHeads = numKHeads
         self.numVHeads = numVHeads
         self.keyHeadDim = keyHeadDim
@@ -165,8 +171,8 @@ public struct LinearAttentionConfig: Sendable, Equatable {
 /// 1 = full attention, 2 = gated-DeltaNet linear attention.
 public struct ArchConfig: Sendable, Equatable {
     public let hiddenSize: Int
-    public let intermediateSize: Int          // shared expert FFN (== ffnIntermediate in manifest)
-    public let moeIntermediateSize: Int       // per-expert FFN
+    public let intermediateSize: Int  // shared expert FFN (== ffnIntermediate in manifest)
+    public let moeIntermediateSize: Int  // per-expert FFN
     public let numHeads: Int
     public let numKVHeads: Int
     public let numFullKVHeads: Int
@@ -330,7 +336,7 @@ public struct ArchConfig: Sendable, Equatable {
         hiddenActivation: "silu",
         family: .qwen36,
         attnOutputGate: true,
-        attentionScale: 0.0625,   // 256^-0.5
+        attentionScale: 0.0625,  // 256^-0.5
         embeddingScaledBySqrtHidden: false,
         routerScaled: false,
         ffnSandwichNorms: false,
@@ -415,7 +421,7 @@ public struct ArchConfig: Sendable, Equatable {
         hiddenActivation: "silu",
         family: .qwen38flash,
         attnOutputGate: true,
-        attentionScale: 0.0625,   // 256^-0.5
+        attentionScale: 0.0625,  // 256^-0.5
         embeddingScaledBySqrtHidden: false,
         routerScaled: false,
         ffnSandwichNorms: false,
@@ -431,7 +437,7 @@ public struct ArchConfig: Sendable, Equatable {
             numHeads: 4, numKVHeads: 1, headDim: 128,
             budget: 2048, compressRatio: 4),
         ple: PLEConfig(
-            layerIndices: [1],          // config ple_layer_ids [2] is 1-based
+            layerIndices: [1],  // config ple_layer_ids [2] is 1-based
             embedDim: 2560,
             convKernelSize: 4,
             ngramSize: 3,
@@ -627,12 +633,14 @@ public struct TensorView: @unchecked Sendable {
     /// Dtype byte. 0 = U32, 1 = BF16, 2 = FP16, 3 = FP32.
     public let dtype: UInt8
 
-    public init(buffer: MTLBuffer,
-                offset: UInt64, length: UInt64,
-                scaleOffset: UInt64, scaleLength: UInt64,
-                biasOffset: UInt64, biasLength: UInt64,
-                shape: (UInt32, UInt32, UInt32, UInt32),
-                dtype: UInt8) {
+    public init(
+        buffer: MTLBuffer,
+        offset: UInt64, length: UInt64,
+        scaleOffset: UInt64, scaleLength: UInt64,
+        biasOffset: UInt64, biasLength: UInt64,
+        shape: (UInt32, UInt32, UInt32, UInt32),
+        dtype: UInt8
+    ) {
         self.buffer = buffer
         self.offset = offset
         self.length = length

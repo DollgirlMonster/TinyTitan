@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// `sample` kernel exercises. Inputs are pre-softmaxed FP16 probability
 /// vectors (no upstream softmax needed) so the tests can hand-craft known
@@ -20,12 +21,12 @@ import TinyTitanValidationSupport
     /// would have passed every one of those.
     @Test func selectionMatchesCPUReference() throws {
         let cases: [(v: Int, temperature: Float, topK: UInt32, topP: Float)] = [
-            (32,   1.0, 32,  1.0),
-            (32,   0.7, 8,   1.0),
-            (64,   1.0, 16,  0.9),
-            (64,   2.0, 64,  0.95),
-            (128,  0.5, 4,   1.0),
-            (256,  1.3, 64,  0.8),
+            (32, 1.0, 32, 1.0),
+            (32, 0.7, 8, 1.0),
+            (64, 1.0, 16, 0.9),
+            (64, 2.0, 64, 0.95),
+            (128, 0.5, 4, 1.0),
+            (256, 1.3, 64, 0.8),
         ]
         for c in cases {
             var rng = SeedTree(0x5A3D).key("sample-selection-\(c.v)-\(c.topK)")
@@ -34,18 +35,22 @@ import TinyTitanValidationSupport
             // Compare against exactly what the kernel reads: the FP16 values.
             let asFloats = probs.map { Float($0) }
             for seed in UInt64(1)...6 {
-                let got = try Self.runSampler(probs: probs,
-                                              temperature: c.temperature,
-                                              topK: c.topK,
-                                              topP: c.topP,
-                                              seed: seed)
-                let want = SampleSelectionRef.select(probs: asFloats,
-                                                     temperature: c.temperature,
-                                                     topK: Int(c.topK),
-                                                     topP: c.topP,
-                                                     seed: seed)
-                #expect(got == want,
-                        "v=\(c.v) T=\(c.temperature) k=\(c.topK) p=\(c.topP) seed=\(seed): kernel \(got) vs reference \(want)")
+                let got = try Self.runSampler(
+                    probs: probs,
+                    temperature: c.temperature,
+                    topK: c.topK,
+                    topP: c.topP,
+                    seed: seed)
+                let want = SampleSelectionRef.select(
+                    probs: asFloats,
+                    temperature: c.temperature,
+                    topK: Int(c.topK),
+                    topP: c.topP,
+                    seed: seed)
+                #expect(
+                    got == want,
+                    "v=\(c.v) T=\(c.temperature) k=\(c.topK) p=\(c.topP) seed=\(seed): kernel \(got) vs reference \(want)"
+                )
             }
         }
     }
@@ -58,30 +63,37 @@ import TinyTitanValidationSupport
         return values.map { Float16($0 / sum) }
     }
 
-    private static func runSampler(probs: [Float16],
-                                   temperature: Float,
-                                   topK: UInt32,
-                                   topP: Float,
-                                   seed: UInt64) throws -> UInt32 {
-        let ctx    = try MetalContext()
+    private static func runSampler(
+        probs: [Float16],
+        temperature: Float,
+        topK: UInt32,
+        topP: Float,
+        seed: UInt64
+    ) throws -> UInt32 {
+        let ctx = try MetalContext()
         let kernel = try Sample(context: ctx)
 
         let v = probs.count
-        guard let inBuf  = ctx.device.makeBuffer(bytes: probs,
-                                                 length: v * MemoryLayout<Float16>.size,
-                                                 options: .storageModeShared),
-              let outBuf = ctx.device.makeBuffer(length: MemoryLayout<UInt32>.size,
-                                                 options: .storageModeShared),
-              let cmd    = ctx.queue.makeCommandBuffer() else {
+        guard
+            let inBuf = ctx.device.makeBuffer(
+                bytes: probs,
+                length: v * MemoryLayout<Float16>.size,
+                options: .storageModeShared),
+            let outBuf = ctx.device.makeBuffer(
+                length: MemoryLayout<UInt32>.size,
+                options: .storageModeShared),
+            let cmd = ctx.queue.makeCommandBuffer()
+        else {
             Issue.record("Failed to allocate Metal resources")
             return UInt32.max
         }
 
-        try kernel.encode(commandBuffer: cmd,
-                      probs: inBuf, outToken: outBuf,
-                      v: UInt32(v),
-                      temperature: temperature,
-                      topK: topK, topP: topP, seed: seed)
+        try kernel.encode(
+            commandBuffer: cmd,
+            probs: inBuf, outToken: outBuf,
+            v: UInt32(v),
+            temperature: temperature,
+            topK: topK, topP: topP, seed: seed)
         cmd.commit()
         cmd.waitUntilCompleted()
 
@@ -93,13 +105,14 @@ import TinyTitanValidationSupport
     @Test func temperature_zero_picksArgmax() throws {
         let v = 2048
         var values = [Float](repeating: 0.01, count: v)
-        values[1337] = 5.0   // clearly the argmax
+        values[1337] = 5.0  // clearly the argmax
         let probs = Self.makeProbs(values)
 
-        let id = try Self.runSampler(probs: probs,
-                                     temperature: 0.0,
-                                     topK: 0, topP: 1.0,
-                                     seed: 1)
+        let id = try Self.runSampler(
+            probs: probs,
+            temperature: 0.0,
+            topK: 0, topP: 1.0,
+            seed: 1)
         #expect(id == 1337, "got \(id)")
     }
 
@@ -111,21 +124,27 @@ import TinyTitanValidationSupport
         let values = (0..<v).map { _ in rng.uniform(0.0, 1.0) }
         let probs = Self.makeProbs(values)
 
-        let seed: UInt64 = 0xDEADBEEFCAFEF00D
-        let a = try Self.runSampler(probs: probs, temperature: 1.0,
-                                    topK: 0, topP: 1.0, seed: seed)
-        let b = try Self.runSampler(probs: probs, temperature: 1.0,
-                                    topK: 0, topP: 1.0, seed: seed)
+        let seed: UInt64 = 0xDEAD_BEEF_CAFE_F00D
+        let a = try Self.runSampler(
+            probs: probs, temperature: 1.0,
+            topK: 0, topP: 1.0, seed: seed)
+        let b = try Self.runSampler(
+            probs: probs, temperature: 1.0,
+            topK: 0, topP: 1.0, seed: seed)
         #expect(a == b, "deterministic seed produced \(a) vs \(b)")
 
         // Different seed should (very probably) give a different draw on a
         // uniform-ish distribution. Allow equality once but expect divergence
         // across a small sweep.
         var sawDifferent = false
-        for s: UInt64 in [42, 1337, 0xAABBCCDD, 0xFFFEDCBA] {
-            let c = try Self.runSampler(probs: probs, temperature: 1.0,
-                                        topK: 0, topP: 1.0, seed: s)
-            if c != a { sawDifferent = true; break }
+        for s: UInt64 in [42, 1337, 0xAABB_CCDD, 0xFFFE_DCBA] {
+            let c = try Self.runSampler(
+                probs: probs, temperature: 1.0,
+                topK: 0, topP: 1.0, seed: s)
+            if c != a {
+                sawDifferent = true
+                break
+            }
         }
         #expect(sawDifferent, "all seeds produced same id — RNG likely stuck")
     }
@@ -139,9 +158,10 @@ import TinyTitanValidationSupport
         var rng = SeedTree(0x51A7_1004).key("sample-gumbel-spread")
         let spread = Self.makeProbs((0..<v).map { _ in rng.uniform(0.5, 1.0) })
         for t in 0..<16 {
-            let seed = (UInt64(t) &+ 1) &* 0x9E3779B97F4A7C15
-            let id = try Self.runSampler(probs: spread, temperature: 2.0,
-                                         topK: 0, topP: 1.0, seed: seed)
+            let seed = (UInt64(t) &+ 1) &* 0x9E37_79B9_7F4A_7C15
+            let id = try Self.runSampler(
+                probs: spread, temperature: 2.0,
+                topK: 0, topP: 1.0, seed: seed)
             #expect(id < UInt32(v), "trial \(t): out-of-range id \(id)")
         }
 
@@ -150,9 +170,10 @@ import TinyTitanValidationSupport
         let probs = Self.makeProbs(peaked)
         var hits = 0
         for t in 0..<32 {
-            let seed = (UInt64(t) &+ 1) &* 0x9E3779B97F4A7C15
-            let id = try Self.runSampler(probs: probs, temperature: 0.3,
-                                         topK: 0, topP: 1.0, seed: seed)
+            let seed = (UInt64(t) &+ 1) &* 0x9E37_79B9_7F4A_7C15
+            let id = try Self.runSampler(
+                probs: probs, temperature: 0.3,
+                topK: 0, topP: 1.0, seed: seed)
             if id == 2049 { hits += 1 }
         }
         // At T=0.3 the peak's re-sharpened mass is ~1 - 1e-9; any miss in 32
@@ -179,13 +200,15 @@ import TinyTitanValidationSupport
         let trials = 32
         for t in 0..<trials {
             // Seed must be non-zero — xorshift64 has a fixed point at 0.
-            let seed = (UInt64(t) &+ 1) &* 0x9E3779B97F4A7C15
-            let id = try Self.runSampler(probs: probs,
-                                         temperature: 1.0,
-                                         topK: 4, topP: 1.0,
-                                         seed: seed)
-            #expect(topSet.contains(id),
-                    "trial \(t): id=\(id) not in top-4 \(topIndices)")
+            let seed = (UInt64(t) &+ 1) &* 0x9E37_79B9_7F4A_7C15
+            let id = try Self.runSampler(
+                probs: probs,
+                temperature: 1.0,
+                topK: 4, topP: 1.0,
+                seed: seed)
+            #expect(
+                topSet.contains(id),
+                "trial \(t): id=\(id) not in top-4 \(topIndices)")
         }
     }
 }

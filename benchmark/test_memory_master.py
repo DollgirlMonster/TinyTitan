@@ -7,6 +7,7 @@ count, because that is the number the suite is for.
 
     cd benchmark && python3 -m unittest test_memory_master -v
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -40,8 +41,9 @@ class ScenarioTests(unittest.TestCase):
 
     def test_foundation_and_carryable_partition_the_keys(self):
         for name, spec in scenarios.SCENARIOS.items():
-            self.assertEqual(sorted(spec["foundation"] + spec["carryable"]),
-                             sorted(spec["keys"]), name)
+            self.assertEqual(
+                sorted(spec["foundation"] + spec["carryable"]), sorted(spec["keys"]), name
+            )
             self.assertFalse(set(spec["foundation"]) & set(spec["carryable"]), name)
 
     def test_a_changed_key_really_changes_and_a_foundation_key_never_does(self):
@@ -49,12 +51,10 @@ class ScenarioTests(unittest.TestCase):
             if spec["self_chosen"]:
                 continue
             for key in spec["carryable"]:
-                values = {repr(spec["truth"](s)[key])
-                          for s in range(1, spec["sessions"] + 1)}
+                values = {repr(spec["truth"](s)[key]) for s in range(1, spec["sessions"] + 1)}
                 self.assertGreater(len(values), 1, f"{name}: {key} never changes")
             for key in spec["foundation"]:
-                values = {repr(spec["truth"](s)[key])
-                          for s in range(1, spec["sessions"] + 1)}
+                values = {repr(spec["truth"](s)[key]) for s in range(1, spec["sessions"] + 1)}
                 self.assertEqual(len(values), 1, f"{name}: {key} changes")
 
 
@@ -82,8 +82,12 @@ class ScoreTests(unittest.TestCase):
         session_five = dict(spec["truth"](5))
         # The inn burned in session 4; this answer is the old value.
         stale = dict(session_five, inn_status="standing")
-        base = {"prompt_tokens": 500, "completion_tokens": 100, "seconds": 10.0,
-                "consolidation_wait": 0.0}
+        base = {
+            "prompt_tokens": 500,
+            "completion_tokens": 100,
+            "seconds": 10.0,
+            "consolidation_wait": 0.0,
+        }
         return [
             dict(base, session=1, answers=session_one),
             dict(base, session=5, answers=stale),
@@ -93,20 +97,27 @@ class ScoreTests(unittest.TestCase):
         master.SPEC = scenarios.SCENARIOS["photograph"]
         run = master.score_run(self._photograph_run())
         last = run["sessions"][-1]
-        self.assertEqual(last["foundation"], [9, 9])   # nothing else regressed
-        self.assertEqual(last["carryable"], [4, 5])    # inn_status is the miss
-        self.assertEqual(last["stale"], 1)             # and it is the old value
+        self.assertEqual(last["foundation"], [9, 9])  # nothing else regressed
+        self.assertEqual(last["carryable"], [4, 5])  # inn_status is the miss
+        self.assertEqual(last["stale"], 1)  # and it is the old value
         self.assertEqual(last["wrong"], ["inn_status"])
 
     def test_a_session_with_no_quiz_is_excluded_not_scored_as_misses(self):
         master.SPEC = scenarios.SCENARIOS["photograph"]
         spec = scenarios.SCENARIOS["photograph"]
-        base = {"prompt_tokens": 500, "completion_tokens": 2500, "seconds": 10.0,
-                "consolidation_wait": 0.0, "finish_reason": "length"}
-        run = master.score_run([
-            dict(base, session=1, answers=dict(spec["truth"](1))),
-            dict(base, session=5, answers={}),
-        ])
+        base = {
+            "prompt_tokens": 500,
+            "completion_tokens": 2500,
+            "seconds": 10.0,
+            "consolidation_wait": 0.0,
+            "finish_reason": "length",
+        }
+        run = master.score_run(
+            [
+                dict(base, session=1, answers=dict(spec["truth"](1))),
+                dict(base, session=5, answers={}),
+            ]
+        )
         last = run["sessions"][-1]
         self.assertTrue(last["invalid"])
         self.assertEqual(last["invalid_reason"], "truncated at the token ceiling")
@@ -117,27 +128,45 @@ class ScoreTests(unittest.TestCase):
     def test_a_completed_reply_without_a_quiz_says_so(self):
         master.SPEC = scenarios.SCENARIOS["photograph"]
         spec = scenarios.SCENARIOS["photograph"]
-        base = {"prompt_tokens": 500, "completion_tokens": 400, "seconds": 10.0,
-                "consolidation_wait": 0.0, "finish_reason": "stop"}
-        run = master.score_run([
-            dict(base, session=1, answers=dict(spec["truth"](1))),
-            dict(base, session=5, answers={}),
-        ])
-        self.assertEqual(run["sessions"][-1]["invalid_reason"],
-                         "no quiz in a completed reply")
+        base = {
+            "prompt_tokens": 500,
+            "completion_tokens": 400,
+            "seconds": 10.0,
+            "consolidation_wait": 0.0,
+            "finish_reason": "stop",
+        }
+        run = master.score_run(
+            [
+                dict(base, session=1, answers=dict(spec["truth"](1))),
+                dict(base, session=5, answers={}),
+            ]
+        )
+        self.assertEqual(run["sessions"][-1]["invalid_reason"], "no quiz in a completed reply")
 
     def test_a_self_chosen_scenario_scores_against_session_one(self):
         master.SPEC = scenarios.SCENARIOS["pong"]
-        rules = {"field_width": 800, "field_height": 600, "win_score": 11,
-                 "ball_start_speed": 5, "ball_speed_increment": 0.5,
-                 "ball_max_speed": 15, "paddle_speed": 8}
-        base = {"prompt_tokens": 2000, "completion_tokens": 900, "seconds": 30.0,
-                "consolidation_wait": 0.0}
-        run = master.score_run([
-            dict(base, session=1, answers=dict(rules), self_truth=dict(rules)),
-            dict(base, session=2, answers=dict(rules)),
-            dict(base, session=3, answers=dict(rules, paddle_speed=6)),
-        ])
+        rules = {
+            "field_width": 800,
+            "field_height": 600,
+            "win_score": 11,
+            "ball_start_speed": 5,
+            "ball_speed_increment": 0.5,
+            "ball_max_speed": 15,
+            "paddle_speed": 8,
+        }
+        base = {
+            "prompt_tokens": 2000,
+            "completion_tokens": 900,
+            "seconds": 30.0,
+            "consolidation_wait": 0.0,
+        }
+        run = master.score_run(
+            [
+                dict(base, session=1, answers=dict(rules), self_truth=dict(rules)),
+                dict(base, session=2, answers=dict(rules)),
+                dict(base, session=3, answers=dict(rules, paddle_speed=6)),
+            ]
+        )
         self.assertEqual(run["sessions"][1]["carryable"], [3, 3])
         self.assertEqual(run["sessions"][2]["carryable"], [2, 3])
         self.assertEqual(run["sessions"][2]["stale"], 0)  # 6 was never the value
@@ -146,14 +175,14 @@ class ScoreTests(unittest.TestCase):
 class QuizExtractionTests(unittest.TestCase):
     def test_the_full_key_block_wins_over_an_earlier_partial_one(self):
         keys = ["a", "b", "c"]
-        text = ('```json\n{"a": 1}\n```\nwork mentions {"a": 1, "b": 2}\n'
-                '```json\n{"a": 1, "b": 2, "c": 3}\n```')
-        self.assertEqual(scenarios.extract_quiz(text, keys),
-                         {"a": 1, "b": 2, "c": 3})
+        text = (
+            '```json\n{"a": 1}\n```\nwork mentions {"a": 1, "b": 2}\n'
+            '```json\n{"a": 1, "b": 2, "c": 3}\n```'
+        )
+        self.assertEqual(scenarios.extract_quiz(text, keys), {"a": 1, "b": 2, "c": 3})
 
     def test_a_partial_block_is_still_a_fallback(self):
-        self.assertEqual(scenarios.extract_quiz('```json\n{"a": 1}\n```', ["a", "b"]),
-                         {"a": 1})
+        self.assertEqual(scenarios.extract_quiz('```json\n{"a": 1}\n```', ["a", "b"]), {"a": 1})
 
     def test_the_quiz_is_asked_for_first(self):
         prompt = scenarios.quiz_prompt(scenarios.SCENARIOS["pigeon"])
@@ -172,6 +201,7 @@ class ConsolidationWaitTests(unittest.TestCase):
 
     def _with_log(self, contents: str):
         import tempfile
+
         directory = tempfile.TemporaryDirectory()
         log = pathlib.Path(directory.name) / "server.log"
         log.write_text(contents)
@@ -188,8 +218,9 @@ class ConsolidationWaitTests(unittest.TestCase):
     def test_a_skip_ends_the_wait(self):
         log = self._with_log("")
         before = master.consolidation_outcomes()
-        log.write_text("[t] memory consolidation skipped session=s-1: "
-                       "10 new characters, nothing to distil\n")
+        log.write_text(
+            "[t] memory consolidation skipped session=s-1: 10 new characters, nothing to distil\n"
+        )
         self.assertLess(master.wait_for_consolidation(before, limit=30), 5)
         self.assertEqual(master.consolidation_outcomes(), (0, 1))
 

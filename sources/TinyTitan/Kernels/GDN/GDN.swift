@@ -33,17 +33,23 @@ final class GDN {
     /// input projection for the decode shape. Measured elsewhere in this
     /// package: an unspecialized INT4 GEMV runs ~102 GB/s against ~141 GB/s
     /// specialized, so the runtime path must not be the only one available.
-    init(context: MetalContext, config: LinearAttentionConfig,
-         specializedHiddenSize: Int? = nil,
-         abBF16: Bool = false) throws {
-        precondition(config.keyHeadDim > 0 && config.keyHeadDim % 32 == 0,
-                     "keyHeadDim must be a positive multiple of 32")
-        precondition(config.keyHeadDim / 32 <= 8,
-                     "keyHeadDim register tile exceeds the kernel's bound")
-        precondition(config.valueHeadDim % 4 == 0,
-                     "valueHeadDim must be a multiple of 4")
-        precondition(config.numVHeads % config.numKHeads == 0,
-                     "numVHeads must be a multiple of numKHeads")
+    init(
+        context: MetalContext, config: LinearAttentionConfig,
+        specializedHiddenSize: Int? = nil,
+        abBF16: Bool = false
+    ) throws {
+        precondition(
+            config.keyHeadDim > 0 && config.keyHeadDim % 32 == 0,
+            "keyHeadDim must be a positive multiple of 32")
+        precondition(
+            config.keyHeadDim / 32 <= 8,
+            "keyHeadDim register tile exceeds the kernel's bound")
+        precondition(
+            config.valueHeadDim % 4 == 0,
+            "valueHeadDim must be a multiple of 4")
+        precondition(
+            config.numVHeads % config.numKHeads == 0,
+            "numVHeads must be a multiple of numKHeads")
         self.config = config
         self.convDecodePSO = try context.pipeline("gdn_conv_mix_decode")
         self.convPrefillPSO = try context.pipeline("gdn_conv_mix_prefill")
@@ -51,17 +57,23 @@ final class GDN {
         self.convTailCheckpointPSO = try context.pipeline("gdn_conv_tail_checkpoint")
         self.qkNormPSO = try context.pipeline(
             "gdn_qk_norm",
-            constants: [MetalFunctionConstant(index: 95,
-                                               value: .uint32(Self.normThreadsPerGroup))])
+            constants: [
+                MetalFunctionConstant(
+                    index: 95,
+                    value: .uint32(Self.normThreadsPerGroup))
+            ])
         self.deltaDecodePSO = try context.pipeline("gdn_delta_step_decode")
         self.deltaPrefillPSO = try context.pipeline("gdn_delta_step_prefill")
         self.gatedNormPSO = try context.pipeline(
             "gdn_gated_norm",
-            constants: [MetalFunctionConstant(index: 95,
-                                               value: .uint32(Self.normThreadsPerGroup)),
-                        MetalFunctionConstant(
-                            index: 96,
-                            value: .bool(config.outputGate == .sigmoid))])
+            constants: [
+                MetalFunctionConstant(
+                    index: 95,
+                    value: .uint32(Self.normThreadsPerGroup)),
+                MetalFunctionConstant(
+                    index: 96,
+                    value: .bool(config.outputGate == .sigmoid)),
+            ])
         // gdn.metal has always carried three alternates to the base kernel and
         // nothing ever selected them, so the decode path has only ever run the
         // 8-row, unstaged variant. They matter because every row re-reads the
@@ -103,20 +115,24 @@ final class GDN {
     /// (a and b, `numVHeads` rows each) were near-empty launches. Bit-identical
     /// to the four separate GEMVs — the per-row body and its operand order are
     /// unchanged.
-    func encodeInputProjections(commandBuffer: MTLCommandBuffer,
-                                x: MTLBuffer, xOffset: Int = 0,
-                                qkv: TensorView, qkvOut: MTLBuffer,
-                                z: TensorView, zOut: MTLBuffer,
-                                a: TensorView, aOut: MTLBuffer,
-                                b: TensorView, bOut: MTLBuffer,
-                                hiddenSize: Int) throws {
-        precondition(hiddenSize % Quantization.groupSize == 0,
-                     "hiddenSize must be a multiple of \(Quantization.groupSize)")
+    func encodeInputProjections(
+        commandBuffer: MTLCommandBuffer,
+        x: MTLBuffer, xOffset: Int = 0,
+        qkv: TensorView, qkvOut: MTLBuffer,
+        z: TensorView, zOut: MTLBuffer,
+        a: TensorView, aOut: MTLBuffer,
+        b: TensorView, bOut: MTLBuffer,
+        hiddenSize: Int
+    ) throws {
+        precondition(
+            hiddenSize % Quantization.groupSize == 0,
+            "hiddenSize must be a multiple of \(Quantization.groupSize)")
         // The row body reads packed weights through a `ushort*`; the repacker
         // guarantees two-byte sub-tensor alignment but not four-byte.
-        precondition(Int(qkv.offset) % 2 == 0 && Int(z.offset) % 2 == 0 &&
-                     Int(a.offset) % 2 == 0 && Int(b.offset) % 2 == 0,
-                     "gdn_in_proj_gemv_simd needs 2-aligned weights offsets")
+        precondition(
+            Int(qkv.offset) % 2 == 0 && Int(z.offset) % 2 == 0 && Int(a.offset) % 2 == 0
+                && Int(b.offset) % 2 == 0,
+            "gdn_in_proj_gemv_simd needs 2-aligned weights offsets")
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -151,11 +167,13 @@ final class GDN {
     /// Decode: conv over [tail | current row] with SiLU, shifting the tail in
     /// place. `convWeight` is the BF16 `[convDim, kernel]` tensor view region.
     /// `tailOffset` selects a slot's region in a multi-sequence tail buffer.
-    func encodeConvDecode(commandBuffer: MTLCommandBuffer,
-                          tail: MTLBuffer, tailOffset: Int = 0,
-                          qkv: MTLBuffer, qkvOffset: Int = 0,
-                          convWeight: MTLBuffer, convWeightOffset: Int,
-                          out: MTLBuffer, outOffset: Int = 0) throws {
+    func encodeConvDecode(
+        commandBuffer: MTLCommandBuffer,
+        tail: MTLBuffer, tailOffset: Int = 0,
+        qkv: MTLBuffer, qkvOffset: Int = 0,
+        convWeight: MTLBuffer, convWeightOffset: Int,
+        out: MTLBuffer, outOffset: Int = 0
+    ) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -173,12 +191,14 @@ final class GDN {
     }
 
     /// Prefill: conv over [tail | chunk rows]; the tail is read-only here.
-    func encodeConvPrefill(commandBuffer: MTLCommandBuffer,
-                           tail: MTLBuffer, tailOffset: Int = 0,
-                           qkvRows: MTLBuffer, qkvRowsOffset: Int = 0,
-                           convWeight: MTLBuffer, convWeightOffset: Int,
-                           out: MTLBuffer, outOffset: Int = 0,
-                           rows: Int) throws {
+    func encodeConvPrefill(
+        commandBuffer: MTLCommandBuffer,
+        tail: MTLBuffer, tailOffset: Int = 0,
+        qkvRows: MTLBuffer, qkvRowsOffset: Int = 0,
+        convWeight: MTLBuffer, convWeightOffset: Int,
+        out: MTLBuffer, outOffset: Int = 0,
+        rows: Int
+    ) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -193,16 +213,19 @@ final class GDN {
         encoder.setBytes(&channels, length: MemoryLayout<UInt32>.size, index: 4)
         encoder.setBytes(&taps, length: MemoryLayout<UInt32>.size, index: 5)
         encoder.setBytes(&rowCount, length: MemoryLayout<UInt32>.size, index: 6)
-        dispatch2D(encoder, pipeline: convPrefillPSO,
-                   width: config.qkvDim, height: rows)
+        dispatch2D(
+            encoder, pipeline: convPrefillPSO,
+            width: config.qkvDim, height: rows)
         encoder.endEncoding()
     }
 
     /// After a prefill chunk: tail := last (kernel-1) raw rows of [tail | chunk].
-    func encodeConvTailUpdate(commandBuffer: MTLCommandBuffer,
-                              tail: MTLBuffer, tailOffset: Int = 0,
-                              qkvRows: MTLBuffer, qkvRowsOffset: Int = 0,
-                              rows: Int) throws {
+    func encodeConvTailUpdate(
+        commandBuffer: MTLCommandBuffer,
+        tail: MTLBuffer, tailOffset: Int = 0,
+        qkvRows: MTLBuffer, qkvRowsOffset: Int = 0,
+        rows: Int
+    ) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -215,17 +238,20 @@ final class GDN {
         encoder.setBytes(&channels, length: MemoryLayout<UInt32>.size, index: 2)
         encoder.setBytes(&taps, length: MemoryLayout<UInt32>.size, index: 3)
         encoder.setBytes(&rowCount, length: MemoryLayout<UInt32>.size, index: 4)
-        dispatch2D(encoder, pipeline: convTailUpdatePSO,
-                   width: config.qkvDim, height: config.convKernelSize - 1)
+        dispatch2D(
+            encoder, pipeline: convTailUpdatePSO,
+            width: config.qkvDim, height: config.convKernelSize - 1)
         encoder.endEncoding()
     }
 
     /// Capture the conv tail after the first (confirmed) row while the normal
     /// two-row update continues to the speculative final state.
-    func encodeConvTailCheckpoint(commandBuffer: MTLCommandBuffer,
-                                  tail: MTLBuffer, tailOffset: Int = 0,
-                                  qkvRows: MTLBuffer,
-                                  checkpoint: MTLBuffer, checkpointOffset: Int = 0) throws {
+    func encodeConvTailCheckpoint(
+        commandBuffer: MTLCommandBuffer,
+        tail: MTLBuffer, tailOffset: Int = 0,
+        qkvRows: MTLBuffer,
+        checkpoint: MTLBuffer, checkpointOffset: Int = 0
+    ) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -237,16 +263,19 @@ final class GDN {
         var taps = UInt32(config.convKernelSize)
         encoder.setBytes(&channels, length: MemoryLayout<UInt32>.size, index: 3)
         encoder.setBytes(&taps, length: MemoryLayout<UInt32>.size, index: 4)
-        dispatch1D(encoder, pipeline: convTailCheckpointPSO,
-                   threads: (config.convKernelSize - 1) * config.qkvDim)
+        dispatch1D(
+            encoder, pipeline: convTailCheckpointPSO,
+            threads: (config.convKernelSize - 1) * config.qkvDim)
         encoder.endEncoding()
     }
 
     /// Per-head no-weight RMS norm over the q and k slices of `convOut`,
     /// in place, with the delta-rule scales folded in. `rows` > 1 for prefill.
-    func encodeQKNorm(commandBuffer: MTLCommandBuffer,
-                      convOut: MTLBuffer, convOutOffset: Int = 0,
-                      rows: Int = 1) throws {
+    func encodeQKNorm(
+        commandBuffer: MTLCommandBuffer,
+        convOut: MTLBuffer, convOutOffset: Int = 0,
+        rows: Int = 1
+    ) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -262,22 +291,25 @@ final class GDN {
         // partial-count loop is bound to the same function constant.
         encoder.dispatchThreadgroups(
             MTLSize(width: 2 * config.numKHeads, height: rows, depth: 1),
-            threadsPerThreadgroup: MTLSize(width: Int(Self.normThreadsPerGroup),
-                                           height: 1, depth: 1))
+            threadsPerThreadgroup: MTLSize(
+                width: Int(Self.normThreadsPerGroup),
+                height: 1, depth: 1))
         encoder.endEncoding()
     }
 
     /// Decode: one gated delta rule step. `state` is FP32 [Hv, Dv, Dk],
     /// updated in place; `y` receives [Hv * Dv] FP16. `stateOffset` selects a
     /// slot's region in a multi-sequence state buffer.
-    func encodeDeltaStepDecode(commandBuffer: MTLCommandBuffer,
-                               convOut: MTLBuffer, convOutOffset: Int = 0,
-                               aProj: MTLBuffer, aProjOffset: Int = 0,
-                               bProj: MTLBuffer, bProjOffset: Int = 0,
-                               aLog: MTLBuffer, aLogOffset: Int,
-                               dtBias: MTLBuffer, dtBiasOffset: Int,
-                               state: MTLBuffer, stateOffset: Int = 0,
-                               y: MTLBuffer, yOffset: Int = 0) throws {
+    func encodeDeltaStepDecode(
+        commandBuffer: MTLCommandBuffer,
+        convOut: MTLBuffer, convOutOffset: Int = 0,
+        aProj: MTLBuffer, aProjOffset: Int = 0,
+        bProj: MTLBuffer, bProjOffset: Int = 0,
+        aLog: MTLBuffer, aLogOffset: Int,
+        dtBias: MTLBuffer, dtBiasOffset: Int,
+        state: MTLBuffer, stateOffset: Int = 0,
+        y: MTLBuffer, yOffset: Int = 0
+    ) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -291,26 +323,29 @@ final class GDN {
         encoder.setBuffer(y, offset: yOffset, index: 6)
         setHeadDims(encoder, startingAt: 7)
         encoder.dispatchThreadgroups(
-            MTLSize(width: config.numVHeads,
-                    height: config.valueHeadDim / 4,
-                    depth: 1),
+            MTLSize(
+                width: config.numVHeads,
+                height: config.valueHeadDim / 4,
+                depth: 1),
             threadsPerThreadgroup: MTLSize(width: 32, height: 4, depth: 1))
         encoder.endEncoding()
     }
 
     /// Prefill: the recurrence runs sequentially over `rows` inside the
     /// kernel; state persists in registers and is written back once.
-    func encodeDeltaStepPrefill(commandBuffer: MTLCommandBuffer,
-                                convOut: MTLBuffer, convOutOffset: Int = 0,
-                                aProj: MTLBuffer, aProjOffset: Int = 0,
-                                bProj: MTLBuffer, bProjOffset: Int = 0,
-                                aLog: MTLBuffer, aLogOffset: Int,
-                                dtBias: MTLBuffer, dtBiasOffset: Int,
-                                state: MTLBuffer, stateOffset: Int = 0,
-                                checkpointState: MTLBuffer? = nil,
-                                checkpointStateOffset: Int = 0,
-                                y: MTLBuffer, yOffset: Int = 0,
-                                rows: Int) throws {
+    func encodeDeltaStepPrefill(
+        commandBuffer: MTLCommandBuffer,
+        convOut: MTLBuffer, convOutOffset: Int = 0,
+        aProj: MTLBuffer, aProjOffset: Int = 0,
+        bProj: MTLBuffer, bProjOffset: Int = 0,
+        aLog: MTLBuffer, aLogOffset: Int,
+        dtBias: MTLBuffer, dtBiasOffset: Int,
+        state: MTLBuffer, stateOffset: Int = 0,
+        checkpointState: MTLBuffer? = nil,
+        checkpointStateOffset: Int = 0,
+        y: MTLBuffer, yOffset: Int = 0,
+        rows: Int
+    ) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -337,20 +372,23 @@ final class GDN {
         var checkpointEnabled = checkpointState != nil
         encoder.setBytes(&checkpointEnabled, length: MemoryLayout<Bool>.size, index: 14)
         encoder.dispatchThreadgroups(
-            MTLSize(width: config.numVHeads,
-                    height: config.valueHeadDim / 4,
-                    depth: 1),
+            MTLSize(
+                width: config.numVHeads,
+                height: config.valueHeadDim / 4,
+                depth: 1),
             threadsPerThreadgroup: MTLSize(width: 32, height: 4, depth: 1))
         encoder.endEncoding()
     }
 
     /// out = rmsnorm(y; weight) * silu(z), per value head, `rows` rows.
-    func encodeGatedNorm(commandBuffer: MTLCommandBuffer,
-                         y: MTLBuffer, yOffset: Int = 0,
-                         z: MTLBuffer, zOffset: Int = 0,
-                         weight: MTLBuffer, weightOffset: Int,
-                         out: MTLBuffer, outOffset: Int = 0,
-                         rows: Int = 1) throws {
+    func encodeGatedNorm(
+        commandBuffer: MTLCommandBuffer,
+        y: MTLBuffer, yOffset: Int = 0,
+        z: MTLBuffer, zOffset: Int = 0,
+        weight: MTLBuffer, weightOffset: Int,
+        out: MTLBuffer, outOffset: Int = 0,
+        rows: Int = 1
+    ) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -367,8 +405,9 @@ final class GDN {
         // partial-count loop is bound to the same function constant.
         encoder.dispatchThreadgroups(
             MTLSize(width: config.numVHeads, height: rows, depth: 1),
-            threadsPerThreadgroup: MTLSize(width: Int(Self.normThreadsPerGroup),
-                                           height: 1, depth: 1))
+            threadsPerThreadgroup: MTLSize(
+                width: Int(Self.normThreadsPerGroup),
+                height: 1, depth: 1))
         encoder.endEncoding()
     }
 
@@ -383,18 +422,22 @@ final class GDN {
         encoder.setBytes(&valueDim, length: MemoryLayout<UInt32>.size, index: index + 3)
     }
 
-    private func dispatch1D(_ encoder: MTLComputeCommandEncoder,
-                            pipeline: MTLComputePipelineState,
-                            threads: Int) {
+    private func dispatch1D(
+        _ encoder: MTLComputeCommandEncoder,
+        pipeline: MTLComputePipelineState,
+        threads: Int
+    ) {
         let width = min(pipeline.maxTotalThreadsPerThreadgroup, 256)
         encoder.dispatchThreads(
             MTLSize(width: threads, height: 1, depth: 1),
             threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
     }
 
-    private func dispatch2D(_ encoder: MTLComputeCommandEncoder,
-                            pipeline: MTLComputePipelineState,
-                            width: Int, height: Int) {
+    private func dispatch2D(
+        _ encoder: MTLComputeCommandEncoder,
+        pipeline: MTLComputePipelineState,
+        width: Int, height: Int
+    ) {
         let tgWidth = min(pipeline.maxTotalThreadsPerThreadgroup, 256)
         encoder.dispatchThreads(
             MTLSize(width: width, height: height, depth: 1),
@@ -410,9 +453,9 @@ enum GDNInProjVariant: String {
 
     var functionName: String {
         switch self {
-        case .base:  return "gdn_in_proj_gemv_simd"
-        case .xsh8:  return "gdn_in_proj_gemv_simd_xsh8"
-        case .r16:   return "gdn_in_proj_gemv_simd_r16"
+        case .base: return "gdn_in_proj_gemv_simd"
+        case .xsh8: return "gdn_in_proj_gemv_simd_xsh8"
+        case .r16: return "gdn_in_proj_gemv_simd_r16"
         case .xsh16: return "gdn_in_proj_gemv_simd_xsh16"
         }
     }

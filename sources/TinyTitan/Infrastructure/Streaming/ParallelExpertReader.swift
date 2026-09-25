@@ -65,17 +65,22 @@ public final class ParallelExpertReader: @unchecked Sendable {
     ///     Four saturates the development machine.
     ///   - bypassCache: keep reads out of the page cache. Default on, because a
     ///     bounded footprint is the point of streaming.
-    public init(path: String,
-                expertStride: Int,
-                threads: Int = 4,
-                bypassCache: Bool = true) throws {
+    public init(
+        path: String,
+        expertStride: Int,
+        threads: Int = 4,
+        bypassCache: Bool = true
+    ) throws {
         precondition(expertStride > 0, "expertStride must be positive")
         var failure: Int32 = 0
-        guard let handle = tinytitan_expert_reader_create(path,
-                                                     expertStride,
-                                                     Int32(threads),
-                                                     bypassCache ? 1 : 0,
-                                                     &failure) else {
+        guard
+            let handle = tinytitan_expert_reader_create(
+                path,
+                expertStride,
+                Int32(threads),
+                bypassCache ? 1 : 0,
+                &failure)
+        else {
             throw Failure.openFailed(path: path, errno: failure)
         }
         self.handle = handle
@@ -92,10 +97,13 @@ public final class ParallelExpertReader: @unchecked Sendable {
     /// Each destination must be at least `expertStride` bytes. On failure the
     /// destinations hold undefined bytes and must not be used -- a partially
     /// filled expert slot would otherwise be indistinguishable from a valid one.
-    public func fetch(experts: [UInt32],
-                      into destinations: [UnsafeMutableRawPointer]) throws {
-        precondition(experts.count == destinations.count,
-                     "experts and destinations must be the same length")
+    public func fetch(
+        experts: [UInt32],
+        into destinations: [UnsafeMutableRawPointer]
+    ) throws {
+        precondition(
+            experts.count == destinations.count,
+            "experts and destinations must be the same length")
         guard !experts.isEmpty else { return }
         let status = destinations.withUnsafeBufferPointer { dst in
             // `void *const *` imports with an optional element type. A
@@ -103,10 +111,11 @@ public final class ParallelExpertReader: @unchecked Sendable {
             // rebind is a type-level adjustment and moves no bytes.
             dst.withMemoryRebound(to: UnsafeMutableRawPointer?.self) { rebound in
                 experts.withUnsafeBufferPointer { ids in
-                    tinytitan_expert_reader_fetch(handle,
-                                              ids.baseAddress,
-                                              rebound.baseAddress,
-                                              experts.count)
+                    tinytitan_expert_reader_fetch(
+                        handle,
+                        ids.baseAddress,
+                        rebound.baseAddress,
+                        experts.count)
                 }
             }
         }
@@ -119,18 +128,22 @@ public final class ParallelExpertReader: @unchecked Sendable {
     ///
     /// The streamer's regions carry a per-layer base and a container offset, so an
     /// expert index alone would address the wrong layer.
-    public func fetch(offsets: [UInt64],
-                      into destinations: [UnsafeMutableRawPointer]) throws {
-        precondition(offsets.count == destinations.count,
-                     "offsets and destinations must be the same length")
+    public func fetch(
+        offsets: [UInt64],
+        into destinations: [UnsafeMutableRawPointer]
+    ) throws {
+        precondition(
+            offsets.count == destinations.count,
+            "offsets and destinations must be the same length")
         guard !offsets.isEmpty else { return }
         let status = destinations.withUnsafeBufferPointer { dst in
             dst.withMemoryRebound(to: UnsafeMutableRawPointer?.self) { rebound in
                 offsets.withUnsafeBufferPointer { offs in
-                    tinytitan_expert_reader_fetch_offsets(handle,
-                                                          offs.baseAddress,
-                                                          rebound.baseAddress,
-                                                          offsets.count)
+                    tinytitan_expert_reader_fetch_offsets(
+                        handle,
+                        offs.baseAddress,
+                        rebound.baseAddress,
+                        offsets.count)
                 }
             }
         }

@@ -59,10 +59,12 @@ try:
     from safetensors import safe_open
     from safetensors.numpy import save_file
 except ImportError as exc:  # pragma: no cover - environment, not logic
-    sys.exit(f"missing dependency: {exc}\n"
-             f"  install them for the interpreter running this file: {sys.executable}\n"
-             "    -m pip install safetensors numpy ml_dtypes\n"
-             "  (or point TINYTITAN_PYTHON at another Python 3.10+)")
+    sys.exit(
+        f"missing dependency: {exc}\n"
+        f"  install them for the interpreter running this file: {sys.executable}\n"
+        "    -m pip install safetensors numpy ml_dtypes\n"
+        "  (or point TINYTITAN_PYTHON at another Python 3.10+)"
+    )
 REPO = "Qwen/Qwen3.8-Flash-Next"
 # `HF_ENDPOINT` (the Hub's own variable) and `--endpoint` point every fetch at a
 # mirror. The path below the host is the Hub's -- `/<repo>/resolve/main/<file>`
@@ -135,7 +137,7 @@ def ple_constants(text_config: dict) -> dict:
     multiplier and every n-gram id, silently.
     """
     ple_layer_index = 0
-    heads = text_config["heads_per_ngram"] * 2      # two n-gram orders
+    heads = text_config["heads_per_ngram"] * 2  # two n-gram orders
     vocab_base = text_config["ngram_vocab_size_base"]
     sizes, offsets, total = [], [], 0
     for head in range(heads):
@@ -185,10 +187,14 @@ def quantize_affine(value: np.ndarray, bits: int) -> tuple[np.ndarray, ...]:
     scale = np.where(high == bias, np.float32(1), (high - bias) / levels)
     scale = scale.astype(ml_dtypes.bfloat16)
     bias = bias.astype(ml_dtypes.bfloat16)
-    quantized = np.rint(
-        (grouped - bias.astype(np.float32)[..., None])
-        / scale.astype(np.float32)[..., None]
-    ).clip(0, levels).astype(np.uint32).reshape(value.shape)
+    quantized = (
+        np.rint(
+            (grouped - bias.astype(np.float32)[..., None]) / scale.astype(np.float32)[..., None]
+        )
+        .clip(0, levels)
+        .astype(np.uint32)
+        .reshape(value.shape)
+    )
     lanes = 32 // bits
     words = quantized.reshape(*quantized.shape[:-1], quantized.shape[-1] // lanes, lanes)
     packed = np.zeros(words.shape[:-1], dtype=np.uint32)
@@ -218,9 +224,11 @@ PLE_BUFFERS = ("layer_multipliers", "ngram_heads_offsets", "ngram_heads_vocab_si
 
 
 def is_ple_buffer(name: str) -> bool:
-    return name.startswith("model.language_model.layers.") \
-        and ".ple.ple_embedding." in name \
+    return (
+        name.startswith("model.language_model.layers.")
+        and ".ple.ple_embedding." in name
         and name.rsplit(".", 1)[-1] in PLE_BUFFERS
+    )
 
 
 # Names the runtime's schema spells without `.weight`, where the checkpoint
@@ -309,9 +317,9 @@ def rename(name: str) -> str:
 # weights come from RAM; the routed experts, which are 23x the parameters and
 # would double SSD traffic, are deliberately not here.
 PROMOTE_TO_BF16_AT_8BIT = (
-    ".mlp.gate",                        # router: picks which experts run
-    ".mlp.shared_expert_gate",          # 1 row of D; highest measured error
-    ".block_inject_weight",             # 4 rows; the write gate for every layer
+    ".mlp.gate",  # router: picks which experts run
+    ".mlp.shared_expert_gate",  # 1 row of D; highest measured error
+    ".block_inject_weight",  # 4 rows; the write gate for every layer
     ".linear_attn.in_proj_a",
     ".linear_attn.in_proj_b",
     ".ple.key_proj",
@@ -383,15 +391,15 @@ def quant_bits(name: str, width: int = BITS_4) -> int | None:
     if promoted_to_bf16(name, width):
         return None
     if name.endswith("embed_tokens.weight") or name == "lm_head.weight":
-        return BITS_8                      # embedding slot
+        return BITS_8  # embedding slot
     # Both of these validate against `quant.router` in Model.swift. The scalar
     # gate does so explicitly and against expectation -- "quantized at the
     # ROUTER's bit width ... independent of the sharedExpert slot" -- which is
     # why grouping it with the shared expert produced a tensor half the size
     # the loader wanted.
     if name.endswith(".mlp.gate.weight") or name.endswith(".shared_expert_gate.weight"):
-        return BITS_8                      # router slot
-    return width                           # attention / sharedExpert / routedExpert
+        return BITS_8  # router slot
+    return width  # attention / sharedExpert / routedExpert
 
 
 def output_names_for(name: str) -> list[str]:
@@ -421,8 +429,10 @@ def outputs_for(name: str, shape: list[int]) -> list[tuple[str, list[int]]]:
     new = rename(name)
     if new.endswith(".mlp.experts.gate_up_proj"):
         experts, fused, hidden = shape
-        return [(names[0], [experts, fused // 2, hidden]),
-                (names[1], [experts, fused // 2, hidden])]
+        return [
+            (names[0], [experts, fused // 2, hidden]),
+            (names[1], [experts, fused // 2, hidden]),
+        ]
     if new.endswith(".mlp.experts.down_proj"):
         return [(names[0], list(shape))]
     if new.endswith(".self_attn.indexer.index_qk_proj.weight"):
@@ -432,8 +442,7 @@ def outputs_for(name: str, shape: list[int]) -> list[tuple[str, list[int]]]:
     return [(names[0], list(shape))]
 
 
-def checkpoint_shard_is_converted(names: list[str], index: dict[str, str],
-                                 width: int) -> bool:
+def checkpoint_shard_is_converted(names: list[str], index: dict[str, str], width: int) -> bool:
     """Whether every tensor this checkpoint shard would produce is already in
     `index` (the tensors a previous run's output shards hold).
 
@@ -456,7 +465,6 @@ def checkpoint_shard_is_converted(names: list[str], index: dict[str, str],
                 if stem + suffix not in index:
                     return False
     return wrote_anything
-
 
 
 def write_config(config: dict, out: Path, tensor_names, width: int) -> dict:
@@ -482,7 +490,10 @@ def write_config(config: dict, out: Path, tensor_names, width: int) -> dict:
         overrides[name[: -len(".weight")]] = {"bits": bits, "group_size": GROUP_SIZE}
     config = dict(config)
     config["quantization"] = {
-        "bits": width, "group_size": GROUP_SIZE, "mode": "affine", **overrides,
+        "bits": width,
+        "group_size": GROUP_SIZE,
+        "mode": "affine",
+        **overrides,
     }
     (out / "config.json").write_text(json.dumps(config, indent=1))
     return config
@@ -500,20 +511,26 @@ def fetch_header(shard: str) -> dict:
     this tool at all, and the first read's length is how that is detected.
     """
     url = f"{BASE}/{shard}"
-    raw = subprocess.run(["curl", "-sfL", "--max-time", "60", "-r", "0-7", url],
-                         capture_output=True, check=True).stdout
+    raw = subprocess.run(
+        ["curl", "-sfL", "--max-time", "60", "-r", "0-7", url], capture_output=True, check=True
+    ).stdout
     if len(raw) != 8:
         raise RuntimeError(
             f"{url}: asked for 8 bytes and got {len(raw)}; the endpoint does not "
             "honour range requests, and this converter reads shard headers and "
-            "resumes partial downloads with them")
+            "resumes partial downloads with them"
+        )
     size = struct.unpack("<Q", raw[:8])[0]
-    body = subprocess.run(["curl", "-sfL", "--max-time", "180", "-r", f"8-{8 + size - 1}", url],
-                          capture_output=True, check=True).stdout
+    body = subprocess.run(
+        ["curl", "-sfL", "--max-time", "180", "-r", f"8-{8 + size - 1}", url],
+        capture_output=True,
+        check=True,
+    ).stdout
     if len(body) != size:
         raise RuntimeError(
             f"{url}: asked for the {size}-byte header and got {len(body)}; the "
-            "endpoint does not honour range requests")
+            "endpoint does not honour range requests"
+        )
     return json.loads(body)
 
 
@@ -547,25 +564,46 @@ def download(shard: str, work: Path) -> Path:
     delay = 5
     for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
         url = f"{BASE}/{shard}"
-        result = subprocess.run([
-            "curl", "-fL", "--retry", str(CURL_RETRY_ATTEMPTS),
-            "--retry-delay", str(CURL_RETRY_DELAY_SECONDS),
-            "--retry-connrefused", "--retry-all-errors", "-C", "-",
-            "--max-time", str(DOWNLOAD_TIMEOUT_SECONDS),
-            "--silent", "--show-error", "-o", str(dest), url])
+        result = subprocess.run(
+            [
+                "curl",
+                "-fL",
+                "--retry",
+                str(CURL_RETRY_ATTEMPTS),
+                "--retry-delay",
+                str(CURL_RETRY_DELAY_SECONDS),
+                "--retry-connrefused",
+                "--retry-all-errors",
+                "-C",
+                "-",
+                "--max-time",
+                str(DOWNLOAD_TIMEOUT_SECONDS),
+                "--silent",
+                "--show-error",
+                "-o",
+                str(dest),
+                url,
+            ]
+        )
         if result.returncode == 0 and dest.exists() and dest.stat().st_size > 0:
             return dest
         if result.returncode == 33 and dest.exists():
-            print(f"    {shard}: the endpoint will not serve a range request; "
-                  "downloading it from the start", file=sys.stderr, flush=True)
+            print(
+                f"    {shard}: the endpoint will not serve a range request; "
+                "downloading it from the start",
+                file=sys.stderr,
+                flush=True,
+            )
             dest.unlink()
-        print(f"    [download {attempt}/{DOWNLOAD_ATTEMPTS}] {shard} failed "
-              f"(curl {result.returncode}); retrying in {delay}s",
-              file=sys.stderr, flush=True)
+        print(
+            f"    [download {attempt}/{DOWNLOAD_ATTEMPTS}] {shard} failed "
+            f"(curl {result.returncode}); retrying in {delay}s",
+            file=sys.stderr,
+            flush=True,
+        )
         time.sleep(delay)
         delay = min(delay * 2, 120)
-    raise RuntimeError(
-        f"failed to download {shard} after {DOWNLOAD_ATTEMPTS} attempts")
+    raise RuntimeError(f"failed to download {shard} after {DOWNLOAD_ATTEMPTS} attempts")
 
 
 # --- conversion ------------------------------------------------------------
@@ -646,8 +684,7 @@ class OutputWriter:
         for shard_path in sorted(self.out.glob("model-[0-9][0-9][0-9][0-9][0-9].safetensors")):
             header = read_shard_header(shard_path)
             if header is None:
-                print(f"  discarding an incomplete output shard: {shard_path.name}",
-                      flush=True)
+                print(f"  discarding an incomplete output shard: {shard_path.name}", flush=True)
                 shard_path.unlink()
                 self.discarded += 1
                 continue
@@ -669,10 +706,12 @@ class OutputWriter:
                 self.total += offsets[1] - offsets[0]
         self.shard_no = len(survivors)
         if survivors or self.discarded:
-            print(f"  resuming from {len(survivors)} output shards "
-                  f"({self.shard_no:05d} last, {self.total / 1e9:.2f} GB, "
-                  f"{len(self.index)} tensors); {self.discarded} discarded",
-                  flush=True)
+            print(
+                f"  resuming from {len(survivors)} output shards "
+                f"({self.shard_no:05d} last, {self.total / 1e9:.2f} GB, "
+                f"{len(self.index)} tensors); {self.discarded} discarded",
+                flush=True,
+            )
 
     def add(self, name: str, value: np.ndarray) -> None:
         if name in self.index:
@@ -701,8 +740,9 @@ class OutputWriter:
         os.replace(partial, self.out / name)
         for key in self.block:
             self.index[key] = name
-        print(f"    wrote {name} ({self.bytes / 1e9:.2f} GB, {len(self.block)} tensors)",
-              flush=True)
+        print(
+            f"    wrote {name} ({self.bytes / 1e9:.2f} GB, {len(self.block)} tensors)", flush=True
+        )
         self.block.clear()
         self.bytes = 0
 
@@ -716,12 +756,14 @@ class OutputWriter:
         for n in range(1, self.shard_no + 1):
             src = self.out / f"model-{n:05d}.safetensors"
             src.rename(self.out / f"model-{n:05d}-of-{self.shard_no:05d}.safetensors")
-        (self.out / "model.safetensors.index.json").write_text(json.dumps(
-            {"metadata": {"total_size": self.total}, "weight_map": final}, indent=1))
+        (self.out / "model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {"total_size": self.total}, "weight_map": final}, indent=1)
+        )
 
 
-def convert_shard(path: Path, writer: OutputWriter, ngram: "NgramTable",
-                  width: int = BITS_4) -> None:
+def convert_shard(
+    path: Path, writer: OutputWriter, ngram: "NgramTable", width: int = BITS_4
+) -> None:
     with safe_open(path, framework="np") as src:
         for name in src.keys():
             if is_multimodal(name):
@@ -736,7 +778,7 @@ def convert_shard(path: Path, writer: OutputWriter, ngram: "NgramTable",
                 if out_name.endswith("switch_mlp.gate_proj.weight"):
                     piece = value[:, : value.shape[1] // 2, :]
                 elif out_name.endswith("switch_mlp.up_proj.weight"):
-                    piece = value[:, value.shape[1] // 2:, :]
+                    piece = value[:, value.shape[1] // 2 :, :]
                 elif out_name.endswith("indexer.index_q_proj.weight"):
                     piece = value[:INDEXER_QUERY_ROWS]
                 elif out_name.endswith("indexer.index_k_proj.weight"):
@@ -745,8 +787,7 @@ def convert_shard(path: Path, writer: OutputWriter, ngram: "NgramTable",
                     piece = value
                 bits = quant_bits(out_name, width)
                 if bits is None:
-                    writer.add(out_name, np.ascontiguousarray(
-                        fold_unit_offset(out_name, piece)))
+                    writer.add(out_name, np.ascontiguousarray(fold_unit_offset(out_name, piece)))
                     continue
                 stem = out_name[: -len(".weight")]
                 packed, scales, biases = quantize_affine(np.ascontiguousarray(piece), bits)
@@ -764,8 +805,7 @@ class NgramTable:
     and is quietly wrong.
     """
 
-    def __init__(self, out: Path, expected_rows: int, dim: int,
-                 reuse: Path | None = None):
+    def __init__(self, out: Path, expected_rows: int, dim: int, reuse: Path | None = None):
         self.path = out / "ngram_table.bin"
         self.expected_rows = expected_rows
         self.dim = dim
@@ -795,7 +835,8 @@ class NgramTable:
             raise ValueError(
                 f"{reuse}: {actual} bytes, expected {expected_bytes} "
                 f"({expected_rows} rows x {dim} x fp16). A table of the wrong "
-                "size is a different model's, or a truncated copy.")
+                "size is a different model's, or a truncated copy."
+            )
         # A reuse that resolves to the table already at the destination -- the
         # automatic reuse of a table a previous run finished here, or
         # `--reuse-ngram-table` aimed at this same output -- has nothing to
@@ -815,8 +856,10 @@ class NgramTable:
             # on an external disk). Reusing the table is still what the caller
             # asked for, so copy it: that is the 102 GB the flag exists to save,
             # but a copy is correct where a link is impossible.
-            print(f"  {reuse} is on another filesystem; copying the table "
-                  f"({expected_bytes / 1e9:.1f} GB) instead of hardlinking it")
+            print(
+                f"  {reuse} is on another filesystem; copying the table "
+                f"({expected_bytes / 1e9:.1f} GB) instead of hardlinking it"
+            )
             shutil.copyfile(reuse, self.path)
 
     @staticmethod
@@ -841,7 +884,8 @@ class NgramTable:
                 if not finite.all():
                     raise ValueError(
                         f"{name}: bf16 -> fp16 overflows on "
-                        f"{(~finite).sum()} values; the table format is fp16")
+                        f"{(~finite).sum()} values; the table format is fp16"
+                    )
                 block = as_f32.astype(np.float16)
             self.handle.write(np.ascontiguousarray(block).tobytes())
             self.rows += block.shape[0]
@@ -850,8 +894,10 @@ class NgramTable:
     def summary(self) -> str:
         """What the table cost this build, in the mode it actually ran."""
         if self.reused:
-            return (f"linked, {self.expected_rows} rows "
-                    f"({self.expected_rows * self.dim * 2 / 1e9:.1f} GB not written)")
+            return (
+                f"linked, {self.expected_rows} rows "
+                f"({self.expected_rows * self.dim * 2 / 1e9:.1f} GB not written)"
+            )
         return f"{self.rows} rows"
 
     def finish(self) -> None:
@@ -859,16 +905,18 @@ class NgramTable:
             if self.pending:
                 raise ValueError("n-gram shards arrived while reusing a table")
             if self.skipped:
-                print(f"  {self.skipped} n-gram tensors in mixed shards ignored "
-                      f"(already in the linked table)")
+                print(
+                    f"  {self.skipped} n-gram tensors in mixed shards ignored "
+                    f"(already in the linked table)"
+                )
             return
         self.handle.close()
         if self.pending:
-            raise ValueError(f"n-gram shards never became contiguous: "
-                             f"{sorted(self.pending)[:5]} still pending")
+            raise ValueError(
+                f"n-gram shards never became contiguous: {sorted(self.pending)[:5]} still pending"
+            )
         if self.rows != self.expected_rows:
-            raise ValueError(f"n-gram table has {self.rows} rows, "
-                             f"expected {self.expected_rows}")
+            raise ValueError(f"n-gram table has {self.rows} rows, expected {self.expected_rows}")
         # Published only once it is whole: a run that dies earlier leaves
         # `ngram_table.bin.partial`, which the next run deletes and rebuilds.
         os.replace(self.temporary, self.path)
@@ -894,12 +942,12 @@ def fetch_tokenizer(out: Path) -> None:
     """Copy the tokenizer beside the weights, so the snapshot stands alone."""
     for name, required in TOKENIZER_FILES:
         url = f"{BASE}/{name}"
-        result = subprocess.run(["curl", "-sfL", "--max-time", "300", url],
-                                capture_output=True)
+        result = subprocess.run(["curl", "-sfL", "--max-time", "300", url], capture_output=True)
         if result.returncode != 0 or not result.stdout:
             if required:
-                raise SystemExit(f"cannot fetch {name} from {REPO}; the "
-                                 "snapshot would be rejected at repack")
+                raise SystemExit(
+                    f"cannot fetch {name} from {REPO}; the snapshot would be rejected at repack"
+                )
             continue
         (out / name).write_bytes(result.stdout)
         print(f"  {name} ({len(result.stdout) / 1e6:.2f} MB)")
@@ -911,12 +959,14 @@ def plan(index: dict, width: int = BITS_4) -> None:
     text = {n: s for n, s in wm.items() if not is_multimodal(n)}
     ngram = [n for n in text if is_ngram(n)]
     print(f"repo     : {REPO}")
-    print(f"shards   : {len(shards)}   tensors: {len(wm)} "
-          f"({len(wm) - len(text)} multimodal skipped)")
+    print(
+        f"shards   : {len(shards)}   tensors: {len(wm)} ({len(wm) - len(text)} multimodal skipped)"
+    )
     print(f"declared : {index['metadata']['total_size'] / 1e9:.1f} GB")
     print(f"n-gram   : {len(ngram)} table shards")
-    probe = [s for s in shards if any(
-        ".mlp.experts." in n for n, sh in text.items() if sh == s)][:1]
+    probe = [s for s in shards if any(".mlp.experts." in n for n, sh in text.items() if sh == s)][
+        :1
+    ]
     problems: list[str] = []
     for shard in probe:
         for name, meta in fetch_header(shard).items():
@@ -926,19 +976,29 @@ def plan(index: dict, width: int = BITS_4) -> None:
                 bits = quant_bits(out_name, width)
                 if bits and out_shape[-1] % GROUP_SIZE:
                     problems.append(f"{out_name} last dim {out_shape[-1]} unaligned")
-                print(f"  {name} {meta['shape']}\n     -> {out_name} {out_shape} "
-                      f"{'q' + str(bits) if bits else 'passthrough'}")
-    print("\nPROBLEMS: " + "; ".join(problems) if problems
-          else "\nplan validates against the checkpoint's own headers")
+                print(
+                    f"  {name} {meta['shape']}\n     -> {out_name} {out_shape} "
+                    f"{'q' + str(bits) if bits else 'passthrough'}"
+                )
+    print(
+        "\nPROBLEMS: " + "; ".join(problems)
+        if problems
+        else "\nplan validates against the checkpoint's own headers"
+    )
 
 
 # The PLE constants a table is addressed by. The file is a hash table: its
 # contents are meaningless under different multipliers, offsets or vocabulary
 # sizes, and none of that is recoverable from the file itself, so a build may
 # only reuse a table whose constants match its own.
-REUSE_CONSTANT_KEYS = ("layer_multipliers", "ngram_heads_offsets",
-                       "ngram_heads_vocab_sizes", "ngram_size",
-                       "heads_per_ngram", "ple_head_dim")
+REUSE_CONSTANT_KEYS = (
+    "layer_multipliers",
+    "ngram_heads_offsets",
+    "ngram_heads_vocab_sizes",
+    "ngram_size",
+    "heads_per_ngram",
+    "ple_head_dim",
+)
 
 
 def read_json_file(path: Path) -> dict | None:
@@ -954,13 +1014,12 @@ def constants_match(previous: dict | None, constants: dict) -> bool:
     """Whether a previous run's constants can address this build's table."""
     if previous is None:
         return False
-    return all(previous.get(key) == constants.get(key)
-               for key in REUSE_CONSTANT_KEYS)
+    return all(previous.get(key) == constants.get(key) for key in REUSE_CONSTANT_KEYS)
 
 
-def reusable_local_table(out: Path, expected_bytes: int,
-                         previous_constants: dict | None,
-                         constants: dict) -> Path | None:
+def reusable_local_table(
+    out: Path, expected_bytes: int, previous_constants: dict | None, constants: dict
+) -> Path | None:
     """The table a previous run finished in `out`, or None.
 
     Three things have to hold: the file is there, it is exactly the size this
@@ -997,7 +1056,8 @@ def reusable_table_path(reuse: Path, constants: dict) -> Path:
                     raise SystemExit(
                         f"--reuse-ngram-table: {key} differs between "
                         f"{sibling} and this build; the table is addressed "
-                        "by those constants and would be read wrongly")
+                        "by those constants and would be read wrongly"
+                    )
         reuse = reuse / "ngram_table.bin"
     if not reuse.exists():
         raise SystemExit(f"--reuse-ngram-table: no such file: {reuse}")
@@ -1007,27 +1067,39 @@ def reusable_table_path(reuse: Path, constants: dict) -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--plan", action="store_true")
-    ap.add_argument("--bits", type=int, choices=(4, 8), default=4,
-                    help="routed-expert width of the install being built")
-    ap.add_argument("--rewrite-config", type=Path,
-                    help="regenerate config.json for an existing snapshot")
+    ap.add_argument(
+        "--bits",
+        type=int,
+        choices=(4, 8),
+        default=4,
+        help="routed-expert width of the install being built",
+    )
+    ap.add_argument(
+        "--rewrite-config", type=Path, help="regenerate config.json for an existing snapshot"
+    )
     ap.add_argument("--output", type=Path)
     ap.add_argument("--work", type=Path, help="scratch for in-flight shards")
-    ap.add_argument("--reuse-ngram-table", type=Path, metavar="DIR_OR_FILE",
-                    help="hardlink ngram_table.bin from an existing install or "
-                         "snapshot instead of fetching the table shards. The "
-                         "table is fp16 in every quantization and is fully "
-                         "determined by the checkpoint, so two builds of the "
-                         "same model cannot differ in it.")
+    ap.add_argument(
+        "--reuse-ngram-table",
+        type=Path,
+        metavar="DIR_OR_FILE",
+        help="hardlink ngram_table.bin from an existing install or "
+        "snapshot instead of fetching the table shards. The "
+        "table is fp16 in every quantization and is fully "
+        "determined by the checkpoint, so two builds of the "
+        "same model cannot differ in it.",
+    )
     ap.add_argument("--index", type=Path)
     ap.add_argument("--config", type=Path)
-    ap.add_argument("--endpoint",
-                    default=os.environ.get("HF_ENDPOINT", "https://huggingface.co"),
-                    help="Hub endpoint or mirror, e.g. https://hf-mirror.com "
-                         "(default: HF_ENDPOINT or https://huggingface.co). The "
-                         "mirror must serve the Hub's layout: "
-                         "/<repo>/resolve/main/<file> for weights and "
-                         "/<repo>/raw/main/<file> for the small JSON files")
+    ap.add_argument(
+        "--endpoint",
+        default=os.environ.get("HF_ENDPOINT", "https://huggingface.co"),
+        help="Hub endpoint or mirror, e.g. https://hf-mirror.com "
+        "(default: HF_ENDPOINT or https://huggingface.co). The "
+        "mirror must serve the Hub's layout: "
+        "/<repo>/resolve/main/<file> for weights and "
+        "/<repo>/raw/main/<file> for the small JSON files",
+    )
     args = ap.parse_args()
 
     global HF_ENDPOINT, BASE
@@ -1037,18 +1109,29 @@ def main() -> int:
     def fetch_json(path: Path | None, remote: str) -> dict:
         if path and path.exists():
             return json.loads(path.read_text())
-        return json.loads(subprocess.run(
-            ["curl", "-sfL", "--max-time", "60", raw_url(remote)],
-            capture_output=True, check=True).stdout)
+        return json.loads(
+            subprocess.run(
+                ["curl", "-sfL", "--max-time", "60", raw_url(remote)],
+                capture_output=True,
+                check=True,
+            ).stdout
+        )
 
     index = fetch_json(args.index, "model.safetensors.index.json")
     if args.rewrite_config:
         snap = args.rewrite_config
         names = json.loads((snap / "model.safetensors.index.json").read_text())["weight_map"]
-        cfg = json.loads(subprocess.run(
-            ["curl", "-sfL", "--max-time", "60", raw_url("config.json")],
-            capture_output=True, check=True).stdout) if not (snap / "config.json").exists() \
+        cfg = (
+            json.loads(
+                subprocess.run(
+                    ["curl", "-sfL", "--max-time", "60", raw_url("config.json")],
+                    capture_output=True,
+                    check=True,
+                ).stdout
+            )
+            if not (snap / "config.json").exists()
             else json.loads((snap / "config.json").read_text())
+        )
         cfg.pop("quantization", None)
         out = write_config(cfg, snap, names.keys(), args.bits)
         n = len(out["quantization"]) - 3
@@ -1068,7 +1151,8 @@ def main() -> int:
             f"{args.output} already holds a finished snapshot "
             "(model.safetensors.index.json is present). Converting into it would "
             "leave two generations of shards behind; delete the directory or "
-            "point --output at a new one.")
+            "point --output at a new one."
+        )
     # The same hazard one step earlier: `finish` renames the shards before it
     # writes the index, so a process killed (or a disk that filled) between the
     # two leaves finished N-of-M shards and no index. Nothing adopts those --
@@ -1082,7 +1166,8 @@ def main() -> int:
             "model.safetensors.index.json: a run stopped between finishing its "
             "shards and writing the index. Converting into it again would "
             "orphan those shards beside a second generation of the same "
-            "tensors; delete the directory or point --output at a new one.")
+            "tensors; delete the directory or point --output at a new one."
+        )
 
     config = fetch_json(args.config, "config.json")
     text_config = config["text_config"]
@@ -1121,26 +1206,34 @@ def main() -> int:
             f"{args.output} holds a partial {previous_bits.get('bits')}-bit "
             f"conversion and this run is {args.bits}-bit. Adopting those shards "
             "would put two widths in one snapshot without recording it; delete "
-            "the directory or point --output at a new one.")
+            "the directory or point --output at a new one."
+        )
     marker.write_text(json.dumps({"bits": args.bits}, indent=1))
 
     writer = OutputWriter(args.output)
 
     if args.reuse_ngram_table is None:
         # A previous run may have finished the table before the weights.
-        found = reusable_local_table(args.output, table_bytes,
-                                     previous_constants, constants)
+        found = reusable_local_table(args.output, table_bytes, previous_constants, constants)
         if found is not None:
-            print(f"reusing the completed ngram_table.bin already here "
-                  f"({table_bytes / 1e9:.1f} GB)", flush=True)
+            print(
+                f"reusing the completed ngram_table.bin already here ({table_bytes / 1e9:.1f} GB)",
+                flush=True,
+            )
             args.reuse_ngram_table = found
         elif (args.output / "ngram_table.bin").exists():
-            print("ignoring the ngram_table.bin already here (wrong size for "
-                  "this build's constants, or a constants mismatch); it will "
-                  "be rebuilt", flush=True)
+            print(
+                "ignoring the ngram_table.bin already here (wrong size for "
+                "this build's constants, or a constants mismatch); it will "
+                "be rebuilt",
+                flush=True,
+            )
 
-    reuse = (None if args.reuse_ngram_table is None
-             else reusable_table_path(args.reuse_ngram_table, constants))
+    reuse = (
+        None
+        if args.reuse_ngram_table is None
+        else reusable_table_path(args.reuse_ngram_table, constants)
+    )
 
     ngram = NgramTable(args.output, padded, constants["ple_head_dim"], reuse)
 
@@ -1148,8 +1241,7 @@ def main() -> int:
         # Skip the shards that carry nothing else. Two of the 131 hold n-gram
         # rows alongside ordinary tensors and are still fetched; convert_shard
         # already ignores the n-gram names inside them.
-        skippable = {shard for shard, names in by_shard.items()
-                     if all(is_ngram(n) for n in names)}
+        skippable = {shard for shard, names in by_shard.items() if all(is_ngram(n) for n in names)}
         shards = [s for s in shards if s not in skippable]
         print(f"reusing n-gram table: {reuse}")
         print(f"  linked, {table_bytes / 1e9:.1f} GB not written")
@@ -1158,13 +1250,16 @@ def main() -> int:
     if writer.index:
         # The shards a previous run finished are converted already; the
         # checkpoint sources of those can be skipped. This is the resume.
-        converted = {s for s in shards
-                     if checkpoint_shard_is_converted(by_shard[s], writer.index,
-                                                      args.bits)}
+        converted = {
+            s for s in shards if checkpoint_shard_is_converted(by_shard[s], writer.index, args.bits)
+        }
         if converted:
             shards = [s for s in shards if s not in converted]
-            print(f"  {len(converted)} checkpoint shards already converted; "
-                  f"{len(shards)} left to fetch and convert", flush=True)
+            print(
+                f"  {len(converted)} checkpoint shards already converted; "
+                f"{len(shards)} left to fetch and convert",
+                flush=True,
+            )
 
     # Fetch shard N+1 while shard N converts.
     queue: Queue = Queue(maxsize=1)
@@ -1173,7 +1268,7 @@ def main() -> int:
         for shard in shards:
             try:
                 queue.put(download(shard, work))
-            except Exception as exc:                     # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 queue.put(exc)
                 return
         queue.put(None)

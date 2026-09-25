@@ -45,11 +45,18 @@ function backups(path) {
 test("the stock compaction row is replaced, and nothing else is", () => {
   const { text, changed } = repointCompactionRow(fixture());
   assert.equal(changed, true);
-  assert.match(text, /- id: compaction-basic\n\s+name: dsh-tinytitan\/backend\n\s+config:\n\s+maxTokens: 32768/);
+  assert.match(
+    text,
+    /- id: compaction-basic\n\s+name: dsh-tinytitan\/backend\n\s+config:\n\s+maxTokens: 32768/,
+  );
   assert.doesNotMatch(text, /@deepseek-ai\/dsh-compaction-basic/);
-  for (const kept of ["- id: command-compact", "- id: tool-result-pruner",
-                      "- id: compaction\n  name: cordis:group", "- id: present",
-                      "thresholdChars: 8192"]) {
+  for (const kept of [
+    "- id: command-compact",
+    "- id: tool-result-pruner",
+    "- id: compaction\n  name: cordis:group",
+    "- id: present",
+    "thresholdChars: 8192",
+  ]) {
     assert.ok(text.includes(kept), `lost ${kept}`);
   }
 });
@@ -74,7 +81,7 @@ test("the default preset is read and only set when absent", () => {
 
   const inserted = setDefaultPreset("agent-presets:\nother: 1\n", "tinytitan");
   assert.equal(inserted.changed, true);
-  assert.match(inserted.text, /agent-presets:\n  default: tinytitan\nother: 1\n/);
+  assert.match(inserted.text, /agent-presets:\n {2}default: tinytitan\nother: 1\n/);
 
   const appended = setDefaultPreset("ui-theme:\n  preference: dark\n", "tinytitan");
   assert.equal(appended.changed, true);
@@ -84,8 +91,12 @@ test("the default preset is read and only set when absent", () => {
 test("the plugin's own preset is generated and the default is set when unset", () => {
   const dshHome = home("ui-theme:\n  preference: dark\n");
   const messages = [];
-  const result = ensureCompactionPreset({ dshHome, presetId: "tinytitan", standardPath: STANDARD,
-                                          log: (message) => messages.push(message) });
+  const result = ensureCompactionPreset({
+    dshHome,
+    presetId: "tinytitan",
+    standardPath: STANDARD,
+    log: (message) => messages.push(message),
+  });
   assert.equal(result.generated, true);
   assert.equal(result.defaultSet, true);
   const generated = readFileSync(presetAt(dshHome, "tinytitan"), "utf8");
@@ -98,8 +109,12 @@ test("the plugin's own preset is generated and the default is set when unset", (
 test("a user's own default preset is adopted, not replaced", () => {
   const dshHome = home("agent-presets:\n  default: qwen38\n");
   writeUserPreset(dshHome, "qwen38", fixture());
-  const result = ensureCompactionPreset({ dshHome, presetId: "tinytitan", standardPath: STANDARD,
-                                          log: () => {} });
+  const result = ensureCompactionPreset({
+    dshHome,
+    presetId: "tinytitan",
+    standardPath: STANDARD,
+    log: () => {},
+  });
   assert.equal(result.adopted, "qwen38");
   const adopted = readFileSync(presetAt(dshHome, "qwen38"), "utf8");
   assert.ok(adopted.includes(COMPACTION_BACKEND));
@@ -112,14 +127,25 @@ test("a user's own default preset is adopted, not replaced", () => {
 test("adoption can be turned off, and a shipped default is never edited", () => {
   const off = home("agent-presets:\n  default: qwen38\n");
   writeUserPreset(off, "qwen38", fixture());
-  const result = ensureCompactionPreset({ dshHome: off, presetId: "tinytitan", standardPath: STANDARD,
-                                          adopt: false, log: () => {} });
+  const result = ensureCompactionPreset({
+    dshHome: off,
+    presetId: "tinytitan",
+    standardPath: STANDARD,
+    adopt: false,
+    log: () => {},
+  });
   assert.equal(result.adopted, null);
-  assert.ok(readFileSync(presetAt(off, "qwen38"), "utf8").includes("@deepseek-ai/dsh-compaction-basic"));
+  assert.ok(
+    readFileSync(presetAt(off, "qwen38"), "utf8").includes("@deepseek-ai/dsh-compaction-basic"),
+  );
 
   const shipped = home("agent-presets:\n  default: standard\n");
-  const untouched = ensureCompactionPreset({ dshHome: shipped, presetId: "tinytitan",
-                                             standardPath: STANDARD, log: () => {} });
+  const untouched = ensureCompactionPreset({
+    dshHome: shipped,
+    presetId: "tinytitan",
+    standardPath: STANDARD,
+    log: () => {},
+  });
   assert.equal(untouched.adopted, null);
   assert.equal(untouched.generated, true);
   assert.equal(defaultPreset(readFileSync(join(shipped, "settings.yaml"), "utf8")), "standard");
@@ -130,8 +156,12 @@ test("a second run changes nothing", () => {
   writeUserPreset(dshHome, "qwen38", fixture());
   ensureCompactionPreset({ dshHome, presetId: "tinytitan", standardPath: STANDARD, log: () => {} });
   const before = readFileSync(presetAt(dshHome, "qwen38"), "utf8");
-  const second = ensureCompactionPreset({ dshHome, presetId: "tinytitan", standardPath: STANDARD,
-                                          log: () => {} });
+  const second = ensureCompactionPreset({
+    dshHome,
+    presetId: "tinytitan",
+    standardPath: STANDARD,
+    log: () => {},
+  });
   assert.equal(second.generated, false);
   assert.equal(second.adopted, "qwen38");
   assert.equal(readFileSync(presetAt(dshHome, "qwen38"), "utf8"), before);
@@ -141,9 +171,12 @@ test("a second run changes nothing", () => {
 test("a missing standard preset is reported, not fatal", () => {
   const dshHome = home("agent-presets:\n  default: qwen38\n");
   const messages = [];
-  const result = ensureCompactionPreset({ dshHome, presetId: "tinytitan",
-                                          standardPath: join(dshHome, "absent.yml"),
-                                          log: (message) => messages.push(message) });
+  const result = ensureCompactionPreset({
+    dshHome,
+    presetId: "tinytitan",
+    standardPath: join(dshHome, "absent.yml"),
+    log: (message) => messages.push(message),
+  });
   assert.equal(result.preset, null);
   assert.ok(messages.some((message) => message.includes("no standard preset")));
 });
@@ -184,19 +217,27 @@ test("withoutRows drops a row with its body and keeps the rest", () => {
 test("the generated preset is chat-shaped, not agent-shaped", () => {
   const dshHome = home("agent-presets:\n  default: qwen38\n");
   const standardPath = join(dshHome, "standard.yml");
-  writeFileSync(standardPath, [
-    "- id: agent-instructions",
-    "  name: '@deepseek-ai/dsh-agent-instructions'",
-    "- id: compaction",
-    "  name: cordis:group",
-    "  config:",
-    "    - id: compaction-basic",
-    "      name: '@deepseek-ai/dsh-compaction-basic'",
-    "- id: tool-skill",
-    "  name: '@deepseek-ai/dsh-tool-skill'",
-  ].join("\n"));
-  ensureCompactionPreset({ dshHome, presetId: "tinytitan", standardPath,
-                           adopt: false, log: () => {} });
+  writeFileSync(
+    standardPath,
+    [
+      "- id: agent-instructions",
+      "  name: '@deepseek-ai/dsh-agent-instructions'",
+      "- id: compaction",
+      "  name: cordis:group",
+      "  config:",
+      "    - id: compaction-basic",
+      "      name: '@deepseek-ai/dsh-compaction-basic'",
+      "- id: tool-skill",
+      "  name: '@deepseek-ai/dsh-tool-skill'",
+    ].join("\n"),
+  );
+  ensureCompactionPreset({
+    dshHome,
+    presetId: "tinytitan",
+    standardPath,
+    adopt: false,
+    log: () => {},
+  });
   const written = readFileSync(presetAt(dshHome, "tinytitan"), "utf8");
   for (const row of CHAT_NOISE_ROWS) {
     assert.equal(written.includes(`- id: ${row}`), false, `${row} should be dropped`);

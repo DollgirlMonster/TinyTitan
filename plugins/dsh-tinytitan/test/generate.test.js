@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,10 +35,26 @@ const TEST_BINARY = existsSync(join(REPO_ROOT, ".build", "release", "TinyTitanSe
 
 /** A two-model catalog with one binary and one four-level family. */
 const FAKE = [
-  { id: "alpha_4-Bit", name: "Alpha 4B", family: "f_dense", quant: 4, backend: "gpu",
-    engines: "gpu,cpu", path: "/models/alpha_4Bit", thinking: ["off", "on"] },
-  { id: "beta_4-Bit", name: "Beta 35B-A3B", family: "qwen38flash", quant: 4, backend: "gpu",
-    engines: "gpu", path: "/models/beta_4Bit", thinking: ["off", "low", "medium", "xhigh"] },
+  {
+    id: "alpha_4-Bit",
+    name: "Alpha 4B",
+    family: "f_dense",
+    quant: 4,
+    backend: "gpu",
+    engines: "gpu,cpu",
+    path: "/models/alpha_4Bit",
+    thinking: ["off", "on"],
+  },
+  {
+    id: "beta_4-Bit",
+    name: "Beta 35B-A3B",
+    family: "qwen38flash",
+    quant: 4,
+    backend: "gpu",
+    engines: "gpu",
+    path: "/models/beta_4Bit",
+    thinking: ["off", "low", "medium", "xhigh"],
+  },
 ];
 
 function count(haystack, needle) {
@@ -40,25 +63,40 @@ function count(haystack, needle) {
 
 /** The catalog exactly as the shell tool would read it, with no ambient env. */
 function readCatalog() {
-  const stdout = execFileSync(TEST_BINARY, ["--catalog", "--models-dir", MODELS_DIR],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const stdout = execFileSync(TEST_BINARY, ["--catalog", "--models-dir", MODELS_DIR], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   return JSON.parse(String(stdout)).models;
 }
 
 /** `tools/dsh_route.sh --print`, with the ambient TinyTitan env removed. */
 function shellBlock(extra = []) {
   const env = { ...process.env };
-  for (const name of ["TINYTITAN_CATALOG_JSON", "TINYTITAN_MODELS_DIR", "TINYTITAN_PORT",
-                      "TINYTITAN_SERVER"]) {
+  for (const name of [
+    "TINYTITAN_CATALOG_JSON",
+    "TINYTITAN_MODELS_DIR",
+    "TINYTITAN_PORT",
+    "TINYTITAN_SERVER",
+  ]) {
     delete env[name];
   }
-  return execFileSync("bash", [SHELL, "--print", ...extra],
-    { cwd: REPO_ROOT, encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
+  return execFileSync("bash", [SHELL, "--print", ...extra], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }
 
 /** Whether this machine can run the checkout comparison at all. */
 function shellComparable(t) {
-  if (existsSync(SHELL) && existsSync(SHELL_BINARY) && existsSync(TEST_BINARY) && existsSync(MODELS_DIR)) {
+  if (
+    existsSync(SHELL) &&
+    existsSync(SHELL_BINARY) &&
+    existsSync(TEST_BINARY) &&
+    existsSync(MODELS_DIR)
+  ) {
     return true;
   }
   t.skip("no built TinyTitanServer or tools/dsh_route.sh here; skipping shell byte-equality");
@@ -70,29 +108,84 @@ test("the generated block is byte-identical to tools/dsh_route.sh --print", (t) 
   const models = readCatalog();
   assert.equal(generateBlock(models), shellBlock());
   assert.equal(
-    generateBlock(models, { port: 8123, provider: "local", reasoning: "off",
-                            context: 131072, maxTokens: 8192 }),
-    shellBlock(["--port", "8123", "--provider", "local", "--reasoning", "off",
-                "--context", "131072", "--max-tokens", "8192"]),
+    generateBlock(models, {
+      port: 8123,
+      provider: "local",
+      reasoning: "off",
+      context: 131072,
+      maxTokens: 8192,
+    }),
+    shellBlock([
+      "--port",
+      "8123",
+      "--provider",
+      "local",
+      "--reasoning",
+      "off",
+      "--context",
+      "131072",
+      "--max-tokens",
+      "8192",
+    ]),
   );
 });
 
 /** A catalog that exercises GPU-first order, level re-sorting and skipped rows. */
 const SYNTHETIC = [
-  { id: "cpu_4-Bit", name: "CPU Model", family: "f_dense", quant: 4, backend: "cpu",
-    engines: "gpu,cpu", path: "/models/cpu_4Bit", thinking: ["xhigh", "off", "medium"] },
-  { id: "gpu-on_8-Bit", name: "GPU Binary", family: "qwen36", quant: 8, backend: "gpu",
-    engines: "gpu", path: "/models/gpu_8Bit", thinking: ["on", "off"] },
+  {
+    id: "cpu_4-Bit",
+    name: "CPU Model",
+    family: "f_dense",
+    quant: 4,
+    backend: "cpu",
+    engines: "gpu,cpu",
+    path: "/models/cpu_4Bit",
+    thinking: ["xhigh", "off", "medium"],
+  },
+  {
+    id: "gpu-on_8-Bit",
+    name: "GPU Binary",
+    family: "qwen36",
+    quant: 8,
+    backend: "gpu",
+    engines: "gpu",
+    path: "/models/gpu_8Bit",
+    thinking: ["on", "off"],
+  },
   // Two widths of one model, named identically by the catalog. The picker
   // renders `name` and nothing else, so this pair is what proves the label
   // carries the width.
-  { id: "twin_4-Bit", name: "Twin 2B", family: "f_dense", quant: 4, backend: "gpu",
-    engines: "gpu", path: "/models/twin_4Bit", thinking: ["off", "on"] },
-  { id: "twin_8-Bit", name: "Twin 2B", family: "f_dense", quant: 8, backend: "gpu",
-    engines: "gpu", path: "/models/twin_8Bit", thinking: ["off", "on"] },
+  {
+    id: "twin_4-Bit",
+    name: "Twin 2B",
+    family: "f_dense",
+    quant: 4,
+    backend: "gpu",
+    engines: "gpu",
+    path: "/models/twin_4Bit",
+    thinking: ["off", "on"],
+  },
+  {
+    id: "twin_8-Bit",
+    name: "Twin 2B",
+    family: "f_dense",
+    quant: 8,
+    backend: "gpu",
+    engines: "gpu",
+    path: "/models/twin_8Bit",
+    thinking: ["off", "on"],
+  },
   // A string where a list belongs: the shell parser iterates it per character.
-  { id: "string_4-Bit", name: "String Levels", family: "f_dense", quant: 4, backend: "cpu",
-    engines: "cpu", path: "/models/string_4Bit", thinking: "off" },
+  {
+    id: "string_4-Bit",
+    name: "String Levels",
+    family: "f_dense",
+    quant: 4,
+    backend: "cpu",
+    engines: "cpu",
+    path: "/models/string_4Bit",
+    thinking: "off",
+  },
   // Neither a bad backend nor a missing quant may reach the block.
   { id: "bad-backend", name: "Bad", family: "f", quant: 4, backend: "tpu", path: "/models/bad" },
   { id: "bad-quant", name: "Bad", family: "f", backend: "gpu", path: "/models/bad" },
@@ -115,28 +208,43 @@ test("the shell tool and the generator agree on a synthetic catalog", (t) => {
   delete env.TINYTITAN_MODELS_DIR;
   delete env.TINYTITAN_PORT;
   delete env.TINYTITAN_SERVER;
-  const printed = execFileSync("bash", [SHELL, "--print"],
-    { cwd: REPO_ROOT, encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
+  const printed = execFileSync("bash", [SHELL, "--print"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   const block = generateBlock(SYNTHETIC);
   assert.equal(block, printed);
-  assert.deepEqual([...block.matchAll(/^        - id: (.+)$/gm)].map((match) => match[1]),
-                   ["gpu-on_8-Bit", "twin_4-Bit", "twin_8-Bit", "cpu_4-Bit", "string_4-Bit"]);
+  assert.deepEqual(
+    [...block.matchAll(/^ {8}- id: (.+)$/gm)].map((match) => match[1]),
+    ["gpu-on_8-Bit", "twin_4-Bit", "twin_8-Bit", "cpu_4-Bit", "string_4-Bit"],
+  );
   // One label per row, and the width in it: the picker shows `name` alone, so
   // two widths of one model would otherwise arrive as the same row twice.
   const labels = [...block.matchAll(/^ {10}name: (.+)$/gm)].map((match) => match[1]);
   assert.equal(new Set(labels).size, labels.length, "every picker label must be unique");
-  assert.ok(labels.includes("Twin 2B (4-bit)") && labels.includes("Twin 2B (8-bit)"),
-            `the width must be on the label: ${JSON.stringify(labels)}`);
+  assert.ok(
+    labels.includes("Twin 2B (4-bit)") && labels.includes("Twin 2B (8-bit)"),
+    `the width must be on the label: ${JSON.stringify(labels)}`,
+  );
   // Levels follow pi-ai's order, not the catalog's.
-  assert.ok(block.includes("          reasoningEfforts:\n            off:\n            medium: medium\n            xhigh: xhigh\n"));
+  assert.ok(
+    block.includes(
+      "          reasoningEfforts:\n            off:\n            medium: medium\n            xhigh: xhigh\n",
+    ),
+  );
 });
 
 test("the block carries the header, the three switches and the effort ladder", () => {
   const block = generateBlock(FAKE);
-  assert.ok(block.startsWith(
-    "# DeepSeek Harness route to the TinyTitan server on port 8080.\n"
-    + "# Generated by tools/dsh_route.sh from the installs under models/.\n"
-    + "# 2 served model(s); settings.yaml is hot-reloaded.\n"));
+  assert.ok(
+    block.startsWith(
+      "# DeepSeek Harness route to the TinyTitan server on port 8080.\n" +
+        "# Generated by tools/dsh_route.sh from the installs under models/.\n" +
+        "# 2 served model(s); settings.yaml is hot-reloaded.\n",
+    ),
+  );
   assert.ok(block.includes("      displayName: TinyTitan\n"));
   assert.ok(block.includes("        authorization: Bearer tinytitan-local\n"));
   assert.ok(block.includes("      reasoning: medium\n"));
@@ -150,13 +258,20 @@ test("the block carries the header, the three switches and the effort ladder", (
   assert.ok(block.includes("            supportsUsageInStreaming: true\n"));
   // An `on`-only template offers that mode as `medium` with the wire value `on`,
   // because pi-ai's level vocabulary has no `on`.
-  assert.ok(block.includes("          reasoningEfforts:\n            off:\n            medium: on\n"));
+  assert.ok(
+    block.includes("          reasoningEfforts:\n            off:\n            medium: on\n"),
+  );
   assert.ok(block.includes("            xhigh: xhigh\n"));
   assert.ok(!block.includes("            on:"));
   assert.ok(block.endsWith("            supportsUsageInStreaming: true\n"));
 
-  const options = generateBlock(FAKE, { port: 8123, provider: "local", reasoning: "off",
-                                         context: 131072, maxTokens: 8192 });
+  const options = generateBlock(FAKE, {
+    port: 8123,
+    provider: "local",
+    reasoning: "off",
+    context: 131072,
+    maxTokens: 8192,
+  });
   assert.ok(options.includes("      baseURL: http://127.0.0.1:8123/v1\n"));
   assert.ok(options.includes("    local:\n"));
   assert.ok(options.includes("      reasoning: off\n"));
@@ -204,7 +319,9 @@ test("a file with no route gets the block appended, and an empty one gets only i
 test("CRLF settings are normalized to LF, as the shell tool's own read does", () => {
   const block = generateBlock(FAKE);
   const next = applyRouteToSettings(
-    "ui-theme:\r\n  preference: dark\r\nllm-pi-ai:\r\n  stale: 1\r\n", block);
+    "ui-theme:\r\n  preference: dark\r\nllm-pi-ai:\r\n  stale: 1\r\n",
+    block,
+  );
   assert.ok(!next.includes("\r"));
   assert.ok(next.startsWith("ui-theme:\n  preference: dark\n\n"));
   assert.ok(!next.includes("stale: 1"));
@@ -250,17 +367,24 @@ test("findServerBinary follows explicit, env, PATH, then the checkout", () => {
 
   assert.equal(findServerBinary({ explicit, env, repoRoot: "/repo", isExecutable }), explicit);
   assert.equal(
-    findServerBinary({ explicit: "/nope", env, repoRoot: "/repo", isExecutable }), onPath);
+    findServerBinary({ explicit: "/nope", env, repoRoot: "/repo", isExecutable }),
+    onPath,
+  );
   assert.equal(findServerBinary({ env, repoRoot: "/repo", isExecutable }), onPath);
   // Nothing on PATH: the checkout's own build is the fallback.
+  assert.equal(findServerBinary({ env: { PATH: "" }, repoRoot: "/repo", isExecutable }), repoArm);
   assert.equal(
-    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo", isExecutable }), repoArm);
+    findServerBinary({
+      env: { PATH: "" },
+      repoRoot: "/repo",
+      isExecutable: (path) => path === repoRelease,
+    }),
+    repoRelease,
+  );
   assert.equal(
-    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo",
-                       isExecutable: (path) => path === repoRelease }), repoRelease);
-  assert.equal(
-    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo",
-                       isExecutable: () => false }), null);
+    findServerBinary({ env: { PATH: "" }, repoRoot: "/repo", isExecutable: () => false }),
+    null,
+  );
   assert.equal(findServerBinary({ env: {}, isExecutable: () => false }), null);
 });
 
@@ -269,21 +393,30 @@ test("findServerBinary finds a real executable on PATH with the default probe", 
   const binary = join(directory, "TinyTitanServer");
   writeFileSync(binary, "#!/bin/sh\nexit 0\n");
   chmodSync(binary, 0o755);
-  assert.equal(
-    findServerBinary({ env: { PATH: directory }, repoRoot: "/none" }), binary);
+  assert.equal(findServerBinary({ env: { PATH: directory }, repoRoot: "/none" }), binary);
 });
 
 test("findModelsDir follows explicit, env, then the checkout", () => {
   const dirs = new Set(["/explicit/models", "/env/models", "/repo/models"]);
   const isDirectory = (path) => dirs.has(path);
   assert.equal(
-    findModelsDir({ explicit: "/explicit/models", env: { TINYTITAN_MODELS_DIR: "/env/models" },
-                    repoRoot: "/repo", isDirectory }),
-    "/explicit/models");
+    findModelsDir({
+      explicit: "/explicit/models",
+      env: { TINYTITAN_MODELS_DIR: "/env/models" },
+      repoRoot: "/repo",
+      isDirectory,
+    }),
+    "/explicit/models",
+  );
   assert.equal(
-    findModelsDir({ explicit: "/nope", env: { TINYTITAN_MODELS_DIR: "/env/models" },
-                    repoRoot: "/repo", isDirectory }),
-    "/env/models");
+    findModelsDir({
+      explicit: "/nope",
+      env: { TINYTITAN_MODELS_DIR: "/env/models" },
+      repoRoot: "/repo",
+      isDirectory,
+    }),
+    "/env/models",
+  );
   assert.equal(findModelsDir({ env: {}, repoRoot: "/repo", isDirectory }), "/repo/models");
   assert.equal(findModelsDir({ env: {}, repoRoot: "/repo", isDirectory: () => false }), null);
   assert.equal(findModelsDir({ env: {}, isDirectory: () => false }), null);
@@ -304,8 +437,14 @@ test("generateRoute discovers the binary, parses stdout, and writes the block", 
     return JSON.stringify({ models: FAKE });
   };
   const result = generateRoute({
-    serverBinary: binary, modelsDir, settingsPath, port: 8080, provider: "tinytitan",
-    run, env: { PATH: "" }, log: () => {},
+    serverBinary: binary,
+    modelsDir,
+    settingsPath,
+    port: 8080,
+    provider: "tinytitan",
+    run,
+    env: { PATH: "" },
+    log: () => {},
   });
   assert.equal(result.status, "written-self-contained");
   assert.equal(result.detail, "written");
@@ -313,12 +452,18 @@ test("generateRoute discovers the binary, parses stdout, and writes the block", 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].command, binary);
   assert.deepEqual(calls[0].args, ["--catalog", "--models-dir", modelsDir]);
-  assert.equal(readFileSync(settingsPath, "utf8"),
-               applyRouteToSettings("ui-theme:\n  preference: dark\n", generateBlock(FAKE)));
+  assert.equal(
+    readFileSync(settingsPath, "utf8"),
+    applyRouteToSettings("ui-theme:\n  preference: dark\n", generateBlock(FAKE)),
+  );
 
   // A second run over its own output is a no-op with no new backup.
   const again = generateRoute({
-    serverBinary: binary, modelsDir, settingsPath, run, env: { PATH: "" },
+    serverBinary: binary,
+    modelsDir,
+    settingsPath,
+    run,
+    env: { PATH: "" },
     log: () => {},
   });
   assert.equal(again.status, "written-self-contained");
@@ -326,11 +471,15 @@ test("generateRoute discovers the binary, parses stdout, and writes the block", 
   assert.equal(again.backup, null);
 });
 
-test("generateRoute reports absent prerequisites and a broken catalog", (t) => {
+test("generateRoute reports absent prerequisites and a broken catalog", () => {
   // No models directory is the one prerequisite nothing can work around.
-  const noModels = generateRoute({ serverBinary: "/x/TinyTitanServer", env: { PATH: "" },
-                                   isExecutable: () => true, isDirectory: () => false,
-                                   log: () => {} });
+  const noModels = generateRoute({
+    serverBinary: "/x/TinyTitanServer",
+    env: { PATH: "" },
+    isExecutable: () => true,
+    isDirectory: () => false,
+    log: () => {},
+  });
   assert.equal(noModels.status, "missing");
   assert.match(noModels.detail, /no models directory/);
 
@@ -338,20 +487,33 @@ test("generateRoute reports absent prerequisites and a broken catalog", (t) => {
   // empty folder says so instead, and the binary's own words are logged.
   const emptyDir = mkdtempSync(join(tmpdir(), "dsh-tinytitan-empty-models-"));
   const messages = [];
-  const broken = generateRoute({ serverBinary: "/x/TinyTitanServer", modelsDir: emptyDir,
-                                 env: { PATH: "" }, isExecutable: () => true,
-                                 isDirectory: () => true,
-                                 run: () => { throw new Error("exit 2"); },
-                                 log: (message) => messages.push(message) });
+  const broken = generateRoute({
+    serverBinary: "/x/TinyTitanServer",
+    modelsDir: emptyDir,
+    env: { PATH: "" },
+    isExecutable: () => true,
+    isDirectory: () => true,
+    run: () => {
+      throw new Error("exit 2");
+    },
+    log: (message) => messages.push(message),
+  });
   assert.equal(broken.status, "failed");
   assert.match(broken.detail, /describes no servable install/);
-  assert.ok(messages.some((message) => /server catalog failed \(exit 2\)/.test(message)),
-            `the binary's own failure must be logged: ${JSON.stringify(messages)}`);
+  assert.ok(
+    messages.some((message) => /server catalog failed \(exit 2\)/.test(message)),
+    `the binary's own failure must be logged: ${JSON.stringify(messages)}`,
+  );
 
-  const empty = generateRoute({ serverBinary: "/x/TinyTitanServer", modelsDir: emptyDir,
-                                env: { PATH: "" }, isExecutable: () => true,
-                                isDirectory: () => true, run: () => JSON.stringify({ models: [] }),
-                                log: () => {} });
+  const empty = generateRoute({
+    serverBinary: "/x/TinyTitanServer",
+    modelsDir: emptyDir,
+    env: { PATH: "" },
+    isExecutable: () => true,
+    isDirectory: () => true,
+    run: () => JSON.stringify({ models: [] }),
+    log: () => {},
+  });
   assert.equal(empty.status, "failed");
   assert.match(empty.detail, /describes no servable install/);
 
@@ -361,15 +523,25 @@ test("generateRoute reports absent prerequisites and a broken catalog", (t) => {
   writeFileSync(join(dshHome, "settings.yaml"), "ui-theme:\n  preference: dark\n");
   const directory = join(emptyDir, "qwen3.5_2B_4Bit");
   mkdirSync(join(directory, "tokenizer"), { recursive: true });
-  writeFileSync(join(directory, "manifest.json"), JSON.stringify({
-    magic: "GTURBO", modelID: "qwen3.5-2b",
-    quant: { routedExpert: { weightBits: 4 } },
-    arch: { family: "qwen3_5_dense", hiddenActivation: "silu" },
-  }));
+  writeFileSync(
+    join(directory, "manifest.json"),
+    JSON.stringify({
+      magic: "GTURBO",
+      modelID: "qwen3.5-2b",
+      quant: { routedExpert: { weightBits: 4 } },
+      arch: { family: "qwen3_5_dense", hiddenActivation: "silu" },
+    }),
+  );
   writeFileSync(join(directory, "tokenizer", "tokenizer.json"), "{}");
-  const scanned = generateRoute({ env: { PATH: "" }, dshHome, modelsDir: emptyDir,
-                                  serverBinary: null, isExecutable: () => false,
-                                  backup: false, log: () => {} });
+  const scanned = generateRoute({
+    env: { PATH: "" },
+    dshHome,
+    modelsDir: emptyDir,
+    serverBinary: null,
+    isExecutable: () => false,
+    backup: false,
+    log: () => {},
+  });
   assert.equal(scanned.status, "written-self-contained");
   assert.equal(scanned.source, "folder");
   assert.equal(scanned.models, 1);
@@ -389,8 +561,13 @@ test("registerRoute falls back to the generator when the checkout tool is absent
 
   const messages = [];
   const result = registerRoute({
-    repoRoot, dshHome, port: 8080, provider: "tinytitan",
-    serverBinary: binary, modelsDir, env: { PATH: "" },
+    repoRoot,
+    dshHome,
+    port: 8080,
+    provider: "tinytitan",
+    serverBinary: binary,
+    modelsDir,
+    env: { PATH: "" },
     run: () => JSON.stringify({ models: FAKE }),
     log: (message) => messages.push(message),
   });

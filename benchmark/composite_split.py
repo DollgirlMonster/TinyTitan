@@ -51,6 +51,7 @@ to be prevented at the source rather than repaired afterwards. This file
 stays because the negative is worth keeping and re-running when either the
 model or the extraction changes.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -61,7 +62,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 _spec = importlib.util.spec_from_file_location(
-    "guard_source_rate", ROOT / "benchmark/guard_source_rate.py")
+    "guard_source_rate", ROOT / "benchmark/guard_source_rate.py"
+)
 guard = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(guard)
 sim = guard.sim
@@ -70,7 +72,7 @@ SYSTEM = (
     "You are shown what a person wrote, and one fact a model recorded "
     "afterwards, as `key = value`. Reply with the value, keeping only the "
     "parts the person actually stated or clearly implied. Their wording may "
-    "differ from the fact's -- \"the inn burns\" and \"burned\" are the same "
+    'differ from the fact\'s -- "the inn burns" and "burned" are the same '
     "thing -- and what matters is whether they said it, not how. If they "
     "stated all of it, repeat the whole value. If none of it, reply exactly "
     "NONE. Reply with the value and nothing else: no key, no explanation, "
@@ -105,22 +107,25 @@ def prepare(labels: list[str], path: Path) -> int:
     jobs = []
     for fact in facts(labels):
         said = sim.user_text(fact["session"])
-        jobs.append({
-            "chat": True,
-            "system": SYSTEM,
-            # The address is part of the fact and was withheld in the first
-            # run, which asked the model to attribute "brown" with no idea
-            # that it was an eye colour. It answered NONE and destroyed six
-            # good facts. Withholding available information is not a fair
-            # test of the model.
-            "prompt": (f"WHAT THE PERSON WROTE:\n{said}\n\n"
-                       f"FACT: {fact['address']} = {fact['value']}"),
-            "max": 160,
-            "run": fact["run"],
-            "session": fact["session"],
-            "address": fact["address"],
-            "value": fact["value"],
-        })
+        jobs.append(
+            {
+                "chat": True,
+                "system": SYSTEM,
+                # The address is part of the fact and was withheld in the first
+                # run, which asked the model to attribute "brown" with no idea
+                # that it was an eye colour. It answered NONE and destroyed six
+                # good facts. Withholding available information is not a fair
+                # test of the model.
+                "prompt": (
+                    f"WHAT THE PERSON WROTE:\n{said}\n\nFACT: {fact['address']} = {fact['value']}"
+                ),
+                "max": 160,
+                "run": fact["run"],
+                "session": fact["session"],
+                "address": fact["address"],
+                "value": fact["value"],
+            }
+        )
     path.write_text("\n".join(json.dumps(job) for job in jobs) + "\n")
     print(f"{len(jobs)} facts -> {path}")
     return 0
@@ -174,8 +179,11 @@ def score(path: Path, threshold: float) -> int:
             print(f"    now:  {(row.get('completion') or '').strip()[:100]}")
 
     verdict = len(repaired) > 0 and len(damaged) == 0
-    print("\nuseful: repairs the composites and damages nothing" if verdict
-          else "\nnot useful as it stands")
+    print(
+        "\nuseful: repairs the composites and damages nothing"
+        if verdict
+        else "\nnot useful as it stands"
+    )
     return 0 if verdict else 2
 
 

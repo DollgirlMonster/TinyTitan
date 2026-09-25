@@ -1,6 +1,6 @@
+import Darwin
 import Foundation
 import Metal
-import Darwin
 import TinyTitanFormat
 
 public struct ModelLoadStats: Sendable {
@@ -8,9 +8,11 @@ public struct ModelLoadStats: Sendable {
     public var receiptValidationNanos: UInt64
     public var eagerSha256Nanos: UInt64
 
-    public init(manifestSha256Nanos: UInt64 = 0,
-                receiptValidationNanos: UInt64 = 0,
-                eagerSha256Nanos: UInt64 = 0) {
+    public init(
+        manifestSha256Nanos: UInt64 = 0,
+        receiptValidationNanos: UInt64 = 0,
+        eagerSha256Nanos: UInt64 = 0
+    ) {
         self.manifestSha256Nanos = manifestSha256Nanos
         self.receiptValidationNanos = receiptValidationNanos
         self.eagerSha256Nanos = eagerSha256Nanos
@@ -56,8 +58,9 @@ public struct Model {
         // (padded to the same vocab rows), which `validateRuntimeSchema`
         // checks.
         sharedTargetWeights?.lmHeadBits
-            ?? roleWeightBits(roleSuffix: ".lm_head",
-                              fallback: manifest.quant?.embedding.weightBits ?? 4)
+            ?? roleWeightBits(
+                roleSuffix: ".lm_head",
+                fallback: manifest.quant?.embedding.weightBits ?? 4)
     }
     public var attentionWeightBits: Int { manifest.quant?.attention.weightBits ?? 4 }
     public var routerWeightBits: Int { manifest.quant?.router.weightBits ?? 8 }
@@ -112,9 +115,10 @@ public struct Model {
     /// dispatcher per role; `validateRuntimeSchema` refuses an install that
     /// declares otherwise rather than reading some layers at the wrong width.
     func roleWeightBits(roleSuffix: String, fallback: Int) -> Int {
-        ManifestQuant.roleWeightBits(roleSuffix: roleSuffix,
-                                     overrides: manifest.quantOverrides,
-                                     fallback: fallback)
+        ManifestQuant.roleWeightBits(
+            roleSuffix: roleSuffix,
+            overrides: manifest.quantOverrides,
+            fallback: fallback)
     }
 
     /// The width the `q_proj`/`o_proj` pair is stored at.
@@ -153,8 +157,9 @@ public struct Model {
     public var hyperConnectionWeightBits: Int {
         // No leading dot: the stem is `attn_hyper_connection.…` or
         // `mlp_hyper_connection.…`, and `.hyper_connection…` matches neither.
-        roleWeightBits(roleSuffix: "hyper_connection.block_inject_weight",
-                       fallback: attentionWeightBits)
+        roleWeightBits(
+            roleSuffix: "hyper_connection.block_inject_weight",
+            fallback: attentionWeightBits)
     }
 
     /// The width the PLE key projection is stored at, resolved the same way.
@@ -164,8 +169,9 @@ public struct Model {
 
     /// The width the sparse indexer's key projections are stored at.
     public var qsaIndexerWeightBits: Int {
-        roleWeightBits(roleSuffix: ".self_attn.indexer.index_q_proj",
-                       fallback: attentionWeightBits)
+        roleWeightBits(
+            roleSuffix: ".self_attn.indexer.index_q_proj",
+            fallback: attentionWeightBits)
     }
 
     public var routedExpertWeightBits: Int { manifest.quant?.routedExpert.weightBits ?? 4 }
@@ -224,19 +230,21 @@ public struct Model {
         }
     }
 
-    init(device: MTLDevice,
-         config: ArchConfig,
-         streamingMode: ExpertStreamingMode,
-         expertCachePolicy: ExpertCachePolicy,
-         integrityPolicy: ModelIntegrityPolicy,
-         residentBuffer: ResidentBuffer,
-         residentIndex: ResidentIndex,
-         packedExpertsLayout: PackedExpertsLayout,
-         manifest: Manifest,
-         directoryURL: URL,
-         modelDirectory: GTurboModelDirectory,
-         sharedTargetWeights: SharedTargetWeights? = nil,
-         promotedBF16: [String: TensorView] = [:]) {
+    init(
+        device: MTLDevice,
+        config: ArchConfig,
+        streamingMode: ExpertStreamingMode,
+        expertCachePolicy: ExpertCachePolicy,
+        integrityPolicy: ModelIntegrityPolicy,
+        residentBuffer: ResidentBuffer,
+        residentIndex: ResidentIndex,
+        packedExpertsLayout: PackedExpertsLayout,
+        manifest: Manifest,
+        directoryURL: URL,
+        modelDirectory: GTurboModelDirectory,
+        sharedTargetWeights: SharedTargetWeights? = nil,
+        promotedBF16: [String: TensorView] = [:]
+    ) {
         self.device = device
         self.config = config
         self.streamingMode = streamingMode
@@ -451,14 +459,16 @@ public struct Model {
         // stream before this projection sees it. The reference's prose says
         // otherwise and its own code works out that the prose cannot be right;
         // the tensor shape settles it.
-        try checks.requireAffine("fc_hidden.weight",
-                                 rows: config.hiddenSize,
-                                 columns: config.hiddenSize,
-                                 slot: quant.attention)
-        try checks.requireAffine("fc_embedding.weight",
-                                 rows: config.hiddenSize,
-                                 columns: config.hiddenSize,
-                                 slot: quant.attention)
+        try checks.requireAffine(
+            "fc_hidden.weight",
+            rows: config.hiddenSize,
+            columns: config.hiddenSize,
+            slot: quant.attention)
+        try checks.requireAffine(
+            "fc_embedding.weight",
+            rows: config.hiddenSize,
+            columns: config.hiddenSize,
+            slot: quant.attention)
     }
 
     /// Attach a native MTP sidecar to a target without copying either large
@@ -466,40 +476,46 @@ public struct Model {
     /// its actual 4/6/8-bit head kernels.
     public func sharingTargetWeights(from target: Model) throws -> Model {
         let pairing = (config.family, target.config.family)
-        let familiesMatch = pairing == (.qwen36MTP, .qwen36)
+        let familiesMatch =
+            pairing == (.qwen36MTP, .qwen36)
             || pairing == (.qwen38flashMTP, .qwen38flash)
         guard familiesMatch,
-              config.hiddenSize == target.config.hiddenSize,
-              config.vocabSize == target.config.vocabSize,
-              Self.mtpLineagesAreCompatible(sidecarID: modelID,
-                                             targetID: target.modelID) else {
+            config.hiddenSize == target.config.hiddenSize,
+            config.vocabSize == target.config.vocabSize,
+            Self.mtpLineagesAreCompatible(
+                sidecarID: modelID,
+                targetID: target.modelID)
+        else {
             throw ModelError.indexCorrupt(
                 detail: "MTP sidecar is incompatible with the target model")
         }
-        return Model(device: device,
-                     config: config,
-                     streamingMode: streamingMode,
-                     expertCachePolicy: expertCachePolicy,
-                     integrityPolicy: integrityPolicy,
-                     residentBuffer: residentBuffer,
-                     residentIndex: residentIndex,
-                     packedExpertsLayout: packedExpertsLayout,
-                     manifest: manifest,
-                     directoryURL: directoryURL,
-                     modelDirectory: modelDirectory,
-                     sharedTargetWeights: SharedTargetWeights(
-                        embedding: try target.embedding(),
-                        lmHead: try target.lmHead(),
-                        embeddingBits: target.embeddingWeightBits,
-                        lmHeadBits: target.lmHeadWeightBits))
+        return Model(
+            device: device,
+            config: config,
+            streamingMode: streamingMode,
+            expertCachePolicy: expertCachePolicy,
+            integrityPolicy: integrityPolicy,
+            residentBuffer: residentBuffer,
+            residentIndex: residentIndex,
+            packedExpertsLayout: packedExpertsLayout,
+            manifest: manifest,
+            directoryURL: directoryURL,
+            modelDirectory: modelDirectory,
+            sharedTargetWeights: SharedTargetWeights(
+                embedding: try target.embedding(),
+                lmHead: try target.lmHead(),
+                embeddingBits: target.embeddingWeightBits,
+                lmHeadBits: target.lmHeadWeightBits))
     }
 
     /// The Qwen3.5-MoE tensor contract is shared by Qwen 3.6 and Ornith 1.5,
     /// but their trained embeddings and heads are not interchangeable. Keep
     /// synthetic and privately named compatible checkpoints usable while
     /// rejecting a known cross-model pairing before any generation begins.
-    static func mtpLineagesAreCompatible(sidecarID: String,
-                                         targetID: String) -> Bool {
+    static func mtpLineagesAreCompatible(
+        sidecarID: String,
+        targetID: String
+    ) -> Bool {
         func lineage(_ modelID: String) -> String? {
             let normalized = modelID.lowercased()
             if normalized.contains("ornith-1.5") { return "ornith-1.5" }
@@ -512,7 +528,8 @@ public struct Model {
             return nil
         }
         guard let sidecar = lineage(sidecarID),
-              let target = lineage(targetID) else {
+            let target = lineage(targetID)
+        else {
             return true
         }
         return sidecar == target
@@ -578,17 +595,20 @@ public struct Model {
         guard let entry = residentIndex.entries[name] else {
             throw ModelError.tensorNotFound(name: name)
         }
-        return Self.residentView(entry: entry,
-                                 indexSize: residentIndex.header.indexSize,
-                                 buffer: residentBuffer.buffer)
+        return Self.residentView(
+            entry: entry,
+            indexSize: residentIndex.header.indexSize,
+            buffer: residentBuffer.buffer)
     }
 
     /// The `TensorView` a resident index entry describes. Shared with the
     /// promotion step, which builds views over buffers it allocates itself and
     /// must handle the same file-to-buffer offset translation.
-    static func residentView(entry: ResidentIndexEntry,
-                             indexSize: UInt64,
-                             buffer: MTLBuffer) -> TensorView {
+    static func residentView(
+        entry: ResidentIndexEntry,
+        indexSize: UInt64,
+        buffer: MTLBuffer
+    ) -> TensorView {
         let relativeOffset = entry.fileOffset - indexSize
         let scaleRel: UInt64 = entry.scaleSize > 0 ? entry.scaleOffset - indexSize : 0
         let biasRel: UInt64 = entry.biasSize > 0 ? entry.biasOffset - indexSize : 0
@@ -597,7 +617,7 @@ public struct Model {
             offset: relativeOffset,
             length: entry.sizeBytes,
             scaleOffset: scaleRel, scaleLength: entry.scaleSize,
-            biasOffset:  biasRel,  biasLength:  entry.biasSize,
+            biasOffset: biasRel, biasLength: entry.biasSize,
             shape: entry.shape,
             dtype: entry.dtype)
     }
@@ -622,17 +642,22 @@ public struct Model {
     ) throws -> [String: TensorView] {
         var promoted: [String: TensorView] = [:]
         for layer in 0..<config.numLayers where config.layerIsLinear(layer) {
-            let names = [schema.gdnALog(layer), schema.gdnDtBias(layer),
-                         schema.gdnConv(layer), schema.gdnNorm(layer)]
+            let names = [
+                schema.gdnALog(layer), schema.gdnDtBias(layer),
+                schema.gdnConv(layer), schema.gdnNorm(layer),
+            ]
             for name in names {
                 guard let entry = residentIndex.entries[name], entry.dtype == 3 else { continue }
-                let source = residentView(entry: entry,
-                                          indexSize: residentIndex.header.indexSize,
-                                          buffer: residentBuffer)
+                let source = residentView(
+                    entry: entry,
+                    indexSize: residentIndex.header.indexSize,
+                    buffer: residentBuffer)
                 let elements = Int(entry.sizeBytes) / MemoryLayout<Float>.size
-                guard let converted = device.makeBuffer(
-                    length: max(elements * MemoryLayout<UInt16>.size, 4),
-                    options: .storageModeShared) else {
+                guard
+                    let converted = device.makeBuffer(
+                        length: max(elements * MemoryLayout<UInt16>.size, 4),
+                        options: .storageModeShared)
+                else {
                     throw ModelError.indexCorrupt(
                         detail: "could not allocate a bf16 promotion buffer for \(name)")
                 }
@@ -666,8 +691,7 @@ public struct Model {
     /// touches reuse the open backend. The backend resolves the expert to an
     /// cache-slot `(MTLBuffer, offset)` pair.
     public func routedExpert(layer L: Int, expert E: Int) throws -> TensorView {
-        try ensureLayerOpened(L)
-        let backend = streamersQueue.sync { streamersBox.streamers[L]! }
+        let backend = try openStreamer(for: L)
         // The streamer is per-layer: `openLayerLocked(L)` bound it to layer
         // L's file with `expertOffsets = layers[L].experts.map(\.offset)`, and
         // `StreamLayout.expertOffset(layer: 0, ...)` is the branch that
@@ -680,7 +704,7 @@ public struct Model {
             offset: r.offset,
             length: r.size,
             scaleOffset: 0, scaleLength: 0,
-            biasOffset:  0, biasLength:  0,
+            biasOffset: 0, biasLength: 0,
             shape: (UInt32(L), UInt32(E), 0, 0),
             dtype: 0)
     }
@@ -690,6 +714,21 @@ public struct Model {
         try streamersQueue.sync {
             try openLayerLocked(L)
         }
+    }
+
+    /// The open streamer for a layer, after making sure the layer is open.
+    ///
+    /// `ensureLayerOpened` either leaves a streamer in the box or throws, so
+    /// the lookup below cannot be nil in practice. It is a thrown
+    /// `internalInconsistency` rather than a force unwrap so a broken
+    /// invariant fails loudly without crashing the process.
+    func openStreamer(for layer: Int) throws -> PreadExpertStreamer {
+        try ensureLayerOpened(layer)
+        guard let streamer = streamersQueue.sync(execute: { streamersBox.streamers[layer] }) else {
+            throw ModelError.internalInconsistency(
+                detail: "routed-expert streamer for layer \(layer) missing after ensureLayerOpened")
+        }
+        return streamer
     }
 
     /// Best-effort overlap hook for prefill: starts the same lazy layer open on
@@ -733,7 +772,8 @@ public struct Model {
         }
         let basename = packedExpertsLayout.layers[L].file
         let manifestRel = "packed_experts/\(basename)"
-        let url = directoryURL
+        let url =
+            directoryURL
             .appendingPathComponent("packed_experts")
             .appendingPathComponent(basename)
         let layerFD = try modelDirectory.openFile(manifestRel)
@@ -750,9 +790,10 @@ public struct Model {
             }
             switch integrityPolicy {
             case .fullSha256:
-                try Sha256Verifier.verifyFile(fileDescriptor: layerFD,
-                                              named: manifestRel,
-                                              expectedHex: entry.sha256)
+                try Sha256Verifier.verifyFile(
+                    fileDescriptor: layerFD,
+                    named: manifestRel,
+                    expectedHex: entry.sha256)
             case .sizeCheckTrustedReceipt:
                 break
             }
@@ -869,28 +910,35 @@ public struct Model {
         var walkNanos: UInt64 = 0
         streamersQueue.sync {
             streamersBox.pinQueueWaitNanos &+= clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - tEnter
-            if pinned, streamersBox.pinnedComplete { earlyReturn = true; return }
+            if pinned, streamersBox.pinnedComplete {
+                earlyReturn = true
+                return
+            }
             let tWalk = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
             var complete = pinned
             for streamer in streamersBox.streamers {
                 guard let streamer else { continue }
                 walked += 1
                 streamer.setSlotsPinned(pinned)
-                if pinned, !streamer.isPinned { complete = false; unpinnedAfter += 1 }
+                if pinned, !streamer.isPinned {
+                    complete = false
+                    unpinnedAfter += 1
+                }
             }
             walkNanos = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - tWalk
             streamersBox.pinnedComplete = complete
         }
         let total = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - tEnter
         if PreadExpertStreamer.wireTraceEnabled, total > 2_000_000 {
-            FileHandle.standardError.write(Data(
-                "[wire] setExpertCachePinned(\(pinned)) \(Double(total) / 1e6) ms early=\(earlyReturn) walked=\(walked) walk_ms=\(Double(walkNanos) / 1e6) unpinned_after=\(unpinnedAfter)\n".utf8))
+            FileHandle.standardError.write(
+                Data(
+                    "[wire] setExpertCachePinned(\(pinned)) \(Double(total) / 1e6) ms early=\(earlyReturn) walked=\(walked) walk_ms=\(Double(walkNanos) / 1e6) unpinned_after=\(unpinnedAfter)\n"
+                        .utf8))
         }
         return streamersQueue.sync { streamersBox.pinnedComplete } == pinned
     }
 
 }
-
 
 /// The schema checks `validateRuntimeSchema` runs, bound to the index and
 /// quant slots they read. Extracted from that function so the per-family and
@@ -965,8 +1013,10 @@ struct RuntimeSchemaChecks {
     /// that is not. Checking only the slot would refuse a correct install; not
     /// checking at all would let a wrong one through, which for these tensors
     /// is silent -- the kernels pick their reading from the same dtype.
-    func requireAffineOrBF16(_ name: String, rows: Int, columns: Int,
-                             slot: ManifestQuantSlot) throws {
+    func requireAffineOrBF16(
+        _ name: String, rows: Int, columns: Int,
+        slot: ManifestQuantSlot
+    ) throws {
         let e = try entry(name)
         if e.dtype == 1 {
             try requireBF16(name, count: rows * columns)
@@ -975,8 +1025,10 @@ struct RuntimeSchemaChecks {
         try requireAffine(name, rows: rows, columns: columns, slot: slot)
     }
 
-    func requireAffine(_ name: String, rows: Int, columns: Int,
-                       slot: ManifestQuantSlot) throws {
+    func requireAffine(
+        _ name: String, rows: Int, columns: Int,
+        slot: ManifestQuantSlot
+    ) throws {
         let e = try entry(name)
         guard columns % slot.groupSize == 0 else {
             throw ModelError.indexCorrupt(
@@ -994,20 +1046,25 @@ struct RuntimeSchemaChecks {
         let weightBytes = elementBits / 8
         let auxBytes = try checkedMultiply(
             UInt64(rows) * UInt64(columns / slot.groupSize), 2, field: name)
-        guard e.dtype == 0,                       // U32-packed weights
-              e.sizeBytes == weightBytes,
-              e.scaleOffset > 0, e.scaleSize == auxBytes,
-              e.biasOffset > 0, e.biasSize == auxBytes else {
+        guard e.dtype == 0,  // U32-packed weights
+            e.sizeBytes == weightBytes,
+            e.scaleOffset > 0, e.scaleSize == auxBytes,
+            e.biasOffset > 0, e.biasSize == auxBytes
+        else {
             throw ModelError.tensorSizeMismatch(
                 name: name, expected: weightBytes, actual: e.sizeBytes)
         }
     }
 
-    func affineSizes(rows: Int, columns: Int, slot: ManifestQuantSlot,
-                     field: String) throws -> (weight: UInt64, aux: UInt64, shape: (UInt32, UInt32)) {
+    func affineSizes(
+        rows: Int, columns: Int, slot: ManifestQuantSlot,
+        field: String
+    ) throws -> (weight: UInt64, aux: UInt64, shape: (UInt32, UInt32)) {
         guard columns % slot.groupSize == 0 else {
             throw ModelError.indexCorrupt(
-                detail: "\(field) has an invalid quant layout (group \(slot.groupSize), \(slot.weightBits)-bit)")
+                detail:
+                    "\(field) has an invalid quant layout (group \(slot.groupSize), \(slot.weightBits)-bit)"
+            )
         }
         let elementBits = try checkedMultiply(
             UInt64(rows) * UInt64(columns), UInt64(slot.weightBits),

@@ -109,13 +109,15 @@ enum PrefillMoEGrouping {
             throw PrefillMoEGroupingError.invalidTileExpertCount(tileExpertCount)
         }
         if let expertSortKeys, expertSortKeys.count != numExperts {
-            throw PrefillMoEGroupingError.expertSortKeyCountMismatch(expected: numExperts,
-                                                                    actual: expertSortKeys.count)
+            throw PrefillMoEGroupingError.expertSortKeyCountMismatch(
+                expected: numExperts,
+                actual: expertSortKeys.count)
         }
         let expectedPairs = queryCount * topK
         guard pairs.count == expectedPairs else {
-            throw PrefillMoEGroupingError.pairCountMismatch(expected: expectedPairs,
-                                                           actual: pairs.count)
+            throw PrefillMoEGroupingError.pairCountMismatch(
+                expected: expectedPairs,
+                actual: pairs.count)
         }
 
         var seenTokenRanks: Set<UInt64> = []
@@ -132,8 +134,9 @@ enum PrefillMoEGrouping {
             }
             let key = UInt64(pair.token) << 32 | UInt64(pair.rank)
             guard seenTokenRanks.insert(key).inserted else {
-                throw PrefillMoEGroupingError.duplicateTokenRank(token: pair.token,
-                                                                rank: pair.rank)
+                throw PrefillMoEGroupingError.duplicateTokenRank(
+                    token: pair.token,
+                    rank: pair.rank)
             }
         }
 
@@ -163,9 +166,11 @@ enum PrefillMoEGrouping {
             let count = i - start
             offsets[Int(expert)] = UInt32(start)
             counts[Int(expert)] = UInt32(count)
-            groups.append(PrefillMoEGroup(expert: expert,
-                                          pairStart: UInt32(start),
-                                          pairCount: UInt32(count)))
+            groups.append(
+                PrefillMoEGroup(
+                    expert: expert,
+                    pairStart: UInt32(start),
+                    pairCount: UInt32(count)))
         }
 
         var tiles: [PrefillMoETile] = []
@@ -176,18 +181,21 @@ enum PrefillMoEGrouping {
             let last = groups[groupEnd - 1]
             let pairStart = first.pairStart
             let pairEnd = last.pairStart + last.pairCount
-            tiles.append(PrefillMoETile(groupStart: UInt32(groupStart),
-                                        groupCount: UInt32(groupEnd - groupStart),
-                                        pairStart: pairStart,
-                                        pairCount: pairEnd - pairStart))
+            tiles.append(
+                PrefillMoETile(
+                    groupStart: UInt32(groupStart),
+                    groupCount: UInt32(groupEnd - groupStart),
+                    pairStart: pairStart,
+                    pairCount: pairEnd - pairStart))
             groupStart = groupEnd
         }
 
-        return PrefillMoEGroupedRoutes(sortedPairs: sortedPairs,
-                                       perExpertOffsets: offsets,
-                                       perExpertCounts: counts,
-                                       groups: groups,
-                                       tiles: tiles,
-                                       queryCount: queryCount)
+        return PrefillMoEGroupedRoutes(
+            sortedPairs: sortedPairs,
+            perExpertOffsets: offsets,
+            perExpertCounts: counts,
+            groups: groups,
+            tiles: tiles,
+            queryCount: queryCount)
     }
 }

@@ -1,6 +1,7 @@
-import Testing
 import Foundation
 import Metal
+import Testing
+
 @testable import TinyTitan
 
 /// Tests `KVCacheManager` FP16 shape, growth, separate K/V storage, ring,
@@ -11,17 +12,20 @@ import Metal
 
     private let config = ArchConfig.qwen36_35B_A3B
 
-    private func makeManager(maxContext: Int,
-                             slots: Int = 1,
-                             fp16RingEnabled: Bool = false) throws -> (MetalContext, KVCacheManager) {
+    private func makeManager(
+        maxContext: Int,
+        slots: Int = 1,
+        fp16RingEnabled: Bool = false
+    ) throws -> (MetalContext, KVCacheManager) {
         let ctx = try MetalContext()
-        let kv = try KVCacheManager(device: ctx.device,
-                                    config: config,
-                                    maxContext: maxContext,
-                                    slots: slots,
-                                    fp16RingEnabled: fp16RingEnabled,
-                                    slidingWindow: config.slidingWindow,
-                                    maxPrefillChunkTokens: 128)
+        let kv = try KVCacheManager(
+            device: ctx.device,
+            config: config,
+            maxContext: maxContext,
+            slots: slots,
+            fp16RingEnabled: fp16RingEnabled,
+            slidingWindow: config.slidingWindow,
+            maxPrefillChunkTokens: 128)
         return (ctx, kv)
     }
 
@@ -48,18 +52,23 @@ import Metal
         let lengths = try saver.snapshotSegmentLengths(at: target)
 
         let (_, receiver) = try makeManager(maxContext: 9_000)
-        #expect(receiver.capacity(layer: 3) == KVCacheManager.initialCapacityTokens,
-                "precondition: a fresh manager starts at the initial capacity")
+        #expect(
+            receiver.capacity(layer: 3) == KVCacheManager.initialCapacityTokens,
+            "precondition: a fresh manager starts at the initial capacity")
         let empty = Data()
         var offset = 0
         // The copy is expected to fail on the empty payload; what matters is that
         // the length check ran against a capacity grown to the snapshot.
         _ = try? empty.withUnsafeBytes { bytes in
-            try receiver.restoreSnapshot(position: target, segmentLengths: lengths,
-                                          bytes: bytes, offset: &offset)
+            try receiver.restoreSnapshot(
+                position: target, segmentLengths: lengths,
+                bytes: bytes, offset: &offset)
         }
-        #expect(receiver.capacity(layer: 3) >= target, Comment(rawValue:
-                "the restore must grow to the snapshot's position before comparing "
+        #expect(
+            receiver.capacity(layer: 3) >= target,
+            Comment(
+                rawValue:
+                    "the restore must grow to the snapshot's position before comparing "
                     + "lengths; without that any prefix past "
                     + "\(KVCacheManager.initialCapacityTokens) is refused"))
     }
@@ -84,8 +93,9 @@ import Metal
         let (_, receiver) = try makeManager(maxContext: 128)
         var offset = 0
         try payload.withUnsafeBytes { bytes in
-            try receiver.restoreSnapshot(position: 100, segmentLengths: lengths,
-                                          bytes: bytes, offset: &offset)
+            try receiver.restoreSnapshot(
+                position: 100, segmentLengths: lengths,
+                bytes: bytes, offset: &offset)
         }
         #expect(receiver.position == 100)
         #expect(offset == payload.count)
@@ -134,8 +144,9 @@ import Metal
     }
 
     @Test func fp16Ring_neverEngagesWithoutSWALayers() throws {
-        let (_, kv) = try makeManager(maxContext: 4096,
-                                      fp16RingEnabled: true)
+        let (_, kv) = try makeManager(
+            maxContext: 4096,
+            fp16RingEnabled: true)
 
         #expect(kv.fp16RingEnabled)
         // Full layers stay linear; no SWA layer exists to cap.
@@ -148,8 +159,9 @@ import Metal
     }
 
     @Test func fp16Ring_slotOffsetsNeverWrap() throws {
-        let (_, kv) = try makeManager(maxContext: 128,
-                                      fp16RingEnabled: true)
+        let (_, kv) = try makeManager(
+            maxContext: 128,
+            fp16RingEnabled: true)
 
         // No SWA layer wraps; full-layer slots stay linear within maxContext.
         #expect(kv.kSlot(layer: 3, position: 0).offset == 0)
@@ -233,8 +245,9 @@ import Metal
             let expected = (slot * capacity + 3) * stride
             #expect(kv.kSlot(layer: 3, position: 3, slot: slot).offset == expected)
             #expect(kv.vSlot(layer: 3, position: 3, slot: slot).offset == expected)
-            #expect(kv.keyView(layer: 3, slot: slot, validTokenCount: 3).offset
-                        == slot * capacity * stride)
+            #expect(
+                kv.keyView(layer: 3, slot: slot, validTokenCount: 3).offset
+                    == slot * capacity * stride)
         }
     }
 

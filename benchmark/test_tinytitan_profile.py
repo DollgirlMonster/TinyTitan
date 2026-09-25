@@ -65,8 +65,9 @@ class BenchmarkProfileTests(unittest.TestCase):
         self.assertEqual(DEFAULT_PROMPT_CACHE_MEMORY_MIB, 256)
 
     def test_explicit_cache_off_is_not_a_default(self) -> None:
-        command = server_command("TinyTitanServer", 8081, model=self.installed_model(),
-                                 cache_mode="off")
+        command = server_command(
+            "TinyTitanServer", 8081, model=self.installed_model(), cache_mode="off"
+        )
         self.assertEqual(command[command.index("--prompt-cache") + 1], "off")
 
     def test_shell_launchers_explicitly_enable_both_caches(self) -> None:
@@ -85,8 +86,7 @@ class BenchmarkProfileTests(unittest.TestCase):
         # the same script rather than building their own command line.
         self.assertIn("--mtp-model) MTP_MODEL_ARG=", launcher)
         self.assertIn(
-            'gpu_runtime+=(--mtp-model "$MTP_MODEL_ARG" '
-            '--mtp-memory-mib "${MTP_MEMORY_ARG:-384}")',
+            'gpu_runtime+=(--mtp-model "$MTP_MODEL_ARG" --mtp-memory-mib "${MTP_MEMORY_ARG:-384}")',
             launcher,
         )
         # The expert-cache budget is per-family (decodeTuning), so neither the
@@ -96,20 +96,22 @@ class BenchmarkProfileTests(unittest.TestCase):
         # keeps the measured optimum.
         self.assertIn('gpu_runtime+=(--ram-budget "${ram_gb}G")', launcher)
         self.assertIn('if [[ -n "$ram_gb" && "$MODEL_BACKEND" != "cpu" ]]', launcher)
-        self.assertIn('${TINYTITAN_THINKING_MODE:-off}', launcher)
+        self.assertIn("${TINYTITAN_THINKING_MODE:-off}", launcher)
         # The dynamic path takes the reasoning level the catalog says the
         # model supports (`--reasoning`); the single-model fallback for a
         # binary-thinking build keeps the old `--thinking` flag.
         self.assertIn('--reasoning "$thinking_level"', launcher)
-        self.assertIn('--thinking "$( [[ "$thinking_level" == off ]] && echo off || echo on )"', launcher)
+        self.assertIn(
+            '--thinking "$( [[ "$thinking_level" == off ]] && echo off || echo on )"', launcher
+        )
         # Model and quantization are one list now, and the server starts
         # in dynamic mode over the whole models directory; the first
         # question is what to launch -- the server alone, or the server plus
         # one coding client -- rather than a coding CLI. Pin both so a revert
         # to the old flow shows here.
         self.assertIn('--models-dir "$MODELS_DIR"', launcher)
-        self.assertIn('What do you want to launch?', launcher)
-        self.assertIn('Which answer style?', launcher)
+        self.assertIn("What do you want to launch?", launcher)
+        self.assertIn("Which answer style?", launcher)
         self.assertIn('case "${answers_choice:-1}"', launcher)
 
     def test_environment_and_model_select_standard_base_alias(self) -> None:
@@ -121,12 +123,10 @@ class BenchmarkProfileTests(unittest.TestCase):
 
     def test_thinking_mode_is_binary_and_configurable(self) -> None:
         self.assertEqual(configured_thinking_mode({}), "off")
-        self.assertEqual(
-            configured_thinking_mode({"TINYTITAN_THINKING_MODE": "yes"}), "on")
+        self.assertEqual(configured_thinking_mode({"TINYTITAN_THINKING_MODE": "yes"}), "on")
         with self.assertRaises(ValueError):
             configured_thinking_mode({"TINYTITAN_THINKING_MODE": "medium"})
-        command = server_command("server", 8080, model=self.installed_model(),
-                                 thinking_mode="on")
+        command = server_command("server", 8080, model=self.installed_model(), thinking_mode="on")
         self.assertEqual(command[command.index("--thinking") + 1], "on")
         self.assertFalse(request_model().endswith("-fast"))
 

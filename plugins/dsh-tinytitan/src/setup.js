@@ -165,7 +165,8 @@ export function setDefaultPreset(settingsText, presetId) {
   const lines = settingsText.split("\n");
   const start = lines.findIndex((line) => /^agent-presets:\s*$/.test(line));
   if (start === -1) {
-    const base = settingsText.endsWith("\n") || settingsText === "" ? settingsText : `${settingsText}\n`;
+    const base =
+      settingsText.endsWith("\n") || settingsText === "" ? settingsText : `${settingsText}\n`;
     return { text: `${base}\nagent-presets:\n  default: ${presetId}\n`, changed: true };
   }
   lines.splice(start + 1, 0, `  default: ${presetId}`);
@@ -245,7 +246,9 @@ export function ensureCompactionPreset({
   }
   const activePath = join(dshHome, ".agent-presets", active, "agent.cordis.yml");
   if (!existsSync(activePath)) {
-    log(`dsh-tinytitan: the default agent preset ${active} is not a user preset; select ${presetId} to mount the backend`);
+    log(
+      `dsh-tinytitan: the default agent preset ${active} is not a user preset; select ${presetId} to mount the backend`,
+    );
     return result;
   }
   const activeText = readFileSync(activePath, "utf8");

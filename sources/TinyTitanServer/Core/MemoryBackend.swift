@@ -81,9 +81,11 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
     private var innerBusy = false
     private var innerWaiters: [CheckedContinuation<Void, Never>] = []
 
-    public init(wrapping inner: any ServerInferenceBackend,
-                service: MemoryService,
-                configuration: MemoryConfiguration) {
+    public init(
+        wrapping inner: any ServerInferenceBackend,
+        service: MemoryService,
+        configuration: MemoryConfiguration
+    ) {
         self.inner = inner
         self.service = service
         self.configuration = configuration
@@ -161,10 +163,12 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
             // a client tool ends here as well: the client has to run that one,
             // and continuing would strand its result.
             guard !memoryCalls.isEmpty, otherCalls.isEmpty else {
-                let finished = Self.settled(completion, content: transcript,
-                                            reasoning: thoughts, toolCalls: otherCalls)
-                await journal(request: request, completion: finished, context: context,
-                              conversation: conversation, startedAt: startedAt)
+                let finished = Self.settled(
+                    completion, content: transcript,
+                    reasoning: thoughts, toolCalls: otherCalls)
+                await journal(
+                    request: request, completion: finished, context: context,
+                    conversation: conversation, startedAt: startedAt)
                 return finished
             }
 
@@ -178,8 +182,10 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
             // any tool call it makes anyway is dropped.
             if rounds >= configuration.maximumToolRounds {
                 var messages = current.messages
-                messages.append(ServerMemory.assistantMessage(content: completion.content,
-                                                              calls: memoryCalls))
+                messages.append(
+                    ServerMemory.assistantMessage(
+                        content: completion.content,
+                        calls: memoryCalls))
                 for call in memoryCalls {
                     let result = await service.execute(
                         name: call.name,
@@ -187,10 +193,11 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
                         in: context)
                     messages.append(ServerMemory.toolResultMessage(call: call, result: result))
                 }
-                messages.append(GFTokenizer.Message(
-                    role: .user,
-                    content: "Your memory tool rounds for this turn are used up. Answer the "
-                        + "original request now, in full, without calling any tools."))
+                messages.append(
+                    GFTokenizer.Message(
+                        role: .user,
+                        content: "Your memory tool rounds for this turn are used up. Answer the "
+                            + "original request now, in full, without calling any tools."))
                 current = current.replacingMessages(messages, tools: current.tools)
                 let last = try await gated(current, onEvent: filteredEvents)
                 transcript += last.content
@@ -199,26 +206,31 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
                     last, content: transcript, reasoning: thoughts,
                     toolCalls: last.toolCalls.filter { !MemoryTools.isMemoryTool($0.name) },
                     finishReason: transcript.isEmpty ? "length" : last.finishReason)
-                ServerLog.memory("tool rounds exhausted; answered without tools "
-                                 + "session=\(context.session.id)")
-                await journal(request: request, completion: finished, context: context,
-                              conversation: conversation, startedAt: startedAt)
+                ServerLog.memory(
+                    "tool rounds exhausted; answered without tools "
+                        + "session=\(context.session.id)")
+                await journal(
+                    request: request, completion: finished, context: context,
+                    conversation: conversation, startedAt: startedAt)
                 return finished
             }
 
             rounds += 1
             var messages = current.messages
-            messages.append(ServerMemory.assistantMessage(content: completion.content,
-                                                          calls: memoryCalls))
+            messages.append(
+                ServerMemory.assistantMessage(
+                    content: completion.content,
+                    calls: memoryCalls))
             for call in memoryCalls {
                 let result = await service.execute(
                     name: call.name,
                     arguments: ServerMemory.arguments(from: call.arguments),
                     in: context)
                 messages.append(ServerMemory.toolResultMessage(call: call, result: result))
-                ServerLog.memory("tool=\(call.name) "
-                                 + (result.isFailure ? "failed" : "ok")
-                                 + " round=\(rounds) session=\(context.session.id)")
+                ServerLog.memory(
+                    "tool=\(call.name) "
+                        + (result.isFailure ? "failed" : "ok")
+                        + " round=\(rounds) session=\(context.session.id)")
             }
             current = current.replacingMessages(messages, tools: current.tools)
         }
@@ -232,19 +244,22 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
     /// once silenced the whole feature whenever memory was on. The stop
     /// string that ended the last round is kept for the same reason: without
     /// it a Messages client saw `end_turn` for a turn its stop sequence ended.
-    static func settled(_ completion: ServerCompletion,
-                        content: String,
-                        reasoning: String,
-                        toolCalls: [ParsedToolCall],
-                        finishReason: String? = nil) -> ServerCompletion {
-        ServerCompletion(content: content,
-                         toolCalls: toolCalls,
-                         finishReason: finishReason ?? completion.finishReason,
-                         usage: completion.usage,
-                         watchdogTrips: completion.watchdogTrips,
-                         stopSequence: completion.stopSequence,
-                         reasoning: reasoning,
-                         unrequestedReasoning: completion.unrequestedReasoning)
+    static func settled(
+        _ completion: ServerCompletion,
+        content: String,
+        reasoning: String,
+        toolCalls: [ParsedToolCall],
+        finishReason: String? = nil
+    ) -> ServerCompletion {
+        ServerCompletion(
+            content: content,
+            toolCalls: toolCalls,
+            finishReason: finishReason ?? completion.finishReason,
+            usage: completion.usage,
+            watchdogTrips: completion.watchdogTrips,
+            stopSequence: completion.stopSequence,
+            reasoning: reasoning,
+            unrequestedReasoning: completion.unrequestedReasoning)
     }
 
     /// Writes the turn to the journal after the completion is settled.
@@ -258,11 +273,13 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
     /// own failures. Only the user's prompt and the assistant's reply text
     /// go in; tool definitions, tool calls and tool results never reach it,
     /// which is what keeps a turn at a few kilobytes.
-    private func journal(request: ValidatedChatRequest,
-                         completion: ServerCompletion,
-                         context: MemorySessionContext,
-                         conversation: String,
-                         startedAt: Date) async {
+    private func journal(
+        request: ValidatedChatRequest,
+        completion: ServerCompletion,
+        context: MemorySessionContext,
+        conversation: String,
+        startedAt: Date
+    ) async {
         let index = (turnIndex[conversation] ?? 0)
         turnIndex[conversation] = index + 1
         let prompt = request.messages.last { $0.role == .user }?.content ?? ""
@@ -296,9 +313,12 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
     }
 
     /// Runs one inner generation under the gate.
-    private func gated(_ request: ValidatedChatRequest,
-                       onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void)
-        async throws -> ServerCompletion {
+    private func gated(
+        _ request: ValidatedChatRequest,
+        onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void
+    )
+        async throws -> ServerCompletion
+    {
         await acquireInner()
         defer { releaseInner() }
         return try await inner.generate(request, onEvent: onEvent)
@@ -378,9 +398,10 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
             unconsolidated[scope] = nil
         }
         guard let journal = await service.journalStore(for: scope) else { return }
-        let newestFirst = await journal.turns(session: context.session.id,
-                                              limit: configuration.consolidationMaximumTurns,
-                                              in: scope)
+        let newestFirst = await journal.turns(
+            session: context.session.id,
+            limit: configuration.consolidationMaximumTurns,
+            in: scope)
         let chronological = Array(newestFirst.reversed())
         let through = consolidatedThrough[context.session.id] ?? -1
         let fresh = chronological.filter { $0.index > through }
@@ -390,8 +411,9 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
         }
         let characters = fresh.reduce(0) { $0 + $1.prompt.count + $1.reply.count }
         guard characters >= configuration.consolidationMinimumCharacters else {
-            ServerLog.memory("consolidation skipped session=\(context.session.id): "
-                             + "\(characters) new characters, nothing to distil")
+            ServerLog.memory(
+                "consolidation skipped session=\(context.session.id): "
+                    + "\(characters) new characters, nothing to distil")
             return
         }
         // One already-distilled turn ahead of the new ones, so a reply that
@@ -418,24 +440,27 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
             // Nothing usable came back. The head of the raw output is the only
             // way to tell an honest "[]" from a truncated array or a refusal.
             let head = completion.content.prefix(200).replacingOccurrences(of: "\n", with: " ")
-            ServerLog.memory("consolidation produced no facts session=\(context.session.id) "
-                             + "finish=\(completion.finishReason) output=\"\(head)\"")
+            ServerLog.memory(
+                "consolidation produced no facts session=\(context.session.id) "
+                    + "finish=\(completion.finishReason) output=\"\(head)\"")
         }
         let written = await service.storeConsolidation(records, in: context)
         consolidatedThrough[context.session.id] = last.index
-        ServerLog.memory("consolidated session=\(context.session.id) turns=\(fresh.count) "
-                         + "facts=\(written) keys=\(records.map(\.key.rawValue).joined(separator: ","))"
-                         + " prompt=\(completion.usage.promptTokens) "
-                         + "completion=\(completion.usage.completionTokens) "
-                         + "seconds=\(Int(Date().timeIntervalSince(started)))")
+        ServerLog.memory(
+            "consolidated session=\(context.session.id) turns=\(fresh.count) "
+                + "facts=\(written) keys=\(records.map(\.key.rawValue).joined(separator: ","))"
+                + " prompt=\(completion.usage.promptTokens) "
+                + "completion=\(completion.usage.completionTokens) "
+                + "seconds=\(Int(Date().timeIntervalSince(started)))")
     }
 
     /// Identifies a conversation for the purpose of freezing its prompt and
     /// counting its turns.
     private func conversationKey(for request: ValidatedChatRequest) -> String {
         let placement = resolvePlacement(for: request)
-        return ServerMemory.sessionIdentifier(messages: request.messages,
-                                              workspace: placement.workspace)
+        return ServerMemory.sessionIdentifier(
+            messages: request.messages,
+            workspace: placement.workspace)
     }
 
     /// Runs the session-end hook, if consolidation is on. The engine calls
@@ -448,35 +473,41 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
 
     /// Resolves, and caches, the memory session for this conversation.
     private func sessionContext(for request: ValidatedChatRequest) async
-        -> MemorySessionContext? {
+        -> MemorySessionContext?
+    {
         let placement = resolvePlacement(for: request)
-        let id = ServerMemory.sessionIdentifier(messages: request.messages,
-                                                workspace: placement.workspace)
+        let id = ServerMemory.sessionIdentifier(
+            messages: request.messages,
+            workspace: placement.workspace)
         if let existing = contexts[id] { return existing }
         let focus = request.messages.first { $0.role == .user }?.content
             .map { String($0.prefix(600)) }
-        guard let context = await service.beginSession(
-            id: id,
-            workspaceOverride: placement.override,
-            modelID: nil,
-            tag: placement.tag,
-            focus: focus) else { return nil }
+        guard
+            let context = await service.beginSession(
+                id: id,
+                workspaceOverride: placement.override,
+                modelID: nil,
+                tag: placement.tag,
+                focus: focus)
+        else { return nil }
         contexts[id] = context
         // A new session in a scope whose last session still has undistilled
         // turns is a rollover: the end-of-conversation signal the API never
         // sends. The previous session is consolidated once this request has
         // returned, so the person waiting on it does not pay for it.
         if configuration.sessionConsolidation,
-           let previous = unconsolidated[context.scope],
-           previous.session.id != context.session.id {
+            let previous = unconsolidated[context.scope],
+            previous.session.id != context.session.id
+        {
             idleTimers[context.scope]?.cancel()
             pendingAfterTurn[context.scope] = previous
             unconsolidated[context.scope] = nil
         }
-        ServerLog.memory("session=\(context.session.id) scope=\(context.scope.workspace) "
-                         + "tag=\(placement.tag ?? "-") via=\(placement.source) "
-                         + "bootstrap=\(context.bootstrap.records.count) "
-                         + "durable=\(context.isDurable)")
+        ServerLog.memory(
+            "session=\(context.session.id) scope=\(context.scope.workspace) "
+                + "tag=\(placement.tag ?? "-") via=\(placement.source) "
+                + "bootstrap=\(context.bootstrap.records.count) "
+                + "durable=\(context.isDurable)")
         return context
     }
 
@@ -510,37 +541,41 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
             return Placement(workspace: header, override: header, tag: header, source: "header")
         }
         guard configuration.allowsPerRequestWorkspace,
-              let declared = ServerMemory.declaredWorkingDirectory(in: request.messages)
+            let declared = ServerMemory.declaredWorkingDirectory(in: request.messages)
         else {
-            return Placement(workspace: configuration.workspace, override: nil,
-                             tag: nil, source: "launch")
+            return Placement(
+                workspace: configuration.workspace, override: nil,
+                tag: nil, source: "launch")
         }
         if let reason = MemoryConfiguration.junkDrawerReason(
-            forPath: declared, environment: ["HOME": homeDirectory]) {
+            forPath: declared, environment: ["HOME": homeDirectory])
+        {
             if refusedDirectories.insert(declared).inserted {
                 ServerLog.memory("declared working directory ignored: \(reason)")
             }
-            return Placement(workspace: configuration.workspace, override: nil,
-                             tag: nil, source: "launch")
+            return Placement(
+                workspace: configuration.workspace, override: nil,
+                tag: nil, source: "launch")
         }
         let workspace = MemoryConfiguration.workspaceIdentifier(forPath: declared)
         let tag = URL(fileURLWithPath: declared).lastPathComponent
-        return Placement(workspace: workspace, override: workspace, tag: tag,
-                         source: "declared-cwd")
+        return Placement(
+            workspace: workspace, override: workspace, tag: tag,
+            source: "declared-cwd")
     }
 
     /// When the round limit stops a conversation mid-memory, say so in the
     /// finish reason rather than presenting a truncated answer as complete.
 }
 
-public extension MemoryBackend {
+extension MemoryBackend {
     /// Flush memory to disk and release the workspace locks.
     ///
     /// Called on the way out of a graceful shutdown. Session boundaries are
     /// the usual durability point, but a server told to stop mid-conversation
     /// has records that have not reached a barrier yet, and those are the
     /// ones a person would most notice losing.
-    func shutDown() async {
+    public func shutDown() async {
         for timer in idleTimers.values { timer.cancel() }
         idleTimers.removeAll()
         await service.shutDown()
@@ -563,19 +598,23 @@ public enum ServerMemoryFactory {
     ///     on the same read — `isIdle` is its inverse — so T7 runs only in a
     ///     window where nobody is waiting. Nil leaves the width alone and the
     ///     pass ungated, which is what a test or a benchmark wants.
-    public static func wrap(_ backend: any ServerInferenceBackend,
-                            configuration: MemoryConfiguration = .fromEnvironment(),
-                            modelsDirectory: String? = nil,
-                            isClientGenerating: (@Sendable () -> Bool)? = nil)
-        -> any ServerInferenceBackend {
+    public static func wrap(
+        _ backend: any ServerInferenceBackend,
+        configuration: MemoryConfiguration = .fromEnvironment(),
+        modelsDirectory: String? = nil,
+        isClientGenerating: (@Sendable () -> Bool)? = nil
+    )
+        -> any ServerInferenceBackend
+    {
         guard configuration.isEnabled else {
             if let reason = configuration.disabledReason { ServerLog.memory(reason) }
             return backend
         }
         // Built before the service because the service holds the port. The
         // weights are not read until the first judgement.
-        let sideEngine = ServerSideEngineFactory.make(modelsDirectory: modelsDirectory,
-                                                      isClientGenerating: isClientGenerating)
+        let sideEngine = ServerSideEngineFactory.make(
+            modelsDirectory: modelsDirectory,
+            isClientGenerating: isClientGenerating)
         // Spelled out rather than mapped: nesting the closure inside
         // `MemoryService(...)`, or even inside an optional `map`, made the
         // type checker crash rather than infer.
@@ -588,15 +627,17 @@ public enum ServerMemoryFactory {
         let service = MemoryService(
             configuration: configuration,
             sideEngine: sideEngine.map { SideEngineMemoryAdapter(engine: $0) },
-            isIdle: isIdle) { event in
+            isIdle: isIdle
+        ) { event in
             ServerLog.memory(event.message)
         }
         ServerLog.memory(configuration.summary)
         // Replay the workspace journal now, at boot, rather than when the
         // first request arrives and the model is about to need the disk.
         Task(priority: .utility) { await service.warmUp() }
-        return MemoryBackend(wrapping: backend,
-                             service: service,
-                             configuration: configuration)
+        return MemoryBackend(
+            wrapping: backend,
+            service: service,
+            configuration: configuration)
     }
 }

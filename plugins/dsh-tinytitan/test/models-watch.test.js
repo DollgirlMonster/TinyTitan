@@ -16,7 +16,14 @@ function fakeWatch() {
   const watch = (_dir, options, listener) => {
     state.options = options;
     state.listener = listener;
-    return { close: () => { state.closed += 1; }, unref: () => { state.unref += 1; } };
+    return {
+      close: () => {
+        state.closed += 1;
+      },
+      unref: () => {
+        state.unref += 1;
+      },
+    };
   };
   return { state, watch };
 }
@@ -29,15 +36,24 @@ function fakeTimers() {
     setTimer: (callback, ms) => {
       const id = next++;
       pending.set(id, { callback, ms });
-      return { id, unref() { this.unreffed = true; } };
+      return {
+        id,
+        unref() {
+          this.unreffed = true;
+        },
+      };
     },
-    clearTimer: (handle) => { pending.delete(handle?.id ?? handle); },
+    clearTimer: (handle) => {
+      pending.delete(handle?.id ?? handle);
+    },
     runAll: () => {
       const entries = [...pending.values()];
       pending.clear();
       for (const entry of entries) entry.callback();
     },
-    get size() { return pending.size; },
+    get size() {
+      return pending.size;
+    },
   };
 }
 
@@ -46,8 +62,14 @@ test("a burst of changes refreshes once, after the folder goes quiet", () => {
   const timers = fakeTimers();
   let refreshes = 0;
   const handle = watchModels({
-    modelsDir: "/models", refresh: () => { refreshes += 1; },
-    watch, setTimer: timers.setTimer, clearTimer: timers.clearTimer, debounceMs: 250,
+    modelsDir: "/models",
+    refresh: () => {
+      refreshes += 1;
+    },
+    watch,
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+    debounceMs: 250,
   });
 
   assert.equal(handle.watching, true);
@@ -75,8 +97,13 @@ test("close stops refreshes and closes the watcher, and is idempotent", () => {
   const timers = fakeTimers();
   let refreshes = 0;
   const handle = watchModels({
-    modelsDir: "/models", refresh: () => { refreshes += 1; },
-    watch, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
+    modelsDir: "/models",
+    refresh: () => {
+      refreshes += 1;
+    },
+    watch,
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
   });
 
   state.listener("rename", "x");
@@ -99,16 +126,23 @@ test("a refresh that throws is logged, not raised", () => {
   const messages = [];
   watchModels({
     modelsDir: "/models",
-    refresh: () => { throw new Error("settings are read-only"); },
+    refresh: () => {
+      throw new Error("settings are read-only");
+    },
     log: (message) => messages.push(message),
-    watch, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
+    watch,
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
   });
 
   state.listener("rename", "x");
   timers.runAll();
-  assert.ok(messages.some((message) =>
-    /refresh after a models\/ change failed: settings are read-only/.test(message)),
-  `the failure must be logged: ${JSON.stringify(messages)}`);
+  assert.ok(
+    messages.some((message) =>
+      /refresh after a models\/ change failed: settings are read-only/.test(message),
+    ),
+    `the failure must be logged: ${JSON.stringify(messages)}`,
+  );
 });
 
 test("no models directory, or an unwatchable one, is reported and not fatal", () => {
@@ -121,7 +155,9 @@ test("no models directory, or an unwatchable one, is reported and not fatal", ()
     modelsDir: "/models",
     refresh: () => {},
     log: (m) => messages.push(m),
-    watch: () => { throw new Error("EMFILE"); },
+    watch: () => {
+      throw new Error("EMFILE");
+    },
   });
   assert.equal(failed.watching, false);
   assert.match(messages.at(-1), /cannot watch \/models: EMFILE/);
@@ -129,6 +165,5 @@ test("no models directory, or an unwatchable one, is reported and not fatal", ()
 });
 
 test("a missing refresh callback is a programming error, not a silent no-op", () => {
-  assert.throws(() => watchModels({ modelsDir: "/models" }),
-                /needs a refresh callback/);
+  assert.throws(() => watchModels({ modelsDir: "/models" }), /needs a refresh callback/);
 });

@@ -38,9 +38,9 @@ package enum TinyTitanFormatError: Error, Equatable, CustomStringConvertible, Se
 
     package var description: String {
         switch self {
-        case let .invalid(field, reason): "\(field): \(reason)"
-        case let .overflow(field): "\(field): arithmetic overflow"
-        case let .truncated(field): "\(field): truncated"
+        case .invalid(let field, let reason): "\(field): \(reason)"
+        case .overflow(let field): "\(field): arithmetic overflow"
+        case .truncated(let field): "\(field): truncated"
         }
     }
 }

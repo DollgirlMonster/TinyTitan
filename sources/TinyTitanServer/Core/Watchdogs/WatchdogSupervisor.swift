@@ -49,7 +49,6 @@ public final class WatchdogSupervisor: @unchecked Sendable {
         lock.withLock { set.explanation }
     }
 
-
     public func resolve(content: String, finishReason: String) -> WatchdogSet.Outcome {
         lock.withLock { set.resolve(content: content, finishReason: finishReason) }
     }
@@ -74,8 +73,9 @@ public final class WatchdogSupervisor: @unchecked Sendable {
 
     public func finish(visibleBytes: Int, requestBytes: Int, finishReason: String) {
         lock.withLock {
-            set.finish(visibleBytes: visibleBytes, requestBytes: requestBytes,
-                       finishReason: finishReason)
+            set.finish(
+                visibleBytes: visibleBytes, requestBytes: requestBytes,
+                finishReason: finishReason)
         }
     }
 

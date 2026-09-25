@@ -1,5 +1,6 @@
 import Metal
 import Testing
+
 @testable import TinyTitan
 
 @Suite struct SampleTopK64Tests {
@@ -61,10 +62,12 @@ import Testing
 
     @Test func samplerPathControlDefaultsToTiledAndFailsClosed() throws {
         #expect(try RuntimeSamplerPath.environmentValue([:]) == .tiled)
-        #expect(try RuntimeSamplerPath.environmentValue(
-            ["TINYTITAN_SAMPLER_PATH": "tiled"]) == .tiled)
-        #expect(try RuntimeSamplerPath.environmentValue(
-            ["TINYTITAN_SAMPLER_PATH": "generic"]) == .generic)
+        #expect(
+            try RuntimeSamplerPath.environmentValue(
+                ["TINYTITAN_SAMPLER_PATH": "tiled"]) == .tiled)
+        #expect(
+            try RuntimeSamplerPath.environmentValue(
+                ["TINYTITAN_SAMPLER_PATH": "generic"]) == .generic)
         #expect(throws: GeneratorError.self) {
             try RuntimeSamplerPath.environmentValue(["TINYTITAN_SAMPLER_PATH": "fast"])
         }
@@ -87,15 +90,16 @@ import Testing
             self.current = try Sample(context: context)
             self.candidate = try SampleTopK64(context: context, vocab: vocab)
             self.vocab = vocab
-            guard let probs = context.device.makeBuffer(
-                      length: vocab * MemoryLayout<Float16>.stride,
-                      options: .storageModeShared),
-                  let currentOutput = context.device.makeBuffer(
-                      length: MemoryLayout<UInt32>.stride,
-                      options: .storageModeShared),
-                  let candidateOutput = context.device.makeBuffer(
-                      length: MemoryLayout<UInt32>.stride,
-                      options: .storageModeShared)
+            guard
+                let probs = context.device.makeBuffer(
+                    length: vocab * MemoryLayout<Float16>.stride,
+                    options: .storageModeShared),
+                let currentOutput = context.device.makeBuffer(
+                    length: MemoryLayout<UInt32>.stride,
+                    options: .storageModeShared),
+                let candidateOutput = context.device.makeBuffer(
+                    length: MemoryLayout<UInt32>.stride,
+                    options: .storageModeShared)
             else {
                 throw MetalError.noDevice
             }
@@ -111,30 +115,36 @@ import Testing
             }
         }
 
-        func draw(seed: UInt64,
-                  temperature: Float = 1.0,
-                  topP: Float,
-                  topK: Int = 64) throws -> (current: UInt32, candidate: UInt32) {
-            let cb = context.queue.makeCommandBuffer()!
-            try current.encode(commandBuffer: cb,
-                           probs: probs,
-                           outToken: currentOutput,
-                           v: UInt32(vocab),
-                           temperature: temperature,
-                           topK: UInt32(topK),
-                           topP: topP,
-                           seed: seed)
-            try candidate.encode(commandBuffer: cb,
-                             probs: probs,
-                             outToken: candidateOutput,
-                             temperature: temperature,
-                             topP: topP,
-                             seed: seed,
-                             topK: UInt32(topK))
+        func draw(
+            seed: UInt64,
+            temperature: Float = 1.0,
+            topP: Float,
+            topK: Int = 64
+        ) throws -> (current: UInt32, candidate: UInt32) {
+            let cb = try #require(context.queue.makeCommandBuffer())
+            try current.encode(
+                commandBuffer: cb,
+                probs: probs,
+                outToken: currentOutput,
+                v: UInt32(vocab),
+                temperature: temperature,
+                topK: UInt32(topK),
+                topP: topP,
+                seed: seed)
+            try candidate.encode(
+                commandBuffer: cb,
+                probs: probs,
+                outToken: candidateOutput,
+                temperature: temperature,
+                topP: topP,
+                seed: seed,
+                topK: UInt32(topK))
             cb.commit()
             cb.waitUntilCompleted()
-            return (currentOutput.contents().load(as: UInt32.self),
-                    candidateOutput.contents().load(as: UInt32.self))
+            return (
+                currentOutput.contents().load(as: UInt32.self),
+                candidateOutput.contents().load(as: UInt32.self)
+            )
         }
     }
 
@@ -142,15 +152,17 @@ import Testing
         let rig = try Rig(vocab: 262_144)
         #expect(rig.candidate.scratchBytes == 139_264)
         rig.write { i in
-            let mixed = UInt64(i) &* 6364136223846793005 &+ 1442695040888963407
+            let mixed = UInt64(i) &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
             return Float(UInt32(mixed >> 40) + 1) * (1.0 / 16_777_217.0)
         }
 
         for temperature: Float in [0.7, 0.85, 1.0] {
             for seed: UInt64 in [1, 2, 0x1234_5678_9ABC_DEF0, UInt64.max] {
                 let result = try rig.draw(seed: seed, temperature: temperature, topP: 0.95)
-                #expect(result.candidate == result.current,
-                        "temperature \(temperature), seed \(seed): candidate \(result.candidate), current \(result.current)")
+                #expect(
+                    result.candidate == result.current,
+                    "temperature \(temperature), seed \(seed): candidate \(result.candidate), current \(result.current)"
+                )
             }
         }
     }
@@ -161,8 +173,9 @@ import Testing
 
         for seed in UInt64(1)...UInt64(8) {
             let result = try rig.draw(seed: seed, topP: 0.95)
-            #expect(result.candidate == result.current,
-                    "seed \(seed): candidate \(result.candidate), current \(result.current)")
+            #expect(
+                result.candidate == result.current,
+                "seed \(seed): candidate \(result.candidate), current \(result.current)")
             #expect(result.candidate < 64)
         }
     }
@@ -194,19 +207,22 @@ import Testing
     @Test func everyKUpToSixtyFourMatchesTheGenericSampler() throws {
         let rig = try Rig(vocab: 262_144)
         rig.write { i in
-            let mixed = UInt64(i) &* 6364136223846793005 &+ 1442695040888963407
+            let mixed = UInt64(i) &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
             return Float(UInt32(mixed >> 40) + 1) * (1.0 / 16_777_217.0)
         }
 
         for topK in [1, 2, 7, 20, 33, 63, 64] {
             for temperature: Float in [0.6, 1.0] {
                 for seed: UInt64 in [1, 42, 0x1234_5678_9ABC_DEF0] {
-                    let result = try rig.draw(seed: seed,
-                                              temperature: temperature,
-                                              topP: 0.95,
-                                              topK: topK)
-                    #expect(result.candidate == result.current,
-                            "k \(topK), t \(temperature), seed \(seed): candidate \(result.candidate) current \(result.current)")
+                    let result = try rig.draw(
+                        seed: seed,
+                        temperature: temperature,
+                        topP: 0.95,
+                        topK: topK)
+                    #expect(
+                        result.candidate == result.current,
+                        "k \(topK), t \(temperature), seed \(seed): candidate \(result.candidate) current \(result.current)"
+                    )
                 }
             }
         }
@@ -226,14 +242,19 @@ import Testing
 
         for topK in [3, 8, 20, 64] {
             for seed: UInt64 in [1, 5, 99, 4_242] {
-                let result = try rig.draw(seed: seed,
-                                          temperature: 1.0,
-                                          topP: 0.95,
-                                          topK: topK)
-                #expect(result.candidate == result.current,
-                        "k \(topK), seed \(seed): candidate \(result.candidate) current \(result.current)")
-                #expect(result.candidate < UInt32(topK),
-                        "k \(topK) selected index \(result.candidate), outside the top k of a decreasing distribution")
+                let result = try rig.draw(
+                    seed: seed,
+                    temperature: 1.0,
+                    topP: 0.95,
+                    topK: topK)
+                #expect(
+                    result.candidate == result.current,
+                    "k \(topK), seed \(seed): candidate \(result.candidate) current \(result.current)"
+                )
+                #expect(
+                    result.candidate < UInt32(topK),
+                    "k \(topK) selected index \(result.candidate), outside the top k of a decreasing distribution"
+                )
             }
         }
     }

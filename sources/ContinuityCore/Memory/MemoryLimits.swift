@@ -30,12 +30,14 @@ public struct MemoryLimits: Sendable, Equatable {
     public var maxNamespaceLength: Int
     public var maxKeyLength: Int
 
-    public init(maxValueBytes: Int = 16 * 1024,
-                maxBytesPerTask: Int = 192 << 20,
-                maxItemsPerTask: Int = 65_536,
-                maxVersionsPerAddress: Int = 32,
-                maxNamespaceLength: Int = 128,
-                maxKeyLength: Int = 128) {
+    public init(
+        maxValueBytes: Int = 16 * 1024,
+        maxBytesPerTask: Int = 192 << 20,
+        maxItemsPerTask: Int = 65_536,
+        maxVersionsPerAddress: Int = 32,
+        maxNamespaceLength: Int = 128,
+        maxKeyLength: Int = 128
+    ) {
         self.maxValueBytes = maxValueBytes
         self.maxBytesPerTask = maxBytesPerTask
         self.maxItemsPerTask = maxItemsPerTask
@@ -56,8 +58,10 @@ public struct MemoryLimits: Sendable, Equatable {
 public enum MemoryAddressValidator {
     /// Lowercase letters, digits, underscore and hyphen, in dot-separated
     /// segments. `plot.act1` is a namespace; `missing_brother` is a key.
-    public static func validateNamespace(_ value: String,
-                                         limits: MemoryLimits) throws {
+    public static func validateNamespace(
+        _ value: String,
+        limits: MemoryLimits
+    ) throws {
         guard !value.isEmpty else {
             throw ContinuityError.invalidNamespace(value, reason: "it is empty")
         }

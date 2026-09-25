@@ -10,6 +10,7 @@ No model, no built binary.
 
     cd benchmark && python3 -m unittest test_quant_perplexity_ab -v
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -47,7 +48,7 @@ class PairedTests(unittest.TestCase):
         # differences 1, 0, 1: mean 2/3, stdev sqrt(1/3), se stdev/sqrt(3).
         mean, stderr, t = ab.paired([1.0, 2.0, 3.0], [0.0, 2.0, 2.0])
         self.assertAlmostEqual(mean, 2.0 / 3.0)
-        self.assertAlmostEqual(stderr, (1.0 / 3.0) ** 0.5 / 3 ** 0.5)
+        self.assertAlmostEqual(stderr, (1.0 / 3.0) ** 0.5 / 3**0.5)
         self.assertAlmostEqual(t, mean / stderr)
 
     def test_a_single_position_is_a_mean_with_no_error(self):
@@ -58,9 +59,11 @@ class PairedTests(unittest.TestCase):
 
 
 class ParsingTests(unittest.TestCase):
-    SAMPLE = ("models/qwen3.5_4B_4Bit: 1024 tokens scored, threads 8, "
-              "token hash 0123456789abcdef\n"
-              "mean nll 2.123456  perplexity 8.365432  seconds 70.1  (14.6 tok/s)\n")
+    SAMPLE = (
+        "models/qwen3.5_4B_4Bit: 1024 tokens scored, threads 8, "
+        "token hash 0123456789abcdef\n"
+        "mean nll 2.123456  perplexity 8.365432  seconds 70.1  (14.6 tok/s)\n"
+    )
 
     def test_the_summary_line_is_read(self):
         match = ab.SUMMARY.search(self.SAMPLE)

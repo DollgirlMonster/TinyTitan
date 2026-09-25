@@ -612,12 +612,12 @@ MODEL_BACKEND="$ENGINE"
 
 if [[ -n "$ANSWERS" ]]; then
   case "$ANSWERS" in
-    default|standard|1) mode_suffix="" ; mode_word=default ;;
-    concise|2)          mode_suffix="_concise" ; mode_word=concise ;;
+    default|standard|1) mode_word=default ;;
+    concise|2)          mode_word=concise ;;
     *) echo "unknown answers mode: $ANSWERS (default|concise)" >&2; exit 2 ;;
   esac
 elif (( ! INTERACTIVE )); then
-  mode_suffix="" ; mode_word=default
+  mode_word=default
 else
   echo ""
   echo "Which answer style?"
@@ -626,8 +626,8 @@ else
   printf "Choice [1-2] (default 1): "
   read -r answers_choice || exit 1
   case "${answers_choice:-1}" in
-    1) mode_suffix="" ; mode_word=default ;;
-    2) mode_suffix="_concise" ; mode_word=concise ;;
+    1) mode_word=default ;;
+    2) mode_word=concise ;;
     *) echo "invalid choice: $answers_choice" >&2; exit 2 ;;
   esac
 fi
@@ -1167,6 +1167,7 @@ print_setup() {
     echo ""
     echo "DeepSeek Harness is opening in your default browser: a prompt box"
     echo "pointed at this server. It is this install's own copy under"
+    # shellcheck disable=SC2088  # prose in a message, not a path being used
     echo "~/.tinytitan (port ${TINYTITAN_DSH_PORT:-7788}, or the next free one), so a"
     echo "DeepSeek Harness you run yourself is not touched."
     echo "Engine is in fast mode: the coding agent's system prompt and tool"

@@ -50,19 +50,22 @@ public enum Int8AffineGEMV {
     /// and nothing enforced it; every Metal wrapper does check.
     @inline(__always)
     static func requireWholeGroups(_ n: Int, _ what: String) {
-        precondition(n % Quantization.groupSize == 0,
-                     "\(what): input width \(n) is not a whole number of "
-                        + "\(Quantization.groupSize)-element groups")
+        precondition(
+            n % Quantization.groupSize == 0,
+            "\(what): input width \(n) is not a whole number of "
+                + "\(Quantization.groupSize)-element groups")
     }
 
     @inline(__always)
-    public static func apply(weights: UnsafePointer<UInt8>,
-                             scales: UnsafePointer<UInt16>,
-                             biases: UnsafePointer<UInt16>,
-                             x: UnsafePointer<Float>,
-                             rows: Int,
-                             n: Int,
-                             out: UnsafeMutablePointer<Float>) {
+    public static func apply(
+        weights: UnsafePointer<UInt8>,
+        scales: UnsafePointer<UInt16>,
+        biases: UnsafePointer<UInt16>,
+        x: UnsafePointer<Float>,
+        rows: Int,
+        n: Int,
+        out: UnsafeMutablePointer<Float>
+    ) {
         requireWholeGroups(n, "Int8AffineGEMV.apply")
         tinytitan_int8_affine_gemv(weights, scales, biases, x, rows, n, out)
     }
@@ -79,14 +82,16 @@ public enum Int8AffineGEMV {
     /// small matrices run inline.
     public static let minimumRowsPerThread = 64
 
-    public static func threaded(weights: UnsafePointer<UInt8>,
-                                scales: UnsafePointer<UInt16>,
-                                biases: UnsafePointer<UInt16>,
-                                x: UnsafePointer<Float>,
-                                rows: Int,
-                                n: Int,
-                                out: UnsafeMutablePointer<Float>,
-                                threads: Int = preferredThreads) {
+    public static func threaded(
+        weights: UnsafePointer<UInt8>,
+        scales: UnsafePointer<UInt16>,
+        biases: UnsafePointer<UInt16>,
+        x: UnsafePointer<Float>,
+        rows: Int,
+        n: Int,
+        out: UnsafeMutablePointer<Float>,
+        threads: Int = preferredThreads
+    ) {
         requireWholeGroups(n, "Int8AffineGEMV.threaded")
         let groups = n / Quantization.groupSize
         let usable = max(1, min(threads, rows / minimumRowsPerThread))
@@ -109,10 +114,11 @@ public enum Int8AffineGEMV {
             let first = slice * chunk
             guard first < rows else { return }
             let count = min(chunk, rows - first)
-            tinytitan_int8_affine_gemv(weights + first * n,
-                                   scales + first * groups,
-                                   biases + first * groups,
-                                   x, count, n, out + first)
+            tinytitan_int8_affine_gemv(
+                weights + first * n,
+                scales + first * groups,
+                biases + first * groups,
+                x, count, n, out + first)
         }
     }
 }

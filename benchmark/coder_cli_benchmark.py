@@ -84,8 +84,7 @@ MTP_PATHS = {
     "ornith": ROOT / "models/ornith-1.5_35B_A3B_MTP_4Bit",
 }
 PROCESS_PATTERN = (
-    "TinyTitanServer|TinyTitanCLI|TinyTitanPackageTests|"
-    "swiftpm-testing-helper|mlx_lm|mlx-lm"
+    "TinyTitanServer|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm"
 )
 DEFAULT_TEMPERATURE = 0.6
 DEFAULT_TOP_P = 0.95
@@ -118,8 +117,9 @@ def client_catalogue() -> list[dict[str, Any]]:
         client_id, label, kind, binaries = fields
         if kind not in ("coder", "editor"):
             raise RuntimeError(f"client {client_id!r} has unknown kind {kind!r}")
-        clients.append({"id": client_id, "label": label, "kind": kind,
-                        "binaries": binaries.split()})
+        clients.append(
+            {"id": client_id, "label": label, "kind": kind, "binaries": binaries.split()}
+        )
     if not clients:
         raise RuntimeError("TINYTITAN_CLIENTS is empty")
     return clients
@@ -251,7 +251,9 @@ def preflight(required_models: Iterable[pathlib.Path]) -> dict[str, Any]:
         ["pgrep", "-fl", PROCESS_PATTERN], text=True, capture_output=True, check=False
     )
     if process_check.returncode == 0 and process_check.stdout.strip():
-        raise RuntimeError("model process already running; refusing to benchmark:\n" + process_check.stdout)
+        raise RuntimeError(
+            "model process already running; refusing to benchmark:\n" + process_check.stdout
+        )
     for model in required_models:
         for name in ("manifest.json", "verified-install.json"):
             if not (model / name).is_file():
@@ -288,12 +290,22 @@ def wait_http(url: str, timeout: float = 300) -> None:
     raise RuntimeError(f"endpoint did not become ready: {url}: {last_error!r}")
 
 
-def start_server(*, output: pathlib.Path, family: str, quant: int, port: int,
-                 label: str, cache: bool = True, concise: bool = False,
-                 mtp: bool = False) -> RunningProcess:
+def start_server(
+    *,
+    output: pathlib.Path,
+    family: str,
+    quant: int,
+    port: int,
+    label: str,
+    cache: bool = True,
+    concise: bool = False,
+    mtp: bool = False,
+) -> RunningProcess:
     model = MODEL_PATHS[family][quant]
     command = server_command(
-        SERVER, port, model=model,
+        SERVER,
+        port,
+        model=model,
         cache_mode="multi-prefix" if cache else "off",
         # The draft head rides the shared seam as a parameter; the launcher owns
         # where it lands on the command line and its 384 MiB budget.
@@ -304,15 +316,21 @@ def start_server(*, output: pathlib.Path, family: str, quant: int, port: int,
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_handle = log_path.open("a", buffering=1)
     process = subprocess.Popen(
-        command, cwd=ROOT, env=env, stdout=log_handle, stderr=subprocess.STDOUT,
-        text=True, start_new_session=True,
+        command,
+        cwd=ROOT,
+        env=env,
+        stdout=log_handle,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
     )
     running = RunningProcess(process, log_handle, log_path)
     try:
         wait_http(f"http://127.0.0.1:{port}/v1/models")
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=5) as response:
             ids = {
-                item.get("id") for item in json.loads(response.read()).get("data", [])
+                item.get("id")
+                for item in json.loads(response.read()).get("data", [])
                 if isinstance(item.get("id"), str)
             }
         expected_model = manifest_api_model(model)
@@ -326,15 +344,29 @@ def start_server(*, output: pathlib.Path, family: str, quant: int, port: int,
     return running
 
 
-def start_adapter(output: pathlib.Path, openai_url: str, model: str, port: int,
-                  label: str) -> RunningProcess:
+def start_adapter(
+    output: pathlib.Path, openai_url: str, model: str, port: int, label: str
+) -> RunningProcess:
     log_path = output / "adapter" / f"{label}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_handle = log_path.open("a", buffering=1)
     process = subprocess.Popen(
-        [sys.executable, str(ADAPTER), "--port", str(port), "--openai-url", openai_url,
-         "--model", model, "--max-tokens", "2048"],
-        cwd=ROOT, stdout=log_handle, stderr=subprocess.STDOUT, text=True,
+        [
+            sys.executable,
+            str(ADAPTER),
+            "--port",
+            str(port),
+            "--openai-url",
+            openai_url,
+            "--model",
+            model,
+            "--max-tokens",
+            "2048",
+        ],
+        cwd=ROOT,
+        stdout=log_handle,
+        stderr=subprocess.STDOUT,
+        text=True,
         start_new_session=True,
     )
     running = RunningProcess(process, log_handle, log_path)
@@ -373,8 +405,9 @@ def completed_keys(path: pathlib.Path) -> set[str]:
 
 def command_version(binary: str) -> str:
     try:
-        return subprocess.check_output([binary, "--version"], text=True, stderr=subprocess.STDOUT,
-                                       timeout=20).strip()
+        return subprocess.check_output(
+            [binary, "--version"], text=True, stderr=subprocess.STDOUT, timeout=20
+        ).strip()
     except Exception as exc:
         return f"unavailable: {exc!r}"
 
@@ -396,8 +429,9 @@ def client_binaries() -> dict[str, str | None]:
     return found
 
 
-def prepare_client_config(output: pathlib.Path, client: str, base_url: str,
-                          model: str) -> pathlib.Path:
+def prepare_client_config(
+    output: pathlib.Path, client: str, base_url: str, model: str
+) -> pathlib.Path:
     home = output / "client-config" / client
     home.mkdir(parents=True, exist_ok=True)
     if client == "codex":
@@ -419,41 +453,58 @@ def prepare_client_config(output: pathlib.Path, client: str, base_url: str,
             "stream_idle_timeout_ms = 3600000\n"
             "request_max_retries = 0\n"
             "stream_max_retries = 0\n\n"
-            "[model_providers.tinytitan]\nname = \"TinyTitan\"\n"
+            '[model_providers.tinytitan]\nname = "TinyTitan"\n'
             f'base_url = "{base_url}"\nwire_api = "responses"\n'
         )
     elif client == "qwen":
-        write_json(home / "settings.json", {
-            "modelProviders": {"openai": [{
-                "id": model, "name": f"[TinyTitan] {model}", "baseUrl": base_url,
-                "description": "TinyTitan local benchmark", "envKey": "OPENAI_API_KEY",
-            }]},
-            "security": {"auth": {"selectedType": "openai"}},
-            "model": {"name": model},
-            "memory": {
-                "enableManagedAutoMemory": False,
-                "enableManagedAutoDream": False,
-                "enableAutoSkill": False,
-            },
-        })
-    elif client == "opencode":
-        write_json(home / "opencode" / "opencode.json", {
-            "$schema": "https://opencode.ai/config.json",
-            "model": f"tinytitan/{model}",
-            "small_model": f"tinytitan/{model}",
-            "provider": {"tinytitan": {
-                "npm": "@ai-sdk/openai-compatible",
-                "name": "TinyTitan",
-                "options": {
-                    "baseURL": base_url,
-                    "headers": {"Authorization": "Bearer local"},
+        write_json(
+            home / "settings.json",
+            {
+                "modelProviders": {
+                    "openai": [
+                        {
+                            "id": model,
+                            "name": f"[TinyTitan] {model}",
+                            "baseUrl": base_url,
+                            "description": "TinyTitan local benchmark",
+                            "envKey": "OPENAI_API_KEY",
+                        }
+                    ]
                 },
-                "models": {model: {
-                    "name": model,
-                    "limit": {"context": 32768, "output": 2048},
-                }},
-            }},
-        })
+                "security": {"auth": {"selectedType": "openai"}},
+                "model": {"name": model},
+                "memory": {
+                    "enableManagedAutoMemory": False,
+                    "enableManagedAutoDream": False,
+                    "enableAutoSkill": False,
+                },
+            },
+        )
+    elif client == "opencode":
+        write_json(
+            home / "opencode" / "opencode.json",
+            {
+                "$schema": "https://opencode.ai/config.json",
+                "model": f"tinytitan/{model}",
+                "small_model": f"tinytitan/{model}",
+                "provider": {
+                    "tinytitan": {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "name": "TinyTitan",
+                        "options": {
+                            "baseURL": base_url,
+                            "headers": {"Authorization": "Bearer local"},
+                        },
+                        "models": {
+                            model: {
+                                "name": model,
+                                "limit": {"context": 32768, "output": 2048},
+                            }
+                        },
+                    }
+                },
+            },
+        )
     return home
 
 
@@ -467,7 +518,11 @@ def parse_opencode_answer(stdout: str) -> str:
         part = value.get("part") if isinstance(value, dict) else None
         if isinstance(part, dict) and isinstance(part.get("text"), str):
             texts.append(part["text"])
-        elif isinstance(value, dict) and value.get("type") == "text" and isinstance(value.get("text"), str):
+        elif (
+            isinstance(value, dict)
+            and value.get("type") == "text"
+            and isinstance(value.get("text"), str)
+        ):
             texts.append(value["text"])
     return "".join(texts) if texts else stdout
 
@@ -480,9 +535,18 @@ def parse_claude_answer(stdout: str) -> str:
         return stdout
 
 
-def run_client(*, client: str, binary: str, prompt: str, base_url: str, model: str,
-               output: pathlib.Path, key: str, adapter_url: str | None,
-               timeout: int) -> dict[str, Any]:
+def run_client(
+    *,
+    client: str,
+    binary: str,
+    prompt: str,
+    base_url: str,
+    model: str,
+    output: pathlib.Path,
+    key: str,
+    adapter_url: str | None,
+    timeout: int,
+) -> dict[str, Any]:
     config = prepare_client_config(output, client, base_url, model)
     env = os.environ.copy()
     env.update({"OPENAI_API_KEY": "local", "DISABLE_AUTOUPDATER": "1"})
@@ -494,44 +558,83 @@ def run_client(*, client: str, binary: str, prompt: str, base_url: str, model: s
     if client == "codex":
         env["CODEX_HOME"] = str(config)
         command = [
-            binary, "exec", "--sandbox", "read-only", "--ephemeral", "--color", "never",
-            "--skip-git-repo-check", "-C", str(ROOT), "-o", str(answer_path), prompt,
+            binary,
+            "exec",
+            "--sandbox",
+            "read-only",
+            "--ephemeral",
+            "--color",
+            "never",
+            "--skip-git-repo-check",
+            "-C",
+            str(ROOT),
+            "-o",
+            str(answer_path),
+            prompt,
         ]
     elif client == "qwen":
-        env.update({
-            "QWEN_HOME": str(config),
-            "QWEN_STREAM_IDLE_TIMEOUT_MS": "0",
-            "QWEN_STREAM_MAX_LIFETIME_MS": "0",
-        })
+        env.update(
+            {
+                "QWEN_HOME": str(config),
+                "QWEN_STREAM_IDLE_TIMEOUT_MS": "0",
+                "QWEN_STREAM_MAX_LIFETIME_MS": "0",
+            }
+        )
         command = [binary, "--safe-mode", "-m", model, "-p", prompt, "-o", "text"]
     elif client == "opencode":
         env["XDG_CONFIG_HOME"] = str(config)
         command = [
-            binary, "run", "--pure", "--format", "json", "--dir", str(ROOT),
-            "-m", f"tinytitan/{model}", prompt,
+            binary,
+            "run",
+            "--pure",
+            "--format",
+            "json",
+            "--dir",
+            str(ROOT),
+            "-m",
+            f"tinytitan/{model}",
+            prompt,
         ]
     elif client == "claude":
         if not adapter_url:
             raise RuntimeError("Claude Code requires the benchmark Anthropic adapter")
-        env.update({
-            "ANTHROPIC_BASE_URL": adapter_url,
-            "ANTHROPIC_API_KEY": "local",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL": model,
-            "DISABLE_TELEMETRY": "1",
-            "DISABLE_ERROR_REPORTING": "1",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-        })
+        env.update(
+            {
+                "ANTHROPIC_BASE_URL": adapter_url,
+                "ANTHROPIC_API_KEY": "local",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": model,
+                "DISABLE_TELEMETRY": "1",
+                "DISABLE_ERROR_REPORTING": "1",
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            }
+        )
         command = [
-            binary, "-p", "--model", "sonnet", "--tools", "Read,Glob,Grep",
-            "--permission-mode", "plan", "--max-turns", "3", "--no-session-persistence",
-            "--output-format", "json", prompt,
+            binary,
+            "-p",
+            "--model",
+            "sonnet",
+            "--tools",
+            "Read,Glob,Grep",
+            "--permission-mode",
+            "plan",
+            "--max-turns",
+            "3",
+            "--no-session-persistence",
+            "--output-format",
+            "json",
+            prompt,
         ]
     else:
         raise ValueError(client)
     started = time.monotonic()
     process = subprocess.Popen(
-        command, cwd=ROOT, env=env, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, start_new_session=True,
+        command,
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
     )
     try:
         stdout, stderr = process.communicate(timeout=timeout)
@@ -581,10 +684,15 @@ def quality_check(prompt_name: str, answer: str, exit_code: int) -> dict[str, An
         failures.append(f"exit code {exit_code}")
     if len(visible) < 20:
         failures.append("empty or implausibly short answer")
-    if any(marker in lower for marker in ("api error", "internal server error", "traceback", "context_length_exceeded")):
+    if any(
+        marker in lower
+        for marker in ("api error", "internal server error", "traceback", "context_length_exceeded")
+    ):
         failures.append("answer contains an error marker")
     if prompt_name == "short":
-        if "mutex" not in lower or not any(word in lower for word in ("lock", "exclusive", "one thread")):
+        if "mutex" not in lower or not any(
+            word in lower for word in ("lock", "exclusive", "one thread")
+        ):
             failures.append("mutex/exclusion explanation missing")
         if not any(word in lower for word in ("race", "shared", "thread")):
             failures.append("concurrency use case missing")
@@ -654,17 +762,27 @@ def run_clients_round(args: argparse.Namespace, output: pathlib.Path) -> None:
             else:
                 row["note"] = "editor client; only the launcher's config is checkable here"
         launcher = subprocess.run(
-            ["bash", str(ROOT / "tools/server_launcher.sh"), "--client", client_id,
-             "--model", model, "--dry-run"],
-            text=True, capture_output=True, check=False,
+            [
+                "bash",
+                str(ROOT / "tools/server_launcher.sh"),
+                "--client",
+                client_id,
+                "--model",
+                model,
+                "--dry-run",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
         )
         row["launcher_exit"] = launcher.returncode
         if launcher.returncode != 0:
             detail = (launcher.stderr.strip().splitlines() or ["no stderr"])[-1]
             failures.append(f"{client_id}: launcher dry run exited {launcher.returncode}: {detail}")
         else:
-            setup = re.search(r"Client setup the launcher would write/use:(.*?)\n\n",
-                              launcher.stdout, re.S)
+            setup = re.search(
+                r"Client setup the launcher would write/use:(.*?)\n\n", launcher.stdout, re.S
+            )
             row["launcher_setup"] = " ".join(setup.group(1).split()) if setup else ""
         if kind == "coder":
             home = prepare_client_config(output, client_id, "http://127.0.0.1:1/v1", model)
@@ -693,8 +811,9 @@ def run_clients_round(args: argparse.Namespace, output: pathlib.Path) -> None:
         raise RuntimeError("client wiring failures:\n  " + "\n  ".join(failures))
 
 
-def run_coder_round(args: argparse.Namespace, output: pathlib.Path, prompts: dict[str, str],
-                    results: pathlib.Path) -> None:
+def run_coder_round(
+    args: argparse.Namespace, output: pathlib.Path, prompts: dict[str, str], results: pathlib.Path
+) -> None:
     binaries = client_binaries()
     clients = args.clients or CODER_CLIENTS
     for client in clients:
@@ -706,8 +825,14 @@ def run_coder_round(args: argparse.Namespace, output: pathlib.Path, prompts: dic
         model_path = MODEL_PATHS[args.model][quant]
         model = manifest_api_model(model_path)
         server = start_server(
-            output=output, family=args.model, quant=quant, port=port,
-            cache=True, concise=False, mtp=False, label=f"coder-{args.model}-q{quant}",
+            output=output,
+            family=args.model,
+            quant=quant,
+            port=port,
+            cache=True,
+            concise=False,
+            mtp=False,
+            label=f"coder-{args.model}-q{quant}",
         )
         adapter: RunningProcess | None = None
         try:
@@ -730,22 +855,40 @@ def run_coder_round(args: argparse.Namespace, output: pathlib.Path, prompts: dic
                         return
                     print(f"RUN {key}", flush=True)
                     result = run_client(
-                        client=client, binary=binaries[client] or "", prompt=prompts[prompt_name],
-                        base_url=base_url, model=model, output=output, key=key,
-                        adapter_url=f"http://127.0.0.1:{19080 + quant}" if client == "claude" else None,
+                        client=client,
+                        binary=binaries[client] or "",
+                        prompt=prompts[prompt_name],
+                        base_url=base_url,
+                        model=model,
+                        output=output,
+                        key=key,
+                        adapter_url=f"http://127.0.0.1:{19080 + quant}"
+                        if client == "claude"
+                        else None,
                         timeout=args.timeout,
                     )
                     time.sleep(0.2)
                     log_delta, log_offset = server_log_delta(server.log_path, log_offset)
                     quality = quality_check(prompt_name, result["answer"], result["exit_code"])
                     record = {
-                        "key": key, "round": "coder", "status": "ok" if result["exit_code"] == 0 else "failed",
-                        "phase": phase, "repetition": repetition, "family": args.model,
-                        "quantization": quant, "cache": True, "mtp": False,
-                        "fast": False, "concise": False,
-                        "client": client, "prompt": prompt_name,
-                        "prompt_sha256": sha256_text(prompts[prompt_name]), "model": model,
-                        "server_log": log_delta, "quality": quality, "finished_at": utc_now(),
+                        "key": key,
+                        "round": "coder",
+                        "status": "ok" if result["exit_code"] == 0 else "failed",
+                        "phase": phase,
+                        "repetition": repetition,
+                        "family": args.model,
+                        "quantization": quant,
+                        "cache": True,
+                        "mtp": False,
+                        "fast": False,
+                        "concise": False,
+                        "client": client,
+                        "prompt": prompt_name,
+                        "prompt_sha256": sha256_text(prompts[prompt_name]),
+                        "model": model,
+                        "server_log": log_delta,
+                        "quality": quality,
+                        "finished_at": utc_now(),
                         **{name: value for name, value in result.items() if name != "answer"},
                     }
                     append_jsonl(results, record)
@@ -761,9 +904,14 @@ def run_coder_round(args: argparse.Namespace, output: pathlib.Path, prompts: dic
             server.stop()
 
 
-def post_chat(base_url: str, model: str, messages: list[dict[str, Any]],
-              tools: list[dict[str, Any]], timeout: int,
-              temperature: float = DEFAULT_TEMPERATURE) -> tuple[dict[str, Any], float]:
+def post_chat(
+    base_url: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    timeout: int,
+    temperature: float = DEFAULT_TEMPERATURE,
+) -> tuple[dict[str, Any], float]:
     payload = {
         "model": model,
         "messages": messages,
@@ -777,7 +925,8 @@ def post_chat(base_url: str, model: str, messages: list[dict[str, Any]],
         "stream": False,
     }
     request = urllib.request.Request(
-        base_url + "/chat/completions", data=json.dumps(payload).encode(),
+        base_url + "/chat/completions",
+        data=json.dumps(payload).encode(),
         headers={"content-type": "application/json", "authorization": "Bearer local"},
         method="POST",
     )
@@ -792,19 +941,22 @@ def post_chat(base_url: str, model: str, messages: list[dict[str, Any]],
 
 
 def synthetic_tools(count: int = 12) -> list[dict[str, Any]]:
-    return [{
-        "type": "function",
-        "function": {
-            "name": f"read_context_{index}",
-            "description": "Read a named repository context item without modifying it. " * 3,
-            "parameters": {
-                "type": "object",
-                "properties": {"name": {"type": "string", "description": "Context name"}},
-                "required": ["name"],
-                "additionalProperties": False,
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": f"read_context_{index}",
+                "description": "Read a named repository context item without modifying it. " * 3,
+                "parameters": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string", "description": "Context name"}},
+                    "required": ["name"],
+                    "additionalProperties": False,
+                },
             },
-        },
-    } for index in range(count)]
+        }
+        for index in range(count)
+    ]
 
 
 def feature_messages(prompt: str) -> list[dict[str, Any]]:
@@ -813,7 +965,8 @@ def feature_messages(prompt: str) -> list[dict[str, Any]]:
             "role": "system",
             "content": (
                 "You are a repository coding agent. Follow the supplied safety policy, inspect context, "
-                "and provide a correct text answer. Do not modify files or call tools during this benchmark. " * 12
+                "and provide a correct text answer. Do not modify files or call tools during this benchmark. "
+                * 12
             ),
         },
         {
@@ -834,25 +987,52 @@ def response_answer(response: dict[str, Any]) -> str:
     return message.get("content") or ""
 
 
-def feature_key(*, family: str, quant: int, cache: bool, mtp: bool,
-                fast: bool, concise: bool, prompt_name: str,
-                track: str = "feature") -> str:
+def feature_key(
+    *,
+    family: str,
+    quant: int,
+    cache: bool,
+    mtp: bool,
+    fast: bool,
+    concise: bool,
+    prompt_name: str,
+    track: str = "feature",
+) -> str:
     return (
         f"{track}-{family}-q{quant}-cache{int(cache)}-mtp{int(mtp)}-"
         f"fast{int(fast)}-concise{int(concise)}-{prompt_name}"
     )
 
 
-def run_feature_case(*, args: argparse.Namespace, output: pathlib.Path,
-                     results: pathlib.Path, prompts: dict[str, str], family: str,
-                     quant: int, cache: bool, fast: bool, concise: bool, mtp: bool,
-                     prompt_name: str, base_url: str, model: str,
-                     server: RunningProcess, log_offset: int,
-                     temperature: float = DEFAULT_TEMPERATURE,
-                     track: str = "feature") -> int:
+def run_feature_case(
+    *,
+    args: argparse.Namespace,
+    output: pathlib.Path,
+    results: pathlib.Path,
+    prompts: dict[str, str],
+    family: str,
+    quant: int,
+    cache: bool,
+    fast: bool,
+    concise: bool,
+    mtp: bool,
+    prompt_name: str,
+    base_url: str,
+    model: str,
+    server: RunningProcess,
+    log_offset: int,
+    temperature: float = DEFAULT_TEMPERATURE,
+    track: str = "feature",
+) -> int:
     key = feature_key(
-        family=family, quant=quant, cache=cache, mtp=mtp, fast=fast,
-        concise=concise, prompt_name=prompt_name, track=track,
+        family=family,
+        quant=quant,
+        cache=cache,
+        mtp=mtp,
+        fast=fast,
+        concise=concise,
+        prompt_name=prompt_name,
+        track=track,
     )
     if key in completed_keys(results):
         print(f"SKIP {key}", flush=True)
@@ -870,8 +1050,8 @@ def run_feature_case(*, args: argparse.Namespace, output: pathlib.Path,
         first_answer = response_answer(first)
         followup_prompt = (
             "State one mutex safety rule and the corresponding lock/unlock action. Keep it under 35 words."
-            if prompt_name == "short" else
-            "Based only on that same context, state one important project safety constraint and one "
+            if prompt_name == "short"
+            else "Based only on that same context, state one important project safety constraint and one "
             "relevant command or action. Keep it under 45 words."
         )
         second_messages = first_messages + [
@@ -900,30 +1080,49 @@ def run_feature_case(*, args: argparse.Namespace, output: pathlib.Path,
     log_delta, next_offset = server_log_delta(server.log_path, log_offset)
     first_quality = quality_check(prompt_name, first_answer, exit_code)
     follow_lower = visible_answer(second_answer).lower()
-    follow_terms = (("mutex", "lock", "unlock", "race") if prompt_name == "short" else
-                    ("127.0.0.1", "receipt", "verify", "server", "install"))
+    follow_terms = (
+        ("mutex", "lock", "unlock", "race")
+        if prompt_name == "short"
+        else ("127.0.0.1", "receipt", "verify", "server", "install")
+    )
     follow_quality = {
-        "automatic_pass": exit_code == 0 and len(follow_lower) >= 20
-            and any(word in follow_lower for word in follow_terms),
+        "automatic_pass": exit_code == 0
+        and len(follow_lower) >= 20
+        and any(word in follow_lower for word in follow_terms),
         "visible_words": len(re.findall(r"\b[\w.-]+\b", visible_answer(second_answer))),
     }
     usage_first = first.get("usage", {})
     usage_second = second.get("usage", {})
     record = {
-        "key": key, "round": "features", "track": track,
+        "key": key,
+        "round": "features",
+        "track": track,
         "status": "ok" if exit_code == 0 else "failed",
-        "family": family, "quantization": quant, "cache": cache, "mtp": mtp,
-        "fast": fast, "concise": concise, "prompt": prompt_name, "model": requested_model,
+        "family": family,
+        "quantization": quant,
+        "cache": cache,
+        "mtp": mtp,
+        "fast": fast,
+        "concise": concise,
+        "prompt": prompt_name,
+        "model": requested_model,
         "prompt_sha256": sha256_text(prompts[prompt_name]),
         "first_wall_seconds": round(first_wall, 3),
         "followup_wall_seconds": round(second_wall, 3),
-        "sampling": {"temperature": temperature, "top_p": DEFAULT_TOP_P,
-                     "top_k": DEFAULT_TOP_K,
-                     "presence_penalty": DEFAULT_PRESENCE_PENALTY},
-        "first_usage": usage_first, "followup_usage": usage_second,
-        "first_quality": first_quality, "followup_quality": follow_quality,
+        "sampling": {
+            "temperature": temperature,
+            "top_p": DEFAULT_TOP_P,
+            "top_k": DEFAULT_TOP_K,
+            "presence_penalty": DEFAULT_PRESENCE_PENALTY,
+        },
+        "first_usage": usage_first,
+        "followup_usage": usage_second,
+        "first_quality": first_quality,
+        "followup_quality": follow_quality,
         "answer_file": str(answer_path.relative_to(output)),
-        "server_log": log_delta, "error": error, "finished_at": utc_now(),
+        "server_log": log_delta,
+        "error": error,
+        "finished_at": utc_now(),
     }
     append_jsonl(results, record)
     args.executed += 1
@@ -936,8 +1135,9 @@ def run_feature_case(*, args: argparse.Namespace, output: pathlib.Path,
     return next_offset
 
 
-def run_feature_round(args: argparse.Namespace, output: pathlib.Path,
-                      prompts: dict[str, str], results: pathlib.Path) -> None:
+def run_feature_round(
+    args: argparse.Namespace, output: pathlib.Path, prompts: dict[str, str], results: pathlib.Path
+) -> None:
     # Ornith: all supported cache/fast/concise combinations. MTP stays out of
     # this matrix so every control has one independently attributable change.
     # Each case gets a fresh server so a previous prompt cannot warm the first
@@ -950,8 +1150,13 @@ def run_feature_round(args: argparse.Namespace, output: pathlib.Path,
         if args.limit is not None and args.executed >= args.limit:
             return
         key = feature_key(
-            family=args.model, quant=quant, cache=cache, mtp=False, fast=fast,
-            concise=concise, prompt_name=prompt_name,
+            family=args.model,
+            quant=quant,
+            cache=cache,
+            mtp=False,
+            fast=fast,
+            concise=concise,
+            prompt_name=prompt_name,
         )
         if key in done:
             print(f"SKIP {key}", flush=True)
@@ -962,18 +1167,35 @@ def run_feature_round(args: argparse.Namespace, output: pathlib.Path,
             f"concise{int(concise)}-{prompt_name}"
         )
         server = start_server(
-            output=output, family=args.model, quant=quant, port=port,
-            cache=cache, concise=concise, mtp=False, label=label,
+            output=output,
+            family=args.model,
+            quant=quant,
+            port=port,
+            cache=cache,
+            concise=concise,
+            mtp=False,
+            label=label,
         )
         try:
             model = manifest_api_model(MODEL_PATHS[args.model][quant])
             base_url = f"http://127.0.0.1:{port}/v1"
             offset = server.log_path.stat().st_size
             run_feature_case(
-                args=args, output=output, results=results, prompts=prompts,
-                family=args.model, quant=quant, cache=cache, fast=fast,
-                concise=concise, mtp=False, prompt_name=prompt_name,
-                base_url=base_url, model=model, server=server, log_offset=offset,
+                args=args,
+                output=output,
+                results=results,
+                prompts=prompts,
+                family=args.model,
+                quant=quant,
+                cache=cache,
+                fast=fast,
+                concise=concise,
+                mtp=False,
+                prompt_name=prompt_name,
+                base_url=base_url,
+                model=model,
+                server=server,
+                log_offset=offset,
             )
         finally:
             server.stop()
@@ -991,8 +1213,14 @@ def run_feature_round(args: argparse.Namespace, output: pathlib.Path,
             if args.limit is not None and args.executed >= args.limit:
                 return
             key = feature_key(
-                family=args.model, quant=quant, cache=False, mtp=mtp, fast=False,
-                concise=False, prompt_name=prompt_name, track="mtp-comparison",
+                family=args.model,
+                quant=quant,
+                cache=False,
+                mtp=mtp,
+                fast=False,
+                concise=False,
+                prompt_name=prompt_name,
+                track="mtp-comparison",
             )
             if key in done:
                 print(f"SKIP {key}", flush=True)
@@ -1000,18 +1228,35 @@ def run_feature_round(args: argparse.Namespace, output: pathlib.Path,
             port = 18280 + quant
             label = f"features-{args.model}-q{quant}-mtp{int(mtp)}-{prompt_name}"
             server = start_server(
-                output=output, family=args.model, quant=quant, port=port,
-                cache=False, concise=False, mtp=mtp, label=label,
+                output=output,
+                family=args.model,
+                quant=quant,
+                port=port,
+                cache=False,
+                concise=False,
+                mtp=mtp,
+                label=label,
             )
             try:
                 model = manifest_api_model(MODEL_PATHS[args.model][quant])
                 base_url = f"http://127.0.0.1:{port}/v1"
                 offset = server.log_path.stat().st_size
                 run_feature_case(
-                    args=args, output=output, results=results, prompts=prompts,
-                    family=args.model, quant=quant, cache=False, fast=False,
-                    concise=False, mtp=mtp, prompt_name=prompt_name,
-                    base_url=base_url, model=model, server=server, log_offset=offset,
+                    args=args,
+                    output=output,
+                    results=results,
+                    prompts=prompts,
+                    family=args.model,
+                    quant=quant,
+                    cache=False,
+                    fast=False,
+                    concise=False,
+                    mtp=mtp,
+                    prompt_name=prompt_name,
+                    base_url=base_url,
+                    model=model,
+                    server=server,
+                    log_offset=offset,
                     # Both sides of the MTP comparison must be pure-greedy or the
                     # draft path cannot engage.
                     temperature=0.0,
@@ -1024,13 +1269,21 @@ def run_feature_round(args: argparse.Namespace, output: pathlib.Path,
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--round", choices=("coder", "features", "clients", "all"), default="coder")
-    parser.add_argument("--model", choices=tuple(MODEL_PATHS), default="ornith",
-                        help="which supported family's installs to run (default: ornith)")
+    parser.add_argument(
+        "--model",
+        choices=tuple(MODEL_PATHS),
+        default="ornith",
+        help="which supported family's installs to run (default: ornith)",
+    )
     parser.add_argument("--output", type=pathlib.Path)
     parser.add_argument("--quantizations", nargs="+", type=int, choices=(4, 8), default=[8])
     parser.add_argument("--clients", nargs="+", choices=tuple(CLIENT_KINDS))
-    parser.add_argument("--prompts", nargs="+", choices=("short", "medium", "long"),
-                        default=["short", "medium", "long"])
+    parser.add_argument(
+        "--prompts",
+        nargs="+",
+        choices=("short", "medium", "long"),
+        default=["short", "medium", "long"],
+    )
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--no-warmup", dest="warmups", action="store_false")
     parser.set_defaults(warmups=True)
@@ -1043,13 +1296,15 @@ def parse_args() -> argparse.Namespace:
         parser.error(
             f"--round {args.round} --model {args.model}: {args.model} is a dense install with "
             "no routed experts, so the features round's expert-cache, streamed-read and draft-head "
-            "tracks have nothing to measure. Use --round coder (or pick an MoE family).")
+            "tracks have nothing to measure. Use --round coder (or pick an MoE family)."
+        )
     for client in args.clients or []:
         if CLIENT_KINDS[client] != "coder":
             parser.error(
                 f"--clients {client}: {client} is an editor client. The launcher writes its "
                 "provider config and opens it; its CLI has no non-interactive prompt mode to "
-                "score. Check its wiring with --round clients instead.")
+                "score. Check its wiring with --round clients instead."
+            )
     args.executed = 0
     return args
 

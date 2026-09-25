@@ -8,11 +8,13 @@ public struct RemoteRangeExpectation: Sendable, Equatable {
     public let totalSize: UInt64
     public let xetHash: String?
 
-    public init(filename: String,
-                offset: UInt64,
-                length: UInt64,
-                totalSize: UInt64,
-                xetHash: String?) {
+    public init(
+        filename: String,
+        offset: UInt64,
+        length: UInt64,
+        totalSize: UInt64,
+        xetHash: String?
+    ) {
         self.filename = filename
         self.offset = offset
         self.length = length
@@ -27,13 +29,16 @@ public struct RemoteRangeTransferResult: Sendable, Equatable {
 }
 
 public enum RemoteRangeTransfer {
-    public static func run(configuration: URLSessionConfiguration,
-                           request: URLRequest,
-                           targetPath: String,
-                           expectation: RemoteRangeExpectation,
-                           maximumRedirects: Int,
-                           progress: @escaping @Sendable (UInt64) -> Void = { _ in })
-        async throws -> RemoteRangeTransferResult {
+    public static func run(
+        configuration: URLSessionConfiguration,
+        request: URLRequest,
+        targetPath: String,
+        expectation: RemoteRangeExpectation,
+        maximumRedirects: Int,
+        progress: @escaping @Sendable (UInt64) -> Void = { _ in }
+    )
+        async throws -> RemoteRangeTransferResult
+    {
         try Posix.mkdirP((targetPath as NSString).deletingLastPathComponent)
         let delegate = try RemoteRangeTransferDelegate(
             targetPath: targetPath,
@@ -44,9 +49,10 @@ public enum RemoteRangeTransfer {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
         queue.qualityOfService = .utility
-        let session = URLSession(configuration: configuration,
-                                 delegate: delegate,
-                                 delegateQueue: queue)
+        let session = URLSession(
+            configuration: configuration,
+            delegate: delegate,
+            delegateQueue: queue)
         return try await withTaskCancellationHandler {
             defer { session.finishTasksAndInvalidate() }
             return try await delegate.start(session: session, request: request)
@@ -59,7 +65,9 @@ public enum RemoteRangeTransfer {
 /// unchecked-invariant: one delegate per range transfer. URLSession serialises
 /// its callbacks onto the delegate queue, so the accumulating buffer is only
 /// touched from that queue and read once the task finishes.
-private final class RemoteRangeTransferDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+private final class RemoteRangeTransferDelegate: NSObject, URLSessionDataDelegate,
+    @unchecked Sendable
+{
     private let targetPath: String
     private let expectation: RemoteRangeExpectation
     private let fd: Int32
@@ -75,11 +83,13 @@ private final class RemoteRangeTransferDelegate: NSObject, URLSessionDataDelegat
     private var responseAccepted = false
     private var lastProgressNanoseconds: UInt64?
 
-    init(targetPath: String,
-         expectation: RemoteRangeExpectation,
-         maximumRedirects: Int,
-         originalRequest: URLRequest,
-        progress: @escaping @Sendable (UInt64) -> Void) throws {
+    init(
+        targetPath: String,
+        expectation: RemoteRangeExpectation,
+        maximumRedirects: Int,
+        originalRequest: URLRequest,
+        progress: @escaping @Sendable (UInt64) -> Void
+    ) throws {
         self.targetPath = targetPath
         self.expectation = expectation
         self.redirectPolicy = RemoteRedirectPolicy(
@@ -119,25 +129,30 @@ private final class RemoteRangeTransferDelegate: NSObject, URLSessionDataDelegat
         task?.cancel()
     }
 
-    func urlSession(_ session: URLSession,
-                    task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest,
-                    completionHandler: @escaping (URLRequest?) -> Void) {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
         do {
-            completionHandler(try redirectPolicy.request(
-                response: response,
-                proposedRequest: request))
+            completionHandler(
+                try redirectPolicy.request(
+                    response: response,
+                    proposedRequest: request))
         } catch {
             reject(error)
             completionHandler(nil)
         }
     }
 
-    func urlSession(_ session: URLSession,
-                    dataTask: URLSessionDataTask,
-                    didReceive response: URLResponse,
-                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
         do {
             if let cancellation = rejectionSnapshot() {
                 throw cancellation
@@ -157,9 +172,11 @@ private final class RemoteRangeTransferDelegate: NSObject, URLSessionDataDelegat
         }
     }
 
-    func urlSession(_ session: URLSession,
-                    dataTask: URLSessionDataTask,
-                    didReceive data: Data) {
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive data: Data
+    ) {
         lock.lock()
         let mayReceive = responseAccepted && rejection == nil
         lock.unlock()
@@ -173,21 +190,23 @@ private final class RemoteRangeTransferDelegate: NSObject, URLSessionDataDelegat
         let (attempted, overflow) = receivedBytes.addingReportingOverflow(
             UInt64(data.count))
         guard !overflow, attempted <= expectation.length else {
-            reject(RepackError.remoteBodyExceeded(
-                path: expectation.filename,
-                limit: expectation.length,
-                attempted: attempted))
+            reject(
+                RepackError.remoteBodyExceeded(
+                    path: expectation.filename,
+                    limit: expectation.length,
+                    attempted: attempted))
             dataTask.cancel()
             return
         }
         do {
             try data.withUnsafeBytes { raw in
                 guard let base = raw.baseAddress else { return }
-                try Posix.pwriteAll(fd: fd,
-                                    path: targetPath,
-                                    buf: base,
-                                    count: raw.count,
-                                    offset: receivedBytes)
+                try Posix.pwriteAll(
+                    fd: fd,
+                    path: targetPath,
+                    buf: base,
+                    count: raw.count,
+                    offset: receivedBytes)
             }
             receivedBytes = attempted
             emitProgressIfNeeded(force: receivedBytes == expectation.length)
@@ -201,32 +220,38 @@ private final class RemoteRangeTransferDelegate: NSObject, URLSessionDataDelegat
         let now = DispatchTime.now().uptimeNanoseconds
         if force
             || lastProgressNanoseconds == nil
-            || now &- (lastProgressNanoseconds ?? now) >= 1_000_000_000 {
+            || now &- (lastProgressNanoseconds ?? now) >= 1_000_000_000
+        {
             lastProgressNanoseconds = now
             progress(receivedBytes)
         }
     }
 
-    func urlSession(_ session: URLSession,
-                    task: URLSessionTask,
-                    didCompleteWithError error: Error?) {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
         let result: Result<RemoteRangeTransferResult, Error>
         if let rejection = rejectionSnapshot() {
             result = .failure(rejection)
         } else if let error {
             result = .failure(error)
         } else if !responseAccepted {
-            result = .failure(RepackError.remoteProtocolInvalid(
-                detail: "range \(expectation.filename) completed without an accepted response"))
+            result = .failure(
+                RepackError.remoteProtocolInvalid(
+                    detail: "range \(expectation.filename) completed without an accepted response"))
         } else if receivedBytes != expectation.length {
-            result = .failure(RepackError.remoteBodyTruncated(
-                path: expectation.filename,
-                expected: expectation.length,
-                actual: receivedBytes))
+            result = .failure(
+                RepackError.remoteBodyTruncated(
+                    path: expectation.filename,
+                    expected: expectation.length,
+                    actual: receivedBytes))
         } else {
-            result = .success(RemoteRangeTransferResult(
-                path: targetPath,
-                byteCount: receivedBytes))
+            result = .success(
+                RemoteRangeTransferResult(
+                    path: targetPath,
+                    byteCount: receivedBytes))
         }
         finish(result)
     }
@@ -238,12 +263,14 @@ private final class RemoteRangeTransferDelegate: NSObject, URLSessionDataDelegat
                 status: response.statusCode,
                 retryAfter: remoteHeader(response, "Retry-After"))
         }
-        guard (remoteHeader(response, "Content-Encoding") ?? "identity").lowercased() == "identity" else {
+        guard (remoteHeader(response, "Content-Encoding") ?? "identity").lowercased() == "identity"
+        else {
             throw RepackError.remoteProtocolInvalid(
                 detail: "compressed range response for \(expectation.filename)")
         }
         guard let contentLength = remoteHeader(response, "Content-Length"),
-              UInt64(contentLength) == expectation.length else {
+            UInt64(contentLength) == expectation.length
+        else {
             throw RepackError.remoteProtocolInvalid(
                 detail: "wrong Content-Length for \(expectation.filename)")
         }
@@ -259,14 +286,16 @@ private final class RemoteRangeTransferDelegate: NSObject, URLSessionDataDelegat
         let parts = range.dropFirst(prefix.count).split(separator: "/", maxSplits: 1)
         let bounds = parts.first?.split(separator: "-", maxSplits: 1) ?? []
         guard parts.count == 2,
-              bounds.count == 2,
-              UInt64(bounds[0]) == expectation.offset,
-              UInt64(bounds[1]) == end,
-              UInt64(parts[1]) == expectation.totalSize else {
+            bounds.count == 2,
+            UInt64(bounds[0]) == expectation.offset,
+            UInt64(bounds[1]) == end,
+            UInt64(parts[1]) == expectation.totalSize
+        else {
             throw RepackError.remoteProtocolInvalid(detail: "wrong Content-Range \(range)")
         }
         if let xetHash = expectation.xetHash {
-            guard normalizedStrongETag(remoteHeader(response, "ETag")) == xetHash.lowercased() else {
+            guard normalizedStrongETag(remoteHeader(response, "ETag")) == xetHash.lowercased()
+            else {
                 throw RepackError.remoteProtocolInvalid(
                     detail: "final ranged validator differs for \(expectation.filename)")
             }
@@ -365,8 +394,9 @@ func remoteHeader(_ response: HTTPURLResponse, _ name: String) -> String? {
 
 func normalizedStrongETag(_ value: String?) -> String? {
     guard var value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !value.isEmpty,
-          !value.lowercased().hasPrefix("w/") else {
+        !value.isEmpty,
+        !value.lowercased().hasPrefix("w/")
+    else {
         return nil
     }
     if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {

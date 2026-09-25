@@ -32,15 +32,18 @@ try:
     from safetensors import safe_open
     from safetensors.numpy import save_file
 except ImportError as exc:  # pragma: no cover
-    sys.exit(f"missing dependency: {exc}\n"
-             f"  install them for the interpreter running this file: {sys.executable}\n"
-             "    -m pip install safetensors numpy ml_dtypes\n"
-             "  (or point TINYTITAN_PYTHON at another Python 3.10+)")
+    sys.exit(
+        f"missing dependency: {exc}\n"
+        f"  install them for the interpreter running this file: {sys.executable}\n"
+        "    -m pip install safetensors numpy ml_dtypes\n"
+        "  (or point TINYTITAN_PYTHON at another Python 3.10+)"
+    )
 sys.path.insert(0, str(Path(__file__).parent))
 import importlib.util
 
 _spec = importlib.util.spec_from_file_location(
-    "prepare_qwen38", Path(__file__).parent / "prepare_qwen38.py")
+    "prepare_qwen38", Path(__file__).parent / "prepare_qwen38.py"
+)
 pq = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pq)
 
@@ -52,18 +55,21 @@ def wants_eight_bits(name: str) -> bool:
     if not name.endswith(".weight"):
         return False
     stem = name[: -len(".weight")]
-    return (".indexer." in name
-            or name.endswith("block_inject_weight.weight")
-            or name.endswith("in_proj_a.weight")
-            or name.endswith("in_proj_b.weight")) and ".scales" not in stem
+    return (
+        ".indexer." in name
+        or name.endswith("block_inject_weight.weight")
+        or name.endswith("in_proj_a.weight")
+        or name.endswith("in_proj_b.weight")
+    ) and ".scales" not in stem
 
 
 def source_name(out_name: str) -> str:
     """Map a snapshot tensor name back to the checkpoint's own name."""
     # None of the affected tensors are renamed or split by the converter, so
-    # the mapping is the identity. Asserted rather than assumed: a split tensor
+    # the mapping is the identity. Checked rather than assumed: a split tensor
     # could not be patched this way.
-    assert ".switch_mlp." not in out_name, f"{out_name} is a split tensor"
+    if ".switch_mlp." in out_name:
+        raise ValueError(f"{out_name} is a split tensor")
     return out_name
 
 
@@ -73,12 +79,15 @@ _headers: dict[str, tuple[dict, int]] = {}
 def header(shard: str, index: dict) -> tuple[dict, int]:
     if shard not in _headers:
         url = f"{BASE}/{shard}"
-        raw = subprocess.run(["curl", "-sfL", "--max-time", "60", "-r", "0-7", url],
-                             capture_output=True, check=True).stdout
+        raw = subprocess.run(
+            ["curl", "-sfL", "--max-time", "60", "-r", "0-7", url], capture_output=True, check=True
+        ).stdout
         n = struct.unpack("<Q", raw[:8])[0]
-        body = subprocess.run(["curl", "-sfL", "--max-time", "180",
-                               "-r", f"8-{8 + n - 1}", url],
-                              capture_output=True, check=True).stdout
+        body = subprocess.run(
+            ["curl", "-sfL", "--max-time", "180", "-r", f"8-{8 + n - 1}", url],
+            capture_output=True,
+            check=True,
+        ).stdout
         _headers[shard] = (json.loads(body), 8 + n)
     return _headers[shard]
 
@@ -88,14 +97,22 @@ def fetch_bf16(name: str, index: dict) -> np.ndarray:
     head, data_start = header(shard, index)
     meta = head[name]
     lo, hi = meta["data_offsets"]
-    raw = subprocess.run(["curl", "-sfL", "--max-time", "600", "-r",
-                          f"{data_start + lo}-{data_start + hi - 1}",
-                          f"{BASE}/{shard}"],
-                         capture_output=True, check=True).stdout
+    raw = subprocess.run(
+        [
+            "curl",
+            "-sfL",
+            "--max-time",
+            "600",
+            "-r",
+            f"{data_start + lo}-{data_start + hi - 1}",
+            f"{BASE}/{shard}",
+        ],
+        capture_output=True,
+        check=True,
+    ).stdout
     if len(raw) != hi - lo:
         raise RuntimeError(f"{name}: got {len(raw)} bytes, expected {hi - lo}")
-    return np.frombuffer(raw, dtype=ml_dtypes.bfloat16).astype(np.float32) \
-             .reshape(meta["shape"])
+    return np.frombuffer(raw, dtype=ml_dtypes.bfloat16).astype(np.float32).reshape(meta["shape"])
 
 
 def main() -> int:
@@ -107,16 +124,19 @@ def main() -> int:
 
     index_path = args.snapshot / "model.safetensors.index.json"
     if not index_path.exists():
-        sys.exit(f"no index at {index_path}\n"
-                 "  the converter writes it last, so the snapshot is either "
-                 "still being built or did not finish")
+        sys.exit(
+            f"no index at {index_path}\n"
+            "  the converter writes it last, so the snapshot is either "
+            "still being built or did not finish"
+        )
     snap_index = json.loads(index_path.read_text())
     if args.index and args.index.exists():
         ck_index = json.loads(args.index.read_text())
     else:
         url = f"https://huggingface.co/{pq.REPO}/raw/main/model.safetensors.index.json"
-        ck_index = json.loads(subprocess.run(["curl", "-sfL", url],
-                                             capture_output=True, check=True).stdout)
+        ck_index = json.loads(
+            subprocess.run(["curl", "-sfL", url], capture_output=True, check=True).stdout
+        )
 
     targets = sorted({n for n in snap_index["weight_map"] if wants_eight_bits(n)})
     by_shard: dict[str, list[str]] = {}
@@ -125,8 +145,10 @@ def main() -> int:
 
     print(f"snapshot : {args.snapshot}")
     print(f"tensors to re-quantize at 8 bits : {len(targets)}")
-    print(f"output shards to rewrite         : {len(by_shard)} of "
-          f"{len(set(snap_index['weight_map'].values()))}")
+    print(
+        f"output shards to rewrite         : {len(by_shard)} of "
+        f"{len(set(snap_index['weight_map'].values()))}"
+    )
     for shard, names in sorted(by_shard.items()):
         print(f"  {shard}: {len(names)} tensors")
     if args.dry_run:
@@ -149,8 +171,11 @@ def main() -> int:
             block[name] = packed
             block[stem + ".scales"] = scales
             block[stem + ".biases"] = biases
-            print(f"    {name.split('.language_model.')[-1]}  "
-                  f"{before / 1e6:.2f} MB -> {packed.nbytes / 1e6:.2f} MB", flush=True)
+            print(
+                f"    {name.split('.language_model.')[-1]}  "
+                f"{before / 1e6:.2f} MB -> {packed.nbytes / 1e6:.2f} MB",
+                flush=True,
+            )
         tmp = path.with_suffix(".safetensors.new")
         save_file(block, str(tmp))
         tmp.replace(path)
@@ -162,8 +187,7 @@ def main() -> int:
         with safe_open(args.snapshot / shard, framework="np") as src:
             total += sum(src.get_tensor(k).nbytes for k in src.keys())
     snap_index["metadata"]["total_size"] = total
-    (args.snapshot / "model.safetensors.index.json").write_text(
-        json.dumps(snap_index, indent=1))
+    (args.snapshot / "model.safetensors.index.json").write_text(json.dumps(snap_index, indent=1))
     print(f"\nindex total_size updated to {total / 1e9:.1f} GB")
     return 0
 

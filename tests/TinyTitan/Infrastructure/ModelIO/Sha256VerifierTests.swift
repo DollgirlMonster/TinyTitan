@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import TinyTitan
 
 @Suite struct Sha256VerifierTests {
@@ -24,7 +25,7 @@ import Foundation
         defer { try? FileManager.default.removeItem(at: url) }
 
         let small = try Sha256Verifier.hashFile(at: url, chunkBytes: 64 << 10)
-        let big   = try Sha256Verifier.hashFile(at: url)
+        let big = try Sha256Verifier.hashFile(at: url)
         #expect(small == big, "chunk size must not affect digest")
     }
 

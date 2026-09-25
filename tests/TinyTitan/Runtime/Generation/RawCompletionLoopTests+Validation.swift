@@ -6,7 +6,7 @@ extension RawCompletionLoopTests {
     @Test func rawCompletionRejectsContextOverflowBeforeReset() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let promptIDs = tokenizer.encode("one two three", addBOS: true)
         let producer = CountingProducer(
             vocabSize: tokenizer.vocabSize,
@@ -22,7 +22,8 @@ extension RawCompletionLoopTests {
                 config: GenerationConfig(maxNewTokens: 1, temperature: 0),
                 context: context,
                 scratch: scratch,
-                prefillConfig: .off) { _ in }
+                prefillConfig: .off
+            ) { _ in }
             Issue.record("expected context overflow")
         } catch let error as GeneratorError {
             guard case .contextOverflow(let prompt, let maxNew, let maxContext) = error else {
@@ -41,7 +42,7 @@ extension RawCompletionLoopTests {
     @Test func rawCompletionRejectsZeroMaxNewBeforeReset() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let promptIDs = tokenizer.encode("one two three", addBOS: true)
         let producer = CountingProducer(
             vocabSize: tokenizer.vocabSize,
@@ -56,7 +57,8 @@ extension RawCompletionLoopTests {
                 config: GenerationConfig(maxNewTokens: 0, temperature: 0),
                 context: context,
                 scratch: scratch,
-                prefillConfig: .off) { _ in }
+                prefillConfig: .off
+            ) { _ in }
             Issue.record("expected invalid generation config")
         } catch let error as GeneratorError {
             guard case .invalidGenerationConfig(let reason) = error else {
@@ -73,7 +75,7 @@ extension RawCompletionLoopTests {
     @Test func rawCompletionRejectsEmptyPromptBeforeReset() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let producer = CountingProducer(
             vocabSize: tokenizer.vocabSize,
             step: automaton([tokenA], end: tokenizer.eosID))
@@ -87,7 +89,8 @@ extension RawCompletionLoopTests {
                 config: GenerationConfig(maxNewTokens: 1, temperature: 0),
                 context: context,
                 scratch: scratch,
-                prefillConfig: .off) { _ in }
+                prefillConfig: .off
+            ) { _ in }
             Issue.record("expected empty prompt rejection")
         } catch let error as GeneratorError {
             #expect(error == .emptyPrompt)

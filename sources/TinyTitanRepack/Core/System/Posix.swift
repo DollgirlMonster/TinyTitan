@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 
 /// Thin POSIX helpers used by the writer hot path. The shapes here are picked
 /// so callers can stay inside tile-bounded scratch budgets without a
@@ -59,9 +59,11 @@ public enum Posix {
         }
     }
 
-    public static func pwriteAll(fd: Int32, path: String,
-                                 buf: UnsafeRawPointer, count: Int,
-                                 offset: UInt64) throws {
+    public static func pwriteAll(
+        fd: Int32, path: String,
+        buf: UnsafeRawPointer, count: Int,
+        offset: UInt64
+    ) throws {
         let checkedOffset = try checkedRangeOffset(
             offset: offset, count: count, path: path, operation: "pwrite")
         var remaining = count
@@ -71,8 +73,9 @@ public enum Posix {
             let n = pwrite(fd, ptr, remaining, off)
             if n < 0, errno == EINTR { continue }
             if n <= 0 {
-                throw RepackError.pwriteShort(path: path, expected: count,
-                                              wrote: count - remaining, errno: errno)
+                throw RepackError.pwriteShort(
+                    path: path, expected: count,
+                    wrote: count - remaining, errno: errno)
             }
             remaining -= n
             off += off_t(n)
@@ -80,9 +83,11 @@ public enum Posix {
         }
     }
 
-    public static func preadAll(fd: Int32, path: String,
-                                buf: UnsafeMutableRawPointer, count: Int,
-                                offset: UInt64) throws {
+    public static func preadAll(
+        fd: Int32, path: String,
+        buf: UnsafeMutableRawPointer, count: Int,
+        offset: UInt64
+    ) throws {
         let checkedOffset = try checkedRangeOffset(
             offset: offset, count: count, path: path, operation: "pread")
         var remaining = count
@@ -92,8 +97,9 @@ public enum Posix {
             let n = pread(fd, ptr, remaining, off)
             if n < 0, errno == EINTR { continue }
             if n <= 0 {
-                throw RepackError.preadShort(path: path, expected: count,
-                                             got: count - remaining, errno: errno)
+                throw RepackError.preadShort(
+                    path: path, expected: count,
+                    got: count - remaining, errno: errno)
             }
             remaining -= n
             off += off_t(n)
@@ -113,9 +119,11 @@ public enum Posix {
         try fsync(fd, path: path)
     }
 
-    private static func checkedOffT(_ value: UInt64,
-                                    path: String,
-                                    operation: String) throws -> off_t {
+    private static func checkedOffT(
+        _ value: UInt64,
+        path: String,
+        operation: String
+    ) throws -> off_t {
         guard value <= UInt64(Int64.max) else {
             throw RepackError.configurationInvalid(
                 detail: "\(operation) value \(value) is not representable for \(path)")
@@ -123,10 +131,12 @@ public enum Posix {
         return off_t(value)
     }
 
-    private static func checkedRangeOffset(offset: UInt64,
-                                           count: Int,
-                                           path: String,
-                                           operation: String) throws -> off_t {
+    private static func checkedRangeOffset(
+        offset: UInt64,
+        count: Int,
+        path: String,
+        operation: String
+    ) throws -> off_t {
         guard count >= 0 else {
             throw RepackError.configurationInvalid(
                 detail: "\(operation) count \(count) is invalid for \(path)")
@@ -179,10 +189,12 @@ public enum Posix {
         }
     }
 
-    public static func atomicWrite(_ data: Data,
-                                   to path: String,
-                                   durableIn directory: String,
-                                   afterRename: (() throws -> Void)? = nil) throws {
+    public static func atomicWrite(
+        _ data: Data,
+        to path: String,
+        durableIn directory: String,
+        afterRename: (() throws -> Void)? = nil
+    ) throws {
         let temporary = path + ".tmp"
         switch try entryKind(temporary) {
         case .absent:
@@ -203,8 +215,9 @@ public enum Posix {
         do {
             try data.withUnsafeBytes { raw in
                 guard let base = raw.baseAddress else { return }
-                try pwriteAll(fd: fd, path: temporary,
-                              buf: base, count: raw.count, offset: 0)
+                try pwriteAll(
+                    fd: fd, path: temporary,
+                    buf: base, count: raw.count, offset: 0)
             }
             try fsync(fd, path: temporary)
             try rename(from: temporary, to: path)
@@ -221,9 +234,11 @@ public enum Posix {
             path, maximumBytes: maximumBytes, followCallerSymlink: false)
     }
 
-    package static func readBoundedData(_ path: String,
-                                        maximumBytes: UInt64,
-                                        followCallerSymlink: Bool) throws -> Data {
+    package static func readBoundedData(
+        _ path: String,
+        maximumBytes: UInt64,
+        followCallerSymlink: Bool
+    ) throws -> Data {
         let noFollow = followCallerSymlink ? 0 : O_NOFOLLOW
         let fd = open(path, O_RDONLY | O_NONBLOCK | noFollow | O_CLOEXEC)
         if fd < 0 { throw RepackError.fileOpenFailed(path: path, errno: errno) }

@@ -2,6 +2,7 @@
 """A/B: rdadvise default vs off on the overlap counters. Interleaved fresh
 servers, 512-token greedy, warm-cache second request, server footers.
 """
+
 import http.client
 import json
 import os
@@ -10,8 +11,11 @@ import time
 import sys
 
 from tinytitan_profile import (
-    DEFAULT_API_MODEL, DEFAULT_MODEL_PATH, benchmark_log_path,
-    server_command, server_environment, resolve_api_model,
+    DEFAULT_MODEL_PATH,
+    benchmark_log_path,
+    server_command,
+    server_environment,
+    resolve_api_model,
 )
 
 BASE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -30,8 +34,8 @@ def run(mode):
     log_path = benchmark_log_path(f"tinytitan_rd_{mode}.log")
     log = open(log_path, "w")
     proc = subprocess.Popen(
-        server_command(BIN, PORT, model=MODEL),
-        env=env, stdout=log, stderr=subprocess.STDOUT)
+        server_command(BIN, PORT, model=MODEL), env=env, stdout=log, stderr=subprocess.STDOUT
+    )
     start = time.time()
     while time.time() - start < 120:
         if proc.poll() is not None:
@@ -47,16 +51,26 @@ def run(mode):
         except OSError:
             pass
         time.sleep(0.05)
-    payload = json.dumps({
-        "model": resolve_api_model(PORT),
-        "messages": [{"role": "user", "content": PROMPT}],
-        "temperature": 0, "top_p": 0.95, "top_k": 20,
-        "presence_penalty": 0.0, "max_completion_tokens": 512, "stream": True,
-    }).encode()
-    for i in range(2):
+    payload = json.dumps(
+        {
+            "model": resolve_api_model(PORT),
+            "messages": [{"role": "user", "content": PROMPT}],
+            "temperature": 0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "presence_penalty": 0.0,
+            "max_completion_tokens": 512,
+            "stream": True,
+        }
+    ).encode()
+    for _i in range(2):
         conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=1800)
-        conn.request("POST", "/v1/chat/completions", body=payload,
-                     headers={"Content-Type": "application/json"})
+        conn.request(
+            "POST",
+            "/v1/chat/completions",
+            body=payload,
+            headers={"Content-Type": "application/json"},
+        )
         resp = conn.getresponse()
         while resp.read(8192):
             pass
@@ -77,9 +91,12 @@ def run(mode):
             if "TinyTitan kernel total_gpu_ms=" in line:
                 gpu.append(line.strip())
     print(f"--- {mode} ---")
-    for l in gen: print(l)
-    for l in runner: print(l)
-    for l in gpu: print(l)
+    for line in gen:
+        print(line)
+    for line in runner:
+        print(line)
+    for line in gpu:
+        print(line)
 
 
 for mode in ("default", "off"):

@@ -13,6 +13,7 @@ Run from this directory, like the other benchmark tests:
 
     cd benchmark && python3 -m unittest test_launcher_ram -v
 """
+
 from __future__ import annotations
 
 import json
@@ -48,7 +49,10 @@ def installed_model() -> str | None:
     try:
         listing = subprocess.run(
             [str(SERVER), "--catalog", "--models-dir", str(MODELS)],
-            text=True, capture_output=True, check=True, timeout=120,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=120,
         ).stdout
         models = json.loads(listing)["models"]
     except Exception:
@@ -61,7 +65,10 @@ def dry_run(*args: str, physical_bytes: int) -> subprocess.CompletedProcess[str]
     environment["TINYTITAN_PHYSICAL_RAM_BYTES"] = str(physical_bytes)
     return subprocess.run(
         ["bash", str(LAUNCHER), "--client", "server", *args, "--dry-run"],
-        text=True, capture_output=True, check=False, env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
     )
 
 
@@ -135,8 +142,7 @@ class RamRuleTests(unittest.TestCase):
         # number is refused too instead of being ignored as an unknown word.
         for ram in ("1", "2", "3", "2G"):
             with self.subTest(placement="flag", ram=ram):
-                run = dry_run("--model", self.model, "--ram", ram,
-                              physical_bytes=24 * 2**30)
+                run = dry_run("--model", self.model, "--ram", ram, physical_bytes=24 * 2**30)
                 self.assertEqual(run.returncode, 2, run.stdout)
                 self.assertIn("unknown RAM target", run.stderr)
                 self.assertNotIn("--ram-budget", run.stdout)
@@ -145,8 +151,7 @@ class RamRuleTests(unittest.TestCase):
         # "off") and the optional-value loop reads those first.
         for ram in ("2", "3", "2G"):
             with self.subTest(placement="positional", ram=ram):
-                run = dry_run("--model", self.model, ram,
-                              physical_bytes=24 * 2**30)
+                run = dry_run("--model", self.model, ram, physical_bytes=24 * 2**30)
                 self.assertEqual(run.returncode, 2, run.stdout)
                 self.assertIn("unknown RAM target", run.stderr)
                 self.assertNotIn("--ram-budget", run.stdout)

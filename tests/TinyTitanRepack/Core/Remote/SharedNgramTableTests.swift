@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Testing
+
 @testable import TinyTitanRepackCore
 
 /// The `--share-ngram-table` link path.
@@ -18,22 +19,26 @@ import Testing
     private func temporaryRoot(_ tag: String) -> String {
         let base = (FileManager.default.currentDirectoryPath as NSString)
             .appendingPathComponent(".build/test-artifacts")
-        try? FileManager.default.createDirectory(atPath: base,
-                                                 withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            atPath: base,
+            withIntermediateDirectories: true)
         let path = (base as NSString)
             .appendingPathComponent("\(tag)-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(atPath: path,
-                                                 withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            atPath: path,
+            withIntermediateDirectories: true)
         return path
     }
 
     private func makeDirectories(_ root: String) throws -> (snapshot: String, partial: String) {
         let snapshot = (root as NSString).appendingPathComponent("snapshot")
         let partial = (root as NSString).appendingPathComponent("partial")
-        try FileManager.default.createDirectory(atPath: snapshot,
-                                                withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(atPath: partial,
-                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            atPath: snapshot,
+            withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            atPath: partial,
+            withIntermediateDirectories: true)
         return (snapshot, partial)
     }
 

@@ -163,7 +163,10 @@ export function subnetHosts(nets = networkInterfaces()) {
  * @returns candidate peers, or `[]` when Tailscale is absent.
  */
 export async function tailscalePeers({ exec: run = exec, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-  const attempts = [["tailscale", ["status", "--json"]], [TAILSCALE_FALLBACK, ["status", "--json"]]];
+  const attempts = [
+    ["tailscale", ["status", "--json"]],
+    [TAILSCALE_FALLBACK, ["status", "--json"]],
+  ];
   for (const [file, args] of attempts) {
     const { stdout } = await run(file, args, { timeoutMs });
     const peers = parseTailscalePeers(stdout);
@@ -233,12 +236,16 @@ export async function discoverCandidates({ config = {}, exec: run = exec, interf
   if (config.discoverTailscale !== false) {
     try {
       found.push(...(await tailscalePeers({ exec: run })).map((p) => ({ ...p, port })));
-    } catch { /* a source that fails contributes nothing */ }
+    } catch {
+      /* a source that fails contributes nothing */
+    }
   }
   if (config.discoverBonjour !== false) {
     try {
       found.push(...(await bonjourPeers({ exec: run })));
-    } catch { /* as above */ }
+    } catch {
+      /* as above */
+    }
   }
   if (config.discoverSubnet === true) {
     for (const address of subnetHosts(interfaces)) {

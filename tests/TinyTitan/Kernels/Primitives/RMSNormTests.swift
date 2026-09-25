@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// Compares the Metal `rmsnorm` kernel against the Accelerate-based
 /// `RmsNormRef`. The reference uses `vDSP_svesq` + `vDSP_vmul` + `vDSP_vsmul`
@@ -25,33 +26,39 @@ import TinyTitanValidationSupport
         let wFp32 = (0..<d).map { _ in rng.uniform(0.5, 1.5) }
 
         let xFp16 = xFp32.map { Float16($0) }
-        let xRef  = xFp16.map { Float($0) }
+        let xRef = xFp16.map { Float($0) }
         let wBits = wFp32.map { Quantization.bf16Bits($0) }
-        let wRef  = wBits.map { Quantization.bf16ToFloat($0) }
+        let wRef = wBits.map { Quantization.bf16ToFloat($0) }
 
         let ctx = try MetalContext()
         let kernel = try RMSNorm(context: ctx)
 
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: xFp16),
-              let yBuf = Fp16Buffer.make(ctx.device, count: d),
-              let wBuf = ctx.device.makeBuffer(length: wBits.count * 2,
-                                                options: .storageModeShared) else {
-            Issue.record("alloc failed"); return
+            let yBuf = Fp16Buffer.make(ctx.device, count: d),
+            let wBuf = ctx.device.makeBuffer(
+                length: wBits.count * 2,
+                options: .storageModeShared)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let wPtr = wBuf.contents().bindMemory(to: UInt16.self, capacity: wBits.count)
         for i in 0..<wBits.count { wPtr[i] = wBits[i] }
 
-        let cb = ctx.queue.makeCommandBuffer()!
-        try kernel.encodeBF16W(commandBuffer: cb, x: xBuf, weight: wBuf, out: yBuf,
-                           d: UInt32(d), eps: eps)
-        cb.commit(); cb.waitUntilCompleted()
+        let cb = try #require(ctx.queue.makeCommandBuffer())
+        try kernel.encodeBF16W(
+            commandBuffer: cb, x: xBuf, weight: wBuf, out: yBuf,
+            d: UInt32(d), eps: eps)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let ref = RmsNormRef.apply(x: xRef, weight: wRef, eps: eps)
         let actual = Fp16Buffer.read(yBuf, count: d)
         let relErr = RelError.compute(actual: actual, reference: ref)
         let maxAbs = RelError.maxAbsDiff(actual, ref)
-        #expect(relErr < Tolerance.fp16Reduction,
-                "BF16W D=\(d): relErr=\(relErr) maxAbsDiff=\(maxAbs)")
+        #expect(
+            relErr < Tolerance.fp16Reduction,
+            "BF16W D=\(d): relErr=\(relErr) maxAbsDiff=\(maxAbs)")
     }
 
     @Test func rmsNorm_bf16w_d256() throws {
@@ -71,27 +78,32 @@ import TinyTitanValidationSupport
         var rng = SeedTree(seed).key("rmsnorm-noscale-d\(d)")
         let xFp32 = (0..<d).map { _ in rng.uniform(-1.0, 1.0) }
         let xFp16 = xFp32.map { Float16($0) }
-        let xRef  = xFp16.map { Float($0) }
+        let xRef = xFp16.map { Float($0) }
         let unitW = [Float](repeating: 1.0, count: d)
 
         let ctx = try MetalContext()
         let kernel = try RMSNorm(context: ctx)
 
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: xFp16),
-              let yBuf = Fp16Buffer.make(ctx.device, count: d) else {
-            Issue.record("alloc failed"); return
+            let yBuf = Fp16Buffer.make(ctx.device, count: d)
+        else {
+            Issue.record("alloc failed")
+            return
         }
-        let cb = ctx.queue.makeCommandBuffer()!
-        try kernel.encodeNoScale(commandBuffer: cb, x: xBuf, out: yBuf,
-                             d: UInt32(d), eps: eps)
-        cb.commit(); cb.waitUntilCompleted()
+        let cb = try #require(ctx.queue.makeCommandBuffer())
+        try kernel.encodeNoScale(
+            commandBuffer: cb, x: xBuf, out: yBuf,
+            d: UInt32(d), eps: eps)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let ref = RmsNormRef.apply(x: xRef, weight: unitW, eps: eps)
         let actual = Fp16Buffer.read(yBuf, count: d)
         let relErr = RelError.compute(actual: actual, reference: ref)
         let maxAbs = RelError.maxAbsDiff(actual, ref)
-        #expect(relErr < Tolerance.fp16Reduction,
-                "no-scale D=\(d): relErr=\(relErr) maxAbsDiff=\(maxAbs)")
+        #expect(
+            relErr < Tolerance.fp16Reduction,
+            "no-scale D=\(d): relErr=\(relErr) maxAbsDiff=\(maxAbs)")
     }
 
     @Test func rmsNorm_noScale_d256() throws {
@@ -118,8 +130,8 @@ import TinyTitanValidationSupport
 
     @Test func rmsNorm_perHead_offsetsCoverEachHeadInIsolation() throws {
         let numHeads = 16
-        let headDim  = 256
-        let total    = numHeads * headDim
+        let headDim = 256
+        let total = numHeads * headDim
 
         // Per-head constant: head h is all (h+1). RMS of a constant c is |c|,
         // so y = c / |c| * unitW = sign(c). Pick c = h + 1 > 0 → y = 1.
@@ -135,31 +147,37 @@ import TinyTitanValidationSupport
         let ctx = try MetalContext()
         let kernel = try RMSNorm(context: ctx)
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: x),
-              let wBuf = ctx.device.makeBuffer(length: wBits.count * 2,
-                                               options: .storageModeShared) else {
-            Issue.record("alloc failed"); return
+            let wBuf = ctx.device.makeBuffer(
+                length: wBits.count * 2,
+                options: .storageModeShared)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let wPtr = wBuf.contents().bindMemory(to: UInt16.self, capacity: wBits.count)
         for i in 0..<wBits.count { wPtr[i] = wBits[i] }
 
         // Mirror the runner's per-head dispatch loop literally.
         let headBytes = headDim * MemoryLayout<Float16>.size
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for h in 0..<numHeads {
-            try kernel.encodeBF16W(commandBuffer: cb,
-                               x: xBuf, xOffset: h * headBytes,
-                               weight: wBuf, weightOffset: 0,
-                               out: xBuf, outOffset: h * headBytes,
-                               d: UInt32(headDim), eps: 1e-6)
+            try kernel.encodeBF16W(
+                commandBuffer: cb,
+                x: xBuf, xOffset: h * headBytes,
+                weight: wBuf, weightOffset: 0,
+                out: xBuf, outOffset: h * headBytes,
+                d: UInt32(headDim), eps: 1e-6)
         }
-        cb.commit(); cb.waitUntilCompleted()
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let out = Fp16Buffer.read(xBuf, count: total)
         for h in 0..<numHeads {
             for k in 0..<headDim {
                 let v = Float(out[h * headDim + k])
-                #expect(abs(v - 1.0) < 1e-2,
-                        "head \(h) idx \(k): expected ~1.0, got \(v) — per-head offset bug?")
+                #expect(
+                    abs(v - 1.0) < 1e-2,
+                    "head \(h) idx \(k): expected ~1.0, got \(v) — per-head offset bug?")
             }
         }
     }
@@ -167,9 +185,9 @@ import TinyTitanValidationSupport
     /// Mirror of the K/V branch using the no-scale variant dispatched for V.
     /// Each head's output should normalize to ±1.
     @Test func rmsNorm_noScale_perHead_offsetsCoverEachHeadInIsolation() throws {
-        let numKVL  = 2
+        let numKVL = 2
         let headDim = 256
-        let total   = numKVL * headDim
+        let total = numKVL * headDim
         var x = [Float16](repeating: 0, count: total)
         for h in 0..<numKVL {
             let c = Float16(h + 1)
@@ -179,25 +197,29 @@ import TinyTitanValidationSupport
         let ctx = try MetalContext()
         let kernel = try RMSNorm(context: ctx)
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: x) else {
-            Issue.record("alloc failed"); return
+            Issue.record("alloc failed")
+            return
         }
 
         let headBytes = headDim * MemoryLayout<Float16>.size
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for h in 0..<numKVL {
-            try kernel.encodeNoScale(commandBuffer: cb,
-                                 x: xBuf, xOffset: h * headBytes,
-                                 out: xBuf, outOffset: h * headBytes,
-                                 d: UInt32(headDim), eps: 1e-6)
+            try kernel.encodeNoScale(
+                commandBuffer: cb,
+                x: xBuf, xOffset: h * headBytes,
+                out: xBuf, outOffset: h * headBytes,
+                d: UInt32(headDim), eps: 1e-6)
         }
-        cb.commit(); cb.waitUntilCompleted()
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let out = Fp16Buffer.read(xBuf, count: total)
         for h in 0..<numKVL {
             for k in 0..<headDim {
                 let v = Float(out[h * headDim + k])
-                #expect(abs(v - 1.0) < 1e-2,
-                        "no-scale head \(h) idx \(k): \(v) — per-head offset bug?")
+                #expect(
+                    abs(v - 1.0) < 1e-2,
+                    "no-scale head \(h) idx \(k): \(v) — per-head offset bug?")
             }
         }
     }
@@ -210,7 +232,9 @@ import TinyTitanValidationSupport
     // data so a cross-head bleed (wrong head offset in the grid) is caught.
 
     @Test func rmsNorm_bf16wPerHead_matchesLoop() throws {
-        let numHeads = 16, headDim = 256, total = numHeads * headDim
+        let numHeads = 16
+        let headDim = 256
+        let total = numHeads * headDim
         var rng = SeedTree(0x2B1).key("rmsnorm-perhead-bf16w")
         let x = (0..<total).map { _ in Float16(rng.uniform(-1.0, 1.0)) }
         let wBits = (0..<headDim).map { _ in Quantization.bf16Bits(rng.uniform(0.5, 1.5)) }
@@ -218,23 +242,28 @@ import TinyTitanValidationSupport
         let ctx = try MetalContext()
         let kernel = try RMSNorm(context: ctx)
         guard let wBuf = ctx.device.makeBuffer(length: headDim * 2, options: .storageModeShared),
-              let loopOut = Fp16Buffer.make(ctx.device, halves: x),
-              let batchOut = Fp16Buffer.make(ctx.device, halves: x) else {
-            Issue.record("alloc failed"); return
+            let loopOut = Fp16Buffer.make(ctx.device, halves: x),
+            let batchOut = Fp16Buffer.make(ctx.device, halves: x)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let wPtr = wBuf.contents().bindMemory(to: UInt16.self, capacity: headDim)
         for i in 0..<headDim { wPtr[i] = wBits[i] }
         let headBytes = headDim * MemoryLayout<Float16>.size
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for h in 0..<numHeads {
-            try kernel.encodeBF16W(commandBuffer: cb, x: loopOut, xOffset: h * headBytes,
-                               weight: wBuf, out: loopOut, outOffset: h * headBytes,
-                               d: UInt32(headDim), eps: 1e-6)
+            try kernel.encodeBF16W(
+                commandBuffer: cb, x: loopOut, xOffset: h * headBytes,
+                weight: wBuf, out: loopOut, outOffset: h * headBytes,
+                d: UInt32(headDim), eps: 1e-6)
         }
-        try kernel.encodeBF16WPerHead(commandBuffer: cb, x: batchOut, weight: wBuf, out: batchOut,
-                                  headDim: UInt32(headDim), numHeads: numHeads, eps: 1e-6)
-        cb.commit(); cb.waitUntilCompleted()
+        try kernel.encodeBF16WPerHead(
+            commandBuffer: cb, x: batchOut, weight: wBuf, out: batchOut,
+            headDim: UInt32(headDim), numHeads: numHeads, eps: 1e-6)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let a = Fp16Buffer.read(loopOut, count: total)
         let b = Fp16Buffer.read(batchOut, count: total)
@@ -242,26 +271,33 @@ import TinyTitanValidationSupport
     }
 
     @Test func rmsNorm_noScalePerHead_matchesLoop() throws {
-        let numKVL = 2, headDim = 256, total = numKVL * headDim
+        let numKVL = 2
+        let headDim = 256
+        let total = numKVL * headDim
         var rng = SeedTree(0x2C2).key("rmsnorm-perhead-noscale")
         let x = (0..<total).map { _ in Float16(rng.uniform(-1.0, 1.0)) }
 
         let ctx = try MetalContext()
         let kernel = try RMSNorm(context: ctx)
         guard let loopOut = Fp16Buffer.make(ctx.device, halves: x),
-              let batchOut = Fp16Buffer.make(ctx.device, halves: x) else {
-            Issue.record("alloc failed"); return
+            let batchOut = Fp16Buffer.make(ctx.device, halves: x)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let headBytes = headDim * MemoryLayout<Float16>.size
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for h in 0..<numKVL {
-            try kernel.encodeNoScale(commandBuffer: cb, x: loopOut, xOffset: h * headBytes,
-                                 out: loopOut, outOffset: h * headBytes,
-                                 d: UInt32(headDim), eps: 1e-6)
+            try kernel.encodeNoScale(
+                commandBuffer: cb, x: loopOut, xOffset: h * headBytes,
+                out: loopOut, outOffset: h * headBytes,
+                d: UInt32(headDim), eps: 1e-6)
         }
-        try kernel.encodeNoScalePerHead(commandBuffer: cb, x: batchOut, out: batchOut,
-                                    headDim: UInt32(headDim), numHeads: numKVL, eps: 1e-6)
-        cb.commit(); cb.waitUntilCompleted()
+        try kernel.encodeNoScalePerHead(
+            commandBuffer: cb, x: batchOut, out: batchOut,
+            headDim: UInt32(headDim), numHeads: numKVL, eps: 1e-6)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let a = Fp16Buffer.read(loopOut, count: total)
         let b = Fp16Buffer.read(batchOut, count: total)
@@ -293,31 +329,39 @@ import TinyTitanValidationSupport
         let ctx = try MetalContext()
         let kernel = try RMSNorm(context: ctx)
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: xFp16),
-              let yBuf = Fp16Buffer.make(ctx.device, count: total),
-              let wBuf = ctx.device.makeBuffer(length: wBits.count * 2,
-                                               options: .storageModeShared) else {
-            Issue.record("alloc failed"); return
+            let yBuf = Fp16Buffer.make(ctx.device, count: total),
+            let wBuf = ctx.device.makeBuffer(
+                length: wBits.count * 2,
+                options: .storageModeShared)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let wPtr = wBuf.contents().bindMemory(to: UInt16.self, capacity: wBits.count)
         for i in 0..<wBits.count { wPtr[i] = wBits[i] }
 
-        let cb = ctx.queue.makeCommandBuffer()!
-        try kernel.encodeBF16WGrouped(commandBuffer: cb, x: xBuf, weight: wBuf,
-                                      out: yBuf, groupDim: UInt32(groupDim),
-                                      numGroups: groups, eps: eps)
-        cb.commit(); cb.waitUntilCompleted()
+        let cb = try #require(ctx.queue.makeCommandBuffer())
+        try kernel.encodeBF16WGrouped(
+            commandBuffer: cb, x: xBuf, weight: wBuf,
+            out: yBuf, groupDim: UInt32(groupDim),
+            numGroups: groups, eps: eps)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         // Reference: each group normalized independently against its own slice.
         var ref: [Float] = []
         for g in 0..<groups {
-            let lo = g * groupDim, hi = lo + groupDim
-            ref += RmsNormRef.apply(x: Array(xRef[lo..<hi]),
-                                    weight: Array(wRef[lo..<hi]), eps: eps)
+            let lo = g * groupDim
+            let hi = lo + groupDim
+            ref += RmsNormRef.apply(
+                x: Array(xRef[lo..<hi]),
+                weight: Array(wRef[lo..<hi]), eps: eps)
         }
         let actual = Fp16Buffer.read(yBuf, count: total)
         let relErr = RelError.compute(actual: actual, reference: ref)
-        #expect(relErr < Tolerance.fp16Reduction,
-                "grouped \(groupDim)x\(groups): relErr=\(relErr)")
+        #expect(
+            relErr < Tolerance.fp16Reduction,
+            "grouped \(groupDim)x\(groups): relErr=\(relErr)")
     }
 
     @Test("The production shape: 4 streams of 2560")
@@ -340,37 +384,46 @@ import TinyTitanValidationSupport
     func groupsUseTheirOwnWeights() throws {
         // Identical data in both groups but different weights: a shared-weight
         // implementation would produce identical halves, which this rejects.
-        let groupDim = 256, groups = 2
+        let groupDim = 256
+        let groups = 2
         var rng = SeedTree(0x55AB).key("grouped-independence")
         let half = (0..<groupDim).map { _ in Float16(rng.uniform(-1.0, 1.0)) }
         let xFp16 = half + half
-        let wBits = (0..<groupDim).map { _ in Quantization.bf16Bits(1.0) }
+        let wBits =
+            (0..<groupDim).map { _ in Quantization.bf16Bits(1.0) }
             + (0..<groupDim).map { _ in Quantization.bf16Bits(2.0) }
 
         let ctx = try MetalContext()
         let kernel = try RMSNorm(context: ctx)
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: xFp16),
-              let yBuf = Fp16Buffer.make(ctx.device, count: groupDim * groups),
-              let wBuf = ctx.device.makeBuffer(length: wBits.count * 2,
-                                               options: .storageModeShared) else {
-            Issue.record("alloc failed"); return
+            let yBuf = Fp16Buffer.make(ctx.device, count: groupDim * groups),
+            let wBuf = ctx.device.makeBuffer(
+                length: wBits.count * 2,
+                options: .storageModeShared)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let wPtr = wBuf.contents().bindMemory(to: UInt16.self, capacity: wBits.count)
         for i in 0..<wBits.count { wPtr[i] = wBits[i] }
 
-        let cb = ctx.queue.makeCommandBuffer()!
-        try kernel.encodeBF16WGrouped(commandBuffer: cb, x: xBuf, weight: wBuf,
-                                      out: yBuf, groupDim: UInt32(groupDim),
-                                      numGroups: groups, eps: Self.eps)
-        cb.commit(); cb.waitUntilCompleted()
+        let cb = try #require(ctx.queue.makeCommandBuffer())
+        try kernel.encodeBF16WGrouped(
+            commandBuffer: cb, x: xBuf, weight: wBuf,
+            out: yBuf, groupDim: UInt32(groupDim),
+            numGroups: groups, eps: Self.eps)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let out = Fp16Buffer.read(yBuf, count: groupDim * groups)
         // Group 1's weight is 2x group 0's, so its output must be 2x.
         for i in 0..<groupDim {
-            let a = out[i], b = out[groupDim + i]
+            let a = out[i]
+            let b = out[groupDim + i]
             if abs(a) > 1e-3 {
-                #expect(abs(b / a - 2.0) < 0.05,
-                        "group weights not applied independently at \(i)")
+                #expect(
+                    abs(b / a - 2.0) < 0.05,
+                    "group weights not applied independently at \(i)")
             }
         }
     }

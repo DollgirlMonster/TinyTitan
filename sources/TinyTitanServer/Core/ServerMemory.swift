@@ -52,9 +52,11 @@ enum ServerMemory {
     /// journal's filtered turns, so tool results and file dumps are already
     /// gone. Existing keys are shown so an update lands on the address it
     /// changes rather than beside it.
-    static func consolidationRequest(turns: [JournalTurn],
-                                     existing: [MemoryRecord],
-                                     workspace: String) -> ValidatedChatRequest {
+    static func consolidationRequest(
+        turns: [JournalTurn],
+        existing: [MemoryRecord],
+        workspace: String
+    ) -> ValidatedChatRequest {
         var transcript = ""
         for turn in turns {
             transcript += "USER: \(turn.prompt)\n\nASSISTANT: \(turn.reply)\n\n---\n\n"
@@ -68,13 +70,15 @@ enum ServerMemory {
         let mentioned = existing.filter { Self.isMentioned($0.key.rawValue, in: haystack) }
         var known = Self.keyListing(existing, mentioned: mentioned)
         if !mentioned.isEmpty {
-            known += "\n\nCurrent values of the keys this session touches:\n"
+            known +=
+                "\n\nCurrent values of the keys this session touches:\n"
                 + mentioned.prefix(40).map { record in
                     let value = record.value.replacingOccurrences(of: "\n", with: " ")
                     return "- \(record.key.rawValue) = \(value.prefix(160))"
                 }.joined(separator: "\n")
         }
-        let system = "You distil a finished working session into durable facts for a memory "
+        let system =
+            "You distil a finished working session into durable facts for a memory "
             + "store scoped to the project `\(workspace)`. Later sessions will see these "
             + "facts and nothing else from this conversation, so record exactly what a "
             + "future session must not contradict: decisions and the reasons for them, "
@@ -108,8 +112,10 @@ enum ServerMemory {
             + "was added or changed."
         let user = "Memory already holds these keys:\n\(known)\n\nThe session:\n\n\(transcript)"
         return ValidatedChatRequest(
-            messages: [GFTokenizer.Message(role: .system, content: system),
-                       GFTokenizer.Message(role: .user, content: user)],
+            messages: [
+                GFTokenizer.Message(role: .system, content: system),
+                GFTokenizer.Message(role: .user, content: user),
+            ],
             tools: [],
             stream: false,
             includeUsage: false,
@@ -128,8 +134,9 @@ enum ServerMemory {
         var candidates: [String] = []
         let fenced = try? NSRegularExpression(pattern: "```(?:json)?\\s*(\\[[\\s\\S]*?\\])\\s*```")
         if let fenced,
-           let match = fenced.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-           let range = Range(match.range(at: 1), in: text) {
+            let match = fenced.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+            let range = Range(match.range(at: 1), in: text)
+        {
             candidates.append(String(text[range]))
         }
         if let open = text.firstIndex(of: "["), let close = text.lastIndex(of: "]"), open < close {
@@ -139,7 +146,8 @@ enum ServerMemory {
         // every complete object before the cut. Losing sixteen facts to a
         // seventeenth that was cut off is the failure this recovers from.
         if let open = text.firstIndex(of: "["), let lastClose = text.lastIndex(of: "}"),
-           open < lastClose {
+            open < lastClose
+        {
             candidates.append(String(text[open...lastClose]) + "]")
         }
         // No array at all: one bare object, or several in a row. A session
@@ -147,24 +155,30 @@ enum ServerMemory {
         // produced nothing, which lost the one fact that session was for.
         if let open = text.firstIndex(of: "{"), let close = text.lastIndex(of: "}"), open < close {
             let objects = String(text[open...close])
-            candidates.append("[" + objects.replacingOccurrences(
-                of: #"\}\s*\{"#, with: "},{", options: .regularExpression) + "]")
+            candidates.append(
+                "["
+                    + objects.replacingOccurrences(
+                        of: #"\}\s*\{"#, with: "},{", options: .regularExpression) + "]")
         }
         for candidate in candidates {
             guard let data = candidate.data(using: .utf8),
-                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+                let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
             else { continue }
             var records: [MemoryRecord] = []
             for entry in parsed {
                 guard let rawKey = entry["key"] as? String,
-                      let key = try? MemoryKey(validating: rawKey.lowercased()),
-                      let raw = entry["value"], !(raw is NSNull)
+                    let key = try? MemoryKey(validating: rawKey.lowercased()),
+                    let raw = entry["value"], !(raw is NSNull)
                 else { continue }
                 let value: String
-                if let flag = raw as? Bool { value = flag ? "true" : "false" }
-                else { value = "\(raw)".trimmingCharacters(in: .whitespacesAndNewlines) }
+                if let flag = raw as? Bool {
+                    value = flag ? "true" : "false"
+                } else {
+                    value = "\(raw)".trimmingCharacters(in: .whitespacesAndNewlines)
+                }
                 guard !value.isEmpty, !Self.isPlaceholder(value) else { continue }
-                let importance = (entry["importance"] as? Double)
+                let importance =
+                    (entry["importance"] as? Double)
                     ?? (entry["importance"] as? Int).map(Double.init)
                 var record = MemoryRecord(key: key, value: value, importance: importance)
                 record.isGlobal = (entry["global"] as? Bool) ?? false
@@ -189,8 +203,10 @@ enum ServerMemory {
     /// enough to tell the model the namespace exists and how it is spelled,
     /// which is what stops it inventing a parallel one. Capped, because a
     /// list that grows with the store is the cost curve this replaces.
-    static func keyListing(_ existing: [MemoryRecord], mentioned: [MemoryRecord],
-                           maximumListed: Int = 60) -> String {
+    static func keyListing(
+        _ existing: [MemoryRecord], mentioned: [MemoryRecord],
+        maximumListed: Int = 60
+    ) -> String {
         guard !existing.isEmpty else { return "(none yet)" }
         let touched = Set(mentioned.map { namespace(of: $0.key.rawValue) })
         var lines: [String] = []
@@ -200,7 +216,7 @@ enum ServerMemory {
             byNamespace[namespace(of: record.key.rawValue), default: []].append(record.key.rawValue)
         }
         for name in byNamespace.keys.sorted() {
-            let keys = byNamespace[name]!.sorted()
+            let keys = (byNamespace[name] ?? []).sorted()
             if touched.contains(name), listed + keys.count <= maximumListed {
                 lines.append(contentsOf: keys.map { "- \($0)" })
                 listed += keys.count
@@ -210,7 +226,9 @@ enum ServerMemory {
                 lines.append("- \(name)/ ... and \(keys.count - room) more keys")
                 listed = maximumListed
             } else {
-                lines.append("- \(name)/ (\(keys.count) key\(keys.count == 1 ? "" : "s"), not touched by this session)")
+                lines.append(
+                    "- \(name)/ (\(keys.count) key\(keys.count == 1 ? "" : "s"), not touched by this session)"
+                )
             }
         }
         return lines.joined(separator: "\n")
@@ -233,7 +251,8 @@ enum ServerMemory {
             .filter { $0.count >= 3 }
         guard !parts.isEmpty else { return false }
         return parts.contains { part in
-            let pattern = "(?<![a-z0-9])" + NSRegularExpression.escapedPattern(for: part) + "(?![a-z0-9])"
+            let pattern =
+                "(?<![a-z0-9])" + NSRegularExpression.escapedPattern(for: part) + "(?![a-z0-9])"
             return haystack.range(of: pattern, options: .regularExpression) != nil
         }
     }
@@ -252,9 +271,13 @@ enum ServerMemory {
     /// segment alone and routed `characters/ines/knows_photo_content` onto
     /// `characters/marcus/knows_photo_content`, which gave Marcus a fact he
     /// was not allowed to have until chapter 60.
-    static func reconcile(_ records: [MemoryRecord],
-                          existing: [MemoryRecord]) -> (records: [MemoryRecord],
-                                                       merged: [(from: String, to: String)]) {
+    static func reconcile(
+        _ records: [MemoryRecord],
+        existing: [MemoryRecord]
+    ) -> (
+        records: [MemoryRecord],
+        merged: [(from: String, to: String)]
+    ) {
         var byPath: [String: [MemoryKey]] = [:]
         for record in existing {
             if let path = pathAfterNamespace(record.key.rawValue) {
@@ -267,10 +290,13 @@ enum ServerMemory {
         for record in records {
             let key = record.key.rawValue
             guard !existingKeys.contains(key),
-                  let path = pathAfterNamespace(key), path.count >= 4,
-                  let targets = byPath[path], targets.count == 1,
-                  let target = targets.first, target.rawValue != key
-            else { out.append(record); continue }
+                let path = pathAfterNamespace(key), path.count >= 4,
+                let targets = byPath[path], targets.count == 1,
+                let target = targets.first, target.rawValue != key
+            else {
+                out.append(record)
+                continue
+            }
             var routed = record
             routed.key = target
             out.append(routed)
@@ -293,9 +319,11 @@ enum ServerMemory {
     /// information for will produce exactly these.
     static func isPlaceholder(_ value: String) -> Bool {
         let folded = value.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " .\"'"))
-        return ["not specified", "unspecified", "unknown", "n/a", "na", "none", "null",
-                "tbd", "not mentioned", "not stated", "not given", "no change", "unchanged"]
-            .contains(folded)
+        return [
+            "not specified", "unspecified", "unknown", "n/a", "na", "none", "null",
+            "tbd", "not mentioned", "not stated", "not given", "no change", "unchanged",
+        ]
+        .contains(folded)
     }
 
     /// A stable session id for a conversation.
@@ -305,8 +333,10 @@ enum ServerMemory {
     /// workspace identifies a conversation well enough to keep one session's
     /// memory continuous across its turns, and it changes when a new
     /// conversation starts, which is when a new session should begin.
-    static func sessionIdentifier(messages: [GFTokenizer.Message],
-                                  workspace: String) -> String {
+    static func sessionIdentifier(
+        messages: [GFTokenizer.Message],
+        workspace: String
+    ) -> String {
         let seed = messages.first { $0.role == .user }?.content ?? ""
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in (workspace + "\u{0}" + seed).utf8 {
@@ -324,7 +354,8 @@ enum ServerMemory {
 
     /// Memory tools in the tokenizer's own definition type.
     static func functionDefinitions(_ definitions: [MemoryToolDefinition])
-        -> [GFTokenizer.FunctionDefinition] {
+        -> [GFTokenizer.FunctionDefinition]
+    {
         definitions.map { definition in
             GFTokenizer.FunctionDefinition(
                 name: definition.name,
@@ -338,9 +369,12 @@ enum ServerMemory {
     /// A client's tool of the same name wins: the client executes its tools
     /// and we execute ours, and two definitions of one name would make the
     /// model's call ambiguous.
-    static func merging(tools: [GFTokenizer.FunctionDefinition],
-                        memory: [GFTokenizer.FunctionDefinition])
-        -> [GFTokenizer.FunctionDefinition] {
+    static func merging(
+        tools: [GFTokenizer.FunctionDefinition],
+        memory: [GFTokenizer.FunctionDefinition]
+    )
+        -> [GFTokenizer.FunctionDefinition]
+    {
         let existing = Set(tools.map(\.name))
         return tools + memory.filter { !existing.contains($0.name) }
     }
@@ -364,10 +398,11 @@ enum ServerMemory {
         case .decimal(let number): return .number(NSDecimalNumber(decimal: number).doubleValue)
         case .bool(let flag): return .bool(flag)
         case .array(let items):
-            return .stringArray(items.compactMap { item in
-                if case .string(let text) = item { return text }
-                return nil
-            })
+            return .stringArray(
+                items.compactMap { item in
+                    if case .string(let text) = item { return text }
+                    return nil
+                })
         case .null: return .null
         case .object:
             // Objects are not a memory argument type; rendering it back to
@@ -378,7 +413,8 @@ enum ServerMemory {
 
     /// The assistant turn that made a set of tool calls, as history.
     static func assistantMessage(content: String, calls: [ParsedToolCall])
-        -> GFTokenizer.Message {
+        -> GFTokenizer.Message
+    {
         GFTokenizer.Message(
             role: .assistant,
             content: content.isEmpty ? nil : content,
@@ -388,12 +424,15 @@ enum ServerMemory {
     }
 
     /// One tool result, as the message the model reads next.
-    static func toolResultMessage(call: ParsedToolCall,
-                                  result: MemoryToolResult) -> GFTokenizer.Message {
-        GFTokenizer.Message(role: .tool,
-                            content: result.jsonString(),
-                            toolCallID: call.id,
-                            name: call.name)
+    static func toolResultMessage(
+        call: ParsedToolCall,
+        result: MemoryToolResult
+    ) -> GFTokenizer.Message {
+        GFTokenizer.Message(
+            role: .tool,
+            content: result.jsonString(),
+            toolCallID: call.id,
+            name: call.name)
     }
 
     private static func jsonValue(from object: Any) -> JSONValue {

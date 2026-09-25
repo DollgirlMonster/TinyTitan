@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContinuityCore
 
 /// A journal that refuses writes on demand, standing in for a full disk, an
@@ -36,7 +37,8 @@ private actor RefusingJournal: ContinuityJournal {
 /// the writer of a fact, always; the author of a session event, never.
 @Suite struct JournalFailureTests {
     private func started(_ journal: RefusingJournal) async throws
-        -> (engine: ContinuityEngine, task: ContinuityTask, session: Session) {
+        -> (engine: ContinuityEngine, task: ContinuityTask, session: Session)
+    {
         let engine = ContinuityEngine(journal: journal)
         try await engine.start()
         let task = try await engine.createTask(title: "Disk")
@@ -99,9 +101,10 @@ private actor RefusingJournal: ContinuityJournal {
 
         #expect(await engine.journalFailure == nil)
         let records = await journal.records
-        #expect(records.contains { record in
-            if case .memory(let item) = record { return item.value == "v" }
-            return false
-        })
+        #expect(
+            records.contains { record in
+                if case .memory(let item) = record { return item.value == "v" }
+                return false
+            })
     }
 }

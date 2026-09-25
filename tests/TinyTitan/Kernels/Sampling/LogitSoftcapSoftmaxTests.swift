@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// Compares the Metal `logit_softcap_softmax` kernel against
 /// `LogitSoftcapSoftmaxRef`, an Accelerate-based two-pass reference (apply
@@ -18,14 +19,16 @@ import TinyTitanValidationSupport
         let kernel = try LogitSoftcapSoftmax(context: ctx)
 
         guard let inBuf = Fp16Buffer.make(ctx.device, halves: logitsFp16),
-              let outBuf = Fp16Buffer.make(ctx.device, count: v),
-              let cmd = ctx.queue.makeCommandBuffer() else {
+            let outBuf = Fp16Buffer.make(ctx.device, count: v),
+            let cmd = ctx.queue.makeCommandBuffer()
+        else {
             Issue.record("Failed to allocate Metal resources")
             return []
         }
-        try kernel.encode(commandBuffer: cmd,
-                      logits: inBuf, probs: outBuf,
-                      v: UInt32(v), softcap: softcap)
+        try kernel.encode(
+            commandBuffer: cmd,
+            logits: inBuf, probs: outBuf,
+            v: UInt32(v), softcap: softcap)
         cmd.commit()
         cmd.waitUntilCompleted()
         return Fp16Buffer.read(outBuf, count: v)
@@ -47,11 +50,13 @@ import TinyTitanValidationSupport
             let logits = (0..<v).map { _ in Float16(rng.uniform(-40.0, 40.0)) }
             for attempt in 0..<8 {
                 let probs = try Self.runKernel(logitsFp16: logits, v: v, softcap: 30.0)
-                #expect(probs.allSatisfy { $0.isFinite },
-                        "non-finite probability at v=\(v) attempt=\(attempt)")
+                #expect(
+                    probs.allSatisfy { $0.isFinite },
+                    "non-finite probability at v=\(v) attempt=\(attempt)")
                 let total = probs.reduce(0, +)
-                #expect(abs(total - 1.0) < 2e-2,
-                        "probabilities sum to \(total), not 1, at v=\(v) attempt=\(attempt)")
+                #expect(
+                    abs(total - 1.0) < 2e-2,
+                    "probabilities sum to \(total), not 1, at v=\(v) attempt=\(attempt)")
             }
         }
     }
@@ -85,8 +90,9 @@ import TinyTitanValidationSupport
         let gpu = try Self.runKernel(logitsFp16: logitsFp16, v: v, softcap: Self.softcap)
         let expected: Float = 1.0 / Float(v)
         for i in 0..<v {
-            #expect(abs(gpu[i] - expected) < 5e-4,
-                    "i=\(i) g=\(gpu[i]) expected=\(expected)")
+            #expect(
+                abs(gpu[i] - expected) < 5e-4,
+                "i=\(i) g=\(gpu[i]) expected=\(expected)")
         }
     }
 
@@ -125,11 +131,13 @@ import TinyTitanValidationSupport
         logits[0] = .nan
         for softcap in [Float(0), 30.0] {
             let probs = try Self.runKernel(logitsFp16: logits, v: v, softcap: softcap)
-            #expect(probs.allSatisfy { $0.isFinite },
-                    "softcap \(softcap): non-finite probability")
+            #expect(
+                probs.allSatisfy { $0.isFinite },
+                "softcap \(softcap): non-finite probability")
             let total = probs.reduce(0, +)
-            #expect(abs(total - 1.0) < 2e-2,
-                    "softcap \(softcap): probabilities sum to \(total)")
+            #expect(
+                abs(total - 1.0) < 2e-2,
+                "softcap \(softcap): probabilities sum to \(total)")
             #expect(probs[0] == 0, "softcap \(softcap): the NaN entry kept mass")
         }
     }
@@ -146,28 +154,35 @@ import TinyTitanValidationSupport
         let single = try LogitSoftcapSoftmax(context: ctx)
         let tiled = try LogitSoftcapSoftmaxTiled(context: ctx, vocab: v)
         for useTiled in [false, true] {
-            guard let logits = Fp16Buffer.make(ctx.device,
-                                               halves: [Float16](repeating: .nan, count: v)),
-                  let probs = Fp16Buffer.make(ctx.device, count: v),
-                  let cb = ctx.queue.makeCommandBuffer() else {
+            guard
+                let logits = Fp16Buffer.make(
+                    ctx.device,
+                    halves: [Float16](repeating: .nan, count: v)),
+                let probs = Fp16Buffer.make(ctx.device, count: v),
+                let cb = ctx.queue.makeCommandBuffer()
+            else {
                 Issue.record("Metal resource allocation failed")
                 return
             }
             if useTiled {
-                try tiled.encode(commandBuffer: cb, logits: logits, probs: probs,
-                                 v: UInt32(v), softcap: 30.0)
+                try tiled.encode(
+                    commandBuffer: cb, logits: logits, probs: probs,
+                    v: UInt32(v), softcap: 30.0)
             } else {
-                try single.encode(commandBuffer: cb, logits: logits, probs: probs,
-                                  v: UInt32(v), softcap: 30.0)
+                try single.encode(
+                    commandBuffer: cb, logits: logits, probs: probs,
+                    v: UInt32(v), softcap: 30.0)
             }
             cb.commit()
             cb.waitUntilCompleted()
             let row = Fp16Buffer.read(probs, count: v)
-            #expect(row.allSatisfy { $0 == 0 },
-                    "tiled=\(useTiled): an all-NaN row must be empty, not NaN")
+            #expect(
+                row.allSatisfy { $0 == 0 },
+                "tiled=\(useTiled): an all-NaN row must be empty, not NaN")
             let rowMax = useTiled ? tiled.rowMax : single.rowMax
-            #expect(!rowMax.isFinite,
-                    "tiled=\(useTiled): row max \(rowMax) should be non-finite")
+            #expect(
+                !rowMax.isFinite,
+                "tiled=\(useTiled): row max \(rowMax) should be non-finite")
         }
     }
 
@@ -182,29 +197,33 @@ import TinyTitanValidationSupport
         let single = try LogitSoftcapSoftmax(context: ctx)
         for vocab in [248_320, 4_096, 4_097, 1_003] {
             let tiled = try LogitSoftcapSoftmaxTiled(context: ctx, vocab: vocab)
-            guard let logits = ctx.device.makeBuffer(
-                      length: vocab * MemoryLayout<Float16>.stride,
-                      options: .storageModeShared),
-                  let a = ctx.device.makeBuffer(
-                      length: vocab * MemoryLayout<Float16>.stride,
-                      options: .storageModeShared),
-                  let b = ctx.device.makeBuffer(
-                      length: vocab * MemoryLayout<Float16>.stride,
-                      options: .storageModeShared)
+            guard
+                let logits = ctx.device.makeBuffer(
+                    length: vocab * MemoryLayout<Float16>.stride,
+                    options: .storageModeShared),
+                let a = ctx.device.makeBuffer(
+                    length: vocab * MemoryLayout<Float16>.stride,
+                    options: .storageModeShared),
+                let b = ctx.device.makeBuffer(
+                    length: vocab * MemoryLayout<Float16>.stride,
+                    options: .storageModeShared)
             else { throw MetalError.noDevice }
-            let src = logits.contents().bindMemory(to: Float16.self,
-                                                   capacity: vocab)
-            var state: UInt64 = 0x9E3779B97F4A7C15
+            let src = logits.contents().bindMemory(
+                to: Float16.self,
+                capacity: vocab)
+            var state: UInt64 = 0x9E37_79B9_7F4A_7C15
             for index in 0..<vocab {
-                state = state &* 6364136223846793005 &+ 1442695040888963407
+                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
                 let unit = Float(state >> 40) / Float(1 << 24)
                 src[index] = Float16(unit * 24 - 12)
             }
-            let cb = ctx.queue.makeCommandBuffer()!
-            try single.encode(commandBuffer: cb, logits: logits, probs: a,
-                              v: UInt32(vocab), softcap: 0)
-            try tiled.encode(commandBuffer: cb, logits: logits, probs: b,
-                             v: UInt32(vocab), softcap: 0)
+            let cb = try #require(ctx.queue.makeCommandBuffer())
+            try single.encode(
+                commandBuffer: cb, logits: logits, probs: a,
+                v: UInt32(vocab), softcap: 0)
+            try tiled.encode(
+                commandBuffer: cb, logits: logits, probs: b,
+                v: UInt32(vocab), softcap: 0)
             cb.commit()
             cb.waitUntilCompleted()
             let pa = a.contents().bindMemory(to: Float16.self, capacity: vocab)
@@ -215,10 +234,12 @@ import TinyTitanValidationSupport
                 worst = max(worst, abs(Float(pa[index]) - Float(pb[index])))
                 sumTiled += Float(pb[index])
             }
-            #expect(worst < 1e-5,
-                    "vocab \(vocab): worst |single - tiled| = \(worst)")
-            #expect(abs(sumTiled - 1) < 5e-2,
-                    "vocab \(vocab): tiled probabilities sum to \(sumTiled)")
+            #expect(
+                worst < 1e-5,
+                "vocab \(vocab): worst |single - tiled| = \(worst)")
+            #expect(
+                abs(sumTiled - 1) < 5e-2,
+                "vocab \(vocab): tiled probabilities sum to \(sumTiled)")
         }
     }
 }

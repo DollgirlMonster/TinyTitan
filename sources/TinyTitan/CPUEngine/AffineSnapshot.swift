@@ -76,8 +76,9 @@ public struct AffineSnapshot: Sendable {
     /// not a semantic one -- which `tools/gturbo_diff_snapshot.py` checks
     /// rather than assumes.
     private enum Storage {
-        case safetensors(shards: [String: SafeTensorsFile],
-                         placement: [String: String])
+        case safetensors(
+            shards: [String: SafeTensorsFile],
+            placement: [String: String])
         case gturbo(index: ResidentIndex, weights: ResidentWeights)
     }
 
@@ -161,8 +162,9 @@ public struct AffineSnapshot: Sendable {
 
         modelType = config["model_type"] as? String
         guard let quantization = config["quantization"] as? [String: Any],
-              let bits = quantization["bits"] as? Int,
-              let group = quantization["group_size"] as? Int else {
+            let bits = quantization["bits"] as? Int,
+            let group = quantization["group_size"] as? Int
+        else {
             throw SafeTensorsFile.Failure.malformed("config.json lacks a quantization block")
         }
         baseBits = bits
@@ -176,10 +178,12 @@ public struct AffineSnapshot: Sendable {
         widths = overrides
 
         let index = try JSONSerialization.jsonObject(
-            with: Data(contentsOf: directory.appendingPathComponent(
-                "model.safetensors.index.json")))
+            with: Data(
+                contentsOf: directory.appendingPathComponent(
+                    "model.safetensors.index.json")))
         guard let index = index as? [String: Any],
-              let map = index["weight_map"] as? [String: String] else {
+            let map = index["weight_map"] as? [String: String]
+        else {
             throw SafeTensorsFile.Failure.malformed("index has no weight_map")
         }
         var opened: [String: SafeTensorsFile] = [:]
@@ -271,7 +275,8 @@ public struct AffineSnapshot: Sendable {
         // that does not is worse than one that refuses.
         var widths: [String: Int] = manifest.quantOverrides
         for name in index.entries.keys {
-            let stem = name.hasSuffix(".weight")
+            let stem =
+                name.hasSuffix(".weight")
                 ? String(name.dropLast(".weight".count)) : name
             // The embedding is the head too when the output is tied, and the
             // manifest's override may not name it; the slot carries its width.
@@ -298,7 +303,7 @@ public struct AffineSnapshot: Sendable {
         guard full.count >= 2 else {
             throw SafeTensorsFile.Failure.malformed(
                 "manifest's attention mask has fewer than two full-attention "
-                + "layers, so no interval can be derived: full at \(full)")
+                    + "layers, so no interval can be derived: full at \(full)")
         }
         // The gap between *consecutive* full-attention layers. Every Qwen 3.5
         // model puts full attention on the last layer of each group, so a
@@ -326,12 +331,15 @@ public struct AffineSnapshot: Sendable {
     /// resident file is opened read-only and never written, so the pointers
     /// handed out live as long as the mapping and concurrent row-range reads
     /// cannot race -- the same invariant the snapshot case documents.
-    private static func matrix(_ name: String,
-                               index: ResidentIndex,
-                               weights: ResidentWeights,
-                               groupSize: Int,
-                               bits: Int) throws -> Matrix {
-        let stem = name.hasSuffix(".weight")
+    private static func matrix(
+        _ name: String,
+        index: ResidentIndex,
+        weights: ResidentWeights,
+        groupSize: Int,
+        bits: Int
+    ) throws -> Matrix {
+        let stem =
+            name.hasSuffix(".weight")
             ? String(name.dropLast(".weight".count)) : name
         guard let entry = index.entries[name] else {
             throw SafeTensorsFile.Failure.missing(name)
@@ -372,18 +380,20 @@ public struct AffineSnapshot: Sendable {
         }
         let perRow = columns / groupSize
         guard entry.scaleSize == UInt64(rows * perRow * 2),
-              entry.biasSize == entry.scaleSize else {
+            entry.biasSize == entry.scaleSize
+        else {
             throw SafeTensorsFile.Failure.malformed(
                 "\(stem): scales/biases are \(entry.scaleSize)/\(entry.biasSize) bytes "
-                + "but \(rows)x\(columns) at group \(groupSize) needs "
-                + "\(rows * perRow * 2) each")
+                    + "but \(rows)x\(columns) at group \(groupSize) needs "
+                    + "\(rows * perRow * 2) each")
         }
         guard let base = weights.base else {
             throw SafeTensorsFile.Failure.malformed("model_weights.bin could not be mapped")
         }
         return Matrix(
-            weights: UnsafeRawBufferPointer(start: base.advanced(by: Int(entry.fileOffset)),
-                                            count: Int(entry.sizeBytes)),
+            weights: UnsafeRawBufferPointer(
+                start: base.advanced(by: Int(entry.fileOffset)),
+                count: Int(entry.sizeBytes)),
             scales: base.advanced(by: Int(entry.scaleOffset))
                 .assumingMemoryBound(to: UInt16.self),
             biases: base.advanced(by: Int(entry.biasOffset))
@@ -479,10 +489,12 @@ public struct AffineSnapshot: Sendable {
     /// A quantized matrix by its `.weight` name.
     public func matrix(_ name: String) throws -> Matrix {
         if case .gturbo(let index, let weights) = storage {
-            return try Self.matrix(name, index: index, weights: weights,
-                                   groupSize: groupSize, bits: bits(forStem: stem(of: name)))
+            return try Self.matrix(
+                name, index: index, weights: weights,
+                groupSize: groupSize, bits: bits(forStem: stem(of: name)))
         }
-        let stem = name.hasSuffix(".weight")
+        let stem =
+            name.hasSuffix(".weight")
             ? String(name.dropLast(".weight".count)) : name
         let shard = try shard(name)
         let entry = try shard.entry(name)
@@ -502,17 +514,25 @@ public struct AffineSnapshot: Sendable {
         let scales = try shard.bytes(stem + ".scales")
         let biases = try shard.bytes(stem + ".biases")
         guard scales.count == rows * (columns / groupSize) * 2,
-              biases.count == scales.count else {
+            biases.count == scales.count
+        else {
             throw SafeTensorsFile.Failure.malformed(
                 "\(stem): scales and biases do not match \(rows)x\(columns) "
-                + "at \(width) bits, group \(groupSize)")
+                    + "at \(width) bits, group \(groupSize)")
         }
-        return Matrix(weights: try shard.bytes(name),
-                      scales: scales.baseAddress!.assumingMemoryBound(to: UInt16.self),
-                      biases: biases.baseAddress!.assumingMemoryBound(to: UInt16.self),
-                      rows: rows,
-                      columns: columns,
-                      bits: width,
-                      groupSize: groupSize)
+        guard let scalesBase = scales.baseAddress?.assumingMemoryBound(to: UInt16.self),
+            let biasesBase = biases.baseAddress?.assumingMemoryBound(to: UInt16.self)
+        else {
+            throw SafeTensorsFile.Failure.malformed(
+                "\(stem): scales or biases have no storage")
+        }
+        return Matrix(
+            weights: try shard.bytes(name),
+            scales: scalesBase,
+            biases: biasesBase,
+            rows: rows,
+            columns: columns,
+            bits: width,
+            groupSize: groupSize)
     }
 }

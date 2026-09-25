@@ -1,5 +1,5 @@
-import Foundation
 import ContinuityCore
+import Foundation
 
 /// A demonstration and a diagnostic.
 ///
@@ -20,8 +20,9 @@ struct ContinuityDemo {
             case "coding": try await coding()
             case "novel": try await novel()
             case "diagnose":
-                try await diagnose(keepingAt: CommandLine.arguments.dropFirst(2).first
-                                    .map { URL(fileURLWithPath: $0) })
+                try await diagnose(
+                    keepingAt: CommandLine.arguments.dropFirst(2).first
+                        .map { URL(fileURLWithPath: $0) })
             case "inspect":
                 let path = CommandLine.arguments.dropFirst(2).first
                 guard let path else {
@@ -67,56 +68,66 @@ struct ContinuityDemo {
 
         // Session one: the rules get decided.
         let first = try await engine.beginSession(taskID: task.id, model: "qwen35b")
-        try await engine.recordUserPrompt(sessionID: first.id,
-                                          text: "Write Pong in Swift with two computer players.")
+        try await engine.recordUserPrompt(
+            sessionID: first.id,
+            text: "Write Pong in Swift with two computer players.")
         try await engine.recordAssistantResponse(
             sessionID: first.id,
             text: "Done. 800x600 field, first to 11, ball starts at 5 and gains 0.5 per "
                 + "paddle hit up to 12, paddles move 6 units per frame.")
-        try await engine.remember(sessionID: first.id, namespace: "decision", key: "field",
-                                  value: "800 by 600, first to 11 points",
-                                  importance: 0.9, tags: ["rules"])
-        try await engine.remember(sessionID: first.id, namespace: "decision", key: "ball_speed",
-                                  value: "starts at 5, +0.5 per paddle hit, capped at 12",
-                                  importance: 0.9, tags: ["rules"])
-        try await engine.remember(sessionID: first.id, namespace: "decision", key: "paddle_speed",
-                                  value: "6 units per frame, 3-unit deadzone to stop jitter",
-                                  importance: 0.85, tags: ["rules"],
-                                  dependencies: ["constraint.no_human_input"])
-        try await engine.remember(sessionID: first.id, namespace: "constraint",
-                                  key: "no_human_input",
-                                  value: "neither paddle reads the keyboard or mouse; "
-                                      + "both track the ball",
-                                  importance: 0.5)
+        try await engine.remember(
+            sessionID: first.id, namespace: "decision", key: "field",
+            value: "800 by 600, first to 11 points",
+            importance: 0.9, tags: ["rules"])
+        try await engine.remember(
+            sessionID: first.id, namespace: "decision", key: "ball_speed",
+            value: "starts at 5, +0.5 per paddle hit, capped at 12",
+            importance: 0.9, tags: ["rules"])
+        try await engine.remember(
+            sessionID: first.id, namespace: "decision", key: "paddle_speed",
+            value: "6 units per frame, 3-unit deadzone to stop jitter",
+            importance: 0.85, tags: ["rules"],
+            dependencies: ["constraint.no_human_input"])
+        try await engine.remember(
+            sessionID: first.id, namespace: "constraint",
+            key: "no_human_input",
+            value: "neither paddle reads the keyboard or mouse; "
+                + "both track the ball",
+            importance: 0.5)
         _ = try await engine.endSession(first.id)
 
         // Session two: a bug becomes a durable gotcha.
         let second = try await engine.beginSession(taskID: task.id, model: "qwen35b")
-        try await engine.recordUserPrompt(sessionID: second.id,
-                                          text: "The paddles vibrate when the ball is level.")
+        try await engine.recordUserPrompt(
+            sessionID: second.id,
+            text: "The paddles vibrate when the ball is level.")
         try await engine.recordAssistantResponse(
             sessionID: second.id,
             text: "The deadzone was smaller than the paddle step, so it overshot every frame. "
                 + "Widened it to 3 units.")
-        try await engine.remember(sessionID: second.id, namespace: "gotcha", key: "jitter",
-                                  value: "a deadzone smaller than the paddle step makes the "
-                                      + "paddle oscillate; keep deadzone >= step / 2",
-                                  importance: 0.8)
+        try await engine.remember(
+            sessionID: second.id, namespace: "gotcha", key: "jitter",
+            value: "a deadzone smaller than the paddle step makes the "
+                + "paddle oscillate; keep deadzone >= step / 2",
+            importance: 0.8)
         _ = try await engine.endSession(second.id)
 
         // Session three: the port. Nothing above is in its window.
         let third = try await engine.beginSession(taskID: task.id, model: "qwen35b")
         let prompt = "Now port it to C99. Keep the behaviour identical."
-        let context = try await engine.assembleContext(taskID: task.id,
-                                                       sessionID: third.id,
-                                                       focus: prompt)
+        let context = try await engine.assembleContext(
+            taskID: task.id,
+            sessionID: third.id,
+            focus: prompt)
         print(context.renderedContext)
         print("")
-        note("\(context.estimatedTokenCount) estimated tokens, "
-             + "\(context.memoryItemIDs.count) facts, "
-             + "\(context.droppedItemIDs.count) dropped")
-        note("the constraint arrives with the paddle decision that depends on it, "
-             + "even though its own importance is low")
+        note(
+            "\(context.estimatedTokenCount) estimated tokens, "
+                + "\(context.memoryItemIDs.count) facts, "
+                + "\(context.droppedItemIDs.count) dropped")
+        note(
+            "the constraint arrives with the paddle decision that depends on it, "
+                + "even though its own importance is low")
     }
 
     // MARK: - A hundred-chapter novel
@@ -139,48 +150,58 @@ struct ContinuityDemo {
             objective: "A hundred-chapter novel. Close third person, past tense.")
         let session = try await engine.beginSession(taskID: task.id, model: "qwen35b")
 
-        try await engine.remember(sessionID: session.id, namespace: "style", key: "voice",
-                                  value: "close third person, past tense, no head-hopping",
-                                  importance: 0.95)
-        try await engine.remember(sessionID: session.id, namespace: "character.marcus",
-                                  key: "knows_about_photo",
-                                  value: "as of chapter 12 Marcus has NOT seen the photograph",
-                                  importance: 0.9, tags: ["continuity"])
-        try await engine.remember(sessionID: session.id, namespace: "character.marcus",
-                                  key: "eyes", value: "grey", importance: 0.4)
-        try await engine.remember(sessionID: session.id, namespace: "plot.act2", key: "brother",
-                                  value: "the brother is missing; found alive in chapter 58",
-                                  importance: 0.9,
-                                  dependencies: ["character.marcus.knows_about_photo"])
-        try await engine.remember(sessionID: session.id, namespace: "setting", key: "town",
-                                  value: "Ashgrove, coastal, permanently out of season",
-                                  importance: 0.6)
+        try await engine.remember(
+            sessionID: session.id, namespace: "style", key: "voice",
+            value: "close third person, past tense, no head-hopping",
+            importance: 0.95)
+        try await engine.remember(
+            sessionID: session.id, namespace: "character.marcus",
+            key: "knows_about_photo",
+            value: "as of chapter 12 Marcus has NOT seen the photograph",
+            importance: 0.9, tags: ["continuity"])
+        try await engine.remember(
+            sessionID: session.id, namespace: "character.marcus",
+            key: "eyes", value: "grey", importance: 0.4)
+        try await engine.remember(
+            sessionID: session.id, namespace: "plot.act2", key: "brother",
+            value: "the brother is missing; found alive in chapter 58",
+            importance: 0.9,
+            dependencies: ["character.marcus.knows_about_photo"])
+        try await engine.remember(
+            sessionID: session.id, namespace: "setting", key: "town",
+            value: "Ashgrove, coastal, permanently out of season",
+            importance: 0.6)
 
         // Chapter 30 contradicted chapter 12. The engine does not pick a
         // winner; it shows the model the conflict.
-        try await engine.remember(sessionID: session.id, namespace: "character.marcus",
-                                  key: "knows_about_photo",
-                                  value: "chapter 30 has Marcus recognising the photograph, "
-                                      + "which contradicts chapter 12",
-                                  importance: 0.95, tags: ["continuity"])
-        _ = try await engine.dispute(taskID: task.id, namespace: "character.marcus",
-                                     key: "knows_about_photo")
+        try await engine.remember(
+            sessionID: session.id, namespace: "character.marcus",
+            key: "knows_about_photo",
+            value: "chapter 30 has Marcus recognising the photograph, "
+                + "which contradicts chapter 12",
+            importance: 0.95, tags: ["continuity"])
+        _ = try await engine.dispute(
+            taskID: task.id, namespace: "character.marcus",
+            key: "knows_about_photo")
 
         let prompt = "Write chapter 41, where Marcus finally confronts his brother's absence."
-        let context = try await engine.assembleContext(taskID: task.id,
-                                                       sessionID: session.id, focus: prompt)
+        let context = try await engine.assembleContext(
+            taskID: task.id,
+            sessionID: session.id, focus: prompt)
         print(context.renderedContext)
         print("")
 
-        let history = await engine.history(taskID: task.id,
-                                           namespace: "character.marcus",
-                                           key: "knows_about_photo")
+        let history = await engine.history(
+            taskID: task.id,
+            namespace: "character.marcus",
+            key: "knows_about_photo")
         note("what the book believed about the photograph, in order:")
         for version in history {
             print("      v\(version.version) [\(version.status.rawValue)] \(version.value)")
         }
-        note("the contradiction is surfaced, not silently resolved; "
-             + "chapter 12's version is still readable")
+        note(
+            "the contradiction is surfaced, not silently resolved; "
+                + "chapter 12's version is still readable")
     }
 
     // MARK: - Diagnostics
@@ -191,9 +212,10 @@ struct ContinuityDemo {
     static func diagnose(keepingAt destination: URL? = nil) async throws {
         heading("Diagnostics")
 
-        let directory = destination?.deletingLastPathComponent()
+        let directory =
+            destination?.deletingLastPathComponent()
             ?? FileManager.default.temporaryDirectory
-                .appendingPathComponent("continuity-demo-\(UUID().uuidString)")
+            .appendingPathComponent("continuity-demo-\(UUID().uuidString)")
         // Cleans up at return, not at the end of the `if`: `defer` binds to its
         // enclosing scope, and inside that `if` it ran immediately -- deleting
         // the directory the journal below is then written to.
@@ -206,21 +228,24 @@ struct ContinuityDemo {
 
         let engine = ContinuityEngine(journal: try FileJournal(url: url))
         try await engine.start()
-        let task = try await engine.createTask(title: "Scale check",
-                                               objective: "A hundred chapters of state")
+        let task = try await engine.createTask(
+            title: "Scale check",
+            objective: "A hundred chapters of state")
 
         let start = Date()
         for chapter in 0..<100 {
             let session = try await engine.beginSession(taskID: task.id, model: "qwen35b")
-            try await engine.recordUserPrompt(sessionID: session.id,
-                                              text: "Write chapter \(chapter).")
+            try await engine.recordUserPrompt(
+                sessionID: session.id,
+                text: "Write chapter \(chapter).")
             try await engine.recordAssistantResponse(
                 sessionID: session.id,
                 text: String(repeating: "prose ", count: 400))
-            try await engine.remember(sessionID: session.id, namespace: "chapter",
-                                      key: String(format: "c%03d", chapter),
-                                      value: "chapter \(chapter): summary of what happened",
-                                      importance: Double(chapter % 10) / 10)
+            try await engine.remember(
+                sessionID: session.id, namespace: "chapter",
+                key: String(format: "c%03d", chapter),
+                value: "chapter \(chapter): summary of what happened",
+                importance: Double(chapter % 10) / 10)
             _ = try await engine.endSession(session.id)
         }
         let elapsed = Date().timeIntervalSince(start)
@@ -228,10 +253,12 @@ struct ContinuityDemo {
         let statistics = await engine.statistics()
         let context = try await engine.assembleContext(
             taskID: task.id,
-            budget: ContextBudget(maxTokens: 2000, priorityNamespaces: ["chapter"],
-                                  recentTurnCount: 2))
-        let bytes = (try? FileManager.default
-            .attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+            budget: ContextBudget(
+                maxTokens: 2000, priorityNamespaces: ["chapter"],
+                recentTurnCount: 2))
+        let bytes =
+            (try? FileManager.default
+                .attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
 
         row("sessions", "\(statistics.sessionCount)")
         row("events", "\(statistics.eventCount)")
@@ -242,21 +269,26 @@ struct ContinuityDemo {
         row("log bytes resident", "\(statistics.logBytes)")
         row("100 sessions in", String(format: "%.0f ms", elapsed * 1000))
         row("per session", String(format: "%.1f ms", elapsed * 10))
-        row("assembled context", "\(context.estimatedTokenCount) tokens, "
-            + "\(context.memoryItemIDs.count) of \(statistics.memoryItemCount) facts")
+        row(
+            "assembled context",
+            "\(context.estimatedTokenCount) tokens, "
+                + "\(context.memoryItemIDs.count) of \(statistics.memoryItemCount) facts")
 
         try await engine.compactJournal()
-        let compacted = (try? FileManager.default
-            .attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        let compacted =
+            (try? FileManager.default
+                .attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
         row("after compaction", "\(compacted) bytes")
         await engine.shutDown()
         if let destination {
             note("journal kept at \(destination.path)")
         }
-        note("the context stays inside its budget while the record keeps everything; "
-             + "that separation is the whole design")
-        note("per-session cost is dominated by the durability barrier taken at each "
-             + "session boundary, which is the point of taking it there and not per write")
+        note(
+            "the context stays inside its budget while the record keeps everything; "
+                + "that separation is the whole design")
+        note(
+            "per-session cost is dominated by the durability barrier taken at each "
+                + "session boundary, which is the point of taking it there and not per write")
     }
 
     // MARK: - Inspecting a journal
@@ -319,12 +351,15 @@ struct ContinuityDemo {
                 let state = session.endedAt == nil ? "open" : "ended"
                 print("    session \(label) [\(state)] \(session.model ?? "")")
             }
-            if taskSessions.count > 10 { print("    ...and \(taskSessions.count - 10) earlier sessions") }
+            if taskSessions.count > 10 {
+                print("    ...and \(taskSessions.count - 10) earlier sessions")
+            }
             let mine = items.values.filter { $0.taskID == task.id }
             for item in mine.sorted(by: { $0.address < $1.address }).prefix(40) {
                 let marker = item.status == .active ? " " : "\(item.status.rawValue.prefix(1))"
-                print("    \(marker) \(item.address) (v\(item.version)): "
-                      + "\(summarize(item.value))")
+                print(
+                    "    \(marker) \(item.address) (v\(item.version)): "
+                        + "\(summarize(item.value))")
             }
             if mine.count > 40 { print("    ...and \(mine.count - 40) more") }
         }

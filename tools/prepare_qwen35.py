@@ -67,6 +67,7 @@ Disk while running: the shard being converted and the one downloading behind
 it (4B: 5.3 + 4.0 GB; 9B: 10.6 + 8.0 GB), plus the outputs (4B: 2.7 GB at
 4-bit, 4.5 GB at 8; 9B: 6.1 GB at 4-bit, 9.5 GB at 8).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -88,10 +89,14 @@ try:
     import ml_dtypes
     import numpy as np
 except ImportError as exc:  # pragma: no cover - environment, not logic
-    sys.exit(f"missing dependency: {exc}\n"
-             f"  install them for the interpreter running this file: {sys.executable}\n"
-             "    -m pip install safetensors numpy ml_dtypes\n"
-             "  (or point TINYTITAN_PYTHON at another Python 3.10+)")
+    sys.exit(
+        f"missing dependency: {exc}\n"
+        f"  install them for the interpreter running this file: {sys.executable}\n"
+        "    -m pip install safetensors numpy ml_dtypes\n"
+        "  (or point TINYTITAN_PYTHON at another Python 3.10+)"
+    )
+
+
 # NamedTuple, not a dataclass: the precision tools load this file with
 # `spec_from_file_location` and never register it in `sys.modules`, and a
 # dataclass under postponed annotations looks its module up there and fails.
@@ -114,18 +119,39 @@ class Size(NamedTuple):
 
 
 SIZES = {
-    "2b": Size("Qwen/Qwen3.5-2B", "15852e8c16360a2fea060d615a32b45270f8a8fc",
-               24, 2048, "Qwen 3.5 2B", "qwen3.5-2b", True),
-    "4b": Size("Qwen/Qwen3.5-4B", "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
-               32, 2560, "Qwen 3.5 4B", "qwen3.5-4b", True),
+    "2b": Size(
+        "Qwen/Qwen3.5-2B",
+        "15852e8c16360a2fea060d615a32b45270f8a8fc",
+        24,
+        2048,
+        "Qwen 3.5 2B",
+        "qwen3.5-2b",
+        True,
+    ),
+    "4b": Size(
+        "Qwen/Qwen3.5-4B",
+        "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+        32,
+        2560,
+        "Qwen 3.5 4B",
+        "qwen3.5-4b",
+        True,
+    ),
     # 9B is the vision-language build: its config nests the text model under
     # `text_config` and carries a `model.visual.*` tower, which `skipped()`
     # drops, so it converts with the same code path as the two text-only
     # sizes. Its text geometry is 4B's attention shape at 9B's width --
     # 16 query heads over 4 key heads, 32 value heads -- so it exercises the
     # same head-sharing the 4B pinned, not a new one.
-    "9b": Size("Qwen/Qwen3.5-9B", "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
-               32, 4096, "Qwen 3.5 9B", "qwen3.5-9b", False),
+    "9b": Size(
+        "Qwen/Qwen3.5-9B",
+        "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+        32,
+        4096,
+        "Qwen 3.5 9B",
+        "qwen3.5-9b",
+        False,
+    ),
 }
 
 # Module-level, because the transport and config writers read them and the
@@ -185,10 +211,14 @@ def quantize_affine(value: np.ndarray, bits: int) -> tuple[np.ndarray, ...]:
     scale = np.where(high == bias, np.float32(1), (high - bias) / levels)
     scale = scale.astype(ml_dtypes.bfloat16)
     bias = bias.astype(ml_dtypes.bfloat16)
-    quantized = np.rint(
-        (grouped - bias.astype(np.float32)[..., None])
-        / scale.astype(np.float32)[..., None]
-    ).clip(0, levels).astype(np.uint32).reshape(value.shape)
+    quantized = (
+        np.rint(
+            (grouped - bias.astype(np.float32)[..., None]) / scale.astype(np.float32)[..., None]
+        )
+        .clip(0, levels)
+        .astype(np.uint32)
+        .reshape(value.shape)
+    )
     lanes = 32 // bits
     words = quantized.reshape(*quantized.shape[:-1], quantized.shape[-1] // lanes, lanes)
     packed = np.zeros(words.shape[:-1], dtype=np.uint32)
@@ -200,8 +230,8 @@ def quantize_affine(value: np.ndarray, bits: int) -> tuple[np.ndarray, ...]:
 # --- naming ------------------------------------------------------------------
 
 
-HEAD_BITS = BITS_8      # --head-bits: the tied embedding slot
-WITH_MTP = False        # --mtp: also convert the one-layer draft head
+HEAD_BITS = BITS_8  # --head-bits: the tied embedding slot
+WITH_MTP = False  # --mtp: also convert the one-layer draft head
 
 # Tensors carried a width above the build's, because measurement says they
 # are worth it (tools/precision_plan_qwen35.py, against the 2B bf16 source):
@@ -229,7 +259,7 @@ PROMOTE_TO_8BIT = (
     ".self_attn.k_proj",
     ".self_attn.v_proj",
 )
-PROMOTE = True          # --no-promote: build a uniform-width snapshot
+PROMOTE = True  # --no-promote: build a uniform-width snapshot
 
 
 def skipped(name: str) -> bool:
@@ -246,7 +276,7 @@ def skipped(name: str) -> bool:
 def rename(name: str) -> str:
     """Checkpoint name -> the MLX spelling this family is repacked from."""
     if name.startswith("mtp."):
-        return "mtp." + name[len("mtp."):]
+        return "mtp." + name[len("mtp.") :]
     # The untied 9B keeps its output head at the archive root, where the
     # reader's `lmHead` slot expects it; only the 2B and 4B tie it to the
     # embedding. Same mapping prepare_agentworld.py uses.
@@ -254,7 +284,7 @@ def rename(name: str) -> str:
         return "language_model.lm_head.weight"
     prefix = "model.language_model."
     if name.startswith(prefix):
-        return "language_model.model." + name[len(prefix):]
+        return "language_model.model." + name[len(prefix) :]
     raise ValueError(f"unexpected tensor outside the language model: {name}")
 
 
@@ -307,7 +337,7 @@ def kept_bf16(name: str) -> bool:
 def quant_bits(name: str, width: int) -> int | None:
     """Bits for a renamed tensor, or None to copy it through at bf16."""
     if not name.endswith(".weight"):
-        return None                                   # A_log, dt_bias
+        return None  # A_log, dt_bias
     if name.endswith("conv1d.weight") or name.endswith("norm.weight"):
         return None
     if is_mtp_norm(name):
@@ -315,7 +345,7 @@ def quant_bits(name: str, width: int) -> int | None:
     if kept_bf16(name):
         return None
     if name.endswith("embed_tokens.weight") or name.endswith("lm_head.weight"):
-        return HEAD_BITS                              # 8-bit: the head, tied or not
+        return HEAD_BITS  # 8-bit: the head, tied or not
     if PROMOTE and width < BITS_8:
         stem = name[: -len(".weight")]
         if stem.endswith(PROMOTE_TO_8BIT):
@@ -326,8 +356,7 @@ def quant_bits(name: str, width: int) -> int | None:
 # --- the plan: every output tensor's place, from the source headers ---------
 
 
-DTYPES = {"BF16": ml_dtypes.bfloat16, "F16": np.float16, "F32": np.float32,
-          "U32": np.uint32}
+DTYPES = {"BF16": ml_dtypes.bfloat16, "F16": np.float16, "F32": np.float32, "U32": np.uint32}
 
 
 class Planned(NamedTuple):
@@ -358,9 +387,11 @@ def planned(name: str, entry: dict, width: int) -> list[Planned]:
         raise ValueError(f"{name}: {columns} columns is not group-aligned")
     stem = out[: -len(".weight")]
     groups = (rows, columns // GROUP_SIZE)
-    return [Planned(stem + ".weight", "U32", (rows, columns * bits // 32)),
-            Planned(stem + ".scales", "BF16", groups),
-            Planned(stem + ".biases", "BF16", groups)]
+    return [
+        Planned(stem + ".weight", "U32", (rows, columns * bits // 32)),
+        Planned(stem + ".scales", "BF16", groups),
+        Planned(stem + ".biases", "BF16", groups),
+    ]
 
 
 def parse_header(raw: bytes) -> dict:
@@ -375,8 +406,7 @@ def in_file_order(header: dict) -> list[str]:
 
 
 def file_size(header_length: int, header: dict) -> int:
-    return 8 + header_length + max((e["data_offsets"][1] for e in header.values()),
-                                   default=0)
+    return 8 + header_length + max((e["data_offsets"][1] for e in header.values()), default=0)
 
 
 # --- source ------------------------------------------------------------------
@@ -421,8 +451,9 @@ class SourceShard:
         dtype = np.dtype(DTYPES[entry["dtype"]])
         inner = tuple(entry["shape"][1:])
         row_bytes = math.prod(inner) * dtype.itemsize
-        raw = self._bytes(self.payload + entry["data_offsets"][0] + first * row_bytes,
-                          (stop - first) * row_bytes)
+        raw = self._bytes(
+            self.payload + entry["data_offsets"][0] + first * row_bytes, (stop - first) * row_bytes
+        )
         return raw.view(dtype).reshape((stop - first, *inner) if entry["shape"] else ())
 
 
@@ -465,11 +496,14 @@ class SnapshotWriter:
             name = f"model-{number:05d}-of-{len(shards):05d}.safetensors"
             header, cursor = {}, 0
             for p in members:
-                header[p.name] = {"dtype": p.dtype, "shape": list(p.shape),
-                                  "data_offsets": [cursor, cursor + p.nbytes]}
+                header[p.name] = {
+                    "dtype": p.dtype,
+                    "shape": list(p.shape),
+                    "data_offsets": [cursor, cursor + p.nbytes],
+                }
                 cursor += p.nbytes
             raw = json.dumps(header, separators=(",", ":")).encode()
-            raw += b" " * (-len(raw) % 8)       # payload 8-aligned, as safetensors pads
+            raw += b" " * (-len(raw) % 8)  # payload 8-aligned, as safetensors pads
             fd = os.open(out / name, os.O_RDWR | os.O_CREAT | os.O_TRUNC, 0o644)
             fcntl.fcntl(fd, fcntl.F_NOCACHE, 1)
             self._pwrite(fd, struct.pack("<Q", len(raw)) + raw, 0)
@@ -508,12 +542,12 @@ class SnapshotWriter:
         for fd in self.files:
             os.fsync(fd)
             os.close(fd)
-        (self.out / "model.safetensors.index.json").write_text(json.dumps(
-            {"metadata": {"total_size": self.total}, "weight_map": self.index}, indent=1))
+        (self.out / "model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {"total_size": self.total}, "weight_map": self.index}, indent=1)
+        )
 
 
-def convert_shard(src: SourceShard, names: list[str],
-                  writers: dict[int, SnapshotWriter]) -> None:
+def convert_shard(src: SourceShard, names: list[str], writers: dict[int, SnapshotWriter]) -> None:
     """One source shard into every requested width; each row block is read
     once and quantized for all of them."""
     for name in names:
@@ -556,9 +590,11 @@ def write_config(config: dict, out: Path, tensor_names, width: int) -> dict:
     own: a server finds a CPU model as a directory under `models/` whose
     config names a family the CPU engine serves and carries this block.
     """
-    text = {"model_id": f"{SIZE.model_id_stem}_{width}-Bit",
-            "display_name": SIZE.display_name,
-            **config.get("text_config", config)}
+    text = {
+        "model_id": f"{SIZE.model_id_stem}_{width}-Bit",
+        "display_name": SIZE.display_name,
+        **config.get("text_config", config),
+    }
     text["model_type"] = "qwen3_5_dense"
     text["architectures"] = ["Qwen3_5DenseForCausalLM"]
     text["tie_word_embeddings"] = SIZE.tied_output
@@ -582,8 +618,10 @@ def write_config(config: dict, out: Path, tensor_names, width: int) -> dict:
             lifted.append(key)
         text.setdefault(key, float(rope.get(key, fallback)))
     text["rope_constants_source"] = (
-        f"text_config.rope_parameters of {REPO}@{COMMIT[:7]}" if len(lifted) == 2
-        else f"architecture default; absent from {REPO}@{COMMIT[:7]}/config.json")
+        f"text_config.rope_parameters of {REPO}@{COMMIT[:7]}"
+        if len(lifted) == 2
+        else f"architecture default; absent from {REPO}@{COMMIT[:7]}/config.json"
+    )
     overrides = {}
     for name in tensor_names:
         if not name.endswith(".weight"):
@@ -593,7 +631,10 @@ def write_config(config: dict, out: Path, tensor_names, width: int) -> dict:
             continue
         overrides[name[: -len(".weight")]] = {"bits": bits, "group_size": GROUP_SIZE}
     text["quantization"] = {
-        "bits": width, "group_size": GROUP_SIZE, "mode": "affine", **overrides,
+        "bits": width,
+        "group_size": GROUP_SIZE,
+        "mode": "affine",
+        **overrides,
     }
     (out / "config.json").write_text(json.dumps(text, indent=1))
     return text
@@ -609,8 +650,11 @@ RETRY = ["--retry", "5", "--retry-delay", "5", "--retry-all-errors"]
 
 def fetch(remote: str, byte_range: str | None = None) -> bytes:
     ranged = ["-r", byte_range] if byte_range else []
-    return subprocess.run(["curl", "-sfL", "--max-time", "120", *RETRY, *ranged,
-                           f"{BASE}/{remote}"], capture_output=True, check=True).stdout
+    return subprocess.run(
+        ["curl", "-sfL", "--max-time", "120", *RETRY, *ranged, f"{BASE}/{remote}"],
+        capture_output=True,
+        check=True,
+    ).stdout
 
 
 def fetch_json(remote: str) -> dict:
@@ -642,8 +686,7 @@ def download(shard: str, work: Path, size: int) -> Path:
     partial = work / (shard + ".part")
     print(f"  fetching {shard}", flush=True)
     started = time.time()
-    _download = subprocess.Popen(
-        ["curl", "-sfL", *RETRY, "-o", str(partial), f"{BASE}/{shard}"])
+    _download = subprocess.Popen(["curl", "-sfL", *RETRY, "-o", str(partial), f"{BASE}/{shard}"])
     if _download.wait() != 0 or partial.stat().st_size != size:
         partial.unlink(missing_ok=True)
         raise RuntimeError(f"download failed: {shard}")
@@ -661,8 +704,8 @@ def stop_download() -> None:
 def fetch_tokenizer(out: Path) -> None:
     for name, required in TOKENIZER_FILES:
         done = subprocess.run(
-            ["curl", "-sfL", "--max-time", "300", *RETRY, "-o", str(out / name),
-             f"{BASE}/{name}"])
+            ["curl", "-sfL", "--max-time", "300", *RETRY, "-o", str(out / name), f"{BASE}/{name}"]
+        )
         if done.returncode != 0:
             (out / name).unlink(missing_ok=True)
             if required:
@@ -678,8 +721,11 @@ def plan(groups: list[list[Planned]], width: int) -> None:
     kinds: dict[str, int] = {}
     for group in groups:
         head = group[0]
-        kind = "bf16" if len(group) == 1 else (
-            f"{32 * head.shape[1] // (group[1].shape[1] * GROUP_SIZE)}-bit")
+        kind = (
+            "bf16"
+            if len(group) == 1
+            else (f"{32 * head.shape[1] // (group[1].shape[1] * GROUP_SIZE)}-bit")
+        )
         kinds[kind] = kinds.get(kind, 0) + 1
     total = sum(p.nbytes for group in groups for p in group)
     print(f"\n{width}-bit plan for {REPO} @ {COMMIT[:8]}")
@@ -696,26 +742,51 @@ def output_path(output: Path, width: int, widths: list[int]) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--size", choices=sorted(SIZES), required=True,
-                    help="which checkpoint: " + ", ".join(
-                        f"{k} = {v.repo}@{v.commit[:7]}" for k, v in SIZES.items()))
-    ap.add_argument("--head-bits", type=int, choices=(4, 8), default=8,
-                    help="tied embedding width (default 8; it is 248320 rows and "
-                         "serves as both the embedding and the output head)")
-    ap.add_argument("--no-promote", action="store_true",
-                    help="uniform build width; by default a 4-bit snapshot keeps "
-                         "k_proj and v_proj at 8-bit, which removes 94%% of their "
-                         "error for under 1%% of the bytes (tools/precision_plan_qwen35.py)")
-    ap.add_argument("--mtp", action="store_true",
-                    help="also convert the one-layer mtp.* draft head")
-    ap.add_argument("--plan", action="store_true",
-                    help="classify and size from the shard headers, download nothing")
-    ap.add_argument("--bits", type=int, choices=(4, 8), nargs="+", default=[8],
-                    help="one width, or both to write two snapshots from one download")
-    ap.add_argument("--output", type=Path,
-                    help="snapshot directory; with two widths, a path containing "
-                         "{bits} (models/qwen3.5_4B_{bits}Bit) or a prefix that "
-                         "gets -4bit/-8bit")
+    ap.add_argument(
+        "--size",
+        choices=sorted(SIZES),
+        required=True,
+        help="which checkpoint: "
+        + ", ".join(f"{k} = {v.repo}@{v.commit[:7]}" for k, v in SIZES.items()),
+    )
+    ap.add_argument(
+        "--head-bits",
+        type=int,
+        choices=(4, 8),
+        default=8,
+        help="tied embedding width (default 8; it is 248320 rows and "
+        "serves as both the embedding and the output head)",
+    )
+    ap.add_argument(
+        "--no-promote",
+        action="store_true",
+        help="uniform build width; by default a 4-bit snapshot keeps "
+        "k_proj and v_proj at 8-bit, which removes 94%% of their "
+        "error for under 1%% of the bytes (tools/precision_plan_qwen35.py)",
+    )
+    ap.add_argument(
+        "--mtp", action="store_true", help="also convert the one-layer mtp.* draft head"
+    )
+    ap.add_argument(
+        "--plan",
+        action="store_true",
+        help="classify and size from the shard headers, download nothing",
+    )
+    ap.add_argument(
+        "--bits",
+        type=int,
+        choices=(4, 8),
+        nargs="+",
+        default=[8],
+        help="one width, or both to write two snapshots from one download",
+    )
+    ap.add_argument(
+        "--output",
+        type=Path,
+        help="snapshot directory; with two widths, a path containing "
+        "{bits} (models/qwen3.5_4B_{bits}Bit) or a prefix that "
+        "gets -4bit/-8bit",
+    )
     ap.add_argument("--work", type=Path, help="scratch for in-flight shards")
     args = ap.parse_args(argv)
     global HEAD_BITS, WITH_MTP, PROMOTE
@@ -731,19 +802,22 @@ def main(argv: list[str] | None = None) -> int:
     if (text.get("num_hidden_layers"), text.get("hidden_size")) != (SIZE.layers, SIZE.hidden):
         raise SystemExit(
             f"unexpected geometry for {args.size}: "
-            f"{text.get('num_hidden_layers')} layers of {text.get('hidden_size')}")
+            f"{text.get('num_hidden_layers')} layers of {text.get('hidden_size')}"
+        )
     index = fetch_json("model.safetensors.index.json")
     shards = sorted({s for n, s in index["weight_map"].items() if not skipped(n)})
     headers = {shard: remote_header(shard) for shard in shards}
-    order = {shard: [n for n in in_file_order(headers[shard][0]) if not skipped(n)]
-             for shard in shards}
+    order = {
+        shard: [n for n in in_file_order(headers[shard][0]) if not skipped(n)] for shard in shards
+    }
     listed = {n for n in index["weight_map"] if not skipped(n)}
     found = {n for names in order.values() for n in names}
     if listed != found:
         raise SystemExit(f"index and shard headers disagree on {len(listed ^ found)} tensors")
     widths = sorted(set(args.bits))
-    groups = {w: [planned(n, headers[s][0][n], w) for s in shards for n in order[s]]
-              for w in widths}
+    groups = {
+        w: [planned(n, headers[s][0][n], w) for s in shards for n in order[s]] for w in widths
+    }
     if args.plan:
         for width in widths:
             plan(groups[width], width)
@@ -761,7 +835,7 @@ def main(argv: list[str] | None = None) -> int:
         for shard in shards:
             try:
                 queue.put((shard, download(shard, work, headers[shard][1])))
-            except Exception as exc:                     # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 queue.put(exc)
                 return
         queue.put(None)
@@ -797,8 +871,10 @@ def main(argv: list[str] | None = None) -> int:
         out = outputs[width]
         written = write_config(config, out, writer.index.keys(), width)
         fetch_tokenizer(out)
-        print(f"  {out}: {written['model_id']}, {writer.total / 1e9:.2f} GB, "
-              f"{len(writer.index)} tensors")
+        print(
+            f"  {out}: {written['model_id']}, {writer.total / 1e9:.2f} GB, "
+            f"{len(writer.index)} tensors"
+        )
     print(f"done in {time.time() - started:.0f}s")
     return 0
 

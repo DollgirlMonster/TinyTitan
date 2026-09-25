@@ -37,20 +37,27 @@ class OrnithConciseToolABTests(unittest.TestCase):
     def test_self_scaffold_artifact_validation(self) -> None:
         with tempfile.TemporaryDirectory(dir=benchmark.ROOT / ".build") as directory:
             workspace = pathlib.Path(directory)
-            curriculum = [{
-                "language": language,
-                "title": "Task",
-                "objective": "Objective",
-                "scaffold": f"scaffold.{suffix}",
-                "self_chosen_edge_case": "Unicode",
-                "rubric": ["Passes"],
-            } for language, suffix in (("Python", "py"), ("Swift", "swift"))]
+            curriculum = [
+                {
+                    "language": language,
+                    "title": "Task",
+                    "objective": "Objective",
+                    "scaffold": f"scaffold.{suffix}",
+                    "self_chosen_edge_case": "Unicode",
+                    "rubric": ["Passes"],
+                }
+                for language, suffix in (("Python", "py"), ("Swift", "swift"))
+            ]
             (workspace / "curriculum.json").write_text(json.dumps(curriculum))
-            (workspace / "reflection.json").write_text(json.dumps({
-                "outcomes": ["pass", "pass"],
-                "lessons": ["normalize boundaries"],
-                "next_task": "Add streaming input",
-            }))
+            (workspace / "reflection.json").write_text(
+                json.dumps(
+                    {
+                        "outcomes": ["pass", "pass"],
+                        "lessons": ["normalize boundaries"],
+                        "next_task": "Add streaming input",
+                    }
+                )
+            )
             self.assertEqual(benchmark.validate_json_artifacts(workspace), [])
             (workspace / "curriculum.json").write_text(json.dumps({"tasks": curriculum}))
             self.assertEqual(benchmark.validate_json_artifacts(workspace), [])

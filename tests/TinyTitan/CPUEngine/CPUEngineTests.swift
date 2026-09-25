@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 /// The side-engine's loader and its scalar arithmetic.
@@ -16,14 +17,22 @@ import Testing
     /// Builds a real safetensors file: an eight-byte header length, a JSON
     /// header, then the payload. Written by hand rather than by a library so
     /// the test fails if the reader's idea of the format drifts.
-    private func writeShard(_ tensors: [(name: String, dtype: String,
-                                         shape: [Int], bytes: [UInt8])]) throws -> URL {
+    private func writeShard(
+        _ tensors: [(
+            name: String, dtype: String,
+            shape: [Int], bytes: [UInt8]
+        )]
+    ) throws -> URL {
         var header: [String: Any] = [:]
         var payload: [UInt8] = []
         for tensor in tensors {
-            header[tensor.name] = ["dtype": tensor.dtype, "shape": tensor.shape,
-                                   "data_offsets": [payload.count,
-                                                    payload.count + tensor.bytes.count]]
+            header[tensor.name] = [
+                "dtype": tensor.dtype, "shape": tensor.shape,
+                "data_offsets": [
+                    payload.count,
+                    payload.count + tensor.bytes.count,
+                ],
+            ]
             payload.append(contentsOf: tensor.bytes)
         }
         var json = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
@@ -118,11 +127,13 @@ import Testing
     /// A snapshot with one quantized matrix, written the way the converter
     /// writes one: `bits`-wide unsigned lanes packed low-first into UInt32,
     /// one BF16 scale and bias per group.
-    private func writeSnapshot(rows: Int, columns: Int, bits: Int,
-                               group: Int = 64,
-                               level: (Int, Int) -> UInt32,
-                               scale: Float, bias: Float,
-                               overrides: [String: Int] = [:]) throws -> URL {
+    private func writeSnapshot(
+        rows: Int, columns: Int, bits: Int,
+        group: Int = 64,
+        level: (Int, Int) -> UInt32,
+        scale: Float, bias: Float,
+        overrides: [String: Int] = [:]
+    ) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("snapshot-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -132,7 +143,8 @@ import Testing
             for word in 0..<(columns / lanes) {
                 var packed: UInt32 = 0
                 for lane in 0..<lanes {
-                    packed |= (level(row, word * lanes + lane) & UInt32((1 << bits) - 1))
+                    packed |=
+                        (level(row, word * lanes + lane) & UInt32((1 << bits) - 1))
                         << (bits * lane)
                 }
                 words.append(packed)
@@ -145,10 +157,14 @@ import Testing
         let groups = rows * (columns / group)
         let url = try writeShard([
             ("w.weight", "U32", [rows, columns / lanes], weightBytes),
-            ("w.scales", "BF16", [rows, columns / group],
-             bf16([Float](repeating: scale, count: groups))),
-            ("w.biases", "BF16", [rows, columns / group],
-             bf16([Float](repeating: bias, count: groups))),
+            (
+                "w.scales", "BF16", [rows, columns / group],
+                bf16([Float](repeating: scale, count: groups))
+            ),
+            (
+                "w.biases", "BF16", [rows, columns / group],
+                bf16([Float](repeating: bias, count: groups))
+            ),
         ])
         try FileManager.default.moveItem(
             at: url, to: directory.appendingPathComponent("model.safetensors"))
@@ -168,10 +184,13 @@ import Testing
         try JSONSerialization.data(withJSONObject: config)
             .write(to: directory.appendingPathComponent("config.json"))
         try JSONSerialization.data(withJSONObject: [
-            "weight_map": ["w.weight": "model.safetensors",
-                           "w.scales": "model.safetensors",
-                           "w.biases": "model.safetensors"]])
-            .write(to: directory.appendingPathComponent("model.safetensors.index.json"))
+            "weight_map": [
+                "w.weight": "model.safetensors",
+                "w.scales": "model.safetensors",
+                "w.biases": "model.safetensors",
+            ]
+        ])
+        .write(to: directory.appendingPathComponent("model.safetensors.index.json"))
         return directory
     }
 
@@ -182,8 +201,9 @@ import Testing
     /// plausible nonsense. It is refused now, before the division's result is
     /// trusted.
     @Test func aWidthOutsideWholeGroupsIsRefused() throws {
-        let directory = try writeSnapshot(rows: 8, columns: 32, bits: 4,
-                                          level: { _, _ in 1 }, scale: 1, bias: 0)
+        let directory = try writeSnapshot(
+            rows: 8, columns: 32, bits: 4,
+            level: { _, _ in 1 }, scale: 1, bias: 0)
         defer { try? FileManager.default.removeItem(at: directory) }
         let snapshot = try AffineSnapshot(directory: directory)
 
@@ -194,14 +214,16 @@ import Testing
 
     @Test func readsAQuantizedMatrixAtBothWidths() throws {
         for bits in [4, 8] {
-            let directory = try writeSnapshot(rows: 128, columns: 64, bits: bits,
-                                              level: { _, _ in 1 }, scale: 1, bias: 0)
+            let directory = try writeSnapshot(
+                rows: 128, columns: 64, bits: bits,
+                level: { _, _ in 1 }, scale: 1, bias: 0)
             defer { try? FileManager.default.removeItem(at: directory) }
             let snapshot = try AffineSnapshot(directory: directory)
             let matrix = try snapshot.matrix("w.weight")
             #expect(matrix.rows == 128)
-            #expect(matrix.columns == 64,
-                    Comment(rawValue: "columns must be unpacked, not the stored word count"))
+            #expect(
+                matrix.columns == 64,
+                Comment(rawValue: "columns must be unpacked, not the stored word count"))
             #expect(matrix.bits == bits)
         }
     }
@@ -210,9 +232,10 @@ import Testing
     /// tensor and the base is only a default. Reading it as a snapshot-wide
     /// constant is a bug this project has already had once.
     @Test func perTensorWidthOverridesTheBase() throws {
-        let directory = try writeSnapshot(rows: 128, columns: 64, bits: 8,
-                                          level: { _, _ in 1 }, scale: 1, bias: 0,
-                                          overrides: ["w": 8])
+        let directory = try writeSnapshot(
+            rows: 128, columns: 64, bits: 8,
+            level: { _, _ in 1 }, scale: 1, bias: 0,
+            overrides: ["w": 8])
         defer { try? FileManager.default.removeItem(at: directory) }
         let snapshot = try AffineSnapshot(directory: directory)
         #expect(snapshot.bits(forStem: "w") == 8)
@@ -223,25 +246,31 @@ import Testing
     /// x. A wrong lane order or group stride shows up immediately.
     @Test func gemvComputesTheProduct() throws {
         for bits in [4, 8] {
-            let columns = 128, rows = 256
-            let directory = try writeSnapshot(rows: rows, columns: columns, bits: bits,
-                                              level: { _, column in UInt32(column % 2) },
-                                              scale: 1, bias: 0)
+            let columns = 128
+            let rows = 256
+            let directory = try writeSnapshot(
+                rows: rows, columns: columns, bits: bits,
+                level: { _, column in UInt32(column % 2) },
+                scale: 1, bias: 0)
             defer { try? FileManager.default.removeItem(at: directory) }
             let snapshot = try AffineSnapshot(directory: directory)
             let matrix = try snapshot.matrix("w.weight")
             let x = (0..<columns).map { Float($0) }
             var out = [Float](repeating: 0, count: rows)
-            x.withUnsafeBufferPointer { input in
-                out.withUnsafeMutableBufferPointer { output in
-                    CPUOps.gemv(matrix, x: input.baseAddress!,
-                                out: output.baseAddress!, threads: 4)
+            try x.withUnsafeBufferPointer { input in
+                try out.withUnsafeMutableBufferPointer { output in
+                    guard let inputBase = input.baseAddress, let outputBase = output.baseAddress
+                    else {
+                        return
+                    }
+                    try CPUOps.gemv(matrix, x: inputBase, out: outputBase, threads: 4)
                 }
             }
             // Levels alternate 0,1 by column, so each row sums the odd x.
             let expected = stride(from: 1, to: columns, by: 2).reduce(Float(0)) { $0 + Float($1) }
-            #expect(out.allSatisfy { abs($0 - expected) < 0.01 },
-                    Comment(rawValue: "\(bits)-bit: got \(out[0]), wanted \(expected)"))
+            #expect(
+                out.allSatisfy { abs($0 - expected) < 0.01 },
+                Comment(rawValue: "\(bits)-bit: got \(out[0]), wanted \(expected)"))
         }
     }
 
@@ -249,7 +278,8 @@ import Testing
     /// own tests assert this for INT8; this asserts it through the path the
     /// engine actually uses, including INT4.
     @Test func threadingDoesNotChangeTheResult() throws {
-        let columns = 128, rows = 512
+        let columns = 128
+        let rows = 512
         for bits in [4, 8] {
             let directory = try writeSnapshot(
                 rows: rows, columns: columns, bits: bits,
@@ -259,18 +289,20 @@ import Testing
             let snapshot = try AffineSnapshot(directory: directory)
             let matrix = try snapshot.matrix("w.weight")
             let x = (0..<columns).map { Float($0 % 7) * 0.25 }
-            func run(_ threads: Int) -> [Float] {
+            func run(_ threads: Int) throws -> [Float] {
                 var out = [Float](repeating: 0, count: rows)
-                x.withUnsafeBufferPointer { input in
-                    out.withUnsafeMutableBufferPointer { output in
-                        CPUOps.gemv(matrix, x: input.baseAddress!,
-                                    out: output.baseAddress!, threads: threads)
+                try x.withUnsafeBufferPointer { input in
+                    try out.withUnsafeMutableBufferPointer { output in
+                        guard let inputBase = input.baseAddress,
+                            let outputBase = output.baseAddress
+                        else { return }
+                        try CPUOps.gemv(matrix, x: inputBase, out: outputBase, threads: threads)
                     }
                 }
                 return out
             }
-            #expect(run(1) == run(4), Comment(rawValue: "\(bits)-bit threading must be exact"))
-            #expect(run(4) == run(8))
+            #expect(try run(1) == run(4), Comment(rawValue: "\(bits)-bit threading must be exact"))
+            #expect(try run(4) == run(8))
         }
     }
 
@@ -282,11 +314,14 @@ import Testing
     private func writeEmptyModel(hidden: Int = 64) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("empty-model-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory,
-                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
         let url = try writeShard([
-            ("language_model.model.norm.weight", "BF16", [hidden],
-             bf16([Float](repeating: 1, count: hidden))),
+            (
+                "language_model.model.norm.weight", "BF16", [hidden],
+                bf16([Float](repeating: 1, count: hidden))
+            )
         ])
         try FileManager.default.moveItem(
             at: url, to: directory.appendingPathComponent("model.safetensors"))
@@ -302,8 +337,9 @@ import Testing
         try JSONSerialization.data(withJSONObject: config)
             .write(to: directory.appendingPathComponent("config.json"))
         try JSONSerialization.data(withJSONObject: [
-            "weight_map": ["language_model.model.norm.weight": "model.safetensors"]])
-            .write(to: directory.appendingPathComponent("model.safetensors.index.json"))
+            "weight_map": ["language_model.model.norm.weight": "model.safetensors"]
+        ])
+        .write(to: directory.appendingPathComponent("model.safetensors.index.json"))
         return directory
     }
 
@@ -318,8 +354,9 @@ import Testing
     @Test func widthFollowsContention() throws {
         let directory = try writeEmptyModel()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let model = try CPUQwen35(snapshot: try AffineSnapshot(directory: directory),
-                                  threads: 4)
+        let model = try CPUQwen35(
+            snapshot: try AffineSnapshot(directory: directory),
+            threads: 4)
         #expect(model.threads == 4, "without a signal the width is whatever was asked for")
 
         let busy = Busy()
@@ -341,8 +378,9 @@ import Testing
     @Test func noSignalLeavesTheWidthAlone() throws {
         let directory = try writeEmptyModel()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let model = try CPUQwen35(snapshot: try AffineSnapshot(directory: directory),
-                                  threads: 3)
+        let model = try CPUQwen35(
+            snapshot: try AffineSnapshot(directory: directory),
+            threads: 3)
         model.applyWidthPolicy()
         #expect(model.threads == 3)
     }
@@ -393,14 +431,15 @@ import Testing
                     Float.random(in: 0.0005...0.002, using: &rng)
                 }
                 out.scales.append(scales)
-                out.biases.append(scales.map { -127.5 * $0 })   // centred on zero
+                out.biases.append(scales.map { -127.5 * $0 })  // centred on zero
             }
             return out
         }
 
         func picking(_ rows: [Int]) -> Rows {
-            Rows(levels: rows.map { levels[$0] }, scales: rows.map { scales[$0] },
-                 biases: rows.map { biases[$0] })
+            Rows(
+                levels: rows.map { levels[$0] }, scales: rows.map { scales[$0] },
+                biases: rows.map { biases[$0] })
         }
     }
 
@@ -412,8 +451,10 @@ import Testing
 
     private static let tinyPrefix = "language_model.model."
 
-    private func randomFloats(_ count: Int, _ range: ClosedRange<Float>,
-                              _ rng: inout SplitMix) -> [Float] {
+    private func randomFloats(
+        _ count: Int, _ range: ClosedRange<Float>,
+        _ rng: inout SplitMix
+    ) -> [Float] {
         (0..<count).map { _ in Float.random(in: range, using: &rng) }
     }
 
@@ -421,7 +462,8 @@ import Testing
     /// MLP around a mixer the caller adds. `interval` 1 makes layer 0 full
     /// attention, 4 makes it gated DeltaNet.
     private func tinyModel(interval: Int, _ rng: inout SplitMix) -> TinyModel {
-        let p = Self.tinyPrefix, hidden = 64
+        let p = Self.tinyPrefix
+        let hidden = 64
         var model = TinyModel(config: [
             "hidden_size": hidden, "num_hidden_layers": 1, "num_attention_heads": 4,
             "num_key_value_heads": 2, "head_dim": 16, "full_attention_interval": interval,
@@ -444,23 +486,34 @@ import Testing
     private func writeTinyModel(_ model: TinyModel) throws -> URL {
         var tensors: [(name: String, dtype: String, shape: [Int], bytes: [UInt8])] = []
         for (stem, rows) in model.matrices.sorted(by: { $0.key < $1.key }) {
-            let count = rows.levels.count, columns = rows.levels[0].count
+            let count = rows.levels.count
+            let columns = rows.levels[0].count
             // Four 8-bit lanes per word, low first: little-endian, the word's
             // bytes are the levels in order.
-            tensors.append((stem + ".weight", "U32", [count, columns / 4],
-                            rows.levels.flatMap { $0 }))
-            tensors.append((stem + ".scales", "BF16", [count, columns / 64],
-                            bf16(rows.scales.flatMap { $0 })))
-            tensors.append((stem + ".biases", "BF16", [count, columns / 64],
-                            bf16(rows.biases.flatMap { $0 })))
+            tensors.append(
+                (
+                    stem + ".weight", "U32", [count, columns / 4],
+                    rows.levels.flatMap { $0 }
+                ))
+            tensors.append(
+                (
+                    stem + ".scales", "BF16", [count, columns / 64],
+                    bf16(rows.scales.flatMap { $0 })
+                ))
+            tensors.append(
+                (
+                    stem + ".biases", "BF16", [count, columns / 64],
+                    bf16(rows.biases.flatMap { $0 })
+                ))
         }
         for (name, tensor) in model.floats.sorted(by: { $0.key < $1.key }) {
             tensors.append((name, "BF16", tensor.shape, bf16(tensor.values)))
         }
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("tiny-model-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory,
-                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
         try FileManager.default.moveItem(
             at: try writeShard(tensors), to: directory.appendingPathComponent("model.safetensors"))
         try JSONSerialization.data(withJSONObject: model.config)
@@ -477,8 +530,9 @@ import Testing
     private func sequenceLogits(_ model: TinyModel) throws -> [Float] {
         let directory = try writeTinyModel(model)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let engine = try CPUQwen35(snapshot: try AffineSnapshot(directory: directory),
-                                   threads: 1)
+        let engine = try CPUQwen35(
+            snapshot: try AffineSnapshot(directory: directory),
+            threads: 1)
         return try [3, 1, 4, 1, 5].flatMap { try engine.step(token: $0) }
     }
 
@@ -492,8 +546,12 @@ import Testing
     /// their convolution taps -- and nothing else changed.
     @Test func deltaRuleValueHeadsShareConsecutiveKeyHeads() throws {
         var rng = SplitMix(state: 4)
-        let p = Self.tinyPrefix + "layers.0.linear_attn.", hidden = 64
-        let dk = 16, keyHeads = 2, valueHeads = 4, valueWidth = valueHeads * 16
+        let p = Self.tinyPrefix + "layers.0.linear_attn."
+        let hidden = 64
+        let dk = 16
+        let keyHeads = 2
+        let valueHeads = 4
+        let valueWidth = valueHeads * 16
         var base = tinyModel(interval: 4, &rng)
         let qkv = Rows.random(2 * keyHeads * dk + valueWidth, hidden, &rng)
         let taps = (0..<(2 * keyHeads * dk + valueWidth)).map { _ in
@@ -501,10 +559,14 @@ import Testing
         }
         base.matrices[p + "in_proj_z"] = Rows.random(valueWidth, hidden, &rng)
         base.matrices[p + "out_proj"] = Rows.random(hidden, valueWidth, &rng)
-        base.floats[p + "in_proj_a.weight"] = ([valueHeads, hidden],
-                                              randomFloats(valueHeads * hidden, -0.1...0.1, &rng))
-        base.floats[p + "in_proj_b.weight"] = ([valueHeads, hidden],
-                                              randomFloats(valueHeads * hidden, -0.1...0.1, &rng))
+        base.floats[p + "in_proj_a.weight"] = (
+            [valueHeads, hidden],
+            randomFloats(valueHeads * hidden, -0.1...0.1, &rng)
+        )
+        base.floats[p + "in_proj_b.weight"] = (
+            [valueHeads, hidden],
+            randomFloats(valueHeads * hidden, -0.1...0.1, &rng)
+        )
         base.floats[p + "A_log"] = ([valueHeads], randomFloats(valueHeads, -1...0.5, &rng))
         base.floats[p + "dt_bias"] = ([valueHeads], randomFloats(valueHeads, -0.5...0.5, &rng))
         base.floats[p + "norm.weight"] = ([16], randomFloats(16, 0.5...1.5, &rng))
@@ -514,20 +576,27 @@ import Testing
         func variant(_ layout: [Int]) -> TinyModel {
             var model = base
             let query = layout.flatMap { Array(($0 * dk)..<($0 * dk + dk)) }
-            let key = layout.flatMap { Array((keyHeads * dk + $0 * dk)..<(keyHeads * dk + $0 * dk + dk)) }
-            let channels = query + key + Array((2 * keyHeads * dk)..<(2 * keyHeads * dk + valueWidth))
+            let key = layout.flatMap {
+                Array((keyHeads * dk + $0 * dk)..<(keyHeads * dk + $0 * dk + dk))
+            }
+            let channels =
+                query + key + Array((2 * keyHeads * dk)..<(2 * keyHeads * dk + valueWidth))
             model.matrices[p + "in_proj_qkv"] = qkv.picking(channels)
-            model.floats[p + "conv1d.weight"] = ([channels.count, 1, 4], channels.flatMap { taps[$0] })
+            model.floats[p + "conv1d.weight"] = (
+                [channels.count, 1, 4], channels.flatMap { taps[$0] }
+            )
             model.config["linear_num_key_heads"] = layout.count
             return model
         }
         let shared = try sequenceLogits(variant([0, 1]))
         let consecutive = try sequenceLogits(variant([0, 0, 1, 1]))
         let strided = try sequenceLogits(variant([0, 1, 0, 1]))
-        #expect(largestDifference(shared, consecutive) < 1e-4,
-                "32 value heads over 16 key heads must read key head h / 2")
-        #expect(largestDifference(shared, strided) > 1e-3,
-                "the strided pairing must be distinguishable, or this proves nothing")
+        #expect(
+            largestDifference(shared, consecutive) < 1e-4,
+            "32 value heads over 16 key heads must read key head h / 2")
+        #expect(
+            largestDifference(shared, strided) > 1e-3,
+            "the strided pairing must be distinguishable, or this proves nothing")
     }
 
     /// Sixteen query heads over four KV heads, the 4B's attention, is the
@@ -535,7 +604,9 @@ import Testing
     /// code path. Written out, KV heads [0, 0, 1, 1], one per query head.
     @Test func queryHeadsShareConsecutiveKeyValueHeads() throws {
         var rng = SplitMix(state: 16)
-        let p = Self.tinyPrefix + "layers.0.self_attn.", hidden = 64, dim = 16
+        let p = Self.tinyPrefix + "layers.0.self_attn."
+        let hidden = 64
+        let dim = 16
         var base = tinyModel(interval: 1, &rng)
         base.matrices[p + "q_proj"] = Rows.random(4 * 2 * dim, hidden, &rng)
         base.matrices[p + "o_proj"] = Rows.random(hidden, 4 * dim, &rng)
@@ -555,10 +626,12 @@ import Testing
         let shared = try sequenceLogits(variant([0, 1]))
         let consecutive = try sequenceLogits(variant([0, 0, 1, 1]))
         let strided = try sequenceLogits(variant([0, 1, 0, 1]))
-        #expect(largestDifference(shared, consecutive) < 1e-4,
-                "query head h must read KV head h / (heads / kvHeads)")
-        #expect(largestDifference(shared, strided) > 1e-3,
-                "the strided pairing must be distinguishable, or this proves nothing")
+        #expect(
+            largestDifference(shared, consecutive) < 1e-4,
+            "query head h must read KV head h / (heads / kvHeads)")
+        #expect(
+            largestDifference(shared, strided) > 1e-3,
+            "the strided pairing must be distinguishable, or this proves nothing")
     }
 
     /// The 2B and 4B tie the output to the embedding; the 9B does not, and
@@ -570,7 +643,8 @@ import Testing
     /// moves, which an ignored head cannot do.
     @Test func anUntiedModelReadsItsOwnHead() throws {
         var rng = SplitMix(state: 21)
-        let hidden = 64, dim = 16
+        let hidden = 64
+        let dim = 16
         let p = Self.tinyPrefix + "layers.0.self_attn."
         // Full attention, so the mixer is the plain q/k/v the other attention
         // tests use; the head is orthogonal to which mixer runs. `q_proj` is
@@ -589,8 +663,9 @@ import Testing
             if let head { model.matrices["language_model.lm_head"] = head }
             let directory = try writeTinyModel(model)
             defer { try? FileManager.default.removeItem(at: directory) }
-            let engine = try CPUQwen35(snapshot: try AffineSnapshot(directory: directory),
-                                       threads: 1)
+            let engine = try CPUQwen35(
+                snapshot: try AffineSnapshot(directory: directory),
+                threads: 1)
             return try [3, 1, 4, 1, 5].flatMap { try engine.step(token: $0) }
         }
 
@@ -598,14 +673,16 @@ import Testing
         // Untied, head M: the engine must read M, not the embedding.
         let headM = Rows.random(8, hidden, &rng)
         let headA = try logits(tied: false, head: headM)
-        #expect(largestDifference(headA, tiedLogits) > 1e-3,
-                "the untied head must be read, not the embedding")
+        #expect(
+            largestDifference(headA, tiedLogits) > 1e-3,
+            "the untied head must be read, not the embedding")
         // The same model with a different head must move the logits: the only
         // way an ignored head passes both checks is by coincidence.
         let headB = Rows.random(8, hidden, &rng)
         let headBLogits = try logits(tied: false, head: headB)
-        #expect(largestDifference(headBLogits, headA) > 1e-3,
-                "changing the head must change the logits")
+        #expect(
+            largestDifference(headBLogits, headA) > 1e-3,
+            "changing the head must change the logits")
     }
 
     /// A head ratio that is not whole would floor into a wrong mapping;

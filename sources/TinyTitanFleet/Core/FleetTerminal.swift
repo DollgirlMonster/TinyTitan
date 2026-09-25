@@ -32,8 +32,8 @@ public final class FleetTerminal {
         // CR→NL translation, no flow control.
         settings.c_lflag &= ~UInt(ECHO | ICANON | ISIG | IEXTEN)
         settings.c_iflag &= ~UInt(IXON | ICRNL | BRKINT | INPCK | ISTRIP)
-        settings.c_cc.0 = 1 // VMIN: one byte is enough to return
-        settings.c_cc.1 = 0 // VTIME: no timeout, `poll` decides
+        settings.c_cc.0 = 1  // VMIN: one byte is enough to return
+        settings.c_cc.1 = 0  // VTIME: no timeout, `poll` decides
         guard tcsetattr(STDIN_FILENO, TCSANOW, &settings) == 0 else { return nil }
         raw = true
         write("\u{1B}[?1049h\u{1B}[?25l\u{1B}[2J")
@@ -97,7 +97,7 @@ public final class FleetTerminal {
                 keys.append(.enter)
             case 0x7F, 0x08:
                 keys.append(.backspace)
-            case 0x03, 0x04: // Ctrl-C, Ctrl-D
+            case 0x03, 0x04:  // Ctrl-C, Ctrl-D
                 keys.append(.escape)
             default:
                 if let scalar = Self.scalar(at: index, in: bytes) {
@@ -112,7 +112,9 @@ public final class FleetTerminal {
     }
 
     /// Read one UTF-8 scalar starting at `index`, reporting how many bytes it took.
-    private static func scalar(at index: Int, in bytes: [UInt8]) -> (value: Unicode.Scalar, length: Int)? {
+    private static func scalar(at index: Int, in bytes: [UInt8]) -> (
+        value: Unicode.Scalar, length: Int
+    )? {
         let first = bytes[index]
         let length: Int
         var value: UInt32

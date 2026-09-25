@@ -1,5 +1,5 @@
-import Testing
 import Foundation
+import Testing
 import TinyTitanValidationSupport
 
 @Suite struct LogitSoftcapSoftmaxReferenceTests {
@@ -12,7 +12,7 @@ import TinyTitanValidationSupport
             capped[i] = softcap * Foundation.tanh(x[i] / softcap)
         }
         var mx = -Float.infinity
-        for v in capped { if v > mx { mx = v } }
+        for v in capped where v > mx { mx = v }
         var es = [Float](repeating: 0, count: v)
         var sum: Float = 0
         for i in 0..<v {
@@ -23,11 +23,13 @@ import TinyTitanValidationSupport
         return es.map { $0 / sum }
     }
 
-    @Test("Accelerate ref matches scalar", arguments: [
-        (128, Float(30.0), UInt64(0x10E)),
-        (1024, Float(30.0), UInt64(0x10F)),
-        (4096, Float(30.0), UInt64(0x110)),
-    ])
+    @Test(
+        "Accelerate ref matches scalar",
+        arguments: [
+            (128, Float(30.0), UInt64(0x10E)),
+            (1024, Float(30.0), UInt64(0x10F)),
+            (4096, Float(30.0), UInt64(0x110)),
+        ])
     func acceleratedMatchesScalar(v: Int, softcap: Float, seed: UInt64) {
         var rng = SeedTree(seed).key("softcap-softmax-v\(v)")
         // Wide-range logits — exercises both the cap and the softmax tails.

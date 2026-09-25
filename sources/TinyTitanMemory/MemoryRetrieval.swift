@@ -30,10 +30,12 @@ public struct MemoryRetrievalHint: Sendable, Equatable {
     /// key here, which is the whole reason the hint exists. The query's own
     /// filters still apply, so a hint cannot return a fact the caller excluded
     /// by prefix, tag or importance.
-    public func applied(to records: [MemoryRecord],
-                        query: MemoryQuery,
-                        store: any MemoryStore,
-                        scope: MemoryScope) async -> [MemoryRecord] {
+    public func applied(
+        to records: [MemoryRecord],
+        query: MemoryQuery,
+        store: any MemoryStore,
+        scope: MemoryScope
+    ) async -> [MemoryRecord] {
         guard !answered.isEmpty else { return records }
         let limit = max(0, query.limit)
         let present = Set(records.map(\.key))
@@ -48,8 +50,9 @@ public struct MemoryRetrievalHint: Sendable, Equatable {
         where !present.contains(key) {
             guard recalled.count + promoted.count < limit else { break }
             guard let record = try? await store.get(key, in: scope),
-                  Self.matches(record, query: query),
-                  Self.fingerprint(of: record.value) == answered[key] else { continue }
+                Self.matches(record, query: query),
+                Self.fingerprint(of: record.value) == answered[key]
+            else { continue }
             promoted.append(record)
         }
         return Array((recalled + promoted + rest).prefix(limit))
@@ -59,7 +62,10 @@ public struct MemoryRetrievalHint: Sendable, Equatable {
     /// fact is subject to the same query the token ranking answered.
     private static func matches(_ record: MemoryRecord, query: MemoryQuery) -> Bool {
         if let prefix = query.prefix, !prefix.isEmpty,
-           !record.key.rawValue.hasPrefix(prefix) { return false }
+            !record.key.rawValue.hasPrefix(prefix)
+        {
+            return false
+        }
         if let minimum = query.minimumImportance, (record.importance ?? 0) < minimum {
             return false
         }
@@ -142,9 +148,11 @@ public actor MemoryRetrievalHinter {
     private var background: Task<Void, Never>?
     private var stopped = false
 
-    init(engine: any MemorySideEngine,
-         isIdle: @escaping @Sendable () -> Bool,
-         log: @escaping @Sendable (MemoryLogEvent) -> Void = { _ in }) {
+    init(
+        engine: any MemorySideEngine,
+        isIdle: @escaping @Sendable () -> Bool,
+        log: @escaping @Sendable (MemoryLogEvent) -> Void = { _ in }
+    ) {
         self.engine = engine
         self.isIdle = isIdle
         self.log = log
@@ -154,13 +162,17 @@ public actor MemoryRetrievalHinter {
     /// it returns as soon as the work is queued.
     func register(question: String, in scope: MemoryScope, store: any MemoryStore) {
         guard !stopped,
-              !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
             return
         }
         let key = Self.key(question, scope)
-        var entry = questions[key] ?? Question(question: question, scope: scope, store: store,
-                                               candidateKeys: [], judged: [],
-                                               answered: [:], cursor: 0, lastAsked: Date())
+        var entry =
+            questions[key]
+            ?? Question(
+                question: question, scope: scope, store: store,
+                candidateKeys: [], judged: [],
+                answered: [:], cursor: 0, lastAsked: Date())
         entry.lastAsked = Date()
         questions[key] = entry
         Self.touch(key, in: &recency)
@@ -217,17 +229,20 @@ public actor MemoryRetrievalHinter {
                 continue
             }
             if entry.candidateKeys.isEmpty {
-                let records = (try? await entry.store.search(
-                    MemoryQuery(limit: Self.coverageLimit), in: entry.scope)) ?? []
+                let records =
+                    (try? await entry.store.search(
+                        MemoryQuery(limit: Self.coverageLimit), in: entry.scope)) ?? []
                 entry.candidateKeys = records.map(\.key)
                 questions[key] = entry
             }
             while entry.cursor < entry.candidateKeys.count,
-                  entry.judged.contains(entry.candidateKeys[entry.cursor]) {
+                entry.judged.contains(entry.candidateKeys[entry.cursor])
+            {
                 entry.cursor += 1
             }
             if entry.cursor >= entry.candidateKeys.count
-                || entry.judged.count >= Self.coverageLimit {
+                || entry.judged.count >= Self.coverageLimit
+            {
                 queue.removeFirst()
                 idleWaited = 0
                 continue

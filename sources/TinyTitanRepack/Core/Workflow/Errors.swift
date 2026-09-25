@@ -54,17 +54,17 @@ public enum RepackError: Error, CustomStringConvertible {
         switch self {
         case .snapshotFileMissing(let p, let detail):
             return "snapshot file missing at \(p): \(detail)"
-        case .fileOpenFailed(let p, let e):     return "open(\(p)) failed: errno \(e)"
-        case .fileStatFailed(let p, let e):     return "fstat(\(p)) failed: errno \(e)"
-        case .ftruncateFailed(let p, let e):    return "ftruncate(\(p)) failed: errno \(e)"
+        case .fileOpenFailed(let p, let e): return "open(\(p)) failed: errno \(e)"
+        case .fileStatFailed(let p, let e): return "fstat(\(p)) failed: errno \(e)"
+        case .ftruncateFailed(let p, let e): return "ftruncate(\(p)) failed: errno \(e)"
         case .pwriteShort(let p, let exp, let got, let e):
             return "pwrite(\(p)) short: expected \(exp), wrote \(got), errno \(e)"
         case .preadShort(let p, let exp, let got, let e):
             return "pread(\(p)) short: expected \(exp), got \(got), errno \(e)"
-        case .mmapFailed(let p, let e):         return "mmap(\(p)) failed: errno \(e)"
-        case .renameFailed(let a, let b, let e):return "rename(\(a) -> \(b)) failed: errno \(e)"
-        case .fsyncFailed(let p, let e):        return "fsync(\(p)) failed: errno \(e)"
-        case .mkdirFailed(let p, let e):        return "mkdir(\(p)) failed: errno \(e)"
+        case .mmapFailed(let p, let e): return "mmap(\(p)) failed: errno \(e)"
+        case .renameFailed(let a, let b, let e): return "rename(\(a) -> \(b)) failed: errno \(e)"
+        case .fsyncFailed(let p, let e): return "fsync(\(p)) failed: errno \(e)"
+        case .mkdirFailed(let p, let e): return "mkdir(\(p)) failed: errno \(e)"
         case .installBusy(let p):
             return "another installer holds \(p)"
         case .installPathUnsafe(let p, let d):
@@ -88,11 +88,14 @@ public enum RepackError: Error, CustomStringConvertible {
         case .indexJsonInvalid(let p, let d): return "index.json \(p) invalid: \(d)"
         case .configJsonInvalid(let p, let d): return "config.json \(p) invalid: \(d)"
         case .quantOverrideCountMismatch(let exp, let got, let sample):
-            return "config.json quantization overrides: expected \(exp), got \(got); sample=\(sample.prefix(5))"
+            return
+                "config.json quantization overrides: expected \(exp), got \(got); sample=\(sample.prefix(5))"
         case .missingTensor(let n): return "expected tensor missing: \(n)"
         case .unknownTensorPrefix(let n): return "unknown tensor prefix: \(n)"
-        case .missingScalesCompanion(let n): return "quantized tensor \(n) missing .scales companion"
-        case .missingBiasesCompanion(let n): return "quantized tensor \(n) missing .biases companion"
+        case .missingScalesCompanion(let n):
+            return "quantized tensor \(n) missing .scales companion"
+        case .missingBiasesCompanion(let n):
+            return "quantized tensor \(n) missing .biases companion"
         case .shapeMismatch(let n, let d): return "shape mismatch for \(n): \(d)"
         case .dtypeMismatch(let n, let d): return "dtype mismatch for \(n): \(d)"
         case .sourceFingerprintRejected(let p, let s):

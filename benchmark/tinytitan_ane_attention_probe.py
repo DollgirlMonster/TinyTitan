@@ -19,6 +19,7 @@ work, not probe work.
 
   ~/.venvs/coreml-py311/bin/python benchmark/tinytitan_ane_attention_probe.py
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,12 +35,12 @@ D = 2048
 N_Q_HEADS = 16
 N_KV_HEADS = 2
 HEAD_DIM = 256
-Q_DIM = N_Q_HEADS * HEAD_DIM          # 4096
-Q_PROJ_ROWS = 2 * Q_DIM               # packed query+gate
-KV_DIM = N_KV_HEADS * HEAD_DIM        # 512
-ROTARY = 64                           # headDim * partialRotaryFactor(0.25)
+Q_DIM = N_Q_HEADS * HEAD_DIM  # 4096
+Q_PROJ_ROWS = 2 * Q_DIM  # packed query+gate
+KV_DIM = N_KV_HEADS * HEAD_DIM  # 512
+ROTARY = 64  # headDim * partialRotaryFactor(0.25)
 THETA = 10_000_000.0
-SCALE = 0.0625                        # 256^-0.5
+SCALE = 0.0625  # 256^-0.5
 EPS = 1e-6
 
 
@@ -53,6 +54,7 @@ def rope_tables(start: int, count: int) -> tuple[np.ndarray, np.ndarray]:
 def make_weights(rng: np.random.Generator) -> dict[str, np.ndarray]:
     def w(rows, cols):
         return (rng.standard_normal((rows, cols)) * 0.02).astype(np.float16)
+
     return {
         "wq": w(Q_PROJ_ROWS, D),
         "wk": w(KV_DIM, D),
@@ -73,11 +75,15 @@ def build_block(t: int, history: int, weights: dict[str, np.ndarray]):
     fp16 = ct.converters.mil.mil.types.fp16
     specs = [mb.TensorSpec(shape=(t, D), dtype=fp16)]
     if history > 0:
-        specs += [mb.TensorSpec(shape=(1, N_KV_HEADS, history, HEAD_DIM), dtype=fp16),
-                  mb.TensorSpec(shape=(1, N_KV_HEADS, history, HEAD_DIM), dtype=fp16)]
-    specs += [mb.TensorSpec(shape=(t, ROTARY // 2), dtype=fp16),
-              mb.TensorSpec(shape=(t, ROTARY // 2), dtype=fp16),
-              mb.TensorSpec(shape=(1, 1, t, total), dtype=fp16)]
+        specs += [
+            mb.TensorSpec(shape=(1, N_KV_HEADS, history, HEAD_DIM), dtype=fp16),
+            mb.TensorSpec(shape=(1, N_KV_HEADS, history, HEAD_DIM), dtype=fp16),
+        ]
+    specs += [
+        mb.TensorSpec(shape=(t, ROTARY // 2), dtype=fp16),
+        mb.TensorSpec(shape=(t, ROTARY // 2), dtype=fp16),
+        mb.TensorSpec(shape=(1, 1, t, total), dtype=fp16),
+    ]
 
     def body(hidden, k_hist, v_hist, cos_t, sin_t, mask):
         def rms_head(x, weight_name, heads):
@@ -85,22 +91,31 @@ def build_block(t: int, history: int, weights: dict[str, np.ndarray]):
             sq = mb.mul(x=x, y=x)
             mean = mb.reduce_mean(x=sq, axes=[-1], keep_dims=True)
             denom = mb.rsqrt(x=mb.add(x=mean, y=np.float16(EPS)))
-            return mb.mul(x=mb.mul(x=x, y=denom),
-                          y=weights[weight_name].reshape(1, 1, HEAD_DIM))
+            return mb.mul(x=mb.mul(x=x, y=denom), y=weights[weight_name].reshape(1, 1, HEAD_DIM))
 
         def rope(x, heads, seq):
             # NeoX half-split on the first ROTARY dims; passthrough beyond.
-            r1 = mb.slice_by_index(x=x, begin=[0, 0, 0], end=[heads, seq, ROTARY // 2],
-                                   begin_mask=[True, True, False],
-                                   end_mask=[True, True, False])
-            r2 = mb.slice_by_index(x=x, begin=[0, 0, ROTARY // 2],
-                                   end=[heads, seq, ROTARY],
-                                   begin_mask=[True, True, False],
-                                   end_mask=[True, True, False])
-            rest = mb.slice_by_index(x=x, begin=[0, 0, ROTARY],
-                                     end=[heads, seq, HEAD_DIM],
-                                     begin_mask=[True, True, False],
-                                     end_mask=[True, True, True])
+            r1 = mb.slice_by_index(
+                x=x,
+                begin=[0, 0, 0],
+                end=[heads, seq, ROTARY // 2],
+                begin_mask=[True, True, False],
+                end_mask=[True, True, False],
+            )
+            r2 = mb.slice_by_index(
+                x=x,
+                begin=[0, 0, ROTARY // 2],
+                end=[heads, seq, ROTARY],
+                begin_mask=[True, True, False],
+                end_mask=[True, True, False],
+            )
+            rest = mb.slice_by_index(
+                x=x,
+                begin=[0, 0, ROTARY],
+                end=[heads, seq, HEAD_DIM],
+                begin_mask=[True, True, False],
+                end_mask=[True, True, True],
+            )
             cos_b = mb.reshape(x=cos_t, shape=[1, seq, ROTARY // 2])
             sin_b = mb.reshape(x=sin_t, shape=[1, seq, ROTARY // 2])
             o1 = mb.sub(x=mb.mul(x=r1, y=cos_b), y=mb.mul(x=r2, y=sin_b))
@@ -108,26 +123,32 @@ def build_block(t: int, history: int, weights: dict[str, np.ndarray]):
             return mb.concat(values=[o1, o2, rest], axis=-1)
 
         # Projections: one matmul each, weights transposed at build time.
-        packed = mb.matmul(x=hidden, y=weights["wq"].T)          # [t, 8192]
-        k = mb.matmul(x=hidden, y=weights["wk"].T)               # [t, 512]
-        v = mb.matmul(x=hidden, y=weights["wv"].T)               # [t, 512]
+        packed = mb.matmul(x=hidden, y=weights["wq"].T)  # [t, 8192]
+        k = mb.matmul(x=hidden, y=weights["wk"].T)  # [t, 512]
+        v = mb.matmul(x=hidden, y=weights["wv"].T)  # [t, 512]
 
         # Split packed query+gate: per head, first half query, second gate.
         packed_h = mb.reshape(x=packed, shape=[t, N_Q_HEADS, 2 * HEAD_DIM])
-        q = mb.slice_by_index(x=packed_h, begin=[0, 0, 0],
-                              end=[t, N_Q_HEADS, HEAD_DIM],
-                              begin_mask=[True, True, False],
-                              end_mask=[True, True, False])
-        gate = mb.slice_by_index(x=packed_h, begin=[0, 0, HEAD_DIM],
-                                 end=[t, N_Q_HEADS, 2 * HEAD_DIM],
-                                 begin_mask=[True, True, False],
-                                 end_mask=[True, True, True])
+        q = mb.slice_by_index(
+            x=packed_h,
+            begin=[0, 0, 0],
+            end=[t, N_Q_HEADS, HEAD_DIM],
+            begin_mask=[True, True, False],
+            end_mask=[True, True, False],
+        )
+        gate = mb.slice_by_index(
+            x=packed_h,
+            begin=[0, 0, HEAD_DIM],
+            end=[t, N_Q_HEADS, 2 * HEAD_DIM],
+            begin_mask=[True, True, False],
+            end_mask=[True, True, True],
+        )
 
-        q = mb.transpose(x=q, perm=[1, 0, 2])                    # [16, t, 256]
-        k_h = mb.transpose(x=mb.reshape(x=k, shape=[t, N_KV_HEADS, HEAD_DIM]),
-                           perm=[1, 0, 2])                       # [2, t, 256]
-        v_h = mb.transpose(x=mb.reshape(x=v, shape=[t, N_KV_HEADS, HEAD_DIM]),
-                           perm=[1, 0, 2])
+        q = mb.transpose(x=q, perm=[1, 0, 2])  # [16, t, 256]
+        k_h = mb.transpose(
+            x=mb.reshape(x=k, shape=[t, N_KV_HEADS, HEAD_DIM]), perm=[1, 0, 2]
+        )  # [2, t, 256]
+        v_h = mb.transpose(x=mb.reshape(x=v, shape=[t, N_KV_HEADS, HEAD_DIM]), perm=[1, 0, 2])
 
         q = rms_head(q, "q_norm", N_Q_HEADS)
         k_h = rms_head(k_h, "k_norm", N_KV_HEADS)
@@ -137,7 +158,7 @@ def build_block(t: int, history: int, weights: dict[str, np.ndarray]):
         k_new = mb.reshape(x=k_h, shape=[1, N_KV_HEADS, t, HEAD_DIM])
         v_new = mb.reshape(x=v_h, shape=[1, N_KV_HEADS, t, HEAD_DIM])
         if history > 0:
-            k_all = mb.concat(values=[k_hist, k_new], axis=2)    # [1,2,total,256]
+            k_all = mb.concat(values=[k_hist, k_new], axis=2)  # [1,2,total,256]
             v_all = mb.concat(values=[v_hist, v_new], axis=2)
         else:
             k_all, v_all = k_new, v_new
@@ -165,35 +186,41 @@ def build_block(t: int, history: int, weights: dict[str, np.ndarray]):
         scores = mb.mul(x=scores, y=np.float16(SCALE))
         scores = mb.add(x=scores, y=mask)
         probs = mb.softmax(x=scores, axis=-1)
-        attn = mb.matmul(x=probs, y=v_g)                         # [1,16,t,256]
+        attn = mb.matmul(x=probs, y=v_g)  # [1,16,t,256]
 
-        gated = mb.mul(x=mb.transpose(x=attn, perm=[0, 2, 1, 3]),
-                       y=mb.sigmoid(x=mb.reshape(
-                           x=gate, shape=[1, t, N_Q_HEADS, HEAD_DIM])))
+        gated = mb.mul(
+            x=mb.transpose(x=attn, perm=[0, 2, 1, 3]),
+            y=mb.sigmoid(x=mb.reshape(x=gate, shape=[1, t, N_Q_HEADS, HEAD_DIM])),
+        )
         merged = mb.reshape(x=gated, shape=[t, Q_DIM])
-        out = mb.matmul(x=merged, y=weights["wo"].T)             # [t, D]
+        out = mb.matmul(x=merged, y=weights["wo"].T)  # [t, D]
         return out, k_new, v_new
 
     if history > 0:
+
         @mb.program(input_specs=specs, opset_version=ct.target.iOS18)
         def prog(hidden, k_hist, v_hist, cos_t, sin_t, mask):
             return body(hidden, k_hist, v_hist, cos_t, sin_t, mask)
     else:
+
         @mb.program(input_specs=specs, opset_version=ct.target.iOS18)
         def prog(hidden, cos_t, sin_t, mask):
             return body(hidden, None, None, cos_t, sin_t, mask)
 
-    return ct.convert(prog, convert_to="mlprogram",
-                      minimum_deployment_target=ct.target.iOS18,
-                      compute_precision=ct.precision.FLOAT16,
-                      compute_units=ct.ComputeUnit.CPU_AND_NE)
+    return ct.convert(
+        prog,
+        convert_to="mlprogram",
+        minimum_deployment_target=ct.target.iOS18,
+        compute_precision=ct.precision.FLOAT16,
+        compute_units=ct.ComputeUnit.CPU_AND_NE,
+    )
 
 
 def causal_mask(t: int, history: int) -> np.ndarray:
     total = history + t
     mask = np.zeros((1, 1, t, total), dtype=np.float16)
     for i in range(t):
-        mask[0, 0, i, history + i + 1:] = np.float16(-np.inf)
+        mask[0, 0, i, history + i + 1 :] = np.float16(-np.inf)
     return mask
 
 
@@ -208,15 +235,13 @@ def reference(hidden, k_hist, v_hist, cos_t, sin_t, mask, w):
     q, gate = packed[..., :HEAD_DIM], packed[..., HEAD_DIM:]
 
     def rms(x, weight):
-        return x / np.sqrt((x ** 2).mean(-1, keepdims=True) + EPS) \
-            * weight.astype(np.float32)
+        return x / np.sqrt((x**2).mean(-1, keepdims=True) + EPS) * weight.astype(np.float32)
 
     def rope(x, cos_t, sin_t):
-        r1, r2 = x[..., :ROTARY // 2], x[..., ROTARY // 2:ROTARY]
+        r1, r2 = x[..., : ROTARY // 2], x[..., ROTARY // 2 : ROTARY]
         c = cos_t.astype(np.float32)[:, None, :]
         s = sin_t.astype(np.float32)[:, None, :]
-        return np.concatenate([r1 * c - r2 * s, r2 * c + r1 * s,
-                               x[..., ROTARY:]], -1)
+        return np.concatenate([r1 * c - r2 * s, r2 * c + r1 * s, x[..., ROTARY:]], -1)
 
     q = rope(rms(q, w["q_norm"]), cos_t, sin_t).transpose(1, 0, 2)
     kh = k.reshape(t, N_KV_HEADS, HEAD_DIM)
@@ -237,8 +262,9 @@ def reference(hidden, k_hist, v_hist, cos_t, sin_t, mask, w):
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--configs", default="1024:0,2048:0,4096:0,2048:4096",
-                        help="comma list of chunk:history")
+    parser.add_argument(
+        "--configs", default="1024:0,2048:0,4096:0,2048:4096", help="comma list of chunk:history"
+    )
     parser.add_argument("--repeats", type=int, default=5)
     args = parser.parse_args()
 
@@ -251,10 +277,8 @@ def main() -> int:
         model = build_block(t, hist, weights)
         cpu_model = None
         hidden = (rng.standard_normal((t, D)) * 0.5).astype(np.float16)
-        k_hist = (rng.standard_normal((1, N_KV_HEADS, hist, HEAD_DIM)) * 0.5
-                  ).astype(np.float16)
-        v_hist = (rng.standard_normal((1, N_KV_HEADS, hist, HEAD_DIM)) * 0.5
-                  ).astype(np.float16)
+        k_hist = (rng.standard_normal((1, N_KV_HEADS, hist, HEAD_DIM)) * 0.5).astype(np.float16)
+        v_hist = (rng.standard_normal((1, N_KV_HEADS, hist, HEAD_DIM)) * 0.5).astype(np.float16)
         cos_t, sin_t = rope_tables(hist, t)
         mask = causal_mask(t, hist)
         feed = {"hidden": hidden, "cos_t": cos_t, "sin_t": sin_t, "mask": mask}
@@ -264,10 +288,17 @@ def main() -> int:
         # Outputs are (block output [t, D], k_new, v_new) with generated
         # names; identify the block output by shape, not position.
         out_name = next(
-            name for name in model.output_description
-            if tuple(model.get_spec().description.output[
-                [o.name for o in model.get_spec().description.output].index(name)
-            ].type.multiArrayType.shape) == (t, D))
+            name
+            for name in model.output_description
+            if tuple(
+                model.get_spec()
+                .description.output[
+                    [o.name for o in model.get_spec().description.output].index(name)
+                ]
+                .type.multiArrayType.shape
+            )
+            == (t, D)
+        )
         ane_times = []
         for i in range(args.repeats + 2):
             start = time.perf_counter()
@@ -285,8 +316,10 @@ def main() -> int:
         cpu_ms = None
         if t <= 2048:
             cpu_model = ct.models.MLModel(
-                model.get_spec(), weights_dir=model.weights_dir,
-                compute_units=ct.ComputeUnit.CPU_ONLY)
+                model.get_spec(),
+                weights_dir=model.weights_dir,
+                compute_units=ct.ComputeUnit.CPU_ONLY,
+            )
             times = []
             for i in range(3 + 1):
                 start = time.perf_counter()
@@ -296,18 +329,26 @@ def main() -> int:
                     times.append(elapsed)
             cpu_ms = sorted(times)[len(times) // 2] * 1000
 
-        row = {"chunk": t, "history": hist, "cpu_and_ne_ms": round(ane_ms, 2),
-               "cpu_only_ms": round(cpu_ms, 2) if cpu_ms else None,
-               "mean_rel_error": float(f"{rel:.5f}")}
+        row = {
+            "chunk": t,
+            "history": hist,
+            "cpu_and_ne_ms": round(ane_ms, 2),
+            "cpu_only_ms": round(cpu_ms, 2) if cpu_ms else None,
+            "mean_rel_error": float(f"{rel:.5f}"),
+        }
         results.append(row)
-        print(f"  CPU_AND_NE {ane_ms:9.2f} ms/chunk-layer"
-              + (f"   CPU_ONLY {cpu_ms:9.2f} ms  (ratio {cpu_ms / ane_ms:.2f}x)"
-                 if cpu_ms else "")
-              + f"   mean rel err {rel:.4f}", flush=True)
+        print(
+            f"  CPU_AND_NE {ane_ms:9.2f} ms/chunk-layer"
+            + (f"   CPU_ONLY {cpu_ms:9.2f} ms  (ratio {cpu_ms / ane_ms:.2f}x)" if cpu_ms else "")
+            + f"   mean rel err {rel:.4f}",
+            flush=True,
+        )
 
-    print("\nGPU reference (measured, 4-bit, this machine): full-attention "
-          "block = 4,215 ms per layer-chunk averaged over a 6,103-token "
-          "prefill (84.3 s / 20 layer-chunks).")
+    print(
+        "\nGPU reference (measured, 4-bit, this machine): full-attention "
+        "block = 4,215 ms per layer-chunk averaged over a 6,103-token "
+        "prefill (84.3 s / 20 layer-chunks)."
+    )
     with open(".build/benchmark-results/ane-attention-probe.json", "w") as fh:
         json.dump(results, fh, indent=2)
     print("wrote .build/benchmark-results/ane-attention-probe.json")

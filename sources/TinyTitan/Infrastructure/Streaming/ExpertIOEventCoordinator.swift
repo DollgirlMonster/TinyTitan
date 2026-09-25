@@ -52,16 +52,18 @@ public final class ExpertIOEventCoordinator: @unchecked Sendable {
                 detail: "expert I/O status timeline exhausted")
         }
         if chunkIndex == statusChunks.count {
-            guard let chunk = device.makeBuffer(
-                length: Self.statusesPerChunk * MemoryLayout<UInt32>.stride,
-                options: .storageModeShared)
+            guard
+                let chunk = device.makeBuffer(
+                    length: Self.statusesPerChunk * MemoryLayout<UInt32>.stride,
+                    options: .storageModeShared)
             else {
                 throw ModelError.residentBufferWrapFailed
             }
             statusChunks.append(chunk)
         }
         let status = statusChunks[chunkIndex]
-        let statusOffset = (zeroBasedValue % Self.statusesPerChunk)
+        let statusOffset =
+            (zeroBasedValue % Self.statusesPerChunk)
             * MemoryLayout<UInt32>.stride
         status.contents().advanced(by: statusOffset)
             .storeBytes(of: UInt32(0), as: UInt32.self)

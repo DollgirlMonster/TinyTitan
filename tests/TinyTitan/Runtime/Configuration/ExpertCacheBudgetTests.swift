@@ -1,4 +1,5 @@
 import Testing
+
 @testable import TinyTitan
 
 /// The slot default is derived from a RAM budget and the model's own expert
@@ -21,12 +22,14 @@ import Testing
 
     @Test func defaultBudgetLandsOnTheMeasuredOptimumPerQuant() {
         // 4-bit holds the working set at 128 slots (8.44 GiB).
-        #expect(RuntimeConfiguration.expertCacheSlots(
-            expertStrideBytes: Self.stride4, layers: Self.layers) == 128)
+        #expect(
+            RuntimeConfiguration.expertCacheSlots(
+                expertStrideBytes: Self.stride4, layers: Self.layers) == 128)
         // 8-bit cannot: 128 slots would be 15.94 GiB and measured 1.22 tok/s
         // thrashing on a 24 GB machine, so the budget caps it at 64.
-        #expect(RuntimeConfiguration.expertCacheSlots(
-            expertStrideBytes: Self.stride8, layers: Self.layers) == 64)
+        #expect(
+            RuntimeConfiguration.expertCacheSlots(
+                expertStrideBytes: Self.stride8, layers: Self.layers) == 64)
     }
 
     @Test func everyResultIsASupportedSlotCount() {
@@ -35,8 +38,9 @@ import Testing
                 let slots = RuntimeConfiguration.expertCacheSlots(
                     expertStrideBytes: stride, layers: Self.layers,
                     budgetBytes: budget)
-                #expect(RuntimeConfiguration.allowedExpertCacheSlots.contains(slots),
-                        "stride \(stride) budget \(budget) gave \(slots)")
+                #expect(
+                    RuntimeConfiguration.allowedExpertCacheSlots.contains(slots),
+                    "stride \(stride) budget \(budget) gave \(slots)")
             }
         }
     }
@@ -60,15 +64,18 @@ import Testing
         let slots = RuntimeConfiguration.expertCacheSlots(
             expertStrideBytes: Self.stride8, layers: Self.layers)
         let bytes = Double(slots) * Double(Self.stride8) * Double(Self.layers)
-        #expect(bytes / 1_073_741_824 < 12.0,
-                "8-bit default would reserve \(bytes / 1_073_741_824) GiB")
+        #expect(
+            bytes / 1_073_741_824 < 12.0,
+            "8-bit default would reserve \(bytes / 1_073_741_824) GiB")
     }
 
     @Test func degenerateInputsFallBackToTheSmallestSupportedCount() {
-        #expect(RuntimeConfiguration.expertCacheSlots(
-            expertStrideBytes: 0, layers: Self.layers) == 8)
-        #expect(RuntimeConfiguration.expertCacheSlots(
-            expertStrideBytes: Self.stride4, layers: 0) == 8)
+        #expect(
+            RuntimeConfiguration.expertCacheSlots(
+                expertStrideBytes: 0, layers: Self.layers) == 8)
+        #expect(
+            RuntimeConfiguration.expertCacheSlots(
+                expertStrideBytes: Self.stride4, layers: 0) == 8)
     }
 
     /// The budget must be honoured within one step of the allowed ladder, or the
@@ -79,8 +86,9 @@ import Testing
             let slots = RuntimeConfiguration.expertCacheSlots(
                 expertStrideBytes: stride, layers: Self.layers, budgetBytes: budget)
             let actual = Double(slots) * Double(stride) * Double(Self.layers)
-            #expect(actual <= Double(budget) * 1.15,
-                    "stride \(stride): \(actual / 1_073_741_824) GiB exceeds budget")
+            #expect(
+                actual <= Double(budget) * 1.15,
+                "stride \(stride): \(actual / 1_073_741_824) GiB exceeds budget")
         }
     }
 
@@ -97,8 +105,8 @@ import Testing
         #expect(abs(Double(floor) / 1_073_741_824 - 3.717) < 0.01)
 
         let expected: [(targetGB: Int, slots: Int)] = [
-            (2, 8),   // below the floor: the smallest cache is already too much
-            (4, 8),   // still below it
+            (2, 8),  // below the floor: the smallest cache is already too much
+            (4, 8),  // still below it
             (6, 16),
             (8, 32),
             (10, 48),
@@ -114,11 +122,13 @@ import Testing
             // The estimate the server prints must not exceed the target, except
             // where the target is under the floor and no cache can be small
             // enough.
-            let estimate = Double(floor)
+            let estimate =
+                Double(floor)
                 + Double(slots) * Double(stride) * Double(layers)
             if targetGB >= 6 {
-                #expect(estimate <= Double(targetGB << 30),
-                        "\(targetGB)G estimated \(estimate / 1_073_741_824) GiB")
+                #expect(
+                    estimate <= Double(targetGB << 30),
+                    "\(targetGB)G estimated \(estimate / 1_073_741_824) GiB")
             }
         }
     }
@@ -127,12 +137,15 @@ import Testing
     /// usable cache rather than zero slots.
     @Test func aTargetWithNoRoomFallsBackToTheSmallestRung() {
         let stride = UInt64(2_768_896)
-        #expect(RuntimeConfiguration.expertCacheSlotsFitting(
-            expertStrideBytes: stride, layers: 48, cacheBytes: -1) == 8)
-        #expect(RuntimeConfiguration.expertCacheSlotsFitting(
-            expertStrideBytes: stride, layers: 48, cacheBytes: 0) == 8)
-        #expect(RuntimeConfiguration.expertCacheSlotsFitting(
-            expertStrideBytes: 0, layers: 0, cacheBytes: 8 << 30) == 8)
+        #expect(
+            RuntimeConfiguration.expertCacheSlotsFitting(
+                expertStrideBytes: stride, layers: 48, cacheBytes: -1) == 8)
+        #expect(
+            RuntimeConfiguration.expertCacheSlotsFitting(
+                expertStrideBytes: stride, layers: 48, cacheBytes: 0) == 8)
+        #expect(
+            RuntimeConfiguration.expertCacheSlotsFitting(
+                expertStrideBytes: 0, layers: 0, cacheBytes: 8 << 30) == 8)
     }
 }
 
@@ -157,8 +170,9 @@ import Testing
 
     @Test func rejectsWhatWouldSilentlyShrinkTheCache() {
         for bad in ["", " ", "bogus", "G", "-2G", "0", "0G", "abcG", "2X", "2GG"] {
-            #expect(RuntimeConfiguration.parseBudgetBytes(bad) == nil,
-                    "\(bad.debugDescription) should not parse")
+            #expect(
+                RuntimeConfiguration.parseBudgetBytes(bad) == nil,
+                "\(bad.debugDescription) should not parse")
         }
     }
 
@@ -190,37 +204,49 @@ import Testing
     static let qwen38Layers = 48
 
     @Test func qwen38FlashGetsTheWiderCacheAndPrefetch() {
-        let tuning = RuntimeConfiguration.decodeTuning(family: .qwen38flash,
-                                                       weightBits: 4)
+        let tuning = RuntimeConfiguration.decodeTuning(
+            family: .qwen38flash,
+            weightBits: 4)
         #expect(tuning.expertCacheBudgetBytes == 12 << 30)
         #expect(tuning.prefetchDepth == 1)
         // 12 GiB has to actually land on 96 slots for this payload, which is
         // the whole point of the entry.
-        #expect(RuntimeConfiguration.expertCacheSlots(
-            expertStrideBytes: Self.qwen38Stride, layers: Self.qwen38Layers,
-            budgetBytes: tuning.expertCacheBudgetBytes) == 96)
+        #expect(
+            RuntimeConfiguration.expertCacheSlots(
+                expertStrideBytes: Self.qwen38Stride, layers: Self.qwen38Layers,
+                budgetBytes: tuning.expertCacheBudgetBytes) == 96)
     }
 
     @Test func prefetchShipsOnlyWhereItMeasuredFaster() {
         // 8-bit streams twice the bytes, so expert I/O is a large enough share
         // of the token for a speculative read to pay.
-        #expect(RuntimeConfiguration.decodeTuning(
-            family: .qwen36, weightBits: 8).prefetchDepth == 1)
-        #expect(RuntimeConfiguration.decodeTuning(
-            family: .qwen36MTP, weightBits: 8).prefetchDepth == 1)
+        #expect(
+            RuntimeConfiguration.decodeTuning(
+                family: .qwen36, weightBits: 8
+            ).prefetchDepth == 1)
+        #expect(
+            RuntimeConfiguration.decodeTuning(
+                family: .qwen36MTP, weightBits: 8
+            ).prefetchDepth == 1)
         // At 4-bit the same family spends ~7 ms of a ~44 ms token on expert
         // I/O; prefetch measured -3.9% (Ornith) and -4.2% (Qwen 3.6).
-        #expect(RuntimeConfiguration.decodeTuning(
-            family: .qwen36, weightBits: 4).prefetchDepth == 0)
-        #expect(RuntimeConfiguration.decodeTuning(
-            family: .qwen36MTP, weightBits: 4).prefetchDepth == 0)
+        #expect(
+            RuntimeConfiguration.decodeTuning(
+                family: .qwen36, weightBits: 4
+            ).prefetchDepth == 0)
+        #expect(
+            RuntimeConfiguration.decodeTuning(
+                family: .qwen36MTP, weightBits: 4
+            ).prefetchDepth == 0)
     }
 
     @Test func the35BFamiliesKeepTheirEstablishedBudget() {
         for bits in [4, 8] {
-            #expect(RuntimeConfiguration.decodeTuning(
-                family: .qwen36, weightBits: bits).expertCacheBudgetBytes
-                == RuntimeConfiguration.defaultExpertCacheBudgetBytes)
+            #expect(
+                RuntimeConfiguration.decodeTuning(
+                    family: .qwen36, weightBits: bits
+                ).expertCacheBudgetBytes
+                    == RuntimeConfiguration.defaultExpertCacheBudgetBytes)
         }
     }
 
@@ -237,30 +263,35 @@ import Testing
         // 32 GiB: a third is 10 GiB, so the 12 GiB aimed at qwen38flash is cut
         // by one rung. The 35B families are unaffected - their 8 GiB budget is
         // under a third of even a 24 GiB machine.
-        #expect(RuntimeConfiguration.affordableExpertCacheBudget(
-            wanted, physicalMemory: 32 << 30) == (32 << 30) / 3)
+        #expect(
+            RuntimeConfiguration.affordableExpertCacheBudget(
+                wanted, physicalMemory: 32 << 30) == (32 << 30) / 3)
         // 16 GiB: a third is 5 GiB, which is a harsher cut than the half it
         // replaces (8 GiB) - stated rather than hidden, because it is the case
         // this test used to assert the other way.
-        #expect(RuntimeConfiguration.affordableExpertCacheBudget(
-            wanted, physicalMemory: 16 << 30) == (16 << 30) / 3)
+        #expect(
+            RuntimeConfiguration.affordableExpertCacheBudget(
+                wanted, physicalMemory: 16 << 30) == (16 << 30) / 3)
         // The case that was broken: an 8 GB mini, on the 35B 4-bit geometry.
         // 70.8 MB a slot, so a third is 2.67 GiB and must land on 40 slots -
         // the measured optimum - where a half landed on a higher rung and paged.
         let mini = RuntimeConfiguration.affordableExpertCacheBudget(
             wanted, physicalMemory: 8 << 30)
         #expect(mini == (8 << 30) / 3)
-        #expect(RuntimeConfiguration.expertCacheSlots(
-            expertStrideBytes: 1_769_472, layers: 40, budgetBytes: mini) == 40)
+        #expect(
+            RuntimeConfiguration.expertCacheSlots(
+                expertStrideBytes: 1_769_472, layers: 40, budgetBytes: mini) == 40)
         // And the clamp has to change the slot count, not just the number.
-        #expect(RuntimeConfiguration.expertCacheSlots(
-            expertStrideBytes: Self.qwen38Stride, layers: Self.qwen38Layers,
-            budgetBytes: RuntimeConfiguration.affordableExpertCacheBudget(
-                wanted, physicalMemory: 16 << 30)) == 40)
+        #expect(
+            RuntimeConfiguration.expertCacheSlots(
+                expertStrideBytes: Self.qwen38Stride, layers: Self.qwen38Layers,
+                budgetBytes: RuntimeConfiguration.affordableExpertCacheBudget(
+                    wanted, physicalMemory: 16 << 30)) == 40)
     }
 
     @Test func clampNeverGrowsABudget() {
-        #expect(RuntimeConfiguration.affordableExpertCacheBudget(
-            8 << 30, physicalMemory: 128 << 30) == 8 << 30)
+        #expect(
+            RuntimeConfiguration.affordableExpertCacheBudget(
+                8 << 30, physicalMemory: 128 << 30) == 8 << 30)
     }
 }

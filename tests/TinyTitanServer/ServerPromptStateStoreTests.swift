@@ -33,10 +33,12 @@ struct ServerPromptStateStoreTests {
             entry.id.uuidString.lowercased())
         #expect(permissions(of: root) & 0o077 == 0)
         #expect(permissions(of: entryDirectory) & 0o077 == 0)
-        #expect(permissions(of: entryDirectory.appendingPathComponent("metadata.json"))
-            & 0o077 == 0)
-        #expect(permissions(of: entryDirectory.appendingPathComponent("state.bin"))
-            & 0o077 == 0)
+        #expect(
+            permissions(of: entryDirectory.appendingPathComponent("metadata.json"))
+                & 0o077 == 0)
+        #expect(
+            permissions(of: entryDirectory.appendingPathComponent("state.bin"))
+                & 0o077 == 0)
 
         let reader = try ServerPromptStateStore(configuration: configuration)
         #expect(reader.loadEntries(domain: domain) == [entry])
@@ -105,7 +107,8 @@ struct ServerPromptStateStoreTests {
             diskLimitBytes: 1_024)
         let writer = try ServerPromptStateStore(configuration: configuration)
         _ = await writer.save(entry: entry, snapshot: snapshot)
-        let payload = root
+        let payload =
+            root
             .appendingPathComponent(entry.id.uuidString.lowercased())
             .appendingPathComponent("state.bin")
         try Data([9, 2, 3, 4, 5, 6, 7]).write(to: payload)
@@ -115,8 +118,9 @@ struct ServerPromptStateStoreTests {
         #expect(throws: ServerPromptStateStoreError.self) {
             try reader.loadSnapshot(entryID: entry.id)
         }
-        #expect(!FileManager.default.fileExists(
-            atPath: payload.deletingLastPathComponent().path))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: payload.deletingLastPathComponent().path))
     }
 
     private func makeEntry(tokens: [Int32]) -> ServerPromptCacheEntry {

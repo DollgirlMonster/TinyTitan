@@ -1,30 +1,37 @@
 import Foundation
 import Testing
+
 @testable import ContinuityCore
 
 @Suite struct ContextAssemblerTests {
-    private func item(_ namespace: String,
-                      _ key: String,
-                      _ value: String,
-                      importance: Double? = nil,
-                      status: MemoryStatus = .active,
-                      dependencies: [String] = [],
-                      updatedAt: Date = Date(timeIntervalSince1970: 1_000)) -> MemoryItem {
-        MemoryItem(taskID: Self.task.id, namespace: namespace, key: key, value: value,
-                   createdAt: updatedAt, updatedAt: updatedAt, status: status,
-                   importance: importance, dependencies: dependencies)
+    private func item(
+        _ namespace: String,
+        _ key: String,
+        _ value: String,
+        importance: Double? = nil,
+        status: MemoryStatus = .active,
+        dependencies: [String] = [],
+        updatedAt: Date = Date(timeIntervalSince1970: 1_000)
+    ) -> MemoryItem {
+        MemoryItem(
+            taskID: Self.task.id, namespace: namespace, key: key, value: value,
+            createdAt: updatedAt, updatedAt: updatedAt, status: status,
+            importance: importance, dependencies: dependencies)
     }
 
     private static let task = ContinuityTask(title: "Pong", objective: "Two autoplayers, no input")
 
-    private func request(_ items: [MemoryItem],
-                         budget: ContextBudget,
-                         turns: [SessionTurn] = [],
-                         focus: String? = nil) -> ContextRequest {
+    private func request(
+        _ items: [MemoryItem],
+        budget: ContextBudget,
+        turns: [SessionTurn] = [],
+        focus: String? = nil
+    ) -> ContextRequest {
         var index: [String: MemoryItem] = [:]
         for item in items { index[item.address] = item }
-        return ContextRequest(task: Self.task, items: items, index: index,
-                              turns: turns, budget: budget, focus: focus)
+        return ContextRequest(
+            task: Self.task, items: items, index: index,
+            turns: turns, budget: budget, focus: focus)
     }
 
     @Test func theObjectiveIsAlwaysPresent() throws {
@@ -39,8 +46,9 @@ import Testing
             item("notes", "aside", "unimportant colour", importance: 1.0),
             item("decision", "paddle_speed", "6 units per frame", importance: 0.1),
         ]
-        let budget = ContextBudget(maxTokens: 4096, priorityNamespaces: ["decision"],
-                                   recentTurnCount: 0)
+        let budget = ContextBudget(
+            maxTokens: 4096, priorityNamespaces: ["decision"],
+            recentTurnCount: 0)
         let snapshot = try DefaultContextAssembler().assemble(request(items, budget: budget))
         let ordered = snapshot.memoryItemIDs
         #expect(ordered.first == items[1].id)
@@ -60,13 +68,15 @@ import Testing
         let snapshot = try DefaultContextAssembler().assemble(
             request([renderedFirst, ranked], budget: budget))
 
-        #expect(snapshot.memoryItemIDs == [ranked.id, renderedFirst.id],
-                "memoryItemIDs follows the selection, not the text")
+        #expect(
+            snapshot.memoryItemIDs == [ranked.id, renderedFirst.id],
+            "memoryItemIDs follows the selection, not the text")
         let rendered = snapshot.renderedContext
         let alpha = try #require(rendered.range(of: "### alpha"))
         let zebra = try #require(rendered.range(of: "### zebra"))
-        #expect(alpha.lowerBound < zebra.lowerBound,
-                "the rendering groups by namespace and sorts it")
+        #expect(
+            alpha.lowerBound < zebra.lowerBound,
+            "the rendering groups by namespace and sorts it")
         // Same items, so the counts agree; only the order differs.
         #expect(snapshot.memoryItemIDs.count == 2)
     }
@@ -90,15 +100,18 @@ import Testing
     }
 
     @Test func dependenciesComeInWithTheItemThatNeedsThem() throws {
-        let constraint = item("constraint", "no_input", "neither paddle reads the mouse",
-                              importance: 0.01)
-        let decision = item("decision", "autoplay", "both paddles track the ball",
-                            importance: 0.9, dependencies: ["constraint.no_input"])
+        let constraint = item(
+            "constraint", "no_input", "neither paddle reads the mouse",
+            importance: 0.01)
+        let decision = item(
+            "decision", "autoplay", "both paddles track the ball",
+            importance: 0.9, dependencies: ["constraint.no_input"])
         let filler = (0..<20).map {
             item("filler", "k\($0)", String(repeating: "x", count: 200), importance: 0.5)
         }
-        let budget = ContextBudget(maxTokens: 300, priorityNamespaces: ["decision"],
-                                   recentTurnCount: 0)
+        let budget = ContextBudget(
+            maxTokens: 300, priorityNamespaces: ["decision"],
+            recentTurnCount: 0)
         let snapshot = try DefaultContextAssembler()
             .assemble(request([decision, constraint] + filler, budget: budget))
 
@@ -110,10 +123,12 @@ import Testing
 
     @Test func dependenciesCanBeTurnedOff() throws {
         let constraint = item("constraint", "no_input", "no mouse", importance: 0.01)
-        let decision = item("decision", "autoplay", "tracks the ball", importance: 0.9,
-                            dependencies: ["constraint.no_input"])
-        var budget = ContextBudget(maxTokens: 60, priorityNamespaces: ["decision"],
-                                   recentTurnCount: 0)
+        let decision = item(
+            "decision", "autoplay", "tracks the ball", importance: 0.9,
+            dependencies: ["constraint.no_input"])
+        var budget = ContextBudget(
+            maxTokens: 60, priorityNamespaces: ["decision"],
+            recentTurnCount: 0)
         budget.includesDependencies = false
         let snapshot = try DefaultContextAssembler()
             .assemble(request([decision, constraint], budget: budget))
@@ -123,13 +138,15 @@ import Testing
     @Test func recentTurnsAreCappedSoStateSurvives() throws {
         let wall = String(repeating: "chatter ", count: 500)
         let turns = (0..<6).map { index in
-            SessionTurn(sessionID: UUID(), promptEventID: nil,
-                        prompt: "ask \(index)", response: wall,
-                        timestamp: Date(timeIntervalSince1970: TimeInterval(index)))
+            SessionTurn(
+                sessionID: UUID(), promptEventID: nil,
+                prompt: "ask \(index)", response: wall,
+                timestamp: Date(timeIntervalSince1970: TimeInterval(index)))
         }
         let facts = (0..<5).map { item("decision", "k\($0)", "value \($0)", importance: 0.9) }
-        let budget = ContextBudget(maxTokens: 500, priorityNamespaces: ["decision"],
-                                   recentTurnCount: 6, turnShare: 0.3)
+        let budget = ContextBudget(
+            maxTokens: 500, priorityNamespaces: ["decision"],
+            recentTurnCount: 6, turnShare: 0.3)
         let snapshot = try DefaultContextAssembler()
             .assemble(request(facts, budget: budget, turns: turns))
 
@@ -145,22 +162,30 @@ import Testing
     }
 
     @Test func turnsAreExcludedWhenTheBudgetSaysStateOnly() throws {
-        let turns = [SessionTurn(sessionID: UUID(), promptEventID: nil,
-                                 prompt: "hello", response: "hi",
-                                 timestamp: Date())]
+        let turns = [
+            SessionTurn(
+                sessionID: UUID(), promptEventID: nil,
+                prompt: "hello", response: "hi",
+                timestamp: Date())
+        ]
         let snapshot = try DefaultContextAssembler()
-            .assemble(request([item("n", "k", "v")],
-                              budget: .stateOnly(maxTokens: 1000), turns: turns))
+            .assemble(
+                request(
+                    [item("n", "k", "v")],
+                    budget: .stateOnly(maxTokens: 1000), turns: turns))
         #expect(snapshot.renderedContext.contains("Recent activity") == false)
     }
 
     @Test func disputedItemsAreFlaggedAndRankedUp() throws {
         let settled = item("fact", "a_settled", "agreed", importance: 0.9)
-        let disputed = item("fact", "z_disputed", "contested", importance: 0.9,
-                            status: .disputed)
+        let disputed = item(
+            "fact", "z_disputed", "contested", importance: 0.9,
+            status: .disputed)
         let snapshot = try DefaultContextAssembler()
-            .assemble(request([settled, disputed],
-                              budget: ContextBudget(maxTokens: 4096, recentTurnCount: 0)))
+            .assemble(
+                request(
+                    [settled, disputed],
+                    budget: ContextBudget(maxTokens: 4096, recentTurnCount: 0)))
         #expect(snapshot.memoryItemIDs.first == disputed.id)
         #expect(snapshot.renderedContext.contains("[disputed]"))
     }
@@ -169,9 +194,11 @@ import Testing
         let paddle = item("notes", "paddle", "paddle speed is six", importance: 0.5)
         let colour = item("notes", "colour", "the background is black", importance: 0.5)
         let snapshot = try DefaultContextAssembler()
-            .assemble(request([colour, paddle],
-                              budget: ContextBudget(maxTokens: 4096, recentTurnCount: 0),
-                              focus: "how fast should the paddle move"))
+            .assemble(
+                request(
+                    [colour, paddle],
+                    budget: ContextBudget(maxTokens: 4096, recentTurnCount: 0),
+                    focus: "how fast should the paddle move"))
         #expect(snapshot.memoryItemIDs.first == paddle.id)
     }
 
@@ -179,8 +206,10 @@ import Testing
         var versioned = item("decision", "storage", "native swift")
         versioned.version = 7
         let snapshot = try DefaultContextAssembler()
-            .assemble(request([versioned],
-                              budget: ContextBudget(maxTokens: 4096, recentTurnCount: 0)))
+            .assemble(
+                request(
+                    [versioned],
+                    budget: ContextBudget(maxTokens: 4096, recentTurnCount: 0)))
         #expect(snapshot.memoryVersions["decision.storage"] == 7)
         #expect(snapshot.renderedContext.contains("(v7)"))
         #expect(snapshot.budget.maxTokens == 4096)
@@ -190,8 +219,9 @@ import Testing
         let items = (0..<12).map {
             item("n\($0 % 3)", "k\($0)", "value \($0)", importance: Double($0 % 5) / 5)
         }
-        let budget = ContextBudget(maxTokens: 300, priorityNamespaces: ["n1"],
-                                   recentTurnCount: 0)
+        let budget = ContextBudget(
+            maxTokens: 300, priorityNamespaces: ["n1"],
+            recentTurnCount: 0)
         let assembler = DefaultContextAssembler()
         let first = try assembler.assemble(request(items, budget: budget))
         let second = try assembler.assemble(request(items, budget: budget))
@@ -203,9 +233,8 @@ import Testing
         let assembler = DefaultContextAssembler(preamble: "Use the state below as fact.")
         let snapshot = try assembler.assemble(request([], budget: ContextBudget()))
         let text = snapshot.renderedContext
-        let preambleIndex = text.range(of: "Use the state below")?.lowerBound
-        let objectiveIndex = text.range(of: "## Objective")?.lowerBound
-        #expect(preambleIndex != nil && objectiveIndex != nil)
-        #expect(preambleIndex! < objectiveIndex!)
+        let preambleIndex = try #require(text.range(of: "Use the state below")?.lowerBound)
+        let objectiveIndex = try #require(text.range(of: "## Objective")?.lowerBound)
+        #expect(preambleIndex < objectiveIndex)
     }
 }

@@ -32,14 +32,19 @@ public struct PLEHash: Sendable {
     /// to `ngramSize`.
     public var headCount: Int { headsPerNgram * (ngramSize - 1) }
 
-    public init(multipliers: [UInt64], offsets: [UInt64], vocabSizes: [UInt64],
-                ngramSize: Int, headsPerNgram: Int, eosTokenID: Int32) {
-        precondition(multipliers.count >= ngramSize,
-                     "need one multiplier per n-gram slot")
-        precondition(offsets.count == vocabSizes.count,
-                     "offsets and vocab sizes must pair up")
-        precondition(offsets.count == headsPerNgram * (ngramSize - 1),
-                     "expected one head set per n-gram order")
+    public init(
+        multipliers: [UInt64], offsets: [UInt64], vocabSizes: [UInt64],
+        ngramSize: Int, headsPerNgram: Int, eosTokenID: Int32
+    ) {
+        precondition(
+            multipliers.count >= ngramSize,
+            "need one multiplier per n-gram slot")
+        precondition(
+            offsets.count == vocabSizes.count,
+            "offsets and vocab sizes must pair up")
+        precondition(
+            offsets.count == headsPerNgram * (ngramSize - 1),
+            "expected one head set per n-gram order")
         precondition(vocabSizes.allSatisfy { $0 > 0 }, "vocab sizes must be > 0")
         self.multipliers = multipliers
         self.offsets = offsets

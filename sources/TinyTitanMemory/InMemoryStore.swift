@@ -51,7 +51,8 @@ public actor InMemoryStore: MemoryStore {
         records[scope]?[key] != nil
     }
 
-    public func list(prefix: String, limit: Int, in scope: MemoryScope) async throws -> [MemoryKey] {
+    public func list(prefix: String, limit: Int, in scope: MemoryScope) async throws -> [MemoryKey]
+    {
         let scoped = records[scope] ?? [:]
         return scoped.values
             .filter { prefix.isEmpty || $0.key.rawValue.hasPrefix(prefix) }
@@ -68,7 +69,8 @@ public actor InMemoryStore: MemoryStore {
 
     @discardableResult
     public func append(_ text: String, to key: MemoryKey, in scope: MemoryScope) async throws
-        -> MemoryRecord {
+        -> MemoryRecord
+    {
         let existing = records[scope]?[key]
         let combined = existing.map { $0.value.isEmpty ? text : $0.value + "\n" + text } ?? text
         try limits.validate(value: combined)
@@ -82,7 +84,8 @@ public actor InMemoryStore: MemoryStore {
     }
 
     public func sessionInit(_ session: MemorySession, in scope: MemoryScope) async throws
-        -> MemoryBootstrap {
+        -> MemoryBootstrap
+    {
         sessions[scope, default: []].append(session)
         let scoped = Array((records[scope] ?? [:]).values)
         return MemoryBootstrap.build(from: scoped, limits: limits)
@@ -106,11 +109,13 @@ public struct MemoryLimits: Sendable, Equatable {
     public var bootstrapRecords: Int
     public var bootstrapBytes: Int
 
-    public init(maximumValueBytes: Int = 64 * 1024,
-                maximumSearchResults: Int = 50,
-                maximumListResults: Int = 200,
-                bootstrapRecords: Int = 60,
-                bootstrapBytes: Int = 16 * 1024) {
+    public init(
+        maximumValueBytes: Int = 64 * 1024,
+        maximumSearchResults: Int = 50,
+        maximumListResults: Int = 200,
+        bootstrapRecords: Int = 60,
+        bootstrapBytes: Int = 16 * 1024
+    ) {
         self.maximumValueBytes = maximumValueBytes
         self.maximumSearchResults = maximumSearchResults
         self.maximumListResults = maximumListResults
@@ -136,8 +141,10 @@ extension MemoryBootstrap {
     /// Applies the count and byte caps to records already in the order they
     /// should appear. For a ranking done elsewhere -- by relevance to the
     /// request -- that must not be re-sorted here.
-    static func build(ordered records: [MemoryRecord], limits: MemoryLimits,
-                      recent: [MemoryRecord] = []) -> MemoryBootstrap {
+    static func build(
+        ordered records: [MemoryRecord], limits: MemoryLimits,
+        recent: [MemoryRecord] = []
+    ) -> MemoryBootstrap {
         var chosen: [MemoryRecord] = []
         var bytes = 0
         for record in records {
@@ -147,10 +154,11 @@ extension MemoryBootstrap {
             chosen.append(record)
             bytes += size
         }
-        return MemoryBootstrap(records: chosen,
-                               omittedCount: records.count - chosen.count,
-                               totalBytes: bytes,
-                               recent: recent)
+        return MemoryBootstrap(
+            records: chosen,
+            omittedCount: records.count - chosen.count,
+            totalBytes: bytes,
+            recent: recent)
     }
 
     static func build(from records: [MemoryRecord], limits: MemoryLimits) -> MemoryBootstrap {
@@ -175,9 +183,10 @@ extension MemoryBootstrap {
             chosen.append(record)
             bytes += size
         }
-        return MemoryBootstrap(records: chosen,
-                               omittedCount: records.count - chosen.count,
-                               totalBytes: bytes)
+        return MemoryBootstrap(
+            records: chosen,
+            omittedCount: records.count - chosen.count,
+            totalBytes: bytes)
     }
 }
 
@@ -208,7 +217,10 @@ public enum MemoryRanking {
             .filter { $0.count > 2 }
         let candidates = records.filter { record in
             if let prefix = query.prefix, !prefix.isEmpty,
-               !record.key.rawValue.hasPrefix(prefix) { return false }
+                !record.key.rawValue.hasPrefix(prefix)
+            {
+                return false
+            }
             if let minimum = query.minimumImportance, (record.importance ?? 0) < minimum {
                 return false
             }
@@ -241,12 +253,14 @@ public enum MemoryRanking {
             }
             let documents = Double(max(1, candidates.count))
             let scored = candidates.compactMap { record -> (MemoryRecord, Double)? in
-                let score = textScore(record, terms: terms,
-                                      documentFrequency: documentFrequency,
-                                      documents: documents)
+                let score = textScore(
+                    record, terms: terms,
+                    documentFrequency: documentFrequency,
+                    documents: documents)
                 return score > 0 ? (record, score) : nil
             }
-            ranked = scored
+            ranked =
+                scored
                 .sorted { left, right in
                     if left.1 != right.1 { return left.1 > right.1 }
                     return left.0.updatedAt > right.0.updatedAt
@@ -285,9 +299,11 @@ public enum MemoryRanking {
     ///
     /// Smoothed (`+ 1`) so a term present in every candidate still counts, which
     /// keeps the key's three-to-one ordering intact among common terms.
-    private static func textScore(_ record: MemoryRecord, terms: [String],
-                                  documentFrequency: [String: Int],
-                                  documents: Double) -> Double {
+    private static func textScore(
+        _ record: MemoryRecord, terms: [String],
+        documentFrequency: [String: Int],
+        documents: Double
+    ) -> Double {
         let key = record.key.rawValue.lowercased()
         let value = record.value.lowercased()
         let tags = record.tags.map { $0.lowercased() }

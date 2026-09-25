@@ -36,12 +36,14 @@ public struct ResponsesAPIRequest: Decodable, Sendable {
             case encryptedContent = "encrypted_content"
         }
 
-        public init(type: String?, id: String? = nil, status: String? = nil,
-                    role: String? = nil, content: JSONValue? = nil,
-                    callID: String? = nil, name: String? = nil,
-                    arguments: String? = nil, output: JSONValue? = nil,
-                    summary: JSONValue? = nil, encryptedContent: String? = nil,
-                    namespace: String? = nil) {
+        public init(
+            type: String?, id: String? = nil, status: String? = nil,
+            role: String? = nil, content: JSONValue? = nil,
+            callID: String? = nil, name: String? = nil,
+            arguments: String? = nil, output: JSONValue? = nil,
+            summary: JSONValue? = nil, encryptedContent: String? = nil,
+            namespace: String? = nil
+        ) {
             self.type = type
             self.id = id
             self.status = status
@@ -77,8 +79,10 @@ public struct ResponsesAPIRequest: Decodable, Sendable {
         /// calls the functions, and the call carries the namespace back.
         public let tools: [Tool]?
 
-        public init(type: String, name: String?, description: String?,
-                    parameters: JSONValue?, strict: Bool?, tools: [Tool]? = nil) {
+        public init(
+            type: String, name: String?, description: String?,
+            parameters: JSONValue?, strict: Bool?, tools: [Tool]? = nil
+        ) {
             self.type = type
             self.name = name
             self.description = description
@@ -220,7 +224,8 @@ public enum ResponsesAPIMapper {
     /// Text of a message's content: a plain string or an array of text parts.
     /// `input_text`, `output_text` and `refusal` parts carry text; images and
     /// files are refused because TinyTitan is text-only.
-    public static func messageText(_ content: JSONValue?, param: String = "input") throws -> String {
+    public static func messageText(_ content: JSONValue?, param: String = "input") throws -> String
+    {
         guard let content else { return "" }
         switch content {
         case .string(let text):
@@ -229,7 +234,8 @@ public enum ResponsesAPIMapper {
             var out = ""
             for part in parts {
                 guard case .object(let dict) = part,
-                      case .string(let type)? = dict["type"] else {
+                    case .string(let type)? = dict["type"]
+                else {
                     throw ServerRequestError.invalid(
                         message: "content parts must be objects with a type",
                         param: param, code: "invalid_value")
@@ -266,7 +272,8 @@ public enum ResponsesAPIMapper {
     /// else about the rule differs, so nothing else is duplicated.
     public static func responseFormat(_ format: JSONValue?) throws -> JSONValue? {
         guard let format, case .object(let dict) = format,
-              case .string(let type)? = dict["type"] else {
+            case .string(let type)? = dict["type"]
+        else {
             return nil
         }
         switch type {
@@ -284,8 +291,10 @@ public enum ResponsesAPIMapper {
                     message: "json_schema requires a schema",
                     param: "text.format.schema", code: "invalid_value")
             }
-            return .object(["type": .string("json_schema"),
-                            "json_schema": .object(wrapper)])
+            return .object([
+                "type": .string("json_schema"),
+                "json_schema": .object(wrapper),
+            ])
         default:
             throw ServerRequestError.invalid(
                 message: "text.format \(type) is not supported; use text, json_object "
@@ -327,7 +336,9 @@ public enum ResponsesAPIMapper {
                 param: "conversation", code: "unsupported_value")
         }
         if let include = request.include {
-            let supported: Set<String> = ["message.output_text.logprobs", "reasoning.encrypted_content"]
+            let supported: Set<String> = [
+                "message.output_text.logprobs", "reasoning.encrypted_content",
+            ]
             if let bad = include.first(where: { !supported.contains($0) }) {
                 throw ServerRequestError.invalid(
                     message: "include value \(bad) is not supported",
@@ -344,17 +355,21 @@ public enum ResponsesAPIMapper {
     /// them. Codex sends web_search on every turn, so refusing would refuse
     /// Codex.
     public static func functionTools(_ tools: [ResponsesAPIRequest.Tool]?)
-        -> (tools: [OpenAITool], namespaces: [String: String]) {
+        -> (tools: [OpenAITool], namespaces: [String: String])
+    {
         var out: [OpenAITool] = []
         var namespaces: [String: String] = [:]
         func add(_ tool: ResponsesAPIRequest.Tool, namespace: String?) {
             guard tool.type == "function", let name = tool.name, !name.isEmpty else { return }
-            let parameters: JSONValue = tool.parameters
+            let parameters: JSONValue =
+                tool.parameters
                 ?? .object(["type": .string("object"), "properties": .object([:])])
-            out.append(OpenAITool(
-                type: "function",
-                function: OpenAIFunctionDefinition(name: name, description: tool.description,
-                                                   parameters: parameters)))
+            out.append(
+                OpenAITool(
+                    type: "function",
+                    function: OpenAIFunctionDefinition(
+                        name: name, description: tool.description,
+                        parameters: parameters)))
             if let namespace { namespaces[name] = namespace }
         }
         for tool in tools ?? [] {
@@ -375,8 +390,10 @@ public enum ResponsesAPIMapper {
     /// `/v1/responses/compact`, so the two cannot disagree about what an item
     /// means, and a compacted window replays through exactly the path the
     /// original items did.
-    public static func chatMessages(items: [ResponsesAPIRequest.Item],
-                                   instructions: String?) throws -> [OpenAIChatMessage] {
+    public static func chatMessages(
+        items: [ResponsesAPIRequest.Item],
+        instructions: String?
+    ) throws -> [OpenAIChatMessage] {
         var systemParts: [String] = []
         if let instructions, !instructions.isEmpty {
             systemParts.append(instructions)
@@ -395,9 +412,10 @@ public enum ResponsesAPIMapper {
                 if role == "system" || role == "developer" {
                     if !text.isEmpty { systemParts.append(text) }
                 } else {
-                    messages.append(OpenAIChatMessage(
-                        role: role, content: .text(text),
-                        toolCalls: nil, toolCallID: nil, name: nil))
+                    messages.append(
+                        OpenAIChatMessage(
+                            role: role, content: .text(text),
+                            toolCalls: nil, toolCallID: nil, name: nil))
                 }
             case "function_call":
                 guard let callID = item.callID, !callID.isEmpty else {
@@ -405,15 +423,20 @@ public enum ResponsesAPIMapper {
                         message: "function_call item requires call_id",
                         param: "input", code: "invalid_value")
                 }
-                let function = OpenAIFunctionCall(name: item.name ?? "", arguments: item.arguments ?? "{}")
-                messages.append(OpenAIChatMessage(
-                    role: "assistant", content: nil,
-                    toolCalls: [OpenAIToolCall(id: callID, type: "function", function: function)],
-                    toolCallID: nil, name: nil))
+                let function = OpenAIFunctionCall(
+                    name: item.name ?? "", arguments: item.arguments ?? "{}")
+                messages.append(
+                    OpenAIChatMessage(
+                        role: "assistant", content: nil,
+                        toolCalls: [
+                            OpenAIToolCall(id: callID, type: "function", function: function)
+                        ],
+                        toolCallID: nil, name: nil))
             case "function_call_output":
-                messages.append(OpenAIChatMessage(
-                    role: "tool", content: .text(try outputText(item.output)),
-                    toolCalls: nil, toolCallID: item.callID, name: nil))
+                messages.append(
+                    OpenAIChatMessage(
+                        role: "tool", content: .text(try outputText(item.output)),
+                        toolCalls: nil, toolCallID: item.callID, name: nil))
             case "compaction":
                 // The window `/v1/responses/compact` returned, sent back as the
                 // base input of a new response. It becomes standing context, and
@@ -425,7 +448,8 @@ public enum ResponsesAPIMapper {
                         message: "compaction item requires encrypted_content",
                         param: "input", code: "invalid_value")
                 }
-                systemParts.append(ServerCompaction.replayNote(try ServerCompaction.decode(payload)))
+                systemParts.append(
+                    ServerCompaction.replayNote(try ServerCompaction.decode(payload)))
             case "reasoning":
                 // A client replaying an earlier turn returns the reasoning
                 // item it was given. The model's thoughts are never part of
@@ -443,9 +467,10 @@ public enum ResponsesAPIMapper {
         }
         var chatMessages = messages
         if !systemParts.isEmpty {
-            chatMessages.insert(OpenAIChatMessage(
-                role: "system", content: .text(systemParts.joined(separator: "\n\n")),
-                toolCalls: nil, toolCallID: nil, name: nil), at: 0)
+            chatMessages.insert(
+                OpenAIChatMessage(
+                    role: "system", content: .text(systemParts.joined(separator: "\n\n")),
+                    toolCalls: nil, toolCallID: nil, name: nil), at: 0)
         }
         return chatMessages
     }
@@ -456,9 +481,11 @@ public enum ResponsesAPIMapper {
     /// merged into a single opening system message. `priorItems` is the
     /// conversation a `previous_response_id` resolved to; it precedes the
     /// request's own input.
-    public static func chatRequest(_ request: ResponsesAPIRequest,
-                                   priorItems: [ResponsesAPIRequest.Item] = [],
-                                   inputItems: [ResponsesAPIRequest.Item]? = nil) throws -> OpenAIChatRequest {
+    public static func chatRequest(
+        _ request: ResponsesAPIRequest,
+        priorItems: [ResponsesAPIRequest.Item] = [],
+        inputItems: [ResponsesAPIRequest.Item]? = nil
+    ) throws -> OpenAIChatRequest {
         try validateFeatures(request)
         let chatMessages = try chatMessages(
             items: priorItems + (inputItems ?? request.inputItems),
@@ -508,23 +535,31 @@ public enum ResponsesAPIMapper {
     /// back as input. This is what `previous_response_id` chains on. The
     /// reasoning item is left out: a replayed one is skipped on the way back
     /// in, because thoughts are never part of a prompt.
-    public static func outputAsInput(completion: ServerCompletion,
-                                     responseID: String,
-                                     namespaces: [String: String] = [:]) -> [ResponsesAPIRequest.Item] {
+    public static func outputAsInput(
+        completion: ServerCompletion,
+        responseID: String,
+        namespaces: [String: String] = [:]
+    ) -> [ResponsesAPIRequest.Item] {
         var items: [ResponsesAPIRequest.Item] = []
         let ids = ResponsesAPIBuilder.itemIDs(responseID: responseID, completion: completion)
         if !completion.content.isEmpty {
-            items.append(ResponsesAPIRequest.Item(
-                type: "message", id: ids.message, status: "completed", role: "assistant",
-                content: .array([.object(["type": .string("output_text"),
-                                          "text": .string(completion.content),
-                                          "annotations": .array([])])])))
+            items.append(
+                ResponsesAPIRequest.Item(
+                    type: "message", id: ids.message, status: "completed", role: "assistant",
+                    content: .array([
+                        .object([
+                            "type": .string("output_text"),
+                            "text": .string(completion.content),
+                            "annotations": .array([]),
+                        ])
+                    ])))
         }
         for (index, call) in completion.toolCalls.enumerated() {
-            items.append(ResponsesAPIRequest.Item(
-                type: "function_call", id: ids.calls[index], status: "completed",
-                callID: call.id, name: call.name, arguments: call.argumentsJSON,
-                namespace: namespaces[call.name]))
+            items.append(
+                ResponsesAPIRequest.Item(
+                    type: "function_call", id: ids.calls[index], status: "completed",
+                    callID: call.id, name: call.name, arguments: call.argumentsJSON,
+                    namespace: namespaces[call.name]))
         }
         return items
     }
@@ -642,9 +677,11 @@ public struct ResponsesAPIEcho: Sendable {
     public let reasoningSummary: String?
     public let parallelToolCalls: Bool
 
-    public init(request: ResponsesAPIRequest,
-                effectiveEffort: ModelReasoningEffort?,
-                applied: GenerationConfig) {
+    public init(
+        request: ResponsesAPIRequest,
+        effectiveEffort: ModelReasoningEffort?,
+        applied: GenerationConfig
+    ) {
         instructions = request.instructions
         maxOutputTokens = request.maxOutputTokens
         maxToolCalls = request.maxToolCalls
@@ -687,11 +724,15 @@ public enum ResponsesAPIBuilder {
 
     /// The output item ids of a response, derived from the response id so
     /// that the streamed `output_item.added` and the final object agree.
-    public static func itemIDs(responseID: String,
-                               completion: ServerCompletion) -> (message: String, calls: [String]) {
+    public static func itemIDs(
+        responseID: String,
+        completion: ServerCompletion
+    ) -> (message: String, calls: [String]) {
         let suffix = String(responseID.dropFirst("resp_".count))
-        return ("msg_" + suffix,
-                completion.toolCalls.indices.map { "fc_" + suffix + String($0) })
+        return (
+            "msg_" + suffix,
+            completion.toolCalls.indices.map { "fc_" + suffix + String($0) }
+        )
     }
 
     public static func messageItemID(responseID: String) -> String {
@@ -710,24 +751,28 @@ public enum ResponsesAPIBuilder {
 
     /// One streaming event. `sequence_number` is the client's ordering key;
     /// the handler owns the counter.
-    public static func event(_ type: String, sequence: Int,
-                             _ fields: [String: Any]) -> [String: Any] {
+    public static func event(
+        _ type: String, sequence: Int,
+        _ fields: [String: Any]
+    ) -> [String: Any] {
         var object = fields
         object["type"] = type
         object["sequence_number"] = sequence
         return object
     }
 
-    public static func responseObject(id: String,
-                                      created: Int,
-                                      model: String,
-                                      status: String,
-                                      output: [[String: Any]],
-                                      usage: OpenAIUsage?,
-                                      echo: ResponsesAPIEcho,
-                                      incompleteReason: String? = nil,
-                                      error: (code: String, message: String)? = nil,
-                                      completedAt: Int? = nil) -> [String: Any] {
+    public static func responseObject(
+        id: String,
+        created: Int,
+        model: String,
+        status: String,
+        output: [[String: Any]],
+        usage: OpenAIUsage?,
+        echo: ResponsesAPIEcho,
+        incompleteReason: String? = nil,
+        error: (code: String, message: String)? = nil,
+        completedAt: Int? = nil
+    ) -> [String: Any] {
         var object: [String: Any] = [
             "id": id,
             "object": "response",
@@ -745,8 +790,10 @@ public enum ResponsesAPIBuilder {
             "parallel_tool_calls": echo.parallelToolCalls,
             "previous_response_id": echo.previousResponseID.map { $0 as Any } ?? NSNull(),
             "prompt_cache_key": echo.promptCacheKey.map { $0 as Any } ?? NSNull(),
-            "reasoning": ["effort": echo.reasoningEffort.map { $0 as Any } ?? NSNull(),
-                          "summary": echo.reasoningSummary.map { $0 as Any } ?? NSNull()],
+            "reasoning": [
+                "effort": echo.reasoningEffort.map { $0 as Any } ?? NSNull(),
+                "summary": echo.reasoningSummary.map { $0 as Any } ?? NSNull(),
+            ],
             "safety_identifier": echo.safetyIdentifier.map { $0 as Any } ?? NSNull(),
             "service_tier": echo.serviceTier,
             "store": echo.store,
@@ -772,11 +819,13 @@ public enum ResponsesAPIBuilder {
     public static func usageObject(_ usage: OpenAIUsage) -> [String: Any] {
         [
             "input_tokens": usage.promptTokens,
-            "input_tokens_details": ["cached_tokens": usage.promptTokensDetails.cachedTokens,
-                                     "cache_write_tokens": 0],
+            "input_tokens_details": [
+                "cached_tokens": usage.promptTokensDetails.cachedTokens,
+                "cache_write_tokens": 0,
+            ],
             "output_tokens": usage.completionTokens,
             "output_tokens_details": [
-                "reasoning_tokens": usage.completionTokensDetails.reasoningTokens,
+                "reasoning_tokens": usage.completionTokensDetails.reasoningTokens
             ],
             "total_tokens": usage.totalTokens,
         ]
@@ -789,27 +838,35 @@ public enum ResponsesAPIBuilder {
     /// `output` holds the caller's instructions verbatim (the spec asks
     /// compaction to preserve system prompts) followed by the `compaction` item
     /// that carries the note.
-    public static func compactResource(id: String,
-                                       created: Int,
-                                       output: [[String: Any]],
-                                       usage: OpenAIUsage) -> [String: Any] {
-        ["id": id,
-         "object": "response.compaction",
-         "created_at": created,
-         "output": output,
-         "usage": usageObject(usage)]
+    public static func compactResource(
+        id: String,
+        created: Int,
+        output: [[String: Any]],
+        usage: OpenAIUsage
+    ) -> [String: Any] {
+        [
+            "id": id,
+            "object": "response.compaction",
+            "created_at": created,
+            "output": output,
+            "usage": usageObject(usage),
+        ]
     }
 
     /// The item that carries a compaction note. `encrypted_content` is required
     /// by the schema; what this server puts in it is documented in
     /// `docs/server-api.md`.
-    public static func compactionItem(id: String,
-                                      encryptedContent: String,
-                                      createdBy: String) -> [String: Any] {
-        ["id": id,
-         "type": "compaction",
-         "encrypted_content": encryptedContent,
-         "created_by": createdBy]
+    public static func compactionItem(
+        id: String,
+        encryptedContent: String,
+        createdBy: String
+    ) -> [String: Any] {
+        [
+            "id": id,
+            "type": "compaction",
+            "encrypted_content": encryptedContent,
+            "created_by": createdBy,
+        ]
     }
 
     static func toolObject(_ tool: ResponsesAPIRequest.Tool) -> [String: Any] {
@@ -830,22 +887,30 @@ public enum ResponsesAPIBuilder {
         ["type": "output_text", "text": text, "annotations": [], "logprobs": []]
     }
 
-    public static func messageItem(id: String,
-                                   role: String,
-                                   text: String,
-                                   status: String) -> [String: Any] {
-        ["id": id, "type": "message", "role": role, "status": status,
-         "content": [outputTextPart(text)]]
+    public static func messageItem(
+        id: String,
+        role: String,
+        text: String,
+        status: String
+    ) -> [String: Any] {
+        [
+            "id": id, "type": "message", "role": role, "status": status,
+            "content": [outputTextPart(text)],
+        ]
     }
 
-    public static func functionCallItem(id: String,
-                                        name: String,
-                                        arguments: String,
-                                        callID: String,
-                                        status: String,
-                                        namespace: String? = nil) -> [String: Any] {
-        var item: [String: Any] = ["id": id, "type": "function_call", "status": status,
-                                   "name": name, "arguments": arguments, "call_id": callID]
+    public static func functionCallItem(
+        id: String,
+        name: String,
+        arguments: String,
+        callID: String,
+        status: String,
+        namespace: String? = nil
+    ) -> [String: Any] {
+        var item: [String: Any] = [
+            "id": id, "type": "function_call", "status": status,
+            "name": name, "arguments": arguments, "call_id": callID,
+        ]
         if let namespace { item["namespace"] = namespace }
         return item
     }
@@ -864,31 +929,40 @@ public enum ResponsesAPIBuilder {
 
     /// Output items for a completed generation: the reasoning when there is
     /// any, then the message, then calls.
-    public static func outputItems(completion: ServerCompletion,
-                                   responseID: String,
-                                   namespaces: [String: String] = [:]) -> [[String: Any]] {
+    public static func outputItems(
+        completion: ServerCompletion,
+        responseID: String,
+        namespaces: [String: String] = [:]
+    ) -> [[String: Any]] {
         let ids = itemIDs(responseID: responseID, completion: completion)
         var output: [[String: Any]] = []
         if !completion.reasoning.isEmpty {
-            output.append(reasoningItem(id: reasoningItemID(responseID: responseID, index: 0),
-                                        text: completion.reasoning))
+            output.append(
+                reasoningItem(
+                    id: reasoningItemID(responseID: responseID, index: 0),
+                    text: completion.reasoning))
         }
         if !completion.content.isEmpty || completion.toolCalls.isEmpty {
-            output.append(messageItem(id: ids.message, role: "assistant",
-                                      text: completion.content, status: "completed"))
+            output.append(
+                messageItem(
+                    id: ids.message, role: "assistant",
+                    text: completion.content, status: "completed"))
         }
         for (index, call) in completion.toolCalls.enumerated() {
-            output.append(functionCallItem(
-                id: ids.calls[index], name: call.name,
-                arguments: call.argumentsJSON, callID: call.id, status: "completed",
-                namespace: namespaces[call.name]))
+            output.append(
+                functionCallItem(
+                    id: ids.calls[index], name: call.name,
+                    arguments: call.argumentsJSON, callID: call.id, status: "completed",
+                    namespace: namespaces[call.name]))
         }
         return output
     }
 
     /// The terminal status of a generation: "incomplete" when the output
     /// cap ended it, which the API reports with `incomplete_details`.
-    public static func terminalStatus(for completion: ServerCompletion) -> (status: String, reason: String?) {
+    public static func terminalStatus(for completion: ServerCompletion) -> (
+        status: String, reason: String?
+    ) {
         completion.finishReason == "length"
             ? ("incomplete", "max_output_tokens")
             : ("completed", nil)

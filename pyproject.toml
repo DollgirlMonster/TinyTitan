@@ -1,0 +1,43 @@
+[tool.ruff]
+# Python here is test and glue code: the benchmark harnesses, the converter
+# scripts and the shell-adjacent helpers. One pinned configuration, so a rule
+# cannot be forgotten and a script cannot quietly opt out.
+# The floor the scripts must run on, and the version CI installs. It is NOT
+# "whatever this Mac has" (3.14.7 locally): targeting 3.14 lets ruff format
+# rewrite `except (A, B):` into PEP 758's `except A, B:`, which is a syntax
+# error on anything older. 3.13 keeps one code image for every supported
+# interpreter.
+target-version = "py313"
+line-length = 100
+# Build output only. Nothing under these is project source: `.build` is SwiftPM's
+# checkout directory (vendored packages) and `models/` is the 244 GB model store.
+extend-exclude = [".build", "models"]
+
+[tool.ruff.lint]
+# E4/E7/E9 and F are the correctness core (imports, statements, undefined
+# names); W is whitespace-level syntax; the rest are the families the audit
+# standard names: B flake8-bugbear (loop-variable capture, mutable defaults,
+# zip without strict), E722 bare except, S101 assert, PT flake8-pytest-style.
+select = ["E4", "E7", "E9", "F", "W", "B", "E722", "S101", "PT"]
+
+ignore = [
+    # PT009 wants every unittest assertion rewritten as a bare `assert`. This
+    # suite is unittest-based on purpose (`python3 -m unittest discover` is how
+    # CI runs it) and S101 above is enabled, so PT009 contradicts both the
+    # framework in use and the rule next to it. Excluding it is the documented
+    # decision; the rest of PT stays.
+    "PT009",
+    # PT027 wants `self.assertRaises` rewritten as `pytest.raises`; same reason,
+    # this suite is unittest and `assertRaises` is the framework's own API.
+    "PT027",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# No per-file escapes: a rule that is wrong for a file is fixed as its own
+# ledger task, not silenced here.
+
+[tool.ruff.format]
+# The tree is formatted with `ruff format`; quote style is left at ruff's
+# default (double) and no docstring code formatting is applied, because the
+# scripts carry shell and JSON snippets in docstrings.
+docstring-code-format = false

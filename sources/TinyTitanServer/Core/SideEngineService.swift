@@ -21,13 +21,17 @@ struct SideEngineMemoryAdapter: MemorySideEngine, Sendable {
     /// prompts were measured in. On the 4B the same pair answers YES in that
     /// order and NO reversed, so the mapping is part of the contract.
     func duplicates(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? {
-        await yesNo(.duplication(aKey: stored.key, aValue: stored.value,
-                                 bKey: new.key, bValue: new.value))
+        await yesNo(
+            .duplication(
+                aKey: stored.key, aValue: stored.value,
+                bKey: new.key, bValue: new.value))
     }
 
     func contradicts(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? {
-        await yesNo(.contradiction(aKey: stored.key, aValue: stored.value,
-                                   bKey: new.key, bValue: new.value))
+        await yesNo(
+            .contradiction(
+                aKey: stored.key, aValue: stored.value,
+                bKey: new.key, bValue: new.value))
     }
 
     /// T7. The caller is the background hinter, which owns the idle gate and
@@ -39,12 +43,17 @@ struct SideEngineMemoryAdapter: MemorySideEngine, Sendable {
     /// The rule is data the caller found; without one the engine's answer is a
     /// guess about whether the change was allowed, so a `nil` rule answers
     /// `nil` rather than pretending.
-    func supersedes(_ stored: MemoryFact, _ new: MemoryFact,
-                    rule: String?) async -> MemorySupersession? {
+    func supersedes(
+        _ stored: MemoryFact, _ new: MemoryFact,
+        rule: String?
+    ) async -> MemorySupersession? {
         guard let rule else { return nil }
-        guard let answer = try? await engine.judge(
-            .supersession(key: stored.key, earlier: stored.value,
-                          now: new.value, rule: rule)) else { return nil }
+        guard
+            let answer = try? await engine.judge(
+                .supersession(
+                    key: stored.key, earlier: stored.value,
+                    now: new.value, rule: rule))
+        else { return nil }
         switch answer {
         case .update: return .update
         case .conflict: return .conflict
@@ -86,14 +95,20 @@ public enum ServerSideEngineFactory {
     ///
     /// The weights load on the first judgement rather than here, so a server
     /// that is never asked a question never pays for one.
-    public static func make(environment: [String: String] = ProcessInfo.processInfo.environment,
-                            modelsDirectory: String?,
-                            isClientGenerating: (@Sendable () -> Bool)?) -> SideEngine? {
+    public static func make(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        modelsDirectory: String?,
+        isClientGenerating: (@Sendable () -> Bool)?
+    ) -> SideEngine? {
         if isExplicitlyOff(setting(in: environment)) { return nil }
-        guard let directory = resolve(environment: environment,
-                                      modelsDirectory: modelsDirectory) else {
-            ServerLog.memory("side-engine off: no \(defaultInstall) install under "
-                             + "\(modelsDirectory ?? "the models directory")")
+        guard
+            let directory = resolve(
+                environment: environment,
+                modelsDirectory: modelsDirectory)
+        else {
+            ServerLog.memory(
+                "side-engine off: no \(defaultInstall) install under "
+                    + "\(modelsDirectory ?? "the models directory")")
             return nil
         }
         return SideEngine(isClientGenerating: isClientGenerating) {
@@ -108,8 +123,10 @@ public enum ServerSideEngineFactory {
     /// — is a path and is used as given. Anything else is an install name
     /// under the models directory, which is how the server resolves a model
     /// everywhere else.
-    static func resolve(environment: [String: String],
-                        modelsDirectory: String?) -> String? {
+    static func resolve(
+        environment: [String: String],
+        modelsDirectory: String?
+    ) -> String? {
         let setting = setting(in: environment)
         if isExplicitlyOff(setting) { return nil }
         let name = setting ?? defaultInstall

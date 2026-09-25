@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanRepackCore
 
 /// Non-tensor files Qwen3.8-Flash-Next needs copied into the install: the PLE
@@ -16,10 +17,10 @@ struct Qwen4ExpPassthroughTests {
     }
 
     @Test("The hash constants are required; the 102 GB table is not")
-    func requiredness() {
+    func requiredness() throws {
         let flash = RepackPlanner.passthroughRequirements(family: .qwen38flash)
-        let constants = try! #require(flash.first { $0.name == "ple_constants.json" })
-        let table = try! #require(flash.first { $0.name == "ngram_table.bin" })
+        let constants = try #require(flash.first { $0.name == "ple_constants.json" })
+        let table = try #require(flash.first { $0.name == "ngram_table.bin" })
         // Without the constants the n-gram ids cannot be computed at all.
         #expect(constants.required)
         // The table is optional so the backbone can be installed first; the
@@ -42,23 +43,27 @@ struct Qwen4ExpPassthroughTests {
         ]
         for family in families {
             for requirement in RepackPlanner.passthroughRequirements(family: family) {
-                #expect(requirement.capBytes <= VerifiedInstallTool.payloadMaxBytes,
-                        "\(requirement.name) may be \(requirement.capBytes) bytes, above the verifier's \(VerifiedInstallTool.payloadMaxBytes)")
+                #expect(
+                    requirement.capBytes <= VerifiedInstallTool.payloadMaxBytes,
+                    "\(requirement.name) may be \(requirement.capBytes) bytes, above the verifier's \(VerifiedInstallTool.payloadMaxBytes)"
+                )
             }
         }
     }
 
     @Test("A passthrough file becomes a resumable range copy at offset zero")
     func passthroughBecomesRangeCopy() throws {
-        let table = PassthroughFile(sourceName: "ngram_table.bin",
-                                    destinationName: "ngram_table.bin",
-                                    size: 102_400_491_520,
-                                    required: false)
-        let copy = RangeCopy(shardID: table.sourceName,
-                             sourceOffset: 0,
-                             size: table.size,
-                             destinationPath: table.destinationName,
-                             destinationOffset: 0)
+        let table = PassthroughFile(
+            sourceName: "ngram_table.bin",
+            destinationName: "ngram_table.bin",
+            size: 102_400_491_520,
+            required: false)
+        let copy = RangeCopy(
+            shardID: table.sourceName,
+            sourceOffset: 0,
+            size: table.size,
+            destinationPath: table.destinationName,
+            destinationOffset: 0)
         // Carried by the same machinery as tensor ranges, which is what makes
         // a 102 GB transfer resumable and digest-checked rather than a
         // bespoke download that has to reimplement both.
@@ -87,12 +92,14 @@ struct Qwen4ExpPassthroughTests {
         // fetch from, then no destination file to write into. Each seam looked
         // correct on its own; only their conjunction is a working install, so
         // the check belongs here rather than in three places.
-        let table = PassthroughFile(sourceName: "ngram_table.bin",
-                                    destinationName: "ngram_table.bin",
-                                    size: 102_400_491_520,
-                                    required: false)
-        let expected = RemoteExpectedOutput(relativePath: table.destinationName,
-                                            size: table.size)
+        let table = PassthroughFile(
+            sourceName: "ngram_table.bin",
+            destinationName: "ngram_table.bin",
+            size: 102_400_491_520,
+            required: false)
+        let expected = RemoteExpectedOutput(
+            relativePath: table.destinationName,
+            size: table.size)
         #expect(expected.relativePath == "ngram_table.bin")
         #expect(expected.size == table.size)
         // Omitting it would let a resume accept a partial whose 102 GB table

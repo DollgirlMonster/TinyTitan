@@ -11,11 +11,14 @@ public struct OpenAIErrorEnvelope: Codable, Equatable, Sendable {
 
     public let error: Detail
 
-    public init(message: String, param: String? = nil, code: String, type: String = "invalid_request_error") {
-        error = Detail(message: message,
-                       type: type,
-                       param: param,
-                       code: code)
+    public init(
+        message: String, param: String? = nil, code: String, type: String = "invalid_request_error"
+    ) {
+        error = Detail(
+            message: message,
+            type: type,
+            param: param,
+            code: code)
     }
 }
 
@@ -202,29 +205,31 @@ public struct OpenAIChatRequest: Codable, Equatable, Sendable {
     /// mappers that build a chat request from their own shapes keep compiling
     /// unchanged. A `let` with an inline default would have been skipped by the
     /// synthesised decoder, which is how the budget silently decoded to nil.
-    public init(model: String,
-                messages: [OpenAIChatMessage],
-                stream: Bool? = nil,
-                streamOptions: OpenAIStreamOptions? = nil,
-                temperature: Float? = nil,
-                topP: Float? = nil,
-                maxTokens: Int? = nil,
-                maxCompletionTokens: Int? = nil,
-                stop: OpenAIStop? = nil,
-                seed: UInt64? = nil,
-                tools: [OpenAITool]? = nil,
-                toolChoice: JSONValue? = nil,
-                parallelToolCalls: Bool? = nil,
-                topK: Int? = nil,
-                repetitionPenalty: Float? = nil,
-                n: Int? = nil,
-                logprobs: Bool? = nil,
-                presencePenalty: Float? = nil,
-                frequencyPenalty: Float? = nil,
-                reasoningEffort: String? = nil,
-                chatTemplateKwargs: OpenAIChatTemplateKwargs? = nil,
-                reasoningBudgetTokens: Int? = nil,
-                responseFormat: JSONValue? = nil) {
+    public init(
+        model: String,
+        messages: [OpenAIChatMessage],
+        stream: Bool? = nil,
+        streamOptions: OpenAIStreamOptions? = nil,
+        temperature: Float? = nil,
+        topP: Float? = nil,
+        maxTokens: Int? = nil,
+        maxCompletionTokens: Int? = nil,
+        stop: OpenAIStop? = nil,
+        seed: UInt64? = nil,
+        tools: [OpenAITool]? = nil,
+        toolChoice: JSONValue? = nil,
+        parallelToolCalls: Bool? = nil,
+        topK: Int? = nil,
+        repetitionPenalty: Float? = nil,
+        n: Int? = nil,
+        logprobs: Bool? = nil,
+        presencePenalty: Float? = nil,
+        frequencyPenalty: Float? = nil,
+        reasoningEffort: String? = nil,
+        chatTemplateKwargs: OpenAIChatTemplateKwargs? = nil,
+        reasoningBudgetTokens: Int? = nil,
+        responseFormat: JSONValue? = nil
+    ) {
         self.model = model
         self.messages = messages
         self.stream = stream
@@ -279,9 +284,11 @@ public struct ServerReasoningProfile: Sendable, Equatable {
     public let thinkingMode: ModelThinkingMode
     public let reasoningEffort: ModelReasoningEffort?
 
-    public init(family: ModelFamily,
-                thinkingMode: ModelThinkingMode,
-                reasoningEffort: ModelReasoningEffort?) {
+    public init(
+        family: ModelFamily,
+        thinkingMode: ModelThinkingMode,
+        reasoningEffort: ModelReasoningEffort?
+    ) {
         self.family = family
         self.thinkingMode = thinkingMode
         self.reasoningEffort = reasoningEffort
@@ -294,8 +301,9 @@ public struct ServerReasoningProfile: Sendable, Equatable {
     /// The effort the template actually applies under this profile; nil for
     /// binary families and while thinking is off.
     public var effectiveEffort: ModelReasoningEffort? {
-        family.effectiveReasoningEffort(thinkingMode: thinkingMode,
-                                        effort: reasoningEffort)
+        family.effectiveReasoningEffort(
+            thinkingMode: thinkingMode,
+            effort: reasoningEffort)
     }
 }
 
@@ -345,11 +353,13 @@ public struct OpenAIUsage: Codable, Equatable, Sendable {
         case completionTokensDetails = "completion_tokens_details"
     }
 
-    public init(promptTokens: Int,
-                completionTokens: Int,
-                totalTokens: Int,
-                cachedTokens: Int = 0,
-                reasoningTokens: Int = 0) {
+    public init(
+        promptTokens: Int,
+        completionTokens: Int,
+        totalTokens: Int,
+        cachedTokens: Int = 0,
+        reasoningTokens: Int = 0
+    ) {
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens
         self.totalTokens = totalTokens
@@ -401,16 +411,19 @@ public enum ServerRequestError: Error, Equatable, Sendable {
         case .invalid(let message, let param, let code):
             OpenAIErrorEnvelope(message: message, param: param, code: code)
         case .unknownModel:
-            OpenAIErrorEnvelope(message: "requested model is not available",
-                                param: "model", code: "model_not_found")
+            OpenAIErrorEnvelope(
+                message: "requested model is not available",
+                param: "model", code: "model_not_found")
         case .queueFull:
-            OpenAIErrorEnvelope(message: "generation queue is full",
-                                code: "queue_full",
-                                type: "rate_limit_error")
+            OpenAIErrorEnvelope(
+                message: "generation queue is full",
+                code: "queue_full",
+                type: "rate_limit_error")
         case .unsupportedOperation(let operation):
-            OpenAIErrorEnvelope(message: "\(operation) is not supported by this backend",
-                                code: "unsupported_operation",
-                                type: "server_error")
+            OpenAIErrorEnvelope(
+                message: "\(operation) is not supported by this backend",
+                code: "unsupported_operation",
+                type: "server_error")
         case .notFound(let message, let param):
             OpenAIErrorEnvelope(message: message, param: param, code: "not_found")
         }
@@ -480,19 +493,21 @@ public struct ValidatedChatRequest: Sendable {
     /// middle of a generation.
     public let jsonSchema: JSONSchemaNode?
 
-    public init(messages: [GFTokenizer.Message],
-                tools: [GFTokenizer.FunctionDefinition],
-                stream: Bool,
-                includeUsage: Bool,
-                generationConfig: GenerationConfig,
-                maximumCompletionTokens: Int,
-                stripCLIPrompt: Bool = false,
-                workspace: String? = nil,
-                isEngineInternal: Bool = false,
-                model: String? = nil,
-                reasoningNotes: [String] = [],
-                reasoning: RequestReasoning? = nil,
-                jsonSchema: JSONSchemaNode? = nil) {
+    public init(
+        messages: [GFTokenizer.Message],
+        tools: [GFTokenizer.FunctionDefinition],
+        stream: Bool,
+        includeUsage: Bool,
+        generationConfig: GenerationConfig,
+        maximumCompletionTokens: Int,
+        stripCLIPrompt: Bool = false,
+        workspace: String? = nil,
+        isEngineInternal: Bool = false,
+        model: String? = nil,
+        reasoningNotes: [String] = [],
+        reasoning: RequestReasoning? = nil,
+        jsonSchema: JSONSchemaNode? = nil
+    ) {
         self.messages = messages
         self.tools = tools
         self.stream = stream
@@ -515,12 +530,14 @@ public struct ValidatedChatRequest: Sendable {
     /// lost that way the moment it existed, so a request that asked for
     /// structured output validated, then generated free text. One builder that
     /// carries every unmentioned field makes that impossible to repeat.
-    private func copy(messages: [GFTokenizer.Message]? = nil,
-                      tools: [GFTokenizer.FunctionDefinition]? = nil,
-                      stripCLIPrompt: Bool? = nil,
-                      workspace: String?? = nil,
-                      isEngineInternal: Bool? = nil,
-                      model: String?? = nil) -> ValidatedChatRequest {
+    private func copy(
+        messages: [GFTokenizer.Message]? = nil,
+        tools: [GFTokenizer.FunctionDefinition]? = nil,
+        stripCLIPrompt: Bool? = nil,
+        workspace: String?? = nil,
+        isEngineInternal: Bool? = nil,
+        model: String?? = nil
+    ) -> ValidatedChatRequest {
         ValidatedChatRequest(
             messages: messages ?? self.messages,
             tools: tools ?? self.tools,
@@ -569,22 +586,25 @@ public enum OpenAIRequestValidator {
     /// lint:allow-long a straight-line validation cascade: each guard
     /// rejects one malformed field with its own error. Grouping them into
     /// sub-validators would add indirection without removing a single check.
-    public static func validate(_ request: OpenAIChatRequest,
-                                modelID: String,
-                                maxContext: Int = RuntimeConfiguration
-                                    .supportedContextTokens.max() ?? 262_144,
-                                reasoningProfile: ServerReasoningProfile = .default,
-                                // Filled in for a request that omits the value.
-                                // Defaults to the house settings so callers that
-                                // do not know the family keep today's behaviour.
-                                sampling: GenerationDefaults.Sampling
-                                    = GenerationDefaults.house) throws -> ValidatedChatRequest {
+    public static func validate(
+        _ request: OpenAIChatRequest,
+        modelID: String,
+        maxContext: Int = RuntimeConfiguration
+            .supportedContextTokens.max() ?? 262_144,
+        reasoningProfile: ServerReasoningProfile = .default,
+        // Filled in for a request that omits the value.
+        // Defaults to the house settings so callers that
+        // do not know the family keep today's behaviour.
+        sampling: GenerationDefaults.Sampling = GenerationDefaults.house
+    ) throws -> ValidatedChatRequest {
         // The "<model>-fast" alias selects the same weights as the base model
         // but enables the CLI-strip heuristic per request (chat-only speed),
         // so tool-using clients keep the base model and chat users opt in.
         let fastModelID = modelID + "-fast"
         let stripCLIPrompt = request.model == fastModelID
-        guard request.model == modelID || stripCLIPrompt else { throw ServerRequestError.unknownModel }
+        guard request.model == modelID || stripCLIPrompt else {
+            throw ServerRequestError.unknownModel
+        }
         guard request.n == nil || request.n == 1 else {
             throw invalid("only n=1 is supported", "n", "unsupported_value")
         }
@@ -596,7 +616,8 @@ public enum OpenAIRequestValidator {
         // every non-zero value, which is why Qwen3.8's published instruct row
         // (presence 1.5) could not be expressed.
         guard request.frequencyPenalty == nil || request.frequencyPenalty == 0 else {
-            throw invalid("frequency_penalty must be zero", "frequency_penalty", "unsupported_value")
+            throw invalid(
+                "frequency_penalty must be zero", "frequency_penalty", "unsupported_value")
         }
         // Reasoning effort is defined per family and fixed at model load
         // because it changes the rendered prompt. A request may not be able
@@ -619,13 +640,14 @@ public enum OpenAIRequestValidator {
         // object and dropped the switch. Precedence is explicit: an explicit
         // top-level effort wins, then the template-kwargs effort, then the
         // template switch (true -> on, false -> off).
-        let requestedEffortRaw = request.reasoningEffort
+        let requestedEffortRaw =
+            request.reasoningEffort
             ?? request.chatTemplateKwargs?.reasoningEffort
             ?? request.chatTemplateKwargs?.enableThinking.map { $0 ? "on" : "off" }
         if request.reasoningBudgetTokens != nil {
             reasoningNotes.append(
                 "reasoning_budget_tokens is accepted but not enforced; this runtime "
-                + "bounds thinking by the requested level, not by a token count")
+                    + "bounds thinking by the requested level, not by a token count")
         }
         if let effortRaw = requestedEffortRaw {
             let control = reasoningProfile.family.reasoningControl
@@ -649,16 +671,16 @@ public enum OpenAIRequestValidator {
                 if applied != requested {
                     reasoningNotes.append(
                         "reasoning level '\(effortRaw)' is not supported by this model; "
-                        + "applied \(applied.displayName) instead (supports: "
-                        + supported.map(\.displayName).joined(separator: ", ") + ")")
+                            + "applied \(applied.displayName) instead (supports: "
+                            + supported.map(\.displayName).joined(separator: ", ") + ")")
                 }
             } else {
                 // Unintelligible, not impossible: keep what the model was
                 // loaded with rather than guessing at a level.
                 reasoningNotes.append(
                     "reasoning level '\(effortRaw)' was not recognised; "
-                    + "the model's own default applies (supports: "
-                    + supported.map(\.displayName).joined(separator: ", ") + ")")
+                        + "the model's own default applies (supports: "
+                        + supported.map(\.displayName).joined(separator: ", ") + ")")
             }
         }
         // Structured output. The grammar constrains *every* token, so a
@@ -672,7 +694,7 @@ public enum OpenAIRequestValidator {
             reasoning = RequestReasoning(thinkingMode: .off, effort: nil)
             reasoningNotes.append(
                 "a JSON response format constrains every token, so thinking is off "
-                + "for this request")
+                    + "for this request")
         }
         // `parallel_tool_calls` is accepted and not enforced, on either value.
         // The decoder emits the calls the model produces, so the server cannot
@@ -684,13 +706,15 @@ public enum OpenAIRequestValidator {
         // S17: include_usage is a streaming option; silently ignoring it on a
         // non-stream request hides a client bug.
         if request.streamOptions?.includeUsage == true, request.stream != true {
-            throw invalid("stream_options.include_usage requires stream=true",
-                          "stream_options", "invalid_value")
+            throw invalid(
+                "stream_options.include_usage requires stream=true",
+                "stream_options", "invalid_value")
         }
         // S16: OpenAI forbids setting both bounds in one request.
         guard request.maxCompletionTokens == nil || request.maxTokens == nil else {
-            throw invalid("max_tokens and max_completion_tokens cannot both be set",
-                          "max_tokens", "invalid_value")
+            throw invalid(
+                "max_tokens and max_completion_tokens cannot both be set",
+                "max_tokens", "invalid_value")
         }
 
         // Qwen3.8 publishes a different sampling row inside and outside thinking
@@ -706,13 +730,15 @@ public enum OpenAIRequestValidator {
         }
         let temperature = request.temperature ?? effectiveSampling.temperature
         guard temperature >= 0, temperature <= 2 else {
-            throw invalid("temperature must be between 0 and 2",
-                          "temperature", "invalid_value")
+            throw invalid(
+                "temperature must be between 0 and 2",
+                "temperature", "invalid_value")
         }
         let topP = request.topP ?? effectiveSampling.topP
         guard topP > 0, topP <= 1 else {
-            throw invalid("top_p must be greater than 0 and at most 1",
-                          "top_p", "invalid_value")
+            throw invalid(
+                "top_p must be greater than 0 and at most 1",
+                "top_p", "invalid_value")
         }
         let topK = request.topK ?? effectiveSampling.topK
         guard (1...256).contains(topK) else {
@@ -720,8 +746,9 @@ public enum OpenAIRequestValidator {
         }
         let repetitionPenalty = request.repetitionPenalty ?? 1
         guard repetitionPenalty > 0 else {
-            throw invalid("repetition_penalty must be positive",
-                          "repetition_penalty", "invalid_value")
+            throw invalid(
+                "repetition_penalty must be positive",
+                "repetition_penalty", "invalid_value")
         }
         // No artificial output cap: when the client omits max_tokens /
         // max_completion_tokens, generation is bounded only by the session's
@@ -729,17 +756,19 @@ public enum OpenAIRequestValidator {
         // at inference time), so the model replies until it is done.
         let maximum = request.maxCompletionTokens ?? request.maxTokens ?? maxContext
         guard maximum > 0 else {
-            throw invalid("maximum completion tokens must be positive",
-                          request.maxCompletionTokens != nil ? "max_completion_tokens" : "max_tokens",
-                          "invalid_value")
+            throw invalid(
+                "maximum completion tokens must be positive",
+                request.maxCompletionTokens != nil ? "max_completion_tokens" : "max_tokens",
+                "invalid_value")
         }
         // S11: validate against the session's configured context window, not
         // the hard architectural ceiling.
         let cappedMaximum = min(maximum, maxContext)
         guard cappedMaximum == maximum else {
-            throw invalid("maximum completion tokens exceeds the configured context window (\(maxContext))",
-                          request.maxCompletionTokens != nil ? "max_completion_tokens" : "max_tokens",
-                          "value_too_large")
+            throw invalid(
+                "maximum completion tokens exceeds the configured context window (\(maxContext))",
+                request.maxCompletionTokens != nil ? "max_completion_tokens" : "max_tokens",
+                "value_too_large")
         }
 
         // S18: stop strings must be non-empty, unique, and bounded.
@@ -754,7 +783,8 @@ public enum OpenAIRequestValidator {
             }
             let totalLength = stopValues.reduce(0) { $0 + $1.utf8.count }
             guard totalLength <= 256 else {
-                throw invalid("stop strings must total at most 256 bytes", "stop", "value_too_large")
+                throw invalid(
+                    "stop strings must total at most 256 bytes", "stop", "value_too_large")
             }
             var seen: Set<String> = []
             stopStrings = stopValues.filter { seen.insert($0).inserted }
@@ -767,8 +797,9 @@ public enum OpenAIRequestValidator {
         case .some(.string("none")):
             includeTools = false
         case .some(.string("required")):
-            throw invalid("tool_choice=required is not supported",
-                          "tool_choice", "unsupported_value")
+            throw invalid(
+                "tool_choice=required is not supported",
+                "tool_choice", "unsupported_value")
         case .some(.bool(true)):
             // Legacy boolean form of "auto" (S31).
             includeTools = true
@@ -776,8 +807,9 @@ public enum OpenAIRequestValidator {
             // Legacy boolean form of "none" (S31).
             includeTools = false
         default:
-            throw invalid("named tool choices are not supported",
-                          "tool_choice", "unsupported_value")
+            throw invalid(
+                "named tool choices are not supported",
+                "tool_choice", "unsupported_value")
         }
 
         let tools = try (includeTools ? request.tools ?? [] : []).map {
@@ -785,26 +817,28 @@ public enum OpenAIRequestValidator {
         }
         let messages = try validateMessages(request.messages)
         // A client-supplied seed makes sampling deterministic.
-        let config = GenerationConfig(maxNewTokens: maximum,
-                                      temperature: temperature,
-                                      topK: topK,
-                                      topP: topP,
-                                      presencePenalty: request.presencePenalty
-                                          ?? effectiveSampling.presencePenalty,
-                                      minP: effectiveSampling.minP,
-                                      repetitionPenalty: repetitionPenalty,
-                                      seed: request.seed,
-                                      stopStrings: stopStrings)
-        return ValidatedChatRequest(messages: messages,
-                                    tools: tools,
-                                    stream: request.stream ?? false,
-                                    includeUsage: request.streamOptions?.includeUsage ?? false,
-                                    generationConfig: config,
-                                    maximumCompletionTokens: maximum,
-                                    stripCLIPrompt: stripCLIPrompt,
-                                    reasoningNotes: reasoningNotes,
-                                    reasoning: reasoning,
-                                    jsonSchema: jsonSchema)
+        let config = GenerationConfig(
+            maxNewTokens: maximum,
+            temperature: temperature,
+            topK: topK,
+            topP: topP,
+            presencePenalty: request.presencePenalty
+                ?? effectiveSampling.presencePenalty,
+            minP: effectiveSampling.minP,
+            repetitionPenalty: repetitionPenalty,
+            seed: request.seed,
+            stopStrings: stopStrings)
+        return ValidatedChatRequest(
+            messages: messages,
+            tools: tools,
+            stream: request.stream ?? false,
+            includeUsage: request.streamOptions?.includeUsage ?? false,
+            generationConfig: config,
+            maximumCompletionTokens: maximum,
+            stripCLIPrompt: stripCLIPrompt,
+            reasoningNotes: reasoningNotes,
+            reasoning: reasoning,
+            jsonSchema: jsonSchema)
     }
 
     /// The compiled schema a `response_format` asks for, or nil for plain text.
@@ -818,7 +852,8 @@ public enum OpenAIRequestValidator {
     /// grammar cannot promise.
     static func structuredOutputSchema(_ format: JSONValue?) throws -> JSONSchemaNode? {
         guard let format, case .object(let dict) = format,
-              case .string(let type)? = dict["type"] else {
+            case .string(let type)? = dict["type"]
+        else {
             return nil
         }
         switch type {
@@ -828,15 +863,18 @@ public enum OpenAIRequestValidator {
             return .object(properties: [:], required: [], additional: true)
         case "json_schema":
             guard case .object(let wrapper)? = dict["json_schema"],
-                  let schema = wrapper["schema"] else {
-                throw invalid("json_schema requires json_schema.schema",
-                              "response_format.json_schema.schema", "invalid_value")
+                let schema = wrapper["schema"]
+            else {
+                throw invalid(
+                    "json_schema requires json_schema.schema",
+                    "response_format.json_schema.schema", "invalid_value")
             }
             do {
                 return try JSONSchemaNode.compile(schema)
             } catch let error as JSONSchemaCompileError {
-                throw invalid(error.description, "response_format.json_schema.schema",
-                              "unsupported_value")
+                throw invalid(
+                    error.description, "response_format.json_schema.schema",
+                    "unsupported_value")
             }
         default:
             throw invalid(
@@ -851,22 +889,26 @@ public enum OpenAIRequestValidator {
         }
         let name = tool.function.name
         guard name.range(of: #"^[A-Za-z0-9_-]{1,64}$"#, options: .regularExpression) != nil else {
-            throw invalid("tool name must match [A-Za-z0-9_-]{1,64}",
-                          "tools", "invalid_tool_name")
+            throw invalid(
+                "tool name must match [A-Za-z0-9_-]{1,64}",
+                "tools", "invalid_tool_name")
         }
         guard tool.function.parameters.objectValue != nil else {
-            throw invalid("tool parameters must be an object schema",
-                          "tools", "invalid_tool_schema")
+            throw invalid(
+                "tool parameters must be an object schema",
+                "tools", "invalid_tool_schema")
         }
         try validateSchemaKeys(tool.function.parameters)
         let parameters = tool.function.parameters
         guard (try? parameters.jinjaSendableValue()) != nil else {
-            throw invalid("tool schema contains a number that cannot be represented exactly",
-                          "tools", "invalid_tool_schema")
+            throw invalid(
+                "tool schema contains a number that cannot be represented exactly",
+                "tools", "invalid_tool_schema")
         }
-        return GFTokenizer.FunctionDefinition(name: name,
-                                              description: tool.function.description ?? "",
-                                              parameters: parameters)
+        return GFTokenizer.FunctionDefinition(
+            name: name,
+            description: tool.function.description ?? "",
+            parameters: parameters)
     }
 
     private static func validateSchemaKeys(_ schema: JSONValue) throws {
@@ -875,8 +917,9 @@ public enum OpenAIRequestValidator {
             for (schemaKey, value) in object {
                 if schemaKey == "properties" {
                     guard case .object(let definitions) = value else {
-                        throw invalid("tool schema properties must be an object",
-                                      "tools", "invalid_tool_schema")
+                        throw invalid(
+                            "tool schema properties must be an object",
+                            "tools", "invalid_tool_schema")
                     }
                     for (_, definition) in definitions {
                         // ChatML tool-call parameter names are free-form;
@@ -896,45 +939,54 @@ public enum OpenAIRequestValidator {
         }
     }
 
-    private static func validateMessages(_ input: [OpenAIChatMessage]) throws -> [GFTokenizer.Message] {
+    private static func validateMessages(_ input: [OpenAIChatMessage]) throws -> [GFTokenizer
+        .Message]
+    {
         guard !input.isEmpty else {
             throw invalid("messages must not be empty", "messages", "invalid_message")
         }
         guard input.count <= 1000 else {
-            throw invalid("message count exceeds maximum of 1000",
-                          "messages", "value_too_large")
+            throw invalid(
+                "message count exceeds maximum of 1000",
+                "messages", "value_too_large")
         }
         var knownCalls: [String: (name: String, resolved: Bool)] = [:]
         var result: [GFTokenizer.Message] = []
         var sawConversationMessage = false
         for message in input {
             guard let role = GFTokenizer.Role(rawValue: message.role) else {
-                throw invalid("unsupported message role \(message.role)",
-                              "messages", "invalid_message")
+                throw invalid(
+                    "unsupported message role \(message.role)",
+                    "messages", "invalid_message")
             }
             if role == .system || role == .developer {
                 guard !sawConversationMessage else {
-                    throw invalid("system or developer guidance must precede the conversation",
-                                  "messages", "invalid_message")
+                    throw invalid(
+                        "system or developer guidance must precede the conversation",
+                        "messages", "invalid_message")
                 }
             } else {
                 sawConversationMessage = true
             }
             let content = try message.content?.textValue()
-            let calls: [GFTokenizer.HistoricalToolCall] = try (message.toolCalls ?? []).map { call in
+            let calls: [GFTokenizer.HistoricalToolCall] = try (message.toolCalls ?? []).map {
+                call in
                 guard role == .assistant, call.type == "function",
-                      !call.id.isEmpty, knownCalls[call.id] == nil,
-                      call.function.name.range(
+                    !call.id.isEmpty, knownCalls[call.id] == nil,
+                    call.function.name.range(
                         of: #"^[A-Za-z0-9_-]{1,64}$"#,
-                        options: .regularExpression) != nil else {
-                    throw invalid("invalid or duplicate historical tool call",
-                                  "messages", "invalid_tool_call")
+                        options: .regularExpression) != nil
+                else {
+                    throw invalid(
+                        "invalid or duplicate historical tool call",
+                        "messages", "invalid_tool_call")
                 }
                 let data = Data(call.function.arguments.utf8)
                 let arguments = try JSONDecoder().decode(JSONValue.self, from: data)
                 guard arguments.objectValue != nil else {
-                    throw invalid("historical tool arguments must be a JSON object",
-                                  "messages", "invalid_tool_arguments")
+                    throw invalid(
+                        "historical tool arguments must be a JSON object",
+                        "messages", "invalid_tool_arguments")
                 }
                 guard (try? arguments.jinjaSendableValue()) != nil else {
                     throw invalid(
@@ -948,38 +1000,47 @@ public enum OpenAIRequestValidator {
             }
             if role == .tool {
                 guard let id = message.toolCallID,
-                      let call = knownCalls[id], !call.resolved else {
-                    throw invalid("tool result must reference one unresolved call",
-                                  "messages", "invalid_tool_result")
+                    let call = knownCalls[id], !call.resolved
+                else {
+                    throw invalid(
+                        "tool result must reference one unresolved call",
+                        "messages", "invalid_tool_result")
                 }
                 knownCalls[id] = (call.name, true)
                 guard content != nil else {
-                    throw invalid("tool result content is required",
-                                  "messages", "invalid_tool_result")
+                    throw invalid(
+                        "tool result content is required",
+                        "messages", "invalid_tool_result")
                 }
             } else if content == nil && calls.isEmpty {
-                throw invalid("message content is required",
-                              "messages", "invalid_message")
+                throw invalid(
+                    "message content is required",
+                    "messages", "invalid_message")
             }
-            result.append(GFTokenizer.Message(role: role,
-                                              content: content,
-                                              toolCalls: calls,
-                                              toolCallID: message.toolCallID,
-                                              name: message.name))
+            result.append(
+                GFTokenizer.Message(
+                    role: role,
+                    content: content,
+                    toolCalls: calls,
+                    toolCallID: message.toolCallID,
+                    name: message.name))
         }
         // S19: a conversation that ends with an assistant tool call that is
         // never answered by a tool result would resume from an unanswerable
         // state; reject it instead of generating tool-response markup.
         if knownCalls.contains(where: { !$0.value.resolved }) {
-            throw invalid("conversation ends with an unresolved tool call",
-                          "messages", "invalid_tool_call")
+            throw invalid(
+                "conversation ends with an unresolved tool call",
+                "messages", "invalid_tool_call")
         }
         return result
     }
 
-    private static func invalid(_ message: String,
-                                _ param: String?,
-                                _ code: String) -> ServerRequestError {
+    private static func invalid(
+        _ message: String,
+        _ param: String?,
+        _ code: String
+    ) -> ServerRequestError {
         .invalid(message: message, param: param, code: code)
     }
 }

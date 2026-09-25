@@ -41,31 +41,33 @@ public struct Args: Equatable, Sendable {
     public var kvCachePrecision: KVCachePrecision
     public var ropeScalingMode: RuntimeRoPEScalingMode
 
-    public init(model: String,
-                prompt: String? = nil,
-                messagesFile: String? = nil,
-                maxNew: Int = 1_024,
-                maxContext: Int = 4096,
-                temperature: Float = GenerationDefaults.temperature,
-                topK: Int? = GenerationDefaults.topK,
-                topP: Float? = GenerationDefaults.topP,
-                temperatureWasSet: Bool = false,
-                topKWasSet: Bool = false,
-                topPWasSet: Bool = false,
-                repetitionPenalty: Float = 1.0,
-                presencePenalty: Float = GenerationDefaults.presencePenalty,
-                presencePenaltyWasSet: Bool = false,
-                seed: UInt64? = nil,
-                stops: [String] = [],
-                quiet: Bool = false,
-                concise: Bool = false,
-                thinkingMode: ModelThinkingMode = .off,
-                reasoningEffort: ModelReasoningEffort? = nil,
-                expertCacheSlots: Int? = nil,
-                rdadvise: String = "default",
-                prefillChunk: PrefillChunkChoice? = nil,
-                kvCachePrecision: KVCachePrecision = .int8,
-                ropeScalingMode: RuntimeRoPEScalingMode = .none) {
+    public init(
+        model: String,
+        prompt: String? = nil,
+        messagesFile: String? = nil,
+        maxNew: Int = 1_024,
+        maxContext: Int = 4096,
+        temperature: Float = GenerationDefaults.temperature,
+        topK: Int? = GenerationDefaults.topK,
+        topP: Float? = GenerationDefaults.topP,
+        temperatureWasSet: Bool = false,
+        topKWasSet: Bool = false,
+        topPWasSet: Bool = false,
+        repetitionPenalty: Float = 1.0,
+        presencePenalty: Float = GenerationDefaults.presencePenalty,
+        presencePenaltyWasSet: Bool = false,
+        seed: UInt64? = nil,
+        stops: [String] = [],
+        quiet: Bool = false,
+        concise: Bool = false,
+        thinkingMode: ModelThinkingMode = .off,
+        reasoningEffort: ModelReasoningEffort? = nil,
+        expertCacheSlots: Int? = nil,
+        rdadvise: String = "default",
+        prefillChunk: PrefillChunkChoice? = nil,
+        kvCachePrecision: KVCachePrecision = .int8,
+        ropeScalingMode: RuntimeRoPEScalingMode = .none
+    ) {
         self.model = model
         self.prompt = prompt
         self.messagesFile = messagesFile
@@ -130,60 +132,60 @@ extension Args {
     }
 
     public static let usage = """
-    TinyTitanCLI — Qwen3.5-MoE 35B-A3B text generation
+        TinyTitanCLI — Qwen3.5-MoE 35B-A3B text generation
 
-    usage: TinyTitanCLI --model <dir> (--prompt <string> | --messages-file <path>) [options]
+        usage: TinyTitanCLI --model <dir> (--prompt <string> | --messages-file <path>) [options]
 
-    required:
-      --model <dir>             Path to a .gturbo model directory.
-      --prompt <string>         Raw-completion prompt.
-      --messages-file <path>    JSON chat messages with role and content fields.
+        required:
+          --model <dir>             Path to a .gturbo model directory.
+          --prompt <string>         Raw-completion prompt.
+          --messages-file <path>    JSON chat messages with role and content fields.
 
-    options:
-      --max-new <int>           Generated-token limit (default 1024).
-      --max-context <int>       Native context limit, 1...262144 (default 262144).
-                                With YaRN: 524288 or 1048576 (default 1048576).
-      --rope-scaling <mode>     Context scaling: none or yarn (default none).
-      --temperature <float>     Sampling temperature (0 = greedy). Default is
-                                the family's: 1.0 for Qwen3.8-Flash-Next,
-                                0.6 elsewhere.
-      --top-k <int>             Top-k truncation, 1...256 (default 20; 0 = off).
-      --top-p <float>           Nucleus truncation (default 0.95).
-      --repetition-penalty <f>  Repetition penalty (default 1.0).
-      --presence-penalty <f>    Presence penalty, -2...2 (default: the model's
-                                own row; 1.5 for Qwen3.8 outside thinking mode).
-      --seed <uint64>           Deterministic sampling seed (default off).
-      --stop <string>           Stop substring (repeatable).
-      --rdadvise <mode>         Expert read-ahead advice: off, default,
-                                bounded, or adaptive. The default is
-                                `default`, which leaves advice ON; pass
-                                off to disable it.
-      --expert-cache-slots <n>  Routed-expert cache slots per layer:
-                                \(Self.expertCacheSlotsHelp). The default
-                                is derived from the model profile's tuned
-                                budget, not fixed; 64 is only the
-                                fallback when the manifest cannot be read.
-                                More slots raise the hit rate but use more
-                                memory.
-      --prefill-chunk <n|auto>  Prefill chunk tokens. Larger chunks reduce
-                                routed-expert file sweeps but use more GPU
-                                scratch. Allowed: 32, 64, 128, 256, 512,
-                                1024, 2048, 4096; auto covers the prompt with
-                                the smallest allowed chunk.
-      --kv-bits <4|8|16>        KV-cache storage precision (default 8).
-      --concise                 Inject the per-quantization concise-mode
-                                system prompt (answers without preamble,
-                                filler, or closing codas).
-      --thinking <off|on>       Ornith/Qwen reasoning mode (default off).
-                                These models do not define effort levels.
-      --reasoning-effort <lvl>  Reasoning-effort level: low, medium, or
-                                xhigh. Requires --thinking on and a model
-                                family whose chat template defines effort
-                                levels (Qwen3.8-Flash-Next); Ornith 1.5 and
-                                Qwen 3.6 reject it.
-      --quiet                   Suppress the timing footer.
-      --help                    Show this message.
-    """
+        options:
+          --max-new <int>           Generated-token limit (default 1024).
+          --max-context <int>       Native context limit, 1...262144 (default 262144).
+                                    With YaRN: 524288 or 1048576 (default 1048576).
+          --rope-scaling <mode>     Context scaling: none or yarn (default none).
+          --temperature <float>     Sampling temperature (0 = greedy). Default is
+                                    the family's: 1.0 for Qwen3.8-Flash-Next,
+                                    0.6 elsewhere.
+          --top-k <int>             Top-k truncation, 1...256 (default 20; 0 = off).
+          --top-p <float>           Nucleus truncation (default 0.95).
+          --repetition-penalty <f>  Repetition penalty (default 1.0).
+          --presence-penalty <f>    Presence penalty, -2...2 (default: the model's
+                                    own row; 1.5 for Qwen3.8 outside thinking mode).
+          --seed <uint64>           Deterministic sampling seed (default off).
+          --stop <string>           Stop substring (repeatable).
+          --rdadvise <mode>         Expert read-ahead advice: off, default,
+                                    bounded, or adaptive. The default is
+                                    `default`, which leaves advice ON; pass
+                                    off to disable it.
+          --expert-cache-slots <n>  Routed-expert cache slots per layer:
+                                    \(Self.expertCacheSlotsHelp). The default
+                                    is derived from the model profile's tuned
+                                    budget, not fixed; 64 is only the
+                                    fallback when the manifest cannot be read.
+                                    More slots raise the hit rate but use more
+                                    memory.
+          --prefill-chunk <n|auto>  Prefill chunk tokens. Larger chunks reduce
+                                    routed-expert file sweeps but use more GPU
+                                    scratch. Allowed: 32, 64, 128, 256, 512,
+                                    1024, 2048, 4096; auto covers the prompt with
+                                    the smallest allowed chunk.
+          --kv-bits <4|8|16>        KV-cache storage precision (default 8).
+          --concise                 Inject the per-quantization concise-mode
+                                    system prompt (answers without preamble,
+                                    filler, or closing codas).
+          --thinking <off|on>       Ornith/Qwen reasoning mode (default off).
+                                    These models do not define effort levels.
+          --reasoning-effort <lvl>  Reasoning-effort level: low, medium, or
+                                    xhigh. Requires --thinking on and a model
+                                    family whose chat template defines effort
+                                    levels (Qwen3.8-Flash-Next); Ornith 1.5 and
+                                    Qwen 3.6 reject it.
+          --quiet                   Suppress the timing footer.
+          --help                    Show this message.
+        """
 
     /// lint:allow-long same shape as ServerArguments.parse: a flag table
     /// where the exhaustive switch is the point.
@@ -252,14 +254,16 @@ extension Args {
             case "--max-new":
                 let value = try takeValue(argv, &index, flag: flag)
                 guard let parsed = Int(value),
-                      (1...RuntimeConfiguration.maximumContextTokens).contains(parsed) else {
+                    (1...RuntimeConfiguration.maximumContextTokens).contains(parsed)
+                else {
                     throw ArgsError.invalidValue(flag: flag, value: value)
                 }
                 maxNew = parsed
             case "--max-context":
                 let value = try takeValue(argv, &index, flag: flag)
                 guard let parsed = Int(value),
-                      (1...RuntimeConfiguration.maximumContextTokens).contains(parsed) else {
+                    (1...RuntimeConfiguration.maximumContextTokens).contains(parsed)
+                else {
                     throw ArgsError.invalidValue(flag: flag, value: value)
                 }
                 maxContext = parsed
@@ -308,7 +312,8 @@ extension Args {
                 // distinct id already in the history; Qwen3.8's instruct row is
                 // the one published row that uses a non-zero value (1.5).
                 guard let parsed = Float(value), parsed.isFinite,
-                      parsed >= -2, parsed <= 2 else {
+                    parsed >= -2, parsed <= 2
+                else {
                     throw ArgsError.invalidValue(flag: flag, value: value)
                 }
                 presencePenalty = parsed
@@ -322,7 +327,8 @@ extension Args {
             case "--expert-cache-slots":
                 let value = try takeValue(argv, &index, flag: flag)
                 guard let parsed = Int(value),
-                      RuntimeConfiguration.allowedExpertCacheSlots.contains(parsed) else {
+                    RuntimeConfiguration.allowedExpertCacheSlots.contains(parsed)
+                else {
                     throw ArgsError.invalidValue(flag: flag, value: value)
                 }
                 expertCacheSlots = parsed
@@ -337,7 +343,8 @@ extension Args {
                 if value == "auto" {
                     prefillChunk = .auto
                 } else if let parsed = Int(value),
-                          RuntimeConfiguration.allowedPrefillChunkTokens.contains(parsed) {
+                    RuntimeConfiguration.allowedPrefillChunkTokens.contains(parsed)
+                {
                     prefillChunk = .fixed(parsed)
                 } else {
                     throw ArgsError.invalidValue(flag: flag, value: value)
@@ -345,7 +352,8 @@ extension Args {
             case "--kv-bits":
                 let value = try takeValue(argv, &index, flag: flag)
                 guard let bits = Int(value),
-                      let parsed = KVCachePrecision(rawValue: bits) else {
+                    let parsed = KVCachePrecision(rawValue: bits)
+                else {
                     throw ArgsError.invalidValue(flag: flag, value: value)
                 }
                 kvCachePrecision = parsed
@@ -383,36 +391,39 @@ extension Args {
                 flag: "--reasoning-effort",
                 value: "\(effort.rawValue) requires --thinking on")
         }
-        return Args(model: model,
-                    prompt: prompt,
-                    messagesFile: messagesFile,
-                    maxNew: maxNew,
-                    maxContext: maxContext,
-                    temperature: temperature,
-                    topK: topK,
-                    topP: topP,
-                    temperatureWasSet: temperatureWasSet,
-                    topKWasSet: topKWasSet,
-                    topPWasSet: topPWasSet,
-                    repetitionPenalty: repetitionPenalty,
-                    presencePenalty: presencePenalty,
-                    presencePenaltyWasSet: presencePenaltyWasSet,
-                    seed: seed,
-                    stops: stops,
-                    quiet: quiet,
-                    concise: concise,
-                    thinkingMode: thinkingMode,
-                    reasoningEffort: reasoningEffort,
-                    expertCacheSlots: expertCacheSlots,
-                    rdadvise: rdadvise,
-                    prefillChunk: prefillChunk,
-                    kvCachePrecision: kvCachePrecision,
-                    ropeScalingMode: ropeScalingMode)
+        return Args(
+            model: model,
+            prompt: prompt,
+            messagesFile: messagesFile,
+            maxNew: maxNew,
+            maxContext: maxContext,
+            temperature: temperature,
+            topK: topK,
+            topP: topP,
+            temperatureWasSet: temperatureWasSet,
+            topKWasSet: topKWasSet,
+            topPWasSet: topPWasSet,
+            repetitionPenalty: repetitionPenalty,
+            presencePenalty: presencePenalty,
+            presencePenaltyWasSet: presencePenaltyWasSet,
+            seed: seed,
+            stops: stops,
+            quiet: quiet,
+            concise: concise,
+            thinkingMode: thinkingMode,
+            reasoningEffort: reasoningEffort,
+            expertCacheSlots: expertCacheSlots,
+            rdadvise: rdadvise,
+            prefillChunk: prefillChunk,
+            kvCachePrecision: kvCachePrecision,
+            ropeScalingMode: ropeScalingMode)
     }
 
-    private static func takeValue(_ argv: [String],
-                                  _ index: inout Int,
-                                  flag: String) throws -> String {
+    private static func takeValue(
+        _ argv: [String],
+        _ index: inout Int,
+        flag: String
+    ) throws -> String {
         guard index + 1 < argv.count else { throw ArgsError.missingValue(flag: flag) }
         let value = argv[index + 1]
         index += 2

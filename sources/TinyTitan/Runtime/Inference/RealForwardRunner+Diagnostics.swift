@@ -32,7 +32,7 @@ extension RealForwardRunner {
         for t in kernelGPUTimings {
             let millis = (t.end - t.start) * 1000
             acc[t.role, default: (0, 0)].millis += millis
-            acc[t.role]!.count += 1
+            acc[t.role, default: (0, 0)].count += 1
         }
         return acc.map { (role: $0.key, millis: $0.value.millis, count: $0.value.count) }
             .sorted { $0.millis > $1.millis }
@@ -63,7 +63,8 @@ extension RealForwardRunner {
             }
         }
         busy += mergedEnd - mergedStart
-        let span = sorted.map(\.end).max()! - sorted[0].start
+        // `mergedEnd` is the latest end seen; the array is known non-empty.
+        let span = mergedEnd - sorted[0].start
         return (busy * 1000, span * 1000)
     }
 
@@ -90,7 +91,7 @@ extension RealForwardRunner {
             if gap > 0 {
                 let key = "\(previous.role)->\(current.role)"
                 acc[key, default: (0, 0)].millis += gap * 1000
-                acc[key]!.count += 1
+                acc[key, default: (0, 0)].count += 1
             }
             if current.end > previous.end { previous = current }
         }
@@ -119,8 +120,8 @@ extension RealForwardRunner {
         var written = 0
         while written < bytes.count {
             let n = bytes.withUnsafeBytes { raw -> Int in
-                write(routeTraceFD, raw.baseAddress!.advanced(by: written),
-                      bytes.count - written)
+                guard let base = raw.baseAddress else { return 0 }
+                return write(routeTraceFD, base.advanced(by: written), bytes.count - written)
             }
             if n <= 0 { break }
             written += n
@@ -130,42 +131,49 @@ extension RealForwardRunner {
     /// Appends one exact pre-plan routing/cache observation. `resident` is
     /// captured before cache planning so a later miss reservation cannot make
     /// the trace falsely report an expert as absent.
-    func recordPrefetchTrace(layer: Int,
-                                     position: Int,
-                                     experts: [Int],
-                                     misses: [Int],
-                                     resident: [Int],
-                                     nextLayerPrediction: [Int],
-                                     next2LayerPrediction: [Int] = [],
-                                     nextLayerWeights: [Float] = []) {
+    func recordPrefetchTrace(
+        layer: Int,
+        position: Int,
+        experts: [Int],
+        misses: [Int],
+        resident: [Int],
+        nextLayerPrediction: [Int],
+        next2LayerPrediction: [Int] = [],
+        nextLayerWeights: [Float] = []
+    ) {
         guard prefetchTraceFD >= 0 else { return }
         let weights = nextLayerWeights.map { String(format: "%.4f", $0) }.joined(separator: ",")
-        let line = "{\"position\":\(position),\"layer\":\(layer),\"experts\":\(experts),\"misses\":\(misses),\"resident\":\(resident),\"next_layer_prediction\":\(nextLayerPrediction),\"next2_layer_prediction\":\(next2LayerPrediction),\"next_weights\":[\(weights)]}\n"
+        let line =
+            "{\"position\":\(position),\"layer\":\(layer),\"experts\":\(experts),\"misses\":\(misses),\"resident\":\(resident),\"next_layer_prediction\":\(nextLayerPrediction),\"next2_layer_prediction\":\(next2LayerPrediction),\"next_weights\":[\(weights)]}\n"
         let bytes = Array(line.utf8)
         var written = 0
         while written < bytes.count {
             let count = bytes.withUnsafeBytes { raw -> Int in
-                write(prefetchTraceFD, raw.baseAddress!.advanced(by: written),
-                      bytes.count - written)
+                guard let base = raw.baseAddress else { return 0 }
+                return write(prefetchTraceFD, base.advanced(by: written), bytes.count - written)
             }
             if count <= 0 { break }
             written += count
         }
     }
 
-    func shouldSkipRDAdvice(position: Int,
-                                    requestedMisses: Int,
-                                    estimatedBytes: UInt64,
-                                    canOverlapUsefulGPUWork: Bool) -> ExpertIOAdviceResult? {
+    func shouldSkipRDAdvice(
+        position: Int,
+        requestedMisses: Int,
+        estimatedBytes: UInt64,
+        canOverlapUsefulGPUWork: Bool
+    ) -> ExpertIOAdviceResult? {
         switch rdadvisePolicyMode {
         case .bounded:
             if position <= rdadviseSkipUntilPosition {
-                return ExpertIOAdviceResult.skipped(requested: requestedMisses,
-                                                    bytes: estimatedBytes)
+                return ExpertIOAdviceResult.skipped(
+                    requested: requestedMisses,
+                    bytes: estimatedBytes)
             }
             if requestedMisses > Self.rdadviseBoundedMissCap {
-                return ExpertIOAdviceResult.skipped(requested: requestedMisses,
-                                                    bytes: estimatedBytes)
+                return ExpertIOAdviceResult.skipped(
+                    requested: requestedMisses,
+                    bytes: estimatedBytes)
             }
             return nil
         case .adaptive:
@@ -181,15 +189,18 @@ extension RealForwardRunner {
                 canOverlapUsefulGPUWork: canOverlapUsefulGPUWork)
             rdadviseAdaptivePositionBytes = cumulativeEstimatedBytes
             guard shouldSkip else { return nil }
-            return ExpertIOAdviceResult.skipped(requested: requestedMisses,
-                                                bytes: estimatedBytes)
+            return ExpertIOAdviceResult.skipped(
+                requested: requestedMisses,
+                bytes: estimatedBytes)
         case .default, .off:
             return nil
         }
     }
 
-    func updateRDAdvicePolicy(after result: ExpertIOAdviceResult,
-                                      position: Int) {
+    func updateRDAdvicePolicy(
+        after result: ExpertIOAdviceResult,
+        position: Int
+    ) {
         switch rdadvisePolicyMode {
         case .bounded:
             // Skip window is inclusive of `position`, matching the adaptive

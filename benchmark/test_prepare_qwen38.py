@@ -24,6 +24,7 @@ field:
 It imports the converter, which imports numpy, ml_dtypes and safetensors, so it
 skips where those are absent.
 """
+
 from __future__ import annotations
 
 import functools
@@ -43,6 +44,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 try:
     import prepare_qwen38 as prepare
+
     IMPORT_ERROR = ""
 except SystemExit as exc:  # the module exits when a dependency is missing
     prepare = None
@@ -61,14 +63,16 @@ class ReuseNgramTableTests(unittest.TestCase):
         directory.mkdir()
         if sidecar:
             (directory / "ple_constants.json").write_text(
-                json.dumps(self.constants if constants is None else constants))
+                json.dumps(self.constants if constants is None else constants)
+            )
         (directory / "ngram_table.bin").write_bytes(b"table")
         return directory
 
     def test_a_matching_install_returns_its_table(self) -> None:
         directory = self.install()
-        self.assertEqual(prepare.reusable_table_path(directory, self.constants),
-                         directory / "ngram_table.bin")
+        self.assertEqual(
+            prepare.reusable_table_path(directory, self.constants), directory / "ngram_table.bin"
+        )
 
     def test_a_table_file_is_taken_as_given(self) -> None:
         table = self.install() / "ngram_table.bin"
@@ -89,8 +93,9 @@ class ReuseNgramTableTests(unittest.TestCase):
         # there is nothing to compare, and the size gate on the Swift side is
         # all that is left. Pinned so a change to it is deliberate.
         directory = self.install(sidecar=False)
-        self.assertEqual(prepare.reusable_table_path(directory, self.constants),
-                         directory / "ngram_table.bin")
+        self.assertEqual(
+            prepare.reusable_table_path(directory, self.constants), directory / "ngram_table.bin"
+        )
 
     def test_a_missing_table_is_refused(self) -> None:
         directory = self.install()
@@ -100,10 +105,8 @@ class ReuseNgramTableTests(unittest.TestCase):
         self.assertIn("no such file", str(caught.exception))
 
 
-
 def write_shard(path: pathlib.Path, tensors: dict) -> bytes:
     """A real safetensors shard on disk, and its bytes."""
-    import numpy as np
     from safetensors.numpy import save_file
 
     save_file(tensors, str(path))
@@ -163,8 +166,10 @@ class OutputWriterResumeTests(unittest.TestCase):
         return prepare.OutputWriter(self.root)
 
     def test_a_whole_earlier_shard_is_adopted(self) -> None:
-        write_shard(self.root / "model-00001.safetensors",
-                    {"a.weight": self.np.zeros((4, 4), self.np.float32)})
+        write_shard(
+            self.root / "model-00001.safetensors",
+            {"a.weight": self.np.zeros((4, 4), self.np.float32)},
+        )
         writer = self.a_writer()
         self.assertEqual(writer.shard_no, 1)
         self.assertIn("a.weight", writer.index)
@@ -190,8 +195,10 @@ class OutputWriterResumeTests(unittest.TestCase):
         self.assertEqual(writer.shard_no, 0)
 
     def test_numbering_continues_after_the_adopted_shards(self) -> None:
-        write_shard(self.root / "model-00001.safetensors",
-                    {"a.weight": self.np.zeros((4, 4), self.np.float32)})
+        write_shard(
+            self.root / "model-00001.safetensors",
+            {"a.weight": self.np.zeros((4, 4), self.np.float32)},
+        )
         writer = self.a_writer()
         writer.add("b.weight", self.np.ones((4, 4), self.np.float32))
         writer.flush()
@@ -204,8 +211,10 @@ class OutputWriterResumeTests(unittest.TestCase):
         self.assertEqual(list(self.root.glob("*.partial")), [])
 
     def test_finish_names_every_adopted_and_new_shard(self) -> None:
-        write_shard(self.root / "model-00001.safetensors",
-                    {"a.weight": self.np.zeros((4, 4), self.np.float32)})
+        write_shard(
+            self.root / "model-00001.safetensors",
+            {"a.weight": self.np.zeros((4, 4), self.np.float32)},
+        )
         writer = self.a_writer()
         writer.add("b.weight", self.np.ones((4, 4), self.np.float32))
         writer.finish()
@@ -236,42 +245,43 @@ class ConvertedShardTests(unittest.TestCase):
 
     def test_the_runtime_names_are_the_ones_convert_shard_writes(self) -> None:
         self.assertEqual(
-            prepare.output_names_for(
-                "model.language_model.layers.0.mlp.experts.gate_up_proj"),
-            ["model.language_model.layers.0.mlp.switch_mlp.gate_proj.weight",
-             "model.language_model.layers.0.mlp.switch_mlp.up_proj.weight"])
+            prepare.output_names_for("model.language_model.layers.0.mlp.experts.gate_up_proj"),
+            [
+                "model.language_model.layers.0.mlp.switch_mlp.gate_proj.weight",
+                "model.language_model.layers.0.mlp.switch_mlp.up_proj.weight",
+            ],
+        )
         self.assertEqual(
             prepare.output_names_for(
-                "model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight"),
-            ["model.language_model.layers.0.self_attn.indexer.index_q_proj.weight",
-             "model.language_model.layers.0.self_attn.indexer.index_k_proj.weight"])
+                "model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight"
+            ),
+            [
+                "model.language_model.layers.0.self_attn.indexer.index_q_proj.weight",
+                "model.language_model.layers.0.self_attn.indexer.index_k_proj.weight",
+            ],
+        )
 
     def test_a_fused_tensor_needs_both_halves(self) -> None:
         layer = "model.language_model.layers.0.mlp.experts.gate_up_proj"
         gate = "model.language_model.layers.0.mlp.switch_mlp.gate_proj.weight"
         up = "model.language_model.layers.0.mlp.switch_mlp.up_proj.weight"
-        self.assertTrue(prepare.checkpoint_shard_is_converted(
-            [layer], self.index_for(gate, up), 4))
-        self.assertFalse(prepare.checkpoint_shard_is_converted(
-            [layer], self.index_for(gate), 4))
+        self.assertTrue(prepare.checkpoint_shard_is_converted([layer], self.index_for(gate, up), 4))
+        self.assertFalse(prepare.checkpoint_shard_is_converted([layer], self.index_for(gate), 4))
 
     def test_a_quantised_tensor_needs_its_triple(self) -> None:
         name = "model.language_model.layers.0.self_attn.q_proj.weight"
-        self.assertTrue(prepare.checkpoint_shard_is_converted(
-            [name], self.index_for(name), 4))
+        self.assertTrue(prepare.checkpoint_shard_is_converted([name], self.index_for(name), 4))
         for suffix in (".weight", ".scales", ".biases"):
             with self.subTest(missing=suffix):
                 stem = name[: -len(".weight")]
                 partial = self.index_for(name)
                 del partial[stem + suffix]
-                self.assertFalse(prepare.checkpoint_shard_is_converted(
-                    [name], partial, 4))
+                self.assertFalse(prepare.checkpoint_shard_is_converted([name], partial, 4))
 
     def test_an_unquantised_tensor_needs_only_itself(self) -> None:
         name = "model.language_model.layers.0.input_layernorm.weight"
         self.assertIsNone(prepare.quant_bits(name, 4))
-        self.assertTrue(prepare.checkpoint_shard_is_converted(
-            [name], self.index_for(name), 4))
+        self.assertTrue(prepare.checkpoint_shard_is_converted([name], self.index_for(name), 4))
         self.assertFalse(prepare.checkpoint_shard_is_converted([name], {}, 4))
 
     def test_skipped_families_do_not_count_as_written(self) -> None:
@@ -282,17 +292,17 @@ class ConvertedShardTests(unittest.TestCase):
         self.assertFalse(prepare.checkpoint_shard_is_converted([ngram], {}, 4))
 
     def test_the_split_names_match_what_outputs_for_returns(self) -> None:
-        for key, shape in (("model.language_model.layers.0.mlp.experts.gate_up_proj",
-                            [2, 128, 64]),
-                           ("model.language_model.layers.0.mlp.experts.down_proj",
-                            [2, 64, 64]),
-                           ("model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight",
-                            [640, 2560]),
-                           ("model.language_model.layers.0.self_attn.q_proj.weight",
-                            [256, 256])):
+        for key, shape in (
+            ("model.language_model.layers.0.mlp.experts.gate_up_proj", [2, 128, 64]),
+            ("model.language_model.layers.0.mlp.experts.down_proj", [2, 64, 64]),
+            ("model.language_model.layers.0.self_attn.indexer.index_qk_proj.weight", [640, 2560]),
+            ("model.language_model.layers.0.self_attn.q_proj.weight", [256, 256]),
+        ):
             with self.subTest(key=key):
-                self.assertEqual(prepare.output_names_for(key),
-                                 [name for name, _ in prepare.outputs_for(key, shape)])
+                self.assertEqual(
+                    prepare.output_names_for(key),
+                    [name for name, _ in prepare.outputs_for(key, shape)],
+                )
 
 
 @unittest.skipIf(prepare is None, f"prepare_qwen38 unavailable: {IMPORT_ERROR}")
@@ -313,20 +323,20 @@ class LocalTableReuseTests(unittest.TestCase):
     def test_a_whole_table_with_matching_constants_is_reused(self) -> None:
         self.table(64, self.constants)
         self.assertEqual(
-            prepare.reusable_local_table(self.root, 64, self.constants, self.constants),
-            self.root)
+            prepare.reusable_local_table(self.root, 64, self.constants, self.constants), self.root
+        )
 
     def test_a_short_table_is_refused(self) -> None:
         self.table(63, self.constants)
         self.assertIsNone(
-            prepare.reusable_local_table(self.root, 64, self.constants, self.constants))
+            prepare.reusable_local_table(self.root, 64, self.constants, self.constants)
+        )
 
     def test_different_constants_refuse_it(self) -> None:
         changed = dict(self.constants)
         changed["ple_head_dim"] = "different"
         self.table(64, changed)
-        self.assertIsNone(
-            prepare.reusable_local_table(self.root, 64, changed, self.constants))
+        self.assertIsNone(prepare.reusable_local_table(self.root, 64, changed, self.constants))
 
     def test_no_sidecar_refuses_it(self) -> None:
         # Unlike `reusable_table_path` (which cannot check what is not there),
@@ -334,12 +344,18 @@ class LocalTableReuseTests(unittest.TestCase):
         # sidecar is a refusal rather than a shrug.
         self.table(64, None)
         self.assertIsNone(
-            prepare.reusable_local_table(self.root, 64, prepare.read_json_file(
-                self.root / "ple_constants.json"), self.constants))
+            prepare.reusable_local_table(
+                self.root,
+                64,
+                prepare.read_json_file(self.root / "ple_constants.json"),
+                self.constants,
+            )
+        )
 
     def test_a_missing_table_is_none(self) -> None:
         self.assertIsNone(
-            prepare.reusable_local_table(self.root, 64, self.constants, self.constants))
+            prepare.reusable_local_table(self.root, 64, self.constants, self.constants)
+        )
 
     def test_the_adopted_table_is_reused_in_place(self) -> None:
         # The automatic path hands `NgramTable` the table's own directory, so
@@ -347,12 +363,10 @@ class LocalTableReuseTests(unittest.TestCase):
         # destination first would delete the 102 GB source and then fail to
         # link what is gone, which is how this was found.
         self.table(64, self.constants)
-        found = prepare.reusable_local_table(self.root, 64, self.constants,
-                                             self.constants)
+        found = prepare.reusable_local_table(self.root, 64, self.constants, self.constants)
         table = self.root / "ngram_table.bin"
         inode = table.stat().st_ino
-        reused = prepare.NgramTable(self.root, 4, 8,
-                                    reuse=found / "ngram_table.bin")
+        reused = prepare.NgramTable(self.root, 4, 8, reuse=found / "ngram_table.bin")
         self.assertTrue(reused.reused)
         reused.finish()
         self.assertTrue(table.exists())
@@ -380,10 +394,11 @@ class DownloadTests(unittest.TestCase):
             (self.root / self.shard).write_bytes(b"shard")
             return subprocess.CompletedProcess(command, 0)
 
-        with mock.patch.object(prepare.subprocess, "run", run), \
-             mock.patch.object(prepare.time, "sleep") as sleep:
-            self.assertEqual(prepare.download(self.shard, self.root),
-                             self.root / self.shard)
+        with (
+            mock.patch.object(prepare.subprocess, "run", run),
+            mock.patch.object(prepare.time, "sleep") as sleep,
+        ):
+            self.assertEqual(prepare.download(self.shard, self.root), self.root / self.shard)
         sleep.assert_not_called()
 
     def test_a_refused_range_restarts_the_file(self) -> None:
@@ -399,8 +414,10 @@ class DownloadTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0)
 
         (self.root / self.shard).write_bytes(b"half")
-        with mock.patch.object(prepare.subprocess, "run", run), \
-             mock.patch.object(prepare.time, "sleep") as sleep:
+        with (
+            mock.patch.object(prepare.subprocess, "run", run),
+            mock.patch.object(prepare.time, "sleep") as sleep,
+        ):
             prepare.download(self.shard, self.root)
         self.assertEqual(len(calls), 2)
         self.assertEqual((self.root / self.shard).read_bytes(), b"whole shard")
@@ -410,8 +427,10 @@ class DownloadTests(unittest.TestCase):
         def run(command, **_kwargs):
             return subprocess.CompletedProcess(command, 22)
 
-        with mock.patch.object(prepare.subprocess, "run", run), \
-             mock.patch.object(prepare.time, "sleep"):
+        with (
+            mock.patch.object(prepare.subprocess, "run", run),
+            mock.patch.object(prepare.time, "sleep"),
+        ):
             with self.assertRaises(RuntimeError) as caught:
                 prepare.download(self.shard, self.root)
         self.assertIn(prepare.DOWNLOAD_ATTEMPTS.__str__(), str(caught.exception))
@@ -420,10 +439,14 @@ class DownloadTests(unittest.TestCase):
 @unittest.skipIf(prepare is None, f"prepare_qwen38 unavailable: {IMPORT_ERROR}")
 class EndpointTests(unittest.TestCase):
     def test_the_weights_base_follows_the_endpoint(self) -> None:
-        self.assertEqual(prepare.endpoint_base("https://hf-mirror.com"),
-                         f"https://hf-mirror.com/{prepare.REPO}/resolve/main")
-        self.assertEqual(prepare.endpoint_base("https://hf-mirror.com/"),
-                         f"https://hf-mirror.com/{prepare.REPO}/resolve/main")
+        self.assertEqual(
+            prepare.endpoint_base("https://hf-mirror.com"),
+            f"https://hf-mirror.com/{prepare.REPO}/resolve/main",
+        )
+        self.assertEqual(
+            prepare.endpoint_base("https://hf-mirror.com/"),
+            f"https://hf-mirror.com/{prepare.REPO}/resolve/main",
+        )
 
 
 @unittest.skipIf(prepare is None, f"prepare_qwen38 unavailable: {IMPORT_ERROR}")
@@ -443,8 +466,10 @@ class FetchTokenizerTests(unittest.TestCase):
             seen.append(command[-1])
             return subprocess.CompletedProcess(command, 0, b"data")
 
-        with mock.patch.object(prepare, "BASE", mirror), \
-                mock.patch.object(prepare.subprocess, "run", run):
+        with (
+            mock.patch.object(prepare, "BASE", mirror),
+            mock.patch.object(prepare.subprocess, "run", run),
+        ):
             prepare.fetch_tokenizer(self.root)
 
         self.assertEqual(len(seen), len(prepare.TOKENIZER_FILES))
@@ -478,7 +503,7 @@ class _RangeHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(size))
             self.end_headers()
             return handle
-        start_text, _, end_text = header[len("bytes="):].partition("-")
+        start_text, _, end_text = header[len("bytes=") :].partition("-")
         start = int(start_text) if start_text else 0
         end = int(end_text) if end_text else size - 1
         end = min(end, size - 1)
@@ -487,7 +512,7 @@ class _RangeHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("Content-Length", str(end - start + 1))
         self.end_headers()
-        self._slice = (end - start + 1)
+        self._slice = end - start + 1
         return _Sliced(handle, self._slice)
 
     def copyfile(self, source, outputfile):
@@ -533,17 +558,27 @@ class EndpointIntegrationTests(unittest.TestCase):
         shard_dir = self.root / prepare.REPO / "resolve" / "main"
         shard_dir.mkdir(parents=True)
         self.shard_name = "model-00001-of-00001.safetensors"
-        write_shard(shard_dir / self.shard_name,
-                    {"model.language_model.layers.0.mlp.experts.gate_up_proj":
-                     np.zeros((2, 128, 64), np.float32)})
+        write_shard(
+            shard_dir / self.shard_name,
+            {
+                "model.language_model.layers.0.mlp.experts.gate_up_proj": np.zeros(
+                    (2, 128, 64), np.float32
+                )
+            },
+        )
         self.shard_bytes = (shard_dir / self.shard_name).read_bytes()
         raw_dir = self.root / prepare.REPO / "raw" / "main"
         raw_dir.mkdir(parents=True)
-        (raw_dir / "model.safetensors.index.json").write_text(json.dumps({
-            "metadata": {"total_size": len(self.shard_bytes)},
-            "weight_map": {
-                "model.language_model.layers.0.mlp.experts.gate_up_proj": self.shard_name},
-        }))
+        (raw_dir / "model.safetensors.index.json").write_text(
+            json.dumps(
+                {
+                    "metadata": {"total_size": len(self.shard_bytes)},
+                    "weight_map": {
+                        "model.language_model.layers.0.mlp.experts.gate_up_proj": self.shard_name
+                    },
+                }
+            )
+        )
         self.saved_base = prepare.BASE
 
     def tearDown(self) -> None:
@@ -551,7 +586,8 @@ class EndpointIntegrationTests(unittest.TestCase):
 
     def serve(self, handler) -> str:
         server = http.server.ThreadingHTTPServer(
-            ("127.0.0.1", 0), functools.partial(handler, directory=str(self.root)))
+            ("127.0.0.1", 0), functools.partial(handler, directory=str(self.root))
+        )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(server.shutdown)
@@ -561,12 +597,19 @@ class EndpointIntegrationTests(unittest.TestCase):
     def test_plan_reads_the_mirror(self) -> None:
         endpoint = self.serve(_RangeHandler)
         result = subprocess.run(
-            [sys.executable, str(ROOT / "tools/prepare_qwen38.py"),
-             "--plan", "--endpoint", endpoint],
-            capture_output=True, text=True, timeout=120)
+            [
+                sys.executable,
+                str(ROOT / "tools/prepare_qwen38.py"),
+                "--plan",
+                "--endpoint",
+                endpoint,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("plan validates against the checkpoint's own headers",
-                      result.stdout)
+        self.assertIn("plan validates against the checkpoint's own headers", result.stdout)
 
     def test_a_partial_download_resumes_against_a_range_endpoint(self) -> None:
         prepare.BASE = f"{self.serve(_RangeHandler)}/{prepare.REPO}/resolve/main"
@@ -597,9 +640,18 @@ class FinishedOutputGuardTests(unittest.TestCase):
         index = root / "model.safetensors.index.json"
         index.write_text(json.dumps({"metadata": {"total_size": 0}, "weight_map": {}}))
         result = subprocess.run(
-            [sys.executable, str(ROOT / "tools/prepare_qwen38.py"),
-             "--index", str(index), "--output", str(root)],
-            capture_output=True, text=True, timeout=120)
+            [
+                sys.executable,
+                str(ROOT / "tools/prepare_qwen38.py"),
+                "--index",
+                str(index),
+                "--output",
+                str(root),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("already holds a finished snapshot", result.stderr + result.stdout)
 

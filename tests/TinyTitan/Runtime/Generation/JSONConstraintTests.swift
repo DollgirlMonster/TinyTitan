@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import TinyTitan
 
 /// The token-set side of structured output: which ids a grammar position
@@ -99,12 +100,14 @@ import Foundation
 
     @Test func aCompleteDocumentStopsOnlyWhereTheTableSaysSo() {
         let noStops = JSONConstraint(
-            table: JSONTokenTable(vocab: 11, entries: [(0, Array("{".utf8)), (1, Array("}".utf8))]),
+            table: JSONTokenTable(
+                vocab: 11, entries: [(0, Array("{".utf8)), (1, Array("}".utf8))]),
             node: JSONSchemaNode.object(properties: [:], required: [], additional: true))
         #expect(noStops.observe(0))
         #expect(noStops.observe(1))
         #expect(noStops.isComplete)
-        #expect(noStops.allowedMask().isEmpty, "with no stop token a complete document cannot continue")
+        #expect(
+            noStops.allowedMask().isEmpty, "with no stop token a complete document cannot continue")
     }
 
     /// A greedy walk over nothing but the masks: the document the model is
@@ -114,13 +117,13 @@ import Foundation
         var text = ""
         for _ in 0..<16 {
             guard let next = allowed(constraint.allowedMask()).min(), next != 10 else { break }
-            text += String(decoding: Self.table.bytes(of: next), as: UTF8.self)
+            text += Self.table.bytes(of: next).lossyUTF8String
             #expect(constraint.observe(next))
         }
         #expect(text == #"{"a":1}"#)
         #expect(constraint.isComplete)
         let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8))
-        #expect(parsed as? [String: Any] != nil)
+        #expect(parsed is [String: Any])
     }
 
     /// The same walk with a schema that constrains a value and a nested array,
@@ -150,7 +153,7 @@ import Foundation
         for _ in 0..<64 {
             let mask = constraint.allowedMask()
             guard let next = allowed(mask).min(), next != 44 else { break }
-            text += String(decoding: table.bytes(of: next), as: UTF8.self)
+            text += table.bytes(of: next).lossyUTF8String
             #expect(constraint.observe(next))
         }
         #expect(constraint.isComplete)
@@ -193,7 +196,8 @@ import Foundation
         #expect(allowed(constraint).contains(6))
         #expect(constraint.observe(6))
         #expect(constraint.previousTokenWasWhitespace)
-        #expect(!allowed(constraint).contains(7), "a second whitespace token would pad the response")
+        #expect(
+            !allowed(constraint).contains(7), "a second whitespace token would pad the response")
         #expect(!allowed(constraint).contains(8))
         // A token that carries whitespace *and* the structural byte is still
         // fine, because it makes progress.
@@ -206,8 +210,8 @@ import Foundation
     /// indent in one token, then the value.
     @Test func aPrettyPrintedDocumentIsStillReachable() {
         let constraint = JSONConstraint(table: Self.table, node: Self.objectWithA)
-        #expect(constraint.observe(9))    // "\n{"
-        #expect(constraint.observe(7))    // "  " inside the object
+        #expect(constraint.observe(9))  // "\n{"
+        #expect(constraint.observe(7))  // "  " inside the object
         #expect(allowed(constraint).contains(2))
     }
 }

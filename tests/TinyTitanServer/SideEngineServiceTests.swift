@@ -1,8 +1,9 @@
 import Foundation
 import Testing
-@testable import TinyTitanServerCore
 import TinyTitan
 import TinyTitanMemory
+
+@testable import TinyTitanServerCore
 
 /// The resident side-engine's home in the server: which install it loads, and
 /// how the engine's vocabulary becomes memory's.
@@ -15,17 +16,20 @@ import TinyTitanMemory
 
     private func temporaryDirectory(_ name: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("side-engine-\(name)-\(UUID().uuidString)",
-                                    isDirectory: true)
+            .appendingPathComponent(
+                "side-engine-\(name)-\(UUID().uuidString)",
+                isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
 
     @Test func anExplicitOffMeansNoEngine() {
-        #expect(ServerSideEngineFactory.resolve(
-            environment: ["TINYTITAN_SIDE_ENGINE": "0"], modelsDirectory: "/models") == nil)
-        #expect(ServerSideEngineFactory.resolve(
-            environment: ["TINYTITAN_SIDE_ENGINE": "off"], modelsDirectory: "/models") == nil)
+        #expect(
+            ServerSideEngineFactory.resolve(
+                environment: ["TINYTITAN_SIDE_ENGINE": "0"], modelsDirectory: "/models") == nil)
+        #expect(
+            ServerSideEngineFactory.resolve(
+                environment: ["TINYTITAN_SIDE_ENGINE": "off"], modelsDirectory: "/models") == nil)
     }
 
     @Test func theDefaultInstallIsThe4BUnderTheModelsDirectory() throws {
@@ -34,8 +38,9 @@ import TinyTitanMemory
         let install = models.appendingPathComponent("qwen3.5_4B_4Bit", isDirectory: true)
         try FileManager.default.createDirectory(at: install, withIntermediateDirectories: true)
 
-        let resolved = ServerSideEngineFactory.resolve(environment: [:],
-                                                       modelsDirectory: models.path)
+        let resolved = ServerSideEngineFactory.resolve(
+            environment: [:],
+            modelsDirectory: models.path)
         #expect(resolved == install.path)
         #expect(ServerSideEngineFactory.defaultInstall == "qwen3.5_4B_4Bit")
     }
@@ -55,13 +60,18 @@ import TinyTitanMemory
     @Test func aMissingInstallResolvesToNothing() throws {
         let models = try temporaryDirectory("models")
         defer { try? FileManager.default.removeItem(at: models) }
-        #expect(ServerSideEngineFactory.resolve(environment: [:],
-                                                modelsDirectory: models.path) == nil)
-        #expect(ServerSideEngineFactory.resolve(environment: [:],
-                                                modelsDirectory: nil) == nil)
-        #expect(ServerSideEngineFactory.resolve(
-            environment: ["TINYTITAN_SIDE_ENGINE": "qwen3.5_9B_4Bit"],
-            modelsDirectory: models.path) == nil)
+        #expect(
+            ServerSideEngineFactory.resolve(
+                environment: [:],
+                modelsDirectory: models.path) == nil)
+        #expect(
+            ServerSideEngineFactory.resolve(
+                environment: [:],
+                modelsDirectory: nil) == nil)
+        #expect(
+            ServerSideEngineFactory.resolve(
+                environment: ["TINYTITAN_SIDE_ENGINE": "qwen3.5_9B_4Bit"],
+                modelsDirectory: models.path) == nil)
     }
 
     @Test func anExplicitPathIsUsedAsGiven() throws {
@@ -78,18 +88,22 @@ import TinyTitanMemory
     @Test func aYesAndANoBecomeTrueAndFalse() async {
         let engine = SideEngine { FakeSideEngineModel(answer: "YES") }
         let adapter = SideEngineMemoryAdapter(engine: engine)
-        let answer = await adapter.duplicates(MemoryFact(key: "characters/marcus/eyes",
-                                                         value: "grey"),
-                                              MemoryFact(key: "characters/marcus/eye_colour",
-                                                         value: "grey"))
+        let answer = await adapter.duplicates(
+            MemoryFact(
+                key: "characters/marcus/eyes",
+                value: "grey"),
+            MemoryFact(
+                key: "characters/marcus/eye_colour",
+                value: "grey"))
         #expect(answer == true)
     }
 
     @Test func aCompletionOutsideTheAnswerSetIsNoDecision() async {
         let engine = SideEngine { FakeSideEngineModel(answer: "Maybe") }
         let adapter = SideEngineMemoryAdapter(engine: engine)
-        let answer = await adapter.contradicts(MemoryFact(key: "state/inn", value: "standing"),
-                                               MemoryFact(key: "state/inn", value: "burned"))
+        let answer = await adapter.contradicts(
+            MemoryFact(key: "state/inn", value: "standing"),
+            MemoryFact(key: "state/inn", value: "burned"))
         #expect(answer == nil)
     }
 
@@ -119,37 +133,45 @@ import TinyTitanMemory
     @Test func aConflictAndAnUpdateMapThrough() async {
         let engine = SideEngine { FakeSideEngineModel(answer: "CONFLICT") }
         let adapter = SideEngineMemoryAdapter(engine: engine)
-        let answer = await adapter.supersedes(MemoryFact(key: "characters/marcus/eyes",
-                                                         value: "grey"),
-                                              MemoryFact(key: "characters/marcus/eyes",
-                                                         value: "hazel"),
-                                              rule: "eye colour is fixed.")
+        let answer = await adapter.supersedes(
+            MemoryFact(
+                key: "characters/marcus/eyes",
+                value: "grey"),
+            MemoryFact(
+                key: "characters/marcus/eyes",
+                value: "hazel"),
+            rule: "eye colour is fixed.")
         #expect(answer == .conflict)
     }
 
     @Test func withoutARuleThereIsNoSupersessionAnswer() async {
         let engine = SideEngine { FakeSideEngineModel(answer: "CONFLICT") }
         let adapter = SideEngineMemoryAdapter(engine: engine)
-        let answer = await adapter.supersedes(MemoryFact(key: "characters/marcus/eyes",
-                                                         value: "grey"),
-                                              MemoryFact(key: "characters/marcus/eyes",
-                                                         value: "hazel"),
-                                              rule: nil)
+        let answer = await adapter.supersedes(
+            MemoryFact(
+                key: "characters/marcus/eyes",
+                value: "grey"),
+            MemoryFact(
+                key: "characters/marcus/eyes",
+                value: "hazel"),
+            rule: nil)
         #expect(answer == nil)
     }
 
     @Test func shutdownReleasesTheWeightsAndStopsAnswering() async {
         let engine = SideEngine { FakeSideEngineModel(answer: "NO") }
         let adapter = SideEngineMemoryAdapter(engine: engine)
-        let before = await adapter.duplicates(MemoryFact(key: "a/one", value: "1"),
-                                              MemoryFact(key: "a/two", value: "1"))
+        let before = await adapter.duplicates(
+            MemoryFact(key: "a/one", value: "1"),
+            MemoryFact(key: "a/two", value: "1"))
         #expect(before == false)
 
         await adapter.shutdown()
         let loaded = await engine.isLoaded
         #expect(loaded == false)
-        let after = await adapter.duplicates(MemoryFact(key: "a/one", value: "1"),
-                                             MemoryFact(key: "a/two", value: "1"))
+        let after = await adapter.duplicates(
+            MemoryFact(key: "a/one", value: "1"),
+            MemoryFact(key: "a/two", value: "1"))
         #expect(after == nil)
     }
 
@@ -166,12 +188,13 @@ import TinyTitanMemory
     @Test(.enabled(if: sideEngineEndToEndEnabled()))
     func theRealInstallAnswersThroughTheFactoryAndTheAdapter() async throws {
         let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // TinyTitanServer
-            .deletingLastPathComponent()   // tests
-            .deletingLastPathComponent()   // <root>
+            .deletingLastPathComponent()  // TinyTitanServer
+            .deletingLastPathComponent()  // tests
+            .deletingLastPathComponent()  // <root>
         let modelsDirectory = root.appendingPathComponent("models")
         let requested = ProcessInfo.processInfo.environment["TINYTITAN_SIDE_ENGINE_E2E"]
-        let name = (requested?.isEmpty == false ? requested : nil)
+        let name =
+            (requested?.isEmpty == false ? requested : nil)
             ?? ServerSideEngineFactory.defaultInstall
 
         let side = try #require(

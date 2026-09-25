@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 @Suite("Tokenizer load coordinator")
@@ -28,7 +29,8 @@ struct TokenizerLoadCoordinatorTests {
             #expect(tokenizer.eosID == first.eosID)
             #expect(tokenizer.padID == first.padID)
             #expect(tokenizer.endOfTurnID == first.endOfTurnID)
-            #expect(tokenizer.encode("The capital of France is", addBOS: true)
+            #expect(
+                tokenizer.encode("The capital of France is", addBOS: true)
                     == first.encode("The capital of France is", addBOS: true))
         }
     }
@@ -49,7 +51,8 @@ struct TokenizerLoadCoordinatorTests {
         let root = try temporaryDirectory()
         let model = root.appendingPathComponent("model.gturbo", isDirectory: true)
         let modelTokenizer = model.appendingPathComponent("tokenizer", isDirectory: true)
-        try FileManager.default.createDirectory(at: modelTokenizer, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: modelTokenizer, withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: modelTokenizer.appendingPathComponent("tokenizer.json"))
 
         let resolved = GFTokenizer.tokenizerFolder(forModelDirectory: model)

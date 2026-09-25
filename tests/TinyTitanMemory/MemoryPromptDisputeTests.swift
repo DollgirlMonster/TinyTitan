@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanMemory
 
 /// The guard's whole promise is that a disagreement is *shown* rather than
@@ -30,26 +31,33 @@ import Testing
     /// The case the guard actually produces.
     @Test func aDisputedRecentRecordIsMarked() throws {
         let held = try record("characters/marcus/eyes", "grey", disputed: true)
-        let text = try prompt(MemoryBootstrap(records: [held], omittedCount: 0,
-                                              totalBytes: 40, recent: [held]))
+        let text = try prompt(
+            MemoryBootstrap(
+                records: [held], omittedCount: 0,
+                totalBytes: 40, recent: [held]))
         #expect(text.contains("Changed in the most recent session:"))
-        #expect(text.contains("[disputed"),
-                "a held write must reach the next session as a disagreement")
+        #expect(
+            text.contains("[disputed"),
+            "a held write must reach the next session as a disagreement")
     }
 
     /// And the established-facts list still marks its own.
     @Test func aDisputedEstablishedRecordIsMarked() throws {
         let old = try record("rules/ferry", "Sundays only", disputed: true)
-        let text = try prompt(MemoryBootstrap(records: [old], omittedCount: 0,
-                                              totalBytes: 40))
+        let text = try prompt(
+            MemoryBootstrap(
+                records: [old], omittedCount: 0,
+                totalBytes: 40))
         #expect(text.contains("[disputed"))
     }
 
     /// Nothing else grows a marker.
     @Test func anUndisputedRecordIsNotMarked() throws {
         let plain = try record("setting/town", "Ashgrove", disputed: false)
-        let text = try prompt(MemoryBootstrap(records: [plain], omittedCount: 0,
-                                              totalBytes: 20, recent: [plain]))
+        let text = try prompt(
+            MemoryBootstrap(
+                records: [plain], omittedCount: 0,
+                totalBytes: 20, recent: [plain]))
         #expect(!text.contains("[disputed"))
     }
 
@@ -61,9 +69,10 @@ import Testing
     ///
     /// Saying what is absent is the fix, so the fragment has to say it.
     @Test func withoutToolsTheFragmentSaysThereIsNothingToCall() throws {
-        let text = try prompt(MemoryBootstrap(
-            records: [try record("decisions/storage", "postgres", disputed: false)],
-            omittedCount: 0, totalBytes: 20))
+        let text = try prompt(
+            MemoryBootstrap(
+                records: [try record("decisions/storage", "postgres", disputed: false)],
+                omittedCount: 0, totalBytes: 20))
         #expect(text.contains("no memory tools in this request"))
         #expect(text.contains("nothing to fetch"))
         #expect(text.contains("do not read or write files"))

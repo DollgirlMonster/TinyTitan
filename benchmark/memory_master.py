@@ -19,6 +19,7 @@ Pong is the exception: its rules are the model's own session-1 choice, so the
 run stores that JSON block as `self_truth` and later sessions are scored against
 it.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -45,8 +46,7 @@ scenarios = _load("master_scenarios", "benchmark/master_scenarios.py")
 
 PORT = int(os.environ.get("TINYTITAN_PORT", "8096"))
 BASE = f"http://127.0.0.1:{PORT}/v1"
-OUT = Path(os.environ.get("TINYTITAN_MEMVAL_RESULTS",
-                          ROOT / ".build/benchmark-logs/memory-master"))
+OUT = Path(os.environ.get("TINYTITAN_MEMVAL_RESULTS", ROOT / ".build/benchmark-logs/memory-master"))
 RUN = os.environ.get("TINYTITAN_MEMVAL_RUN", "1")
 SERVER_LOG = os.environ.get("TINYTITAN_MEMVAL_SERVER_LOG")
 NAME = os.environ.get("TINYTITAN_MASTER_SCENARIO", "photograph")
@@ -58,8 +58,7 @@ TEMPERATURE = os.environ.get("TINYTITAN_MEMVAL_TEMPERATURE")
 # formatting was cut off before the JSON block, which scored as a full set of
 # misses and journalled a truncated session into memory. Compliant sessions never
 # approached the old cap, so raising it changes nothing for them.
-MAX_TOKENS = int(os.environ.get("TINYTITAN_MEMVAL_MAX_TOKENS",
-                                5_200 if NAME == "pong" else 6_000))
+MAX_TOKENS = int(os.environ.get("TINYTITAN_MEMVAL_MAX_TOKENS", 5_200 if NAME == "pong" else 6_000))
 
 SUMMARY_PROMPT = (
     "Summarize, in at most 200 words, everything a worker of the next session "
@@ -74,25 +73,28 @@ def sampling() -> dict:
 
 
 def post(messages, model, max_tokens=MAX_TOKENS):
-    body = json.dumps({"model": model, "messages": messages,
-                       "max_completion_tokens": max_tokens,
-                       **sampling()}).encode()
-    request = urllib.request.Request(f"{BASE}/chat/completions", data=body,
-                                     headers={"Content-Type": "application/json"})
+    body = json.dumps(
+        {"model": model, "messages": messages, "max_completion_tokens": max_tokens, **sampling()}
+    ).encode()
+    request = urllib.request.Request(
+        f"{BASE}/chat/completions", data=body, headers={"Content-Type": "application/json"}
+    )
     started = time.time()
     with urllib.request.urlopen(request, timeout=3_600) as response:
         payload = json.load(response)
     choice = payload["choices"][0]
     message = choice.get("message") or {}
     usage = payload.get("usage", {})
-    return {"content": message.get("content") or "",
-            # A sibling of `message` in the choice, not a field of it: reading it
-            # from the message silently yielded "" for every reply, which made a
-            # truncated session indistinguishable from a missing quiz.
-            "finish_reason": choice.get("finish_reason") or "",
-            "prompt_tokens": usage.get("prompt_tokens", 0),
-            "completion_tokens": usage.get("completion_tokens", 0),
-            "seconds": time.time() - started}
+    return {
+        "content": message.get("content") or "",
+        # A sibling of `message` in the choice, not a field of it: reading it
+        # from the message silently yielded "" for every reply, which made a
+        # truncated session indistinguishable from a missing quiz.
+        "finish_reason": choice.get("finish_reason") or "",
+        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "completion_tokens": usage.get("completion_tokens", 0),
+        "seconds": time.time() - started,
+    }
 
 
 def model_id() -> str:
@@ -141,7 +143,8 @@ def assert_arm_is_real(arm: str, prompt_tokens: int) -> None:
     if arm == "auto" and prompt_tokens < 200:
         raise SystemExit(
             f"ABORT: arm 'auto' saw {prompt_tokens} prompt tokens in session 1; the "
-            "memory fragment is missing. Check TINYTITAN_MEMORY on the server.")
+            "memory fragment is missing. Check TINYTITAN_MEMORY on the server."
+        )
 
 
 def run_arm(arm: str) -> None:
@@ -152,37 +155,46 @@ def run_arm(arm: str) -> None:
     carried = None
     self_truth = None
     for session in range(1, SPEC["sessions"] + 1):
-        prompt = scenarios.session_prompt(
-            SPEC, session, carried if arm == "summary" else None)
+        prompt = scenarios.session_prompt(SPEC, session, carried if arm == "summary" else None)
         seen = consolidation_outcomes()
         result = post([{"role": "user", "content": prompt}], model)
         answers = scenarios.extract_quiz(result["content"], SPEC["keys"])
         result.update(session=session, answers=answers)
         if not answers:
-            print(f"  WARNING: {NAME}/{arm}/session {session} produced no quiz "
-                  f"(finish={result.get('finish_reason') or 'unknown'}); "
-                  f"scored as invalid, not as a total miss")
+            print(
+                f"  WARNING: {NAME}/{arm}/session {session} produced no quiz "
+                f"(finish={result.get('finish_reason') or 'unknown'}); "
+                f"scored as invalid, not as a total miss"
+            )
         if SPEC["self_chosen"] and session == 1:
             self_truth = {key: answers.get(key) for key in SPEC["keys"]}
             result["self_truth"] = self_truth
         (OUT / f"{NAME}-{arm}-r{RUN}-{session:02d}.md").write_text(result["content"])
-        print(f"{NAME}/{arm}/session {session:2d}: {result['completion_tokens']} tokens, "
-              f"{result['seconds']:.0f}s, prompt {result['prompt_tokens']}, "
-              f"answers {len(answers)}/{len(SPEC['keys'])}")
+        print(
+            f"{NAME}/{arm}/session {session:2d}: {result['completion_tokens']} tokens, "
+            f"{result['seconds']:.0f}s, prompt {result['prompt_tokens']}, "
+            f"answers {len(answers)}/{len(SPEC['keys'])}"
+        )
         if session == 1:
             assert_arm_is_real(arm, result["prompt_tokens"])
         if arm == "summary":
-            summary = post([{"role": "user", "content": prompt},
-                            {"role": "assistant", "content": result["content"]},
-                            {"role": "user", "content": SUMMARY_PROMPT}], model,
-                           max_tokens=600)
+            summary = post(
+                [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": result["content"]},
+                    {"role": "user", "content": SUMMARY_PROMPT},
+                ],
+                model,
+                max_tokens=600,
+            )
             carried = summary["content"]
-            result.update(summary_prompt_tokens=summary["prompt_tokens"],
-                          summary_completion_tokens=summary["completion_tokens"],
-                          summary_seconds=summary["seconds"])
+            result.update(
+                summary_prompt_tokens=summary["prompt_tokens"],
+                summary_completion_tokens=summary["completion_tokens"],
+                summary_seconds=summary["seconds"],
+            )
             (OUT / f"{NAME}-{arm}-r{RUN}-{session:02d}-summary.md").write_text(carried)
-        result["consolidation_wait"] = (
-            wait_for_consolidation(seen) if memory_on else 0.0)
+        result["consolidation_wait"] = wait_for_consolidation(seen) if memory_on else 0.0
         results.append(result)
         (OUT / f"{NAME}-{arm}-r{RUN}.json").write_text(json.dumps(results, indent=2))
 
@@ -210,14 +222,20 @@ def score_run(results: list) -> dict:
     for result in results:
         session = result["session"]
         expected = expected_for(session, self_truth)
-        row = {"session": session, "foundation": [0, 0], "carryable": [0, 0],
-               "stale": 0, "wrong": [], "invalid": False,
-               "finish_reason": result.get("finish_reason", ""),
-               "prompt_tokens": result["prompt_tokens"],
-               "completion_tokens": result["completion_tokens"],
-               "seconds": result["seconds"],
-               "summary_seconds": result.get("summary_seconds", 0.0),
-               "wait": result.get("consolidation_wait", 0.0)}
+        row = {
+            "session": session,
+            "foundation": [0, 0],
+            "carryable": [0, 0],
+            "stale": 0,
+            "wrong": [],
+            "invalid": False,
+            "finish_reason": result.get("finish_reason", ""),
+            "prompt_tokens": result["prompt_tokens"],
+            "completion_tokens": result["completion_tokens"],
+            "seconds": result["seconds"],
+            "summary_seconds": result.get("summary_seconds", 0.0),
+            "wait": result.get("consolidation_wait", 0.0),
+        }
         if expected is None:
             scored.append(row)
             continue
@@ -228,9 +246,11 @@ def score_run(results: list) -> dict:
             # says anything about memory, so the session is excluded from the
             # denominators and named in the report instead.
             row["invalid"] = True
-            row["invalid_reason"] = ("truncated at the token ceiling"
-                                     if result.get("finish_reason") == "length"
-                                     else "no quiz in a completed reply")
+            row["invalid_reason"] = (
+                "truncated at the token ceiling"
+                if result.get("finish_reason") == "length"
+                else "no quiz in a completed reply"
+            )
             scored.append(row)
             continue
         for key in SPEC["keys"]:
@@ -245,8 +265,10 @@ def score_run(results: list) -> dict:
                 else:
                     row["wrong"].append(key)
                     # Stale: the answer is a value this key really held before.
-                    if any(scenarios.hit(old, result["answers"].get(key))
-                           for _, old in history(session, self_truth, key)):
+                    if any(
+                        scenarios.hit(old, result["answers"].get(key))
+                        for _, old in history(session, self_truth, key)
+                    ):
                         row["stale"] += 1
         scored.append(row)
     return {"name": NAME, "sessions": scored}
@@ -267,11 +289,15 @@ def load_runs() -> dict:
 
 def report() -> None:
     runs = load_runs()
-    print(f"\n=== {NAME} ({SPEC['domain']}, {SPEC['sessions']} sessions) "
-          f"foundation={len(SPEC['foundation'])} carryable={len(SPEC['carryable'])}")
-    print(f"{'arm':8s} {'foundation':>14s} {'carryable':>14s} {'stale':>6s} "
-          f"{'prompt':>8s} {'completion':>11s} {'gen s':>7s} {'cons s':>7s} "
-          f"{'summ s':>7s} {'cost s':>7s}")
+    print(
+        f"\n=== {NAME} ({SPEC['domain']}, {SPEC['sessions']} sessions) "
+        f"foundation={len(SPEC['foundation'])} carryable={len(SPEC['carryable'])}"
+    )
+    print(
+        f"{'arm':8s} {'foundation':>14s} {'carryable':>14s} {'stale':>6s} "
+        f"{'prompt':>8s} {'completion':>11s} {'gen s':>7s} {'cons s':>7s} "
+        f"{'summ s':>7s} {'cost s':>7s}"
+    )
     for arm in ARMS:
         for run in runs.get(arm, []):
             foundation = [0, 0]
@@ -289,22 +315,26 @@ def report() -> None:
                 generation += row["seconds"]
                 consolidation += row["wait"]
                 summary += row["summary_seconds"]
-            pct = (lambda pair: f"{100 * pair[0] / pair[1]:.0f}%"
-                   if pair[1] else "n/a")
+
+            def pct(pair):
+                return f"{100 * pair[0] / pair[1]:.0f}%" if pair[1] else "n/a"
+
             # `cost` is the model time the arm spends: session generation, plus
             # the memory arm's real consolidation generation, plus the summary
             # arm's own summary requests. Never the harness's own wait.
-            print(f"{arm + str(run.get('run', 1)):8s} "
-                  f"{foundation[0]}/{foundation[1]} {pct(foundation):>5s} "
-                  f"{carryable[0]}/{carryable[1]} {pct(carryable):>5s} {stale:6d} "
-                  f"{prompt:8d} {completion:11d} {generation:7.0f} "
-                  f"{consolidation:7.0f} {summary:7.0f} "
-                  f"{generation + consolidation + summary:7.0f}")
+            print(
+                f"{arm + str(run.get('run', 1)):8s} "
+                f"{foundation[0]}/{foundation[1]} {pct(foundation):>5s} "
+                f"{carryable[0]}/{carryable[1]} {pct(carryable):>5s} {stale:6d} "
+                f"{prompt:8d} {completion:11d} {generation:7.0f} "
+                f"{consolidation:7.0f} {summary:7.0f} "
+                f"{generation + consolidation + summary:7.0f}"
+            )
             invalid = [r for r in run["sessions"] if r.get("invalid")]
             if invalid:
                 named = ", ".join(
-                    f"{r['session']} [{r.get('invalid_reason', 'invalid')}]"
-                    for r in invalid)
+                    f"{r['session']} [{r.get('invalid_reason', 'invalid')}]" for r in invalid
+                )
                 print(f"         excluded: {len(invalid)} session(s) — {named}")
     # The one line a suite-level reader needs: carryable carried, and stale.
     print("carryable carried (sessions 2+), and stale old values:")
@@ -326,8 +356,10 @@ def report_all(root: Path) -> None:
     larger denominator rather than being averaged away; `invalid` counts the
     sessions the instrument excluded, and `cost` is model time only.
     """
-    print(f"\n{'scenario':12s} {'arm':8s} {'runs':>4s} {'carryable':>13s} "
-          f"{'stale':>5s} {'foundation':>13s} {'invalid':>7s} {'cost s':>8s}")
+    print(
+        f"\n{'scenario':12s} {'arm':8s} {'runs':>4s} {'carryable':>13s} "
+        f"{'stale':>5s} {'foundation':>13s} {'invalid':>7s} {'cost s':>8s}"
+    )
     for name in scenarios.SCENARIOS:
         for arm in ARMS:
             paths = sorted(root.glob(f"memory-{name}-*/{name}-{arm}-r*.json"))
@@ -346,9 +378,11 @@ def report_all(root: Path) -> None:
                     stale += row["stale"]
                     invalid += 1 if row.get("invalid") else 0
                     cost += row["seconds"] + row["wait"] + row["summary_seconds"]
-            print(f"{name:12s} {arm:8s} {len(paths):4d} {carried:6d}/{total:<6d} "
-                  f"{stale:5d} {foundation:6d}/{foundation_total:<6d} "
-                  f"{invalid:7d} {cost:8.0f}")
+            print(
+                f"{name:12s} {arm:8s} {len(paths):4d} {carried:6d}/{total:<6d} "
+                f"{stale:5d} {foundation:6d}/{foundation_total:<6d} "
+                f"{invalid:7d} {cost:8.0f}"
+            )
 
 
 def _pct(pair) -> str:
@@ -366,13 +400,20 @@ def aggregate(root: Path, names=None) -> None:
     global NAME, SPEC, OUT
     saved = (NAME, SPEC, OUT)
     worlds = []
-    pooled = {arm: {"carryable": [0, 0], "foundation": [0, 0],
-                    "stale": 0, "cost": 0.0, "invalid": 0} for arm in ARMS}
+    pooled = {
+        arm: {"carryable": [0, 0], "foundation": [0, 0], "stale": 0, "cost": 0.0, "invalid": 0}
+        for arm in ARMS
+    }
     try:
-        for name in (names or list(scenarios.SCENARIOS)):
+        for name in names or list(scenarios.SCENARIOS):
             directory = next(
-                (d for d in sorted(root.glob(f"memory-{name}-*"))
-                 if d.is_dir() and not d.name.endswith("-firstpass")), None)
+                (
+                    d
+                    for d in sorted(root.glob(f"memory-{name}-*"))
+                    if d.is_dir() and not d.name.endswith("-firstpass")
+                ),
+                None,
+            )
             if directory is None:
                 continue
             NAME = name
@@ -392,10 +433,14 @@ def aggregate(root: Path, names=None) -> None:
                             f[index] += row["foundation"][index]
                         stale += row["stale"]
                         invalid += 1 if row.get("invalid") else 0
-                        cost += (row["seconds"] + row["wait"]
-                                 + row["summary_seconds"])
-                entry[arm] = {"carryable": c, "foundation": f,
-                              "stale": stale, "cost": cost, "invalid": invalid}
+                        cost += row["seconds"] + row["wait"] + row["summary_seconds"]
+                entry[arm] = {
+                    "carryable": c,
+                    "foundation": f,
+                    "stale": stale,
+                    "cost": cost,
+                    "invalid": invalid,
+                }
                 for index in (0, 1):
                     pooled[arm]["carryable"][index] += c[index]
                     pooled[arm]["foundation"][index] += f[index]
@@ -409,30 +454,39 @@ def aggregate(root: Path, names=None) -> None:
     print(f"\nworlds: {len(worlds)}")
     for name, entry in worlds:
         a, s = entry["auto"], entry["summary"]
-        print(f"  {name:12s} memory {_pct(a['carryable']):>6s} carry / "
-              f"{_pct(a['foundation']):>6s} fnd | summary {_pct(s['carryable']):>6s} / "
-              f"{_pct(s['foundation']):>6s} | stale {a['stale']:2d}/{s['stale']:<2d} | "
-              f"cost {a['cost'] / 60:4.1f}/{s['cost'] / 60:4.1f} min")
+        print(
+            f"  {name:12s} memory {_pct(a['carryable']):>6s} carry / "
+            f"{_pct(a['foundation']):>6s} fnd | summary {_pct(s['carryable']):>6s} / "
+            f"{_pct(s['foundation']):>6s} | stale {a['stale']:2d}/{s['stale']:<2d} | "
+            f"cost {a['cost'] / 60:4.1f}/{s['cost'] / 60:4.1f} min"
+        )
     print("\npooled (every scored key-instance, all runs):")
     for arm in ARMS:
         d = pooled[arm]
-        print(f"  {arm:8s} carryable {d['carryable'][0]:3d}/{d['carryable'][1]:<3d} "
-              f"{_pct(d['carryable']):>6s} | foundation {d['foundation'][0]:3d}/"
-              f"{d['foundation'][1]:<3d} {_pct(d['foundation']):>6s} | stale "
-              f"{d['stale']:2d} | model cost {d['cost'] / 60:6.1f} min | "
-              f"invalid {d['invalid']}")
+        print(
+            f"  {arm:8s} carryable {d['carryable'][0]:3d}/{d['carryable'][1]:<3d} "
+            f"{_pct(d['carryable']):>6s} | foundation {d['foundation'][0]:3d}/"
+            f"{d['foundation'][1]:<3d} {_pct(d['foundation']):>6s} | stale "
+            f"{d['stale']:2d} | model cost {d['cost'] / 60:6.1f} min | "
+            f"invalid {d['invalid']}"
+        )
     print("\nunweighted mean of per-world percentages:")
     for metric in ("carryable", "foundation"):
         means = {}
         for arm in ARMS:
-            values = [100 * e[arm][metric][0] / e[arm][metric][1]
-                      for _, e in worlds if e[arm][metric][1]]
-            means[arm] = (statistics.mean(values),
-                          statistics.stdev(values) if len(values) > 1 else 0.0)
+            values = [
+                100 * e[arm][metric][0] / e[arm][metric][1] for _, e in worlds if e[arm][metric][1]
+            ]
+            means[arm] = (
+                statistics.mean(values),
+                statistics.stdev(values) if len(values) > 1 else 0.0,
+            )
         delta = means["auto"][0] - means["summary"][0]
-        print(f"  {metric:11s} memory {means['auto'][0]:5.1f}% "
-              f"(sd {means['auto'][1]:4.1f})  summary {means['summary'][0]:5.1f}% "
-              f"(sd {means['summary'][1]:4.1f})  delta {delta:+.1f} pp")
+        print(
+            f"  {metric:11s} memory {means['auto'][0]:5.1f}% "
+            f"(sd {means['auto'][1]:4.1f})  summary {means['summary'][0]:5.1f}% "
+            f"(sd {means['summary'][1]:4.1f})  delta {delta:+.1f} pp"
+        )
 
 
 if __name__ == "__main__":

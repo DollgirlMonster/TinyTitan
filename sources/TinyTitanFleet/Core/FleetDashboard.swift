@@ -38,9 +38,11 @@ public struct FleetLine: Sendable, Equatable {
     public let lastSeen: String
     public let ipv6: String
 
-    public init(row: FleetRow?, name: String, kind: String = "", address: String = "",
-                version: String = "", workspaces: String = "", sessions: String = "",
-                lastSeen: String = "", ipv6: String = "") {
+    public init(
+        row: FleetRow?, name: String, kind: String = "", address: String = "",
+        version: String = "", workspaces: String = "", sessions: String = "",
+        lastSeen: String = "", ipv6: String = ""
+    ) {
         self.row = row
         self.name = name
         self.kind = kind
@@ -110,7 +112,10 @@ public struct FleetDashboard: Sendable {
     public private(set) var refreshedAt: Date?
     public private(set) var failure: String?
 
-    public init(group: FleetGroup = FleetGroup(), seed: FleetTarget = FleetTarget(host: "127.0.0.1", port: 3080)) {
+    public init(
+        group: FleetGroup = FleetGroup(),
+        seed: FleetTarget = FleetTarget(host: "127.0.0.1", port: 3080)
+    ) {
         self.group = group
         self.seed = seed
         self.expanded = Set(group.nodes.map(\.id))
@@ -170,7 +175,8 @@ public struct FleetDashboard: Sendable {
         self.group = group
         self.refreshedAt = date
         self.failure = nil
-        self.status = "\(group.nodes.count) member(s), \(group.workspaces) workspace(s), \(group.sessions) session(s)"
+        self.status =
+            "\(group.nodes.count) member(s), \(group.workspaces) workspace(s), \(group.sessions) session(s)"
         // Keep the cursor on the same row where it still exists.
         if let keep, let index = rows.firstIndex(where: { $0.id == keep }) {
             selection = index
@@ -206,7 +212,9 @@ public struct FleetDashboard: Sendable {
         } else {
             expanded.insert(node.id)
         }
-        if let index = rows.firstIndex(where: { $0.id == "node:\(group.nodes.firstIndex { $0.id == node.id } ?? 0)" }) {
+        if let index = rows.firstIndex(where: {
+            $0.id == "node:\(group.nodes.firstIndex { $0.id == node.id } ?? 0)"
+        }) {
             selection = index
         }
     }
@@ -237,12 +245,14 @@ public struct FleetDashboard: Sendable {
         switch row {
         case .session(let nodeIndex, let sessionIndex):
             guard group.nodes.indices.contains(nodeIndex),
-                  group.nodes[nodeIndex].sessions.indices.contains(sessionIndex) else { return nil }
+                group.nodes[nodeIndex].sessions.indices.contains(sessionIndex)
+            else { return nil }
             let node = group.nodes[nodeIndex]
             return .session(nodeID: node.id, sessionID: node.sessions[sessionIndex].sessionId)
         case .workspace(let nodeIndex, let workspaceIndex):
             guard group.nodes.indices.contains(nodeIndex),
-                  group.nodes[nodeIndex].workspaces.indices.contains(workspaceIndex) else { return nil }
+                group.nodes[nodeIndex].workspaces.indices.contains(workspaceIndex)
+            else { return nil }
             let node = group.nodes[nodeIndex]
             return .workspace(nodeID: node.id, workspaceID: node.workspaces[workspaceIndex].id)
         case .node(let index):
@@ -320,7 +330,8 @@ public struct FleetDashboard: Sendable {
             }
             mode = .input(field: .workspaceTitle(nodeID: nodeID, path: value))
         case .workspaceTitle(let nodeID, let path):
-            pendingAction = .createWorkspace(nodeID: nodeID, path: path, title: value.isEmpty ? nil : value)
+            pendingAction = .createWorkspace(
+                nodeID: nodeID, path: path, title: value.isEmpty ? nil : value)
         }
     }
 
@@ -348,21 +359,27 @@ public struct FleetDashboard: Sendable {
             if let node = selectedNode { beginCreateWorkspace(nodeID: node.id) }
         case .character("a"):
             if case .session(let nodeIndex, let sessionIndex) = selectedRow,
-               group.nodes.indices.contains(nodeIndex),
-               group.nodes[nodeIndex].sessions.indices.contains(sessionIndex) {
+                group.nodes.indices.contains(nodeIndex),
+                group.nodes[nodeIndex].sessions.indices.contains(sessionIndex)
+            {
                 let node = group.nodes[nodeIndex]
                 let session = node.sessions[sessionIndex]
-                mode = .confirm(question: "Archive session \(session.sessionId)?", action: .archiveSession(nodeID: node.id, sessionID: session.sessionId))
+                mode = .confirm(
+                    question: "Archive session \(session.sessionId)?",
+                    action: .archiveSession(nodeID: node.id, sessionID: session.sessionId))
             } else {
                 status = "select a session to archive"
             }
         case .character("d"):
             if case .workspace(let nodeIndex, let workspaceIndex) = selectedRow,
-               group.nodes.indices.contains(nodeIndex),
-               group.nodes[nodeIndex].workspaces.indices.contains(workspaceIndex) {
+                group.nodes.indices.contains(nodeIndex),
+                group.nodes[nodeIndex].workspaces.indices.contains(workspaceIndex)
+            {
                 let node = group.nodes[nodeIndex]
                 let workspace = node.workspaces[workspaceIndex]
-                mode = .confirm(question: "Delete workspace \(workspace.id)? Its sessions are archived first.", action: .deleteWorkspace(nodeID: node.id, workspaceID: workspace.id))
+                mode = .confirm(
+                    question: "Delete workspace \(workspace.id)? Its sessions are archived first.",
+                    action: .deleteWorkspace(nodeID: node.id, workspaceID: workspace.id))
             } else {
                 status = "select a workspace to delete"
             }

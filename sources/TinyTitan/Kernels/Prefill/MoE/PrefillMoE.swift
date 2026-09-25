@@ -8,16 +8,18 @@ final class PrefillMoE {
         self.reducePSO = try context.pipeline("prefill_moe_reduce_token_major")
     }
 
-    func encodeReduceTokenMajor(commandBuffer: MTLCommandBuffer,
-                                       routePartials: MTLBuffer,
-                                       routePartialsOffset: Int = 0,
-                                       routeWeights: MTLBuffer,
-                                       routeWeightsOffset: Int = 0,
-                                       h2: MTLBuffer,
-                                       h2Offset: Int = 0,
-                                       queryCount: UInt32,
-                                       topK: UInt32,
-                                       d: UInt32) throws {
+    func encodeReduceTokenMajor(
+        commandBuffer: MTLCommandBuffer,
+        routePartials: MTLBuffer,
+        routePartialsOffset: Int = 0,
+        routeWeights: MTLBuffer,
+        routeWeightsOffset: Int = 0,
+        h2: MTLBuffer,
+        h2Offset: Int = 0,
+        queryCount: UInt32,
+        topK: UInt32,
+        d: UInt32
+    ) throws {
         precondition(queryCount > 0, "queryCount must be positive")
         precondition(topK > 0, "topK must be positive")
         precondition(d > 0, "D must be positive")
@@ -34,8 +36,9 @@ final class PrefillMoE {
         enc.setBytes(&tVar, length: MemoryLayout<UInt32>.size, index: 3)
         enc.setBytes(&topKVar, length: MemoryLayout<UInt32>.size, index: 4)
         enc.setBytes(&dVar, length: MemoryLayout<UInt32>.size, index: 5)
-        enc.dispatchThreads(MTLSize(width: Int(d), height: Int(queryCount), depth: 1),
-                            threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
+        enc.dispatchThreads(
+            MTLSize(width: Int(d), height: Int(queryCount), depth: 1),
+            threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
         enc.endEncoding()
     }
 

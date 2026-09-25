@@ -15,7 +15,12 @@ import {
   validateCandidate,
 } from "../src/peers.js";
 
-const CONFIG = { basePath: "/dsh-lan", peerPort: 3080, groupKey: "tinytitan-lan", token: "tinytitan-lan" };
+const CONFIG = {
+  basePath: "/dsh-lan",
+  peerPort: 3080,
+  groupKey: "tinytitan-lan",
+  token: "tinytitan-lan",
+};
 
 /** A resolve() stub mapping names to addresses. */
 const resolver = (table) => async (name) => {
@@ -25,15 +30,29 @@ const resolver = (table) => async (name) => {
 };
 
 test("validateCandidate admits an address inside the allowlist", async () => {
-  const ok = await validateCandidate({ address: "192.168.18.25", port: 3080, source: "seed" }, { config: CONFIG });
-  assert.deepEqual(ok, { address: "192.168.18.25", port: 3080, name: "192.168.18.25", source: "seed" });
+  const ok = await validateCandidate(
+    { address: "192.168.18.25", port: 3080, source: "seed" },
+    { config: CONFIG },
+  );
+  assert.deepEqual(ok, {
+    address: "192.168.18.25",
+    port: 3080,
+    name: "192.168.18.25",
+    source: "seed",
+  });
 });
 
 test("validateCandidate judges a hostname by what it resolves to, not by its name", async () => {
   const resolve = resolver({ "Node3.local": "100.114.69.128", "evil.example": "8.8.8.8" });
-  const mine = await validateCandidate({ address: "Node3.local", port: 3080, source: "bonjour" }, { config: CONFIG, resolve });
+  const mine = await validateCandidate(
+    { address: "Node3.local", port: 3080, source: "bonjour" },
+    { config: CONFIG, resolve },
+  );
   assert.equal(mine.address, "100.114.69.128", "a Tailscale peer resolves into the allowlist");
-  const hostile = await validateCandidate({ address: "evil.example", port: 3080, source: "gossip:x" }, { config: CONFIG, resolve });
+  const hostile = await validateCandidate(
+    { address: "evil.example", port: 3080, source: "gossip:x" },
+    { config: CONFIG, resolve },
+  );
   assert.equal(hostile, undefined, "a name pointing at the public internet is dropped");
 });
 
@@ -45,7 +64,11 @@ test("validateCandidate rejects unresolvable names, bad ports and unparseable ad
     { address: "10.0.0.5", port: 99999 },
     { address: "", port: 3080 },
   ]) {
-    assert.equal(await validateCandidate(candidate, { config: CONFIG, resolve }), undefined, JSON.stringify(candidate));
+    assert.equal(
+      await validateCandidate(candidate, { config: CONFIG, resolve }),
+      undefined,
+      JSON.stringify(candidate),
+    );
   }
 });
 
@@ -60,7 +83,10 @@ test("mapLimit keeps input order and never exceeds its bound", async () => {
     active -= 1;
     return item * 2;
   });
-  assert.deepEqual(results, items.map((i) => i * 2));
+  assert.deepEqual(
+    results,
+    items.map((i) => i * 2),
+  );
   assert.ok(peak <= 8, `peak concurrency ${peak} must not exceed 8`);
 });
 
@@ -78,7 +104,10 @@ test("a peer's gossip only adds candidates, and never this machine", () => {
   assert.equal(kept, 1);
   assert.equal(table.gossip.size, 1);
   assert.equal(table.peers.size, 0, "gossip alone never creates a member");
-  assert.equal(table.gossip.get(peerKey("192.168.18.25", 3080)).source, "gossip:192.168.18.30:3080");
+  assert.equal(
+    table.gossip.get(peerKey("192.168.18.25", 3080)).source,
+    "gossip:192.168.18.30:3080",
+  );
 });
 
 test("gossip is capped so a hostile member cannot grow the table without bound", () => {
@@ -101,14 +130,15 @@ test("refresh records a member's inventory, merges its gossip, and prunes the st
     ttlMs: 1000,
     // The member answers only on the first cycle, so the second one can show
     // what happens to a member discovery no longer offers.
-    discovery: async () => (cycles++ === 0
-      ? [
-        { address: "192.168.18.25", port: 3080, name: "node-a", source: "seed" },
-        { address: "192.168.18.26", port: 3080, name: "node-b", source: "seed" },
-        { address: "192.168.18.27", port: 3080, name: "me", source: "seed" },
-        { address: "8.8.8.8", port: 3080, name: "public", source: "seed" },
-      ]
-      : []),
+    discovery: async () =>
+      cycles++ === 0
+        ? [
+            { address: "192.168.18.25", port: 3080, name: "node-a", source: "seed" },
+            { address: "192.168.18.26", port: 3080, name: "node-b", source: "seed" },
+            { address: "192.168.18.27", port: 3080, name: "me", source: "seed" },
+            { address: "8.8.8.8", port: 3080, name: "public", source: "seed" },
+          ]
+        : [],
     fetch: async ({ address }) => {
       if (address === "192.168.18.26") return { status: 401, body: { error: "unauthorized" } };
       if (address !== "192.168.18.25") return { status: 0, body: undefined };
@@ -143,7 +173,10 @@ test("a member reporting another group is refused even when it answers 200", asy
   const table = new PeerTable({
     config: CONFIG,
     discovery: async () => [{ address: "192.168.18.25", port: 3080 }],
-    fetch: async () => ({ status: 200, body: { ok: true, group: "someone-elses-group", self: { name: "x" } } }),
+    fetch: async () => ({
+      status: 200,
+      body: { ok: true, group: "someone-elses-group", self: { name: "x" } },
+    }),
   });
   assert.equal((await table.refresh()).length, 0);
 });
@@ -151,8 +184,20 @@ test("a member reporting another group is refused even when it answers 200", asy
 test("get resolves by id, address or name", async () => {
   const table = new PeerTable({
     config: CONFIG,
-    discovery: async () => [{ address: "192.168.18.25", port: 3080, name: "node-a", source: "seed" }],
-    fetch: async () => ({ status: 200, body: { ok: true, group: "tinytitan-lan", self: { name: "node-a" }, workspaces: [], sessions: [], peers: [] } }),
+    discovery: async () => [
+      { address: "192.168.18.25", port: 3080, name: "node-a", source: "seed" },
+    ],
+    fetch: async () => ({
+      status: 200,
+      body: {
+        ok: true,
+        group: "tinytitan-lan",
+        self: { name: "node-a" },
+        workspaces: [],
+        sessions: [],
+        peers: [],
+      },
+    }),
   });
   await table.refresh();
   assert.equal(table.get("192.168.18.25:3080").name, "node-a");
@@ -177,7 +222,10 @@ const nullFetch = async () => ({ status: 0, body: undefined });
 /** Hostname candidates, so every one of them needs a resolve. */
 function hostCandidates(count) {
   return Array.from({ length: count }, (_, i) => ({
-    address: `node-${i}.local`, port: 3080, name: `node-${i}`, source: "bonjour",
+    address: `node-${i}.local`,
+    port: 3080,
+    name: `node-${i}`,
+    source: "bonjour",
   }));
 }
 
@@ -200,7 +248,10 @@ test("a hostname is resolved once and reused, so the threadpool is not re-hit", 
     config: { ...CONFIG, resolveConcurrency: 4, resolveTtlMs: 60_000 },
     now: () => clock,
     discovery: async () => hostCandidates(3),
-    resolve: async (name) => { calls += 1; return { address: "192.168.18.9", name }; },
+    resolve: async (name) => {
+      calls += 1;
+      return { address: "192.168.18.9", name };
+    },
     fetch: nullFetch,
   });
   await table.refresh();
@@ -228,7 +279,10 @@ test("hostname resolution runs on its own, shallower limit", async () => {
     fetch: nullFetch,
   });
   await table.refresh();
-  assert.ok(peak <= 2, `peak concurrent resolutions ${peak} must not exceed resolveConcurrency (2)`);
+  assert.ok(
+    peak <= 2,
+    `peak concurrent resolutions ${peak} must not exceed resolveConcurrency (2)`,
+  );
   assert.ok(peak >= 1);
 });
 
@@ -241,7 +295,10 @@ test("a name that does not resolve is cached too, so it is not retried every cyc
     config: { ...CONFIG, resolveConcurrency: 4, resolveTtlMs: 60_000 },
     now: () => clock,
     discovery: async () => [{ address: "gone.local", port: 3080, name: "gone", source: "bonjour" }],
-    resolve: async () => { calls += 1; throw new Error("ENOTFOUND gone.local"); },
+    resolve: async () => {
+      calls += 1;
+      throw new Error("ENOTFOUND gone.local");
+    },
     fetch: nullFetch,
   });
   assert.deepEqual(await table.refresh(), [], "a name that does not resolve is not a member");

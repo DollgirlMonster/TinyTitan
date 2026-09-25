@@ -16,10 +16,12 @@ public struct Provenance: Codable, Sendable, Equatable {
     public let author: ProvenanceAuthor
     public let timestamp: Date
 
-    public init(sessionID: UUID? = nil,
-                eventID: UUID? = nil,
-                author: ProvenanceAuthor = .engine,
-                timestamp: Date = Date()) {
+    public init(
+        sessionID: UUID? = nil,
+        eventID: UUID? = nil,
+        author: ProvenanceAuthor = .engine,
+        timestamp: Date = Date()
+    ) {
         self.sessionID = sessionID
         self.eventID = eventID
         self.author = author

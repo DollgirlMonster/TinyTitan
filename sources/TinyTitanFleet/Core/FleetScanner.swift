@@ -13,9 +13,11 @@ public struct FleetSnapshot: Sendable, Equatable {
     public let polled: Int
     public let intervalSeconds: Int
 
-    public init(group: FleetGroup = FleetGroup(), scannedAt: Date? = nil, scanning: Bool = false,
-                failure: String? = nil, newMembers: [String] = [], answered: Int = 0,
-                polled: Int = 0, intervalSeconds: Int = 30) {
+    public init(
+        group: FleetGroup = FleetGroup(), scannedAt: Date? = nil, scanning: Bool = false,
+        failure: String? = nil, newMembers: [String] = [], answered: Int = 0,
+        polled: Int = 0, intervalSeconds: Int = 30
+    ) {
         self.group = group
         self.scannedAt = scannedAt
         self.scanning = scanning
@@ -118,7 +120,9 @@ public actor FleetScanner {
             let reports = await askEveryMember(members)
             let merged = Self.merge(seed: seedRead.group, reports: reports.compactMap { $0 })
             let known = Set(state.group.nodes.map(\.name))
-            let appeared = merged.nodes.filter { !known.contains($0.name) && state.scannedAt != nil }
+            let appeared = merged.nodes.filter {
+                !known.contains($0.name) && state.scannedAt != nil
+            }
             state = FleetSnapshot(
                 group: merged,
                 scannedAt: Date(),

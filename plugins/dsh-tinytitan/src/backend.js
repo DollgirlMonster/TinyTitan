@@ -11,8 +11,6 @@ import BasicCompactionEngine from "@deepseek-ai/dsh-compaction-basic";
 import { createAuxiliaryQuietCompaction } from "./compaction.js";
 
 /** `dsh-compaction-basic` with auxiliary calls forced to think off. */
-export class TinytitanCompaction extends createAuxiliaryQuietCompaction(
-  BasicCompactionEngine,
-) {}
+export class TinytitanCompaction extends createAuxiliaryQuietCompaction(BasicCompactionEngine) {}
 
 export default TinytitanCompaction;

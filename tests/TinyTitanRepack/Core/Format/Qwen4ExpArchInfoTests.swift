@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanRepackCore
 
 /// `ArchInfo` parsing for `model_type: qwen4_exp`, checked against the real
@@ -9,7 +10,7 @@ import Testing
 struct Qwen4ExpArchInfoTests {
     /// The load-bearing subset of the real config. Layer types alternate
     /// 3 linear : 1 full, which is what `full_attention_interval: 4` means.
-    private static func configJSON(overrides: [String: Any] = [:]) -> Data {
+    private static func configJSON(overrides: [String: Any] = [:]) throws -> Data {
         var layerTypes: [String] = []
         for i in 0..<48 {
             layerTypes.append((i + 1) % 4 == 0 ? "full_attention" : "linear_attention")
@@ -34,8 +35,10 @@ struct Qwen4ExpArchInfoTests {
             "make_ngram_vocab_size_divisible_by": 128,
             "hidden_act": "silu", "output_gate_type": "sigmoid",
             "tie_word_embeddings": false, "layer_types": layerTypes,
-            "rope_parameters": ["rope_theta": 10_000_000.0,
-                                "partial_rotary_factor": 0.25],
+            "rope_parameters": [
+                "rope_theta": 10_000_000.0,
+                "partial_rotary_factor": 0.25,
+            ],
         ]
         for (k, v) in overrides { text[k] = v }
         let root: [String: Any] = [
@@ -43,7 +46,7 @@ struct Qwen4ExpArchInfoTests {
             "text_config": text,
             "quantization": ["group_size": 64, "bits": 4, "mode": "affine"],
         ]
-        return try! JSONSerialization.data(withJSONObject: root)
+        return try JSONSerialization.data(withJSONObject: root)
     }
 
     private static func load(_ data: Data) throws -> ArchInfo {
@@ -115,8 +118,9 @@ struct Qwen4ExpArchInfoTests {
     func contractRejectsMismatch() {
         // A different model wearing the same model_type: top-8 instead of 10.
         #expect(throws: (any Error).self) {
-            _ = try Self.load(Self.configJSON(
-                overrides: ["num_experts_per_tok": 8]))
+            _ = try Self.load(
+                Self.configJSON(
+                    overrides: ["num_experts_per_tok": 8]))
         }
     }
 

@@ -30,16 +30,18 @@ public struct ContextSnapshot: Identifiable, Codable, Sendable, Equatable {
     public let estimatedTokenCount: Int
     public let budget: ContextBudgetRecord
 
-    public init(id: UUID = UUID(),
-                taskID: UUID,
-                sessionID: UUID? = nil,
-                createdAt: Date = Date(),
-                memoryItemIDs: [UUID],
-                memoryVersions: [String: Int],
-                droppedItemIDs: [UUID] = [],
-                renderedContext: String,
-                estimatedTokenCount: Int,
-                budget: ContextBudgetRecord) {
+    public init(
+        id: UUID = UUID(),
+        taskID: UUID,
+        sessionID: UUID? = nil,
+        createdAt: Date = Date(),
+        memoryItemIDs: [UUID],
+        memoryVersions: [String: Int],
+        droppedItemIDs: [UUID] = [],
+        renderedContext: String,
+        estimatedTokenCount: Int,
+        budget: ContextBudgetRecord
+    ) {
         self.id = id
         self.taskID = taskID
         self.sessionID = sessionID

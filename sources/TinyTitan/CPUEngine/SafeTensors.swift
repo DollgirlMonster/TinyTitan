@@ -82,7 +82,8 @@ public struct SafeTensorsFile: Sendable {
         }
         let length = Int(status.st_size)
         guard let raw = mmap(nil, length, PROT_READ, MAP_PRIVATE, descriptor, 0),
-              raw != MAP_FAILED else {
+            raw != MAP_FAILED
+        else {
             throw Failure.unreadable(url.path)
         }
         // WILLNEED, emphatically not SEQUENTIAL. The access pattern *is*
@@ -109,13 +110,15 @@ public struct SafeTensorsFile: Sendable {
         parsed.reserveCapacity(object.count)
         for (name, value) in object where name != "__metadata__" {
             guard let fields = value as? [String: Any],
-                  let dtype = fields["dtype"] as? String,
-                  let shape = fields["shape"] as? [Int],
-                  let offsets = fields["data_offsets"] as? [Int], offsets.count == 2 else {
+                let dtype = fields["dtype"] as? String,
+                let shape = fields["shape"] as? [Int],
+                let offsets = fields["data_offsets"] as? [Int], offsets.count == 2
+            else {
                 throw Failure.malformed("entry \(name)")
             }
             guard offsets[0] >= 0, offsets[1] >= offsets[0],
-                  payload + offsets[1] <= length else {
+                payload + offsets[1] <= length
+            else {
                 throw Failure.malformed("entry \(name) runs past the file")
             }
             // The shape is validated with reporting arithmetic before anything
@@ -133,8 +136,9 @@ public struct SafeTensorsFile: Sendable {
                 }
                 count = product
             }
-            parsed[name] = Entry(dtype: dtype, shape: shape,
-                                 start: offsets[0], end: offsets[1], count: count)
+            parsed[name] = Entry(
+                dtype: dtype, shape: shape,
+                start: offsets[0], end: offsets[1], count: count)
         }
         entries = parsed
     }
@@ -156,8 +160,9 @@ public struct SafeTensorsFile: Sendable {
     /// Returns the bytes touched, so a caller can say what it did.
     @discardableResult
     public func makeResident() -> Int {
-        madvise(UnsafeMutableRawPointer(mutating: mapping.base),
-                mapping.length, MADV_WILLNEED)
+        madvise(
+            UnsafeMutableRawPointer(mutating: mapping.base),
+            mapping.length, MADV_WILLNEED)
         let pageSize = Int(getpagesize())
         var checksum: UInt64 = 0
         var offset = 0
@@ -182,8 +187,9 @@ public struct SafeTensorsFile: Sendable {
     /// A raw view of one tensor. Valid for the life of this file.
     public func bytes(_ name: String) throws -> UnsafeRawBufferPointer {
         let entry = try entry(name)
-        return UnsafeRawBufferPointer(start: mapping.base.advanced(by: payload + entry.start),
-                                      count: entry.end - entry.start)
+        return UnsafeRawBufferPointer(
+            start: mapping.base.advanced(by: payload + entry.start),
+            count: entry.end - entry.start)
     }
 
     /// A tensor as `Float`, whatever it is stored as.

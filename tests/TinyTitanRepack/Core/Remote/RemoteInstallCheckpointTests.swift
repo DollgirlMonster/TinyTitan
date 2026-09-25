@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 import Testing
 
 @testable import TinyTitanRepackCore
@@ -17,11 +17,12 @@ struct RemoteInstallCheckpointTests {
 
         #expect(try RemoteInstallCheckpoint.load(from: path) == checkpoint)
         #expect(try Data(contentsOf: URL(fileURLWithPath: path)).count < 1024)
-        #expect(!checkpoint.matches(
-            repoID: checkpoint.repoID,
-            requestedRevision: checkpoint.requestedRevision,
-            sourceIndexSHA256: String(repeating: "e", count: 64),
-            planFingerprint: checkpoint.planFingerprint))
+        #expect(
+            !checkpoint.matches(
+                repoID: checkpoint.repoID,
+                requestedRevision: checkpoint.requestedRevision,
+                sourceIndexSHA256: String(repeating: "e", count: 64),
+                planFingerprint: checkpoint.planFingerprint))
     }
 
     @Test func oversizedCheckpointIsRejectedBeforeDecode() throws {
@@ -42,9 +43,10 @@ struct RemoteInstallCheckpointTests {
     }
 
     @Test func destinationByteTotalRejectsOverflowAndValuesAboveBound() throws {
-        #expect(try sampleCheckpoint().validatedDestinationBytes(
-            maximum: 8,
-            path: "resume.json") == 8)
+        #expect(
+            try sampleCheckpoint().validatedDestinationBytes(
+                maximum: 8,
+                path: "resume.json") == 8)
         for values in [[UInt64.max], [UInt64.max, 1], [9]] {
             let checkpoint = RemoteInstallCheckpoint(
                 repoID: "owner/model",
@@ -75,12 +77,13 @@ struct RemoteInstallCheckpointTests {
         try Posix.mkdirP(root)
         let descriptor = try Posix.openCreateRW(path)
         var bytes = [UInt8](repeating: 7, count: 16)
-        try bytes.withUnsafeBytes {
+        try bytes.withUnsafeBytes { buffer in
+            let base = try #require(buffer.baseAddress)
             try Posix.pwriteAll(
                 fd: descriptor,
                 path: path,
-                buf: $0.baseAddress!,
-                count: $0.count,
+                buf: base,
+                count: buffer.count,
                 offset: 0)
         }
         close(descriptor)
@@ -96,7 +99,7 @@ struct RemoteInstallCheckpointTests {
                     sourceOffset: 0,
                     size: 16,
                     destinationPath: path,
-                    destinationOffset: 0),
+                    destinationOffset: 0)
             ])
         let digest = try HTTPRangeSourceByteProvider.destinationDigest(
             copy,
@@ -106,26 +109,30 @@ struct RemoteInstallCheckpointTests {
             destinationDigest: digest,
             sourceBytes: 16,
             destinationBytes: 16)
-        #expect(try RemoteStreamingRepacker.validatedCompletedRanges(
-            [completed],
-            copies: [copy],
-            partialDirectory: root) == [completed])
+        #expect(
+            try RemoteStreamingRepacker.validatedCompletedRanges(
+                [completed],
+                copies: [copy],
+                partialDirectory: root) == [completed])
 
         let writeDescriptor = try Posix.openExistingRW(path)
         bytes[0] = 8
-        try bytes.withUnsafeBytes {
+        try bytes.withUnsafeBytes { buffer in
+            let base = try #require(buffer.baseAddress)
             try Posix.pwriteAll(
                 fd: writeDescriptor,
                 path: path,
-                buf: $0.baseAddress!,
+                buf: base,
                 count: 1,
                 offset: 0)
         }
         close(writeDescriptor)
-        #expect(try RemoteStreamingRepacker.validatedCompletedRanges(
-            [completed],
-            copies: [copy],
-            partialDirectory: root).isEmpty)
+        #expect(
+            try RemoteStreamingRepacker.validatedCompletedRanges(
+                [completed],
+                copies: [copy],
+                partialDirectory: root
+            ).isEmpty)
     }
 }
 
@@ -142,6 +149,6 @@ private func sampleCheckpoint() -> RemoteInstallCheckpoint {
                 id: "range-00000000",
                 destinationDigest: String(repeating: "d", count: 64),
                 sourceBytes: 10,
-                destinationBytes: 8),
+                destinationBytes: 8)
         ])
 }

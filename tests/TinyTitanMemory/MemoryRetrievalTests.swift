@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanMemory
 
 /// The background T7 caller: a search never waits on a judgement, and the
@@ -23,17 +24,21 @@ import Testing
     }
 
     /// Runs one `memory_search` and returns the records the model would see.
-    private func search(_ service: MemoryService,
-                        _ context: MemorySessionContext,
-                        _ text: String,
-                        prefix: String? = nil) async -> [MemoryRecord] {
+    private func search(
+        _ service: MemoryService,
+        _ context: MemorySessionContext,
+        _ text: String,
+        prefix: String? = nil
+    ) async -> [MemoryRecord] {
         var arguments: [String: MemoryToolValue] = ["query": .string(text)]
         if let prefix { arguments["prefix"] = .string(prefix) }
-        let result = await service.execute(name: "memory_search",
-                                           arguments: arguments,
-                                           in: context)
+        let result = await service.execute(
+            name: "memory_search",
+            arguments: arguments,
+            in: context)
         guard case .ok(let fields) = result,
-              case .records(let records)? = fields["results"] else { return [] }
+            case .records(let records)? = fields["results"]
+        else { return [] }
         return records
     }
 
@@ -41,10 +46,11 @@ import Testing
         let store = InMemoryStore()
         let engine = StubRetrievalEngine { _, _ in true }
         let idle = IdleBox(false)
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    isIdle: { idle.isIdle })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            isIdle: { idle.isIdle })
         let context = try #require(await service.beginSession(id: "s-bg"))
         try await store.set(try fact("rules/ferry", "runs only on Sundays"), in: context.scope)
         try await store.set(try fact("setting/town", "Ashgrove"), in: context.scope)
@@ -73,14 +79,16 @@ import Testing
         let engine = StubRetrievalEngine { _, fact in
             fact.key == "characters/ines/role"
         }
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    isIdle: { true })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            isIdle: { true })
         let context = try #require(await service.beginSession(id: "s-order"))
         try await store.set(try fact("setting/town", "Ashgrove"), in: context.scope)
-        try await store.set(try fact("characters/ines/role", "town archivist"),
-                            in: context.scope)
+        try await store.set(
+            try fact("characters/ines/role", "town archivist"),
+            in: context.scope)
 
         let question = "Who keeps town records?"
         let before = await search(service, context, question)
@@ -94,10 +102,11 @@ import Testing
     @Test func aValueThatChangedIsNotPromotedOnAnAnswerAboutTheOldOne() async throws {
         let store = InMemoryStore()
         let engine = StubRetrievalEngine { _, _ in true }
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    isIdle: { true })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            isIdle: { true })
         let context = try #require(await service.beginSession(id: "s-stale"))
         try await store.set(try fact("rules/ferry", "runs only on Sundays"), in: context.scope)
 
@@ -122,10 +131,11 @@ import Testing
         let store = InMemoryStore()
         // The engine says yes to a fact outside the requested prefix.
         let engine = StubRetrievalEngine { _, fact in fact.key == "gotchas/ferry" }
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    isIdle: { true })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            isIdle: { true })
         let context = try #require(await service.beginSession(id: "s-prefix"))
         try await store.set(try fact("gotchas/ferry", "runs only on Sundays"), in: context.scope)
 
@@ -140,10 +150,11 @@ import Testing
     @Test func oneQuestionCoversAtMostTheCoverageLimit() async throws {
         let store = InMemoryStore()
         let engine = StubRetrievalEngine { _, _ in false }
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    isIdle: { true })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            isIdle: { true })
         let context = try #require(await service.beginSession(id: "s-cover"))
         for index in 0..<(MemoryRetrievalHinter.coverageLimit + 16) {
             try await store.set(try fact("bulk/fact\(index)", "value \(index)"), in: context.scope)
@@ -173,11 +184,12 @@ import Testing
         let store = InMemoryStore()
         let log = RetrievalLogCollector()
         let engine = StubRetrievalEngine { _, _ in true }
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    isIdle: { true },
-                                    log: { log.append($0) })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            isIdle: { true },
+            log: { log.append($0) })
         let context = try #require(await service.beginSession(id: "s-log"))
         try await store.set(try fact("rules/ferry", "runs only on Sundays"), in: context.scope)
 
@@ -210,8 +222,10 @@ private final class StubRetrievalEngine: MemorySideEngine, @unchecked Sendable {
     func isDurable(_ fact: MemoryFact) async -> Bool? { nil }
     func duplicates(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? { nil }
     func contradicts(_ stored: MemoryFact, _ new: MemoryFact) async -> Bool? { nil }
-    func supersedes(_ stored: MemoryFact, _ new: MemoryFact,
-                    rule: String?) async -> MemorySupersession? { nil }
+    func supersedes(
+        _ stored: MemoryFact, _ new: MemoryFact,
+        rule: String?
+    ) async -> MemorySupersession? { nil }
 
     func couldAnswer(_ question: String, _ fact: MemoryFact) async -> Bool? {
         lock.withLock { asked.append((question, fact)) }

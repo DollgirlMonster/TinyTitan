@@ -1,13 +1,14 @@
-import Testing
-import Foundation
 import Darwin
+import Foundation
 import Metal
+import Testing
+
 @testable import TinyTitan
 
-/// Unit tests for the synchronous `pread` backend: round-trip correctness,
-/// exact file-byte reads, the short-read failure path,
-/// and round-robin slot reuse. No real model weights — a synthetic layer file
-/// of tagged expert blobs.
+// Unit tests for the synchronous `pread` backend: round-trip correctness,
+// exact file-byte reads, the short-read failure path,
+// and round-robin slot reuse. No real model weights — a synthetic layer file
+// of tagged expert blobs.
 // Every test writes and reads the same synthetic layer path; the suite
 // cannot run in parallel with itself.
 @Suite(.serialized) struct PreadExpertStreamerTests {
@@ -41,11 +42,12 @@ import Metal
     }
 
     static func makeLayout(path: String) -> StreamLayout {
-        StreamLayout(path: path,
-                     streamOffset: streamOffset,
-                     streamSize: streamSize,
-                     expertsPerLayer: numExperts,
-                     expertStride: UInt64(expertStride))
+        StreamLayout(
+            path: path,
+            streamOffset: streamOffset,
+            streamSize: streamSize,
+            expertsPerLayer: numExperts,
+            expertStride: UInt64(expertStride))
     }
 
     static func bytes(of buffer: MTLBuffer, offset: UInt64, count: Int) -> [UInt8] {

@@ -7,11 +7,13 @@ public struct RangeCopy: Sendable, Equatable {
     public let destinationPath: String
     public let destinationOffset: UInt64
 
-    public init(shardID: String,
-                sourceOffset: UInt64,
-                size: UInt64,
-                destinationPath: String,
-                destinationOffset: UInt64) {
+    public init(
+        shardID: String,
+        sourceOffset: UInt64,
+        size: UInt64,
+        destinationPath: String,
+        destinationOffset: UInt64
+    ) {
         self.shardID = shardID
         self.sourceOffset = sourceOffset
         self.size = size
@@ -44,10 +46,12 @@ public struct RangeCopyPlan: Sendable {
 }
 
 public enum RangeCopyPlanner {
-    static func plan(repackPlan: RepackPlan,
-                     rangeChunkBytes: Int,
-                     layoutMode: String = "identity",
-                     layoutOrderSha256: String? = nil) throws -> RangeCopyPlan {
+    static func plan(
+        repackPlan: RepackPlan,
+        rangeChunkBytes: Int,
+        layoutMode: String = "identity",
+        layoutOrderSha256: String? = nil
+    ) throws -> RangeCopyPlan {
         var copies: [RangeCopy] = []
         copies.reserveCapacity(repackPlan.resident.entries.count * 3)
 
@@ -61,34 +65,41 @@ public enum RangeCopyPlanner {
         // root, so its directory is that root.
         let passthroughRoot = outputRoot(for: repackPlan)
         for file in repackPlan.passthroughFiles {
-            copies.append(RangeCopy(
-                shardID: file.sourceName,
-                sourceOffset: 0,
-                size: file.size,
-                destinationPath: (passthroughRoot as NSString)
-                    .appendingPathComponent(file.destinationName),
-                destinationOffset: 0))
+            copies.append(
+                RangeCopy(
+                    shardID: file.sourceName,
+                    sourceOffset: 0,
+                    size: file.size,
+                    destinationPath: (passthroughRoot as NSString)
+                        .appendingPathComponent(file.destinationName),
+                    destinationOffset: 0))
         }
 
         for entry in repackPlan.resident.entries {
-            copies.append(RangeCopy(shardID: entry.sourceWeight.shardPath,
-                                    sourceOffset: entry.sourceWeight.absoluteOffset,
-                                    size: entry.sizeBytes,
-                                    destinationPath: entry.fileOffsetPath(in: repackPlan.resident),
-                                    destinationOffset: entry.fileOffset))
+            copies.append(
+                RangeCopy(
+                    shardID: entry.sourceWeight.shardPath,
+                    sourceOffset: entry.sourceWeight.absoluteOffset,
+                    size: entry.sizeBytes,
+                    destinationPath: entry.fileOffsetPath(in: repackPlan.resident),
+                    destinationOffset: entry.fileOffset))
             if let scales = entry.sourceScales {
-                copies.append(RangeCopy(shardID: scales.shardPath,
-                                        sourceOffset: scales.absoluteOffset,
-                                        size: entry.scaleSize,
-                                        destinationPath: repackPlan.resident.path,
-                                        destinationOffset: entry.scaleOffset))
+                copies.append(
+                    RangeCopy(
+                        shardID: scales.shardPath,
+                        sourceOffset: scales.absoluteOffset,
+                        size: entry.scaleSize,
+                        destinationPath: repackPlan.resident.path,
+                        destinationOffset: entry.scaleOffset))
             }
             if let biases = entry.sourceBiases {
-                copies.append(RangeCopy(shardID: biases.shardPath,
-                                        sourceOffset: biases.absoluteOffset,
-                                        size: entry.biasSize,
-                                        destinationPath: repackPlan.resident.path,
-                                        destinationOffset: entry.biasOffset))
+                copies.append(
+                    RangeCopy(
+                        shardID: biases.shardPath,
+                        sourceOffset: biases.absoluteOffset,
+                        size: entry.biasSize,
+                        destinationPath: repackPlan.resident.path,
+                        destinationOffset: entry.biasOffset))
             }
         }
 
@@ -96,13 +107,14 @@ public enum RangeCopyPlanner {
             for expert in 0..<layer.expertsPerLayer {
                 let blobBase = UInt64(layer.physicalRank(for: expert)) * layer.expertStride
                 for slice in layer.subTensors {
-                    copies.append(RangeCopy(
-                        shardID: slice.sourceTensor.shardPath,
-                        sourceOffset: slice.sourceTensor.absoluteOffset
-                            + UInt64(expert) * slice.sourceOffsetPerExpert,
-                        size: slice.sizeInExpertBlob,
-                        destinationPath: layer.path,
-                        destinationOffset: blobBase + slice.offsetInExpertBlob))
+                    copies.append(
+                        RangeCopy(
+                            shardID: slice.sourceTensor.shardPath,
+                            sourceOffset: slice.sourceTensor.absoluteOffset
+                                + UInt64(expert) * slice.sourceOffsetPerExpert,
+                            size: slice.sizeInExpertBlob,
+                            destinationPath: layer.path,
+                            destinationOffset: blobBase + slice.offsetInExpertBlob))
                 }
             }
         }
@@ -128,17 +140,20 @@ public enum RangeCopyPlanner {
                 detail: "coalesced payload \(downloaded) is smaller than the "
                     + "planned copies \(copied)")
         }
-        return RangeCopyPlan(scalarCopies: copies,
-                             coalescedCopies: coalesced,
-                             remoteBytesToDownload: downloaded,
-                             remoteGapBytesDownloaded: gapBytes,
-                             canonicalFingerprint: fingerprint,
-                             residentIndexSha256: indexSha,
-                             expectedOutputs: expectedOutputs)
+        return RangeCopyPlan(
+            scalarCopies: copies,
+            coalescedCopies: coalesced,
+            remoteBytesToDownload: downloaded,
+            remoteGapBytesDownloaded: gapBytes,
+            canonicalFingerprint: fingerprint,
+            residentIndexSha256: indexSha,
+            expectedOutputs: expectedOutputs)
     }
 
-    public static func coalesce(copies: [RangeCopy],
-                                rangeChunkBytes: Int) throws -> [CoalescedRangeCopy] {
+    public static func coalesce(
+        copies: [RangeCopy],
+        rangeChunkBytes: Int
+    ) throws -> [CoalescedRangeCopy] {
         guard rangeChunkBytes > 0 else {
             throw RepackError.configurationInvalid(detail: "rangeChunkBytes must be positive")
         }
@@ -159,11 +174,13 @@ public enum RangeCopyPlanner {
 
         func flush() {
             guard let shard = currentShard else { return }
-            out.append(CoalescedRangeCopy(id: "",
-                                          shardID: shard,
-                                          sourceOffset: currentStart,
-                                          size: currentEnd - currentStart,
-                                          destinations: currentDestinations))
+            out.append(
+                CoalescedRangeCopy(
+                    id: "",
+                    shardID: shard,
+                    sourceOffset: currentStart,
+                    size: currentEnd - currentStart,
+                    destinations: currentDestinations))
         }
 
         for copy in sorted where copy.size > 0 {
@@ -177,10 +194,12 @@ public enum RangeCopyPlanner {
             }
             let proposedStart = currentStart
             let proposedEnd = max(currentEnd, copyEnd)
-            let gap = copy.sourceOffset > currentEnd
+            let gap =
+                copy.sourceOffset > currentEnd
                 ? copy.sourceOffset - currentEnd
                 : 0
-            let canMerge = currentShard == copy.shardID
+            let canMerge =
+                currentShard == copy.shardID
                 && gap <= maxBridgedGapBytes
                 && proposedEnd >= proposedStart
                 && proposedEnd - proposedStart <= UInt64(rangeChunkBytes)
@@ -209,8 +228,10 @@ public enum RangeCopyPlanner {
         }
     }
 
-    private static func splitLargeCopies(_ copies: [RangeCopy],
-                                         rangeChunkBytes: Int) -> [RangeCopy] {
+    private static func splitLargeCopies(
+        _ copies: [RangeCopy],
+        rangeChunkBytes: Int
+    ) -> [RangeCopy] {
         let limit = UInt64(rangeChunkBytes)
         var out: [RangeCopy] = []
         for copy in copies {
@@ -219,11 +240,13 @@ public enum RangeCopyPlanner {
             var dst = copy.destinationOffset
             while remaining > 0 {
                 let n = min(remaining, limit)
-                out.append(RangeCopy(shardID: copy.shardID,
-                                     sourceOffset: src,
-                                     size: n,
-                                     destinationPath: copy.destinationPath,
-                                     destinationOffset: dst))
+                out.append(
+                    RangeCopy(
+                        shardID: copy.shardID,
+                        sourceOffset: src,
+                        size: n,
+                        destinationPath: copy.destinationPath,
+                        destinationOffset: dst))
                 remaining -= n
                 src += n
                 dst += n
@@ -238,27 +261,32 @@ public enum RangeCopyPlanner {
 
     private static func expectedOutputList(for plan: RepackPlan) -> [RemoteExpectedOutput] {
         var outputs = [
-            RemoteExpectedOutput(relativePath: "model_weights.bin",
-                                 size: plan.resident.totalSize)
+            RemoteExpectedOutput(
+                relativePath: "model_weights.bin",
+                size: plan.resident.totalSize)
         ]
-        outputs.append(contentsOf: plan.layers
-            .filter { $0.expertsPerLayer > 0 }
-            .map {
-                RemoteExpectedOutput(
-                    relativePath: "packed_experts/" + ($0.path as NSString).lastPathComponent,
-                    size: $0.fileSize)
-            })
+        outputs.append(
+            contentsOf: plan.layers
+                .filter { $0.expertsPerLayer > 0 }
+                .map {
+                    RemoteExpectedOutput(
+                        relativePath: "packed_experts/" + ($0.path as NSString).lastPathComponent,
+                        size: $0.fileSize)
+                })
         // Passthrough files are outputs like any other. Omitting them would
         // let a resumed install accept a partial whose 102 GB table is missing
         // or truncated, because that is exactly what this list is checked for.
-        outputs.append(contentsOf: plan.passthroughFiles.map {
-            RemoteExpectedOutput(relativePath: $0.destinationName, size: $0.size)
-        })
+        outputs.append(
+            contentsOf: plan.passthroughFiles.map {
+                RemoteExpectedOutput(relativePath: $0.destinationName, size: $0.size)
+            })
         return outputs.sorted { $0.relativePath < $1.relativePath }
     }
 
-    static func validateDestinationIntervals(_ copies: [RangeCopy],
-                                             outputRoot: String) throws {
+    static func validateDestinationIntervals(
+        _ copies: [RangeCopy],
+        outputRoot: String
+    ) throws {
         let sorted = try copies.map { copy in
             (try normalizedRelativePath(copy.destinationPath, root: outputRoot), copy)
         }.sorted {
@@ -310,9 +338,10 @@ public enum RangeCopyPlanner {
             writer.append(copy.size)
             writer.append(UInt64(copy.destinations.count))
             for destination in copy.destinations {
-                writer.append(try normalizedRelativePath(
-                    destination.destinationPath,
-                    root: outputRoot))
+                writer.append(
+                    try normalizedRelativePath(
+                        destination.destinationPath,
+                        root: outputRoot))
                 writer.append(destination.destinationOffset)
                 writer.append(destination.sourceOffset - copy.sourceOffset)
                 writer.append(destination.size)
@@ -333,8 +362,9 @@ public enum RangeCopyPlanner {
             .precomposedStringWithCanonicalMapping
         let components = relative.split(separator: "/", omittingEmptySubsequences: false)
         guard !relative.isEmpty,
-              !relative.hasPrefix("/"),
-              components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+            !relative.hasPrefix("/"),
+            components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
+        else {
             throw RepackError.configurationInvalid(
                 detail: "invalid relative destination path \(relative)")
         }
@@ -352,8 +382,8 @@ public enum RangeCopyPlanner {
     }
 }
 
-private extension ResidentEntry {
-    func fileOffsetPath(in plan: ResidentFilePlan) -> String {
+extension ResidentEntry {
+    fileprivate func fileOffsetPath(in plan: ResidentFilePlan) -> String {
         plan.path
     }
 }

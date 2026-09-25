@@ -76,14 +76,16 @@ public struct ServerCompletion: Equatable, Sendable {
     /// distinguishes it as stop_reason "stop_sequence" and names the string.
     public let stopSequence: String?
 
-    public init(content: String,
-                toolCalls: [ParsedToolCall],
-                finishReason: String,
-                usage: OpenAIUsage,
-                watchdogTrips: [WatchdogSet.Trip] = [],
-                stopSequence: String? = nil,
-                reasoning: String = "",
-                unrequestedReasoning: Int = 0) {
+    public init(
+        content: String,
+        toolCalls: [ParsedToolCall],
+        finishReason: String,
+        usage: OpenAIUsage,
+        watchdogTrips: [WatchdogSet.Trip] = [],
+        stopSequence: String? = nil,
+        reasoning: String = "",
+        unrequestedReasoning: Int = 0
+    ) {
         self.content = content
         self.reasoning = reasoning
         self.unrequestedReasoning = unrequestedReasoning
@@ -125,15 +127,17 @@ public protocol ServerInferenceBackend: Sendable {
     /// client that sends no temperature gets what the model was tuned for
     /// rather than what the last family to need tuning wanted.
     var samplingDefaults: GenerationDefaults.Sampling { get }
-    func generate(_ request: ValidatedChatRequest,
-                  onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void) async throws -> ServerCompletion
+    func generate(
+        _ request: ValidatedChatRequest,
+        onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void
+    ) async throws -> ServerCompletion
 }
 
-public extension ServerInferenceBackend {
-    var maximumContext: Int {
+extension ServerInferenceBackend {
+    public var maximumContext: Int {
         RuntimeConfiguration.supportedContextTokens.max() ?? 262_144
     }
-    var samplingDefaults: GenerationDefaults.Sampling { GenerationDefaults.house }
+    public var samplingDefaults: GenerationDefaults.Sampling { GenerationDefaults.house }
 }
 
 /// A backend that owns the model's residency and can release it on demand.
@@ -350,7 +354,8 @@ private final class GenerationDecodeState: @unchecked Sendable {
     }
 }
 
-public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, PromptCacheDescribing {
+public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, PromptCacheDescribing
+{
     /// Manifest-derived API model identifier used when --model-id is absent.
     public nonisolated let defaultModelID: String
     /// The session's configured context window; the HTTP layer validates
@@ -446,32 +451,35 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         maxConcurrentSequences: Int
     ) -> ServerPromptCacheMode {
         guard backend != .cpu else { return .off }
-        return effectivePromptCacheMode(requested: requested, mtpEnabled: false,
-                                        slots: maxConcurrentSequences)
+        return effectivePromptCacheMode(
+            requested: requested, mtpEnabled: false,
+            slots: maxConcurrentSequences)
     }
 
     /// lint:allow-long a sequential construction pipeline: tokenizer, Metal
     /// context, runtime config, model, optional MTP sidecar, runner, scratch.
     /// Each step consumes the last, so extracting any of them would return a
     /// tuple straight back into the next -- the same shape as Model.load.
-    public static func load(modelDirectory: URL,
-                            maxContext: Int,
-                            slots: Int = 1,
-                            promptCacheMode: ServerPromptCacheMode = .multiPrefix,
-                            promptCacheMaximumEntries: Int = 4,
-                            promptCacheMemoryLimitBytes: Int = 256 * 1_048_576,
-                            promptCacheDiskDirectory: URL? = nil,
-                            promptCacheDiskLimitBytes: Int = 8_192 * 1_048_576,
-                            prefillChunkTokens requestedPrefillChunkTokens: Int? = nil,
-                            kvCachePrecision: KVCachePrecision = .int8,
-                            ropeScalingMode: RuntimeRoPEScalingMode = .none,
-                            thinkingMode: ModelThinkingMode = .off,
-                            reasoningEffort: ModelReasoningEffort? = nil,
-                            expertCacheSlots requestedExpertCacheSlots: Int? = nil,
-                            expertCacheBudgetBytes: Int? = nil,
-                            mtpModelDirectory: URL? = nil,
-                            mtpMemoryMiB: Int = StreamingMTPMemoryPlan.defaultBudgetMiB,
-                            reusingContext: MetalContext? = nil) async throws -> ServerModelSession {
+    public static func load(
+        modelDirectory: URL,
+        maxContext: Int,
+        slots: Int = 1,
+        promptCacheMode: ServerPromptCacheMode = .multiPrefix,
+        promptCacheMaximumEntries: Int = 4,
+        promptCacheMemoryLimitBytes: Int = 256 * 1_048_576,
+        promptCacheDiskDirectory: URL? = nil,
+        promptCacheDiskLimitBytes: Int = 8_192 * 1_048_576,
+        prefillChunkTokens requestedPrefillChunkTokens: Int? = nil,
+        kvCachePrecision: KVCachePrecision = .int8,
+        ropeScalingMode: RuntimeRoPEScalingMode = .none,
+        thinkingMode: ModelThinkingMode = .off,
+        reasoningEffort: ModelReasoningEffort? = nil,
+        expertCacheSlots requestedExpertCacheSlots: Int? = nil,
+        expertCacheBudgetBytes: Int? = nil,
+        mtpModelDirectory: URL? = nil,
+        mtpMemoryMiB: Int = StreamingMTPMemoryPlan.defaultBudgetMiB,
+        reusingContext: MetalContext? = nil
+    ) async throws -> ServerModelSession {
         let tokenizerFolder = GFTokenizer.tokenizerFolder(forModelDirectory: modelDirectory)
         guard let tokenizerFolder else {
             throw GFTokenizerError.missingToolTemplate
@@ -484,9 +492,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // tokenizer bakes an unsupported control into its rendering. An
         // unreadable manifest is left for Model.load, which reports it better.
         if reasoningEffort != nil,
-           let family = try? ManifestReader.peekFamily(directoryURL: modelDirectory) {
-            try family.validateReasoning(thinkingMode: thinkingMode,
-                                         effort: reasoningEffort)
+            let family = try? ManifestReader.peekFamily(directoryURL: modelDirectory)
+        {
+            try family.validateReasoning(
+                thinkingMode: thinkingMode,
+                effort: reasoningEffort)
         }
         let tokenizer = try await GFTokenizer.load(
             from: tokenizerFolder,
@@ -522,8 +532,9 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             // geometry, like the dense Qwen 3.5 models -- the manifest's own
             // declaration. `ServerInferenceError` keeps the shape callers
             // expect; the reason travels in the message.
-            expectedArch = try ArchConfig.resolved(forFamily: modelFamily,
-                                                   directoryURL: modelDirectory)
+            expectedArch = try ArchConfig.resolved(
+                forFamily: modelFamily,
+                directoryURL: modelDirectory)
         } catch {
             throw ServerInferenceError.unsupportedModel("\(error)")
         }
@@ -539,12 +550,14 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         } else {
             tunedBudget = RuntimeConfiguration.defaultExpertCacheBudgetBytes
         }
-        let loadedManifest = try? ManifestReader.load(directoryURL: modelDirectory,
-                                                      expecting: expectedArch)
+        let loadedManifest = try? ManifestReader.load(
+            directoryURL: modelDirectory,
+            expecting: expectedArch)
         // Bytes one expert occupies in the cache, across every layer.
-        let cachePerSlotBytes = loadedManifest.map {
-            Double($0.expertStride) * Double($0.arch.numLayers)
-        } ?? 0
+        let cachePerSlotBytes =
+            loadedManifest.map {
+                Double($0.expertStride) * Double($0.arch.numLayers)
+            } ?? 0
         let residentFloor = RuntimeConfiguration.residentFloorBytes(
             residentWeightBytes: loadedManifest?.files["model_weights.bin"]
                 .map { Int($0.size) } ?? 0)
@@ -562,15 +575,19 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             let targetGib = gib(Double(explicitTarget))
             let floorGib = gib(Double(residentFloor))
             let cacheGib = slotsGib(derivedSlots)
-            print(String(format: "TinyTitan ram target=%.2fG cache=%.2fG slots=%d "
-                         + "resident_floor=%.2fG estimate=%.2fG",
-                         targetGib, cacheGib, derivedSlots, floorGib,
-                         floorGib + cacheGib))
+            print(
+                String(
+                    format: "TinyTitan ram target=%.2fG cache=%.2fG slots=%d "
+                        + "resident_floor=%.2fG estimate=%.2fG",
+                    targetGib, cacheGib, derivedSlots, floorGib,
+                    floorGib + cacheGib))
             if targetGib < floorGib + cacheGib {
-                print(String(format: "TinyTitan ram warning: %.2fG is below this install's "
-                             + "%.2fG floor (%.2fG resident + the %d-slot minimum cache); "
-                             + "the cache is already at its smallest.",
-                             targetGib, floorGib + cacheGib, floorGib, derivedSlots))
+                print(
+                    String(
+                        format: "TinyTitan ram warning: %.2fG is below this install's "
+                            + "%.2fG floor (%.2fG resident + the %d-slot minimum cache); "
+                            + "the cache is already at its smallest.",
+                        targetGib, floorGib + cacheGib, floorGib, derivedSlots))
             }
         } else if let manifest = loadedManifest {
             derivedSlots = RuntimeConfiguration.expertCacheSlots(
@@ -578,11 +595,13 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                 layers: manifest.arch.numLayers,
                 budgetBytes: tunedBudget)
             let floorGib = gib(Double(residentFloor))
-            print(String(format: "TinyTitan ram profile cache=%.2fG slots=%d "
-                         + "resident_floor=%.2fG estimate=%.2fG (cache budget, not a "
-                         + "process target)",
-                         slotsGib(derivedSlots), derivedSlots, floorGib,
-                         floorGib + slotsGib(derivedSlots)))
+            print(
+                String(
+                    format: "TinyTitan ram profile cache=%.2fG slots=%d "
+                        + "resident_floor=%.2fG estimate=%.2fG (cache budget, not a "
+                        + "process target)",
+                    slotsGib(derivedSlots), derivedSlots, floorGib,
+                    floorGib + slotsGib(derivedSlots)))
         } else {
             // Unreadable manifest means the load below will fail with a better
             // message than anything this could throw, so pick the safe small end.
@@ -603,10 +622,13 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                 .map(RDAdvicePolicyMode.parse)
                 ?? loadRuntime.rdadvisePolicy,
             prefillChunkTokens: requestedPrefillChunkTokens
-                ?? ModelProfile.resolve(modelID: model.modelID, family: model.config.family,
-                                        weightBits: model.routedExpertWeightBits).prefillChunkTokens
-                ?? defaultPrefillChunkTokens(family: model.config.family,
-                                             fallback: loadRuntime.prefillChunkTokens),
+                ?? ModelProfile.resolve(
+                    modelID: model.modelID, family: model.config.family,
+                    weightBits: model.routedExpertWeightBits
+                ).prefillChunkTokens
+                ?? defaultPrefillChunkTokens(
+                    family: model.config.family,
+                    fallback: loadRuntime.prefillChunkTokens),
             prefillAttentionPath: loadRuntime.prefillAttentionPath,
             forceLogitsHead: true,
             decodeExpertExecution: loadRuntime.decodeExpertExecution,
@@ -643,10 +665,12 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             perSlotBytes: perSlotBytes,
             budgetBytes: slotBudget)
         if effectiveSlots < requestedSlots {
-            FileHandle.standardError.write(Data(
-                ("TinyTitan batch width \(requestedSlots) exceeds the memory budget "
-                    + "(per-slot \(perSlotBytes / 1_048_576) MiB, budget "
-                    + "\(slotBudget / 1_048_576) MiB); serving \(effectiveSlots) at once\n").utf8))
+            FileHandle.standardError.write(
+                Data(
+                    ("TinyTitan batch width \(requestedSlots) exceeds the memory budget "
+                        + "(per-slot \(perSlotBytes / 1_048_576) MiB, budget "
+                        + "\(slotBudget / 1_048_576) MiB); serving \(effectiveSlots) at once\n")
+                        .utf8))
         }
         let mtpDecoder: StreamingMTPDecoder?
         let runner: RealForwardRunner
@@ -676,15 +700,17 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             runner = decoder.target
         } else {
             mtpDecoder = nil
-            runner = try RealForwardRunner(model: model,
-                                           context: context,
-                                           maxContext: maxContext,
-                                           slots: effectiveSlots,
-                                           runtimeConfiguration: runtime)
+            runner = try RealForwardRunner(
+                model: model,
+                context: context,
+                maxContext: maxContext,
+                slots: effectiveSlots,
+                runtimeConfiguration: runtime)
         }
         let scratches = try (0..<effectiveSlots).map { _ in
-            try RawCompletionScratch(context: context, vocab: model.config.vocabSize,
-                                     logitSoftcap: Float(model.config.finalLogitSoftcap))
+            try RawCompletionScratch(
+                context: context, vocab: model.config.vocabSize,
+                logitSoftcap: Float(model.config.finalLogitSoftcap))
         }
         let templateDigest = SHA256.hash(data: try Data(contentsOf: templateURL))
             .map { String(format: "%02x", $0) }
@@ -725,9 +751,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                     diskLimitBytes: promptCacheDiskLimitBytes))
             let persisted = store.loadEntries(domain: promptCacheDomain)
             if persisted.count > promptCacheMaximumEntries {
-                store.remove(entryIDs: persisted
-                    .dropLast(promptCacheMaximumEntries)
-                    .map(\.id))
+                store.remove(
+                    entryIDs:
+                        persisted
+                        .dropLast(promptCacheMaximumEntries)
+                        .map(\.id))
             }
             promptStateStore = store
             promptCache = ServerPromptCache(
@@ -737,54 +765,59 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             promptStateStore = nil
             promptCache = ServerPromptCache(maximumEntries: 1)
         }
-        return ServerModelSession(context: context,
-                                  model: model,
-                                  tokenizer: tokenizer,
-                                  tokenizerFolder: tokenizerFolder,
-                                  loadedReasoning: RequestReasoning(
-                                      thinkingMode: thinkingMode,
-                                      effort: reasoningEffort),
-                                  runner: runner,
-                                  mtpDecoder: mtpDecoder,
-                                  scratches: scratches,
-                                  prefillConfig: runtime.prefillConfig,
-                                  expertCacheSlots: loadSlots,
-                                  slots: effectiveSlots,
-                                  maxContext: maxContext,
-                                  promptCacheMode: effectivePromptCacheMode,
-                                  promptCacheDomain: promptCacheDomain,
-                                  promptCache: promptCache,
-                                  promptStateStore: promptStateStore,
-                                  concisePrompt: conciseModeEnabled()
-                                    ? ConcisePrompt.standard : nil)
+        return ServerModelSession(
+            context: context,
+            model: model,
+            tokenizer: tokenizer,
+            tokenizerFolder: tokenizerFolder,
+            loadedReasoning: RequestReasoning(
+                thinkingMode: thinkingMode,
+                effort: reasoningEffort),
+            runner: runner,
+            mtpDecoder: mtpDecoder,
+            scratches: scratches,
+            prefillConfig: runtime.prefillConfig,
+            expertCacheSlots: loadSlots,
+            slots: effectiveSlots,
+            maxContext: maxContext,
+            promptCacheMode: effectivePromptCacheMode,
+            promptCacheDomain: promptCacheDomain,
+            promptCache: promptCache,
+            promptStateStore: promptStateStore,
+            concisePrompt: conciseModeEnabled()
+                ? ConcisePrompt.standard : nil)
     }
 
-    private init(context: MetalContext,
-                 model: Model,
-                 tokenizer: GFTokenizer,
-                 tokenizerFolder: URL,
-                 loadedReasoning: RequestReasoning,
-                 runner: RealForwardRunner,
-                 mtpDecoder: StreamingMTPDecoder?,
-                 scratches: [RawCompletionScratch],
-                 prefillConfig: PrefillRuntimeConfig,
-                 expertCacheSlots: Int,
-                 slots: Int,
-                 maxContext: Int,
-                 promptCacheMode: ServerPromptCacheMode,
-                 promptCacheDomain: ServerPromptCacheDomain,
-                 promptCache: ServerPromptCache,
-                 promptStateStore: ServerPromptStateStore?,
-                 concisePrompt: String?) {
+    private init(
+        context: MetalContext,
+        model: Model,
+        tokenizer: GFTokenizer,
+        tokenizerFolder: URL,
+        loadedReasoning: RequestReasoning,
+        runner: RealForwardRunner,
+        mtpDecoder: StreamingMTPDecoder?,
+        scratches: [RawCompletionScratch],
+        prefillConfig: PrefillRuntimeConfig,
+        expertCacheSlots: Int,
+        slots: Int,
+        maxContext: Int,
+        promptCacheMode: ServerPromptCacheMode,
+        promptCacheDomain: ServerPromptCacheDomain,
+        promptCache: ServerPromptCache,
+        promptStateStore: ServerPromptStateStore?,
+        concisePrompt: String?
+    ) {
         self.context = context
         self.model = model
         self.tokenizer = tokenizer
         self.tokenizerFolder = tokenizerFolder
         self.loadedReasoning = loadedReasoning
         self.modelFamily = model.config.family
-        self.profileSampling = ModelProfile.resolve(
-            modelID: model.modelID, family: model.config.family,
-            weightBits: model.routedExpertWeightBits).sampling
+        self.profileSampling =
+            ModelProfile.resolve(
+                modelID: model.modelID, family: model.config.family,
+                weightBits: model.routedExpertWeightBits
+            ).sampling
         self.defaultModelID = ServerModelIdentity.apiModelID(
             manifestModelID: model.modelID,
             family: model.config.family,
@@ -870,9 +903,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
     private func preparePrompt(
         _ request: ValidatedChatRequest,
         renderTokenizer: GFTokenizer
-    ) throws -> (promptIDs: [Int32],
-                 cacheRequest: ValidatedChatRequest,
-                 needsToolTemplate: Bool) {
+    ) throws -> (
+        promptIDs: [Int32],
+        cacheRequest: ValidatedChatRequest,
+        needsToolTemplate: Bool
+    ) {
         let filteredMessages: [GFTokenizer.Message]
         let filteredTools: [GFTokenizer.FunctionDefinition]
         var stripStats: CLIStrip.Stats?
@@ -893,17 +928,19 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         let needsToolTemplate = usesToolTemplate(
             messages: filteredMessages,
             tools: filteredTools)
-        let effectiveMessages = concisePrompt.map {
-            ConcisePrompt.appendingSystemPrompt($0, to: filteredMessages)
-        } ?? filteredMessages
+        let effectiveMessages =
+            concisePrompt.map {
+                ConcisePrompt.appendingSystemPrompt($0, to: filteredMessages)
+            } ?? filteredMessages
         let promptIDs = try encodePrompt(
             with: renderTokenizer,
             messages: effectiveMessages,
             tools: filteredTools,
             usesToolTemplate: needsToolTemplate)
         if let stats = stripStats {
-            ServerLog.strip(stats: stats,
-                            promptTokens: promptIDs.count)
+            ServerLog.strip(
+                stats: stats,
+                promptTokens: promptIDs.count)
         }
         guard promptIDs.count < maxContext else {
             throw ServerRequestError.invalid(
@@ -959,7 +996,8 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                 domain: promptCacheDomain,
                 request: cacheRequest,
                 renderedPromptIDs: promptIDs,
-                tokenizer: tokenizer) {
+                tokenizer: tokenizer)
+            {
             case .miss:
                 promptCache.invalidate()
                 effectivePromptIDs = promptIDs
@@ -982,14 +1020,16 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                 domain: promptCacheDomain,
                 request: cacheRequest,
                 renderedPromptIDs: promptIDs,
-                tokenizer: tokenizer) {
+                tokenizer: tokenizer)
+            {
             case .miss:
                 activePromptCacheEntryID = nil
                 effectivePromptIDs = promptIDs
                 completionStart = .reset
             case .hit(let entryID, let effective, let cached):
                 if entryID == activePromptCacheEntryID,
-                   runner.continuationPosition == cached {
+                    runner.continuationPosition == cached
+                {
                     // S15: tier=live is only trusted when the in-memory KV
                     // still matches the entry (same entry id and the KV
                     // cursor sits exactly at the request's expected
@@ -1009,13 +1049,16 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                             into: runner)
                         print(
                             "TinyTitan prompt_cache hit tier=\(tier) "
-                                + "cached_tokens=\(cached) entry=\(entryID.uuidString.lowercased())")
+                                + "cached_tokens=\(cached) entry=\(entryID.uuidString.lowercased())"
+                        )
                     } catch {
                         // Drop the stale entry and prefill from scratch rather
                         // than trust it.
-                        FileHandle.standardError.write(Data(
-                            ("TinyTitan prompt_cache restore_failed "
-                                + "entry=\(entryID.uuidString.lowercased()) error=\(error)\n").utf8))
+                        FileHandle.standardError.write(
+                            Data(
+                                ("TinyTitan prompt_cache restore_failed "
+                                    + "entry=\(entryID.uuidString.lowercased()) error=\(error)\n")
+                                    .utf8))
                         promptStateStore?.remove(entryIDs: [entryID])
                         promptCache.remove(entryIDs: [entryID])
                         activePromptCacheEntryID = nil
@@ -1040,7 +1083,8 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // prefill at least one token), so resume as a full prefill; the
         // entry stays active for later extending requests.
         if case .resume(let cached) = completionStart,
-           cached >= effectivePromptIDs.count {
+            cached >= effectivePromptIDs.count
+        {
             completionStart = .reset
         }
         guard effectivePromptIDs.count < maxContext else {
@@ -1124,7 +1168,8 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // B6: an engine-internal generation is never watched. Everything
         // else gets the configured set, which is inert unless the operator
         // turned watchdogs on.
-        let watchdogs = request.isEngineInternal
+        let watchdogs =
+            request.isEngineInternal
             ? WatchdogSupervisor.inert
             : WatchdogSupervisor(configuration: WatchdogConfiguration.shared)
         let watchdogTicker = watchdogs.startTicker()
@@ -1132,8 +1177,9 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // B2: a tool loop shows up in the incoming message history, not in
         // the output stream, so it is judged before anything is generated.
         if !request.isEngineInternal {
-            watchdogs.record(pingPong: PingPongWatchdog.inspect(
-                request.messages, configuration: watchdogs.configuration))
+            watchdogs.record(
+                pingPong: PingPongWatchdog.inspect(
+                    request.messages, configuration: watchdogs.configuration))
         }
         // There is no safe intervention from here -- withholding the tools
         // leaves a tool-templated prompt with a decoder that allows none,
@@ -1166,8 +1212,9 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // request (its state is the document parsed so far), over a table that
         // is built once per model.
         if let node = request.jsonSchema {
-            config.constraint = JSONConstraint(table: structuredOutputTable(), node: node,
-                                               vocab: model.config.vocabSize)
+            config.constraint = JSONConstraint(
+                table: structuredOutputTable(), node: node,
+                vocab: model.config.vocabSize)
         }
 
         // The full render, not the cache-trimmed suffix, decides whether the
@@ -1183,27 +1230,33 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // The stall clock starts at the first visible token, so a long
         // thought before the answer cannot trip it. Reasoning is watched for
         // loops alone, in a window of its own.
-        let state = GenerationDecodeState(decoder: decoder, output: AssistantOutput(
-            stops: request.generationConfig.stopStrings,
-            onEvent: onEvent,
-            observeVisible: { watchdogs.observe($0) },
-            observeReasoning: { watchdogs.observeReasoning($0) }))
+        let state = GenerationDecodeState(
+            decoder: decoder,
+            output: AssistantOutput(
+                stops: request.generationConfig.stopStrings,
+                onEvent: onEvent,
+                observeVisible: { watchdogs.observe($0) },
+                observeReasoning: { watchdogs.observeReasoning($0) }))
 
         // MTP drafts several tokens ahead of the sampler and never consults a
         // grammar, so a constrained request takes the ordinary decode path
         // (`runRawCompletion` refuses the MTP producer outright).
-        let activeProducer: any LogitProducer = if config.isPureGreedy,
-                                                   config.constraint == nil,
-                                                   let mtpDecoder,
-                                                   promptIDs.count + config.maxNewTokens
-                                                    <= mtpDecoder.draftMaxContext {
-            mtpDecoder
-        } else {
-            runner
-        }
-        let activeStart: RawCompletionStart = activeProducer is StreamingMTPDecoder
+        let activeProducer: any LogitProducer =
+            if config.isPureGreedy,
+                config.constraint == nil,
+                let mtpDecoder,
+                promptIDs.count + config.maxNewTokens
+                    <= mtpDecoder.draftMaxContext
+            {
+                mtpDecoder
+            } else {
+                runner
+            }
+        let activeStart: RawCompletionStart =
+            activeProducer is StreamingMTPDecoder
             ? .reset : completionStart
-        let activePromptIDs = activeProducer is StreamingMTPDecoder
+        let activePromptIDs =
+            activeProducer is StreamingMTPDecoder
             ? promptIDs : effectivePromptIDs
         // `@Sendable`: `runRawCompletion` is @concurrent, so a progress closure
         // that is still actor-isolated cannot be sent into it (Swift 6.4).
@@ -1232,7 +1285,8 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             slot: slot,
             // A watchdog stop is polled here, between tokens, alongside the
             // stop-string matcher's own flag.
-            shouldStop: { @Sendable in state.shouldStop || watchdogs.wantsStop }) { @Sendable progress in
+            shouldStop: { @Sendable in state.shouldStop || watchdogs.wantsStop },
+            onProgress: { @Sendable progress in
                 guard state.decodingError == nil else { return }
                 do {
                     switch progress {
@@ -1247,10 +1301,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                     state.decodingError = error
                     state.shouldStop = true
                 }
-        }
-        emitGenerationDiagnostics(activeProducer: activeProducer,
-                                  result: result,
-                                  snapshot: runnerSnapshot)
+            })
+        emitGenerationDiagnostics(
+            activeProducer: activeProducer,
+            result: result,
+            snapshot: runnerSnapshot)
         func structuredFailure(
             kind: StructuredOutputFailureKind,
             cause: StructuredOutputFailureCause
@@ -1301,9 +1356,10 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // prompt in front of "hi" is still a short question, and an agent
         // harness puts a long system prompt in front of everything.
         let asked = request.messages.last { $0.role == .user }?.content?.utf8.count ?? 0
-        watchdogs.finish(visibleBytes: content.utf8.count,
-                         requestBytes: asked,
-                         finishReason: reason)
+        watchdogs.finish(
+            visibleBytes: content.utf8.count,
+            requestBytes: asked,
+            finishReason: reason)
         // B4: neither protocol has an honest reason for "the server stopped
         // this", and inventing one breaks clients. The mapping and the note
         // live in `WatchdogSet.resolve`, which is testable without a model.
@@ -1333,11 +1389,12 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             // matching OpenAI's "completion_tokens = tokens in the generated
             // completion". A stop-string-hidden suffix is therefore counted as
             // generated even though it is filtered from the visible content.
-            usage: OpenAIUsage(promptTokens: result.prefillTokens,
-                               completionTokens: result.newTokens,
-                               totalTokens: result.prefillTokens + result.newTokens,
-                               cachedTokens: result.cachedPromptTokens,
-                               reasoningTokens: state.output.reasoningTokens),
+            usage: OpenAIUsage(
+                promptTokens: result.prefillTokens,
+                completionTokens: result.newTokens,
+                totalTokens: result.prefillTokens + result.newTokens,
+                cachedTokens: result.cachedPromptTokens,
+                reasoningTokens: state.output.reasoningTokens),
             watchdogTrips: watchdogs.trips,
             stopSequence: state.output.matchedStop,
             reasoning: state.output.reasoning,
@@ -1384,7 +1441,8 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                 content: content,
                 calls: calls,
                 result: result,
-                stopStringFiltered: stopStringFiltered) {
+                stopStringFiltered: stopStringFiltered)
+            {
                 promptStateStore?.remove(entryIDs: publication.evictedEntryIDs)
                 do {
                     guard let promptStateStore else {
@@ -1411,8 +1469,10 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                             entry: entry,
                             snapshot: snapshot)
                         if let diskError = saved.diskError {
-                            FileHandle.standardError.write(Data(
-                                ("TinyTitan prompt_cache disk_write_failed error=\(diskError)\n").utf8))
+                            FileHandle.standardError.write(
+                                Data(
+                                    ("TinyTitan prompt_cache disk_write_failed error=\(diskError)\n")
+                                        .utf8))
                         }
                         print(
                             "TinyTitan prompt_cache stored "
@@ -1426,14 +1486,16 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                     // S24: a snapshot that cannot be captured or verified is
                     // never left published without backing; drop the entry so
                     // the next hit re-prefills instead of a doomed restore.
-                    FileHandle.standardError.write(Data(
-                        ("TinyTitan prompt_cache snapshot_failed error=\(error)\n").utf8))
+                    FileHandle.standardError.write(
+                        Data(
+                            ("TinyTitan prompt_cache snapshot_failed error=\(error)\n").utf8))
                     promptCache.remove(entryIDs: [publication.entry.id])
                     activePromptCacheEntryID = nil
                 }
                 if let previousActive,
-                   previousActive != publication.entry.id,
-                   promptStateStore?.contains(previousActive) != true {
+                    previousActive != publication.entry.id,
+                    promptStateStore?.contains(previousActive) != true
+                {
                     promptCache.remove(entryIDs: [previousActive])
                 }
                 activePromptCacheEntryID = publication.entry.id
@@ -1454,9 +1516,10 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         messages: [GFTokenizer.Message],
         tools: [GFTokenizer.FunctionDefinition]
     ) -> Bool {
-        !tools.isEmpty || messages.contains {
-            $0.role == .developer || $0.role == .tool || !$0.toolCalls.isEmpty
-        }
+        !tools.isEmpty
+            || messages.contains {
+                $0.role == .developer || $0.role == .tool || !$0.toolCalls.isEmpty
+            }
     }
 
     /// Prompt tokens of a request as generation would render it — the same
@@ -1481,9 +1544,11 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
     /// *loaded session*; the router's path has no session, so it counts without
     /// one and is the one case that can differ from what a concise-mode server
     /// would spend.
-    static func promptTokenCount(_ request: ValidatedChatRequest,
-                                 tokenizer: GFTokenizer,
-                                 concisePrompt: String? = nil) throws -> Int {
+    static func promptTokenCount(
+        _ request: ValidatedChatRequest,
+        tokenizer: GFTokenizer,
+        concisePrompt: String? = nil
+    ) throws -> Int {
         // The same two transformations `preparePrompt` applies, in the same order.
         // This used to encode the request verbatim, so the count was inflated for
         // the `<model>-fast` alias and whenever `TINYTITAN_STRIP_CLI_PROMPT` is set,
@@ -1492,21 +1557,25 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         let filteredMessages: [GFTokenizer.Message]
         let filteredTools: [GFTokenizer.FunctionDefinition]
         if request.stripCLIPrompt || CLIStrip.isEnabled() {
-            let filtered = CLIStrip.filter(messages: request.messages,
-                                           tools: request.tools)
+            let filtered = CLIStrip.filter(
+                messages: request.messages,
+                tools: request.tools)
             filteredMessages = filtered.messages
             filteredTools = filtered.tools
         } else {
             filteredMessages = request.messages
             filteredTools = request.tools
         }
-        let messages = concisePrompt.map {
-            ConcisePrompt.appendingSystemPrompt($0, to: filteredMessages)
-        } ?? filteredMessages
+        let messages =
+            concisePrompt.map {
+                ConcisePrompt.appendingSystemPrompt($0, to: filteredMessages)
+            } ?? filteredMessages
         return try encodePrompt(
             tokenizer: tokenizer, messages: messages, tools: filteredTools,
-            usesToolTemplate: usesToolTemplate(messages: filteredMessages,
-                                               tools: filteredTools)).count
+            usesToolTemplate: usesToolTemplate(
+                messages: filteredMessages,
+                tools: filteredTools)
+        ).count
     }
 
     /// The vocabulary-as-bytes table, built on first use.
@@ -1548,8 +1617,9 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         tools: [GFTokenizer.FunctionDefinition],
         usesToolTemplate: Bool
     ) throws -> [Int32] {
-        try Self.encodePrompt(tokenizer: renderTokenizer, messages: messages, tools: tools,
-                              usesToolTemplate: usesToolTemplate)
+        try Self.encodePrompt(
+            tokenizer: renderTokenizer, messages: messages, tools: tools,
+            usesToolTemplate: usesToolTemplate)
     }
 
     private static func encodePrompt(
@@ -1575,52 +1645,61 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
     ) {
         if let activeMTP = activeProducer as? StreamingMTPDecoder {
             let stats = activeMTP.statistics
-            let decodeRate = result.decodeSeconds > 0
+            let decodeRate =
+                result.decodeSeconds > 0
                 ? Double(result.newTokens) / result.decodeSeconds : 0
-            print(String(format:
-                "TinyTitan mtp drafted=%d accepted=%d acceptance=%.1f%% "
-                    + "target_passes=%d emitted_per_pass=%.3f "
-                    + "prefill_s=%.3f decode_s=%.3f decode_tok_s=%.3f "
-                    + "memory_required_mib=%.1f memory_budget_mib=%.1f",
-                stats.draftedTokens,
-                stats.acceptedTokens,
-                stats.acceptanceRate * 100,
-                stats.targetBackbonePasses,
-                stats.emittedTokensPerTargetPass,
-                result.prefillSeconds,
-                result.decodeSeconds,
-                decodeRate,
-                Double(activeMTP.memoryPlan.requiredBytes) / 1_048_576,
-                Double(activeMTP.memoryPlan.budgetBytes) / 1_048_576))
+            print(
+                String(
+                    format:
+                        "TinyTitan mtp drafted=%d accepted=%d acceptance=%.1f%% "
+                        + "target_passes=%d emitted_per_pass=%.3f "
+                        + "prefill_s=%.3f decode_s=%.3f decode_tok_s=%.3f "
+                        + "memory_required_mib=%.1f memory_budget_mib=%.1f",
+                    stats.draftedTokens,
+                    stats.acceptedTokens,
+                    stats.acceptanceRate * 100,
+                    stats.targetBackbonePasses,
+                    stats.emittedTokensPerTargetPass,
+                    result.prefillSeconds,
+                    result.decodeSeconds,
+                    decodeRate,
+                    Double(activeMTP.memoryPlan.requiredBytes) / 1_048_576,
+                    Double(activeMTP.memoryPlan.budgetBytes) / 1_048_576))
             if ProcessInfo.processInfo.environment["TINYTITAN_RUNNER_STATS"] != nil,
-               stats.targetBackbonePasses > 0 {
+                stats.targetBackbonePasses > 0
+            {
                 // Per-pass phase attribution for the Track B1 investigation:
                 // where a verify pass's wall time actually goes. Milliseconds
                 // averaged over the request's target passes.
                 let passes = Double(stats.targetBackbonePasses)
                 let ms: (UInt64) -> Double = { Double($0) / passes / 1_000_000 }
-                print(String(format:
-                    "TinyTitan mtp-phases per_pass_ms proposal=%.3f checkpoint=%.3f "
-                        + "verify=%.3f verify_backbone=%.3f verify_head=%.3f "
-                        + "verify_argmax=%.3f commit=%.3f rollback=%.3f passes=%d",
-                    ms(stats.proposalNanos),
-                    ms(stats.checkpointNanos),
-                    ms(stats.verifyNanos),
-                    ms(stats.verifyBackboneNanos),
-                    ms(stats.verifyHeadNanos),
-                    ms(stats.verifyArgmaxNanos),
-                    ms(stats.commitNanos),
-                    ms(stats.rollbackNanos),
-                    stats.targetBackbonePasses))
+                print(
+                    String(
+                        format:
+                            "TinyTitan mtp-phases per_pass_ms proposal=%.3f checkpoint=%.3f "
+                            + "verify=%.3f verify_backbone=%.3f verify_head=%.3f "
+                            + "verify_argmax=%.3f commit=%.3f rollback=%.3f passes=%d",
+                        ms(stats.proposalNanos),
+                        ms(stats.checkpointNanos),
+                        ms(stats.verifyNanos),
+                        ms(stats.verifyBackboneNanos),
+                        ms(stats.verifyHeadNanos),
+                        ms(stats.verifyArgmaxNanos),
+                        ms(stats.commitNanos),
+                        ms(stats.rollbackNanos),
+                        stats.targetBackbonePasses))
             }
         } else {
-            let decodeRate = result.decodeSeconds > 0
+            let decodeRate =
+                result.decodeSeconds > 0
                 ? Double(result.newTokens) / result.decodeSeconds : 0
-            print(String(format:
-                "TinyTitan generation prefill_s=%.3f decode_s=%.3f decode_tok_s=%.3f",
-                result.prefillSeconds,
-                result.decodeSeconds,
-                decodeRate))
+            print(
+                String(
+                    format:
+                        "TinyTitan generation prefill_s=%.3f decode_s=%.3f decode_tok_s=%.3f",
+                    result.prefillSeconds,
+                    result.decodeSeconds,
+                    decodeRate))
         }
         if ProcessInfo.processInfo.environment["TINYTITAN_RUNNER_STATS"] != nil {
             emitRunnerDiagnostics(result: result, snapshot: runnerSnapshot)
@@ -1640,63 +1719,66 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         }
         let missIoNanos = runner.totalMissIoNanos - snapshot.missIo
         let exposedIoNanos = runner.totalExposedIoNanos - snapshot.exposedIo
-        let hiddenPercent = missIoNanos == 0 ? 100.0
+        let hiddenPercent =
+            missIoNanos == 0
+            ? 100.0
             : 100 * (1 - Double(exposedIoNanos) / Double(missIoNanos))
         let expert = runner.expertStreamingStatistics()
             .subtracting(snapshot.expertStreaming)
         let gpuHits = runner.totalGPUClassifiedHits - snapshot.gpuClassifiedHits
         let gpuMisses = runner.totalGPUClassifiedMisses - snapshot.gpuClassifiedMisses
         let gpuAllHit = runner.totalGPUResidencyAllHitLayers - snapshot.gpuAllHitLayers
-        print(String(
-            format: "TinyTitan runner cb1_ms=%.3f io_ms=%.3f cb2_ms=%.3f "
-                + "head_ms=%.3f head_fused_ms=%.3f rdadvise_ms=%.3f "
-                + "wait_ms=%.3f body_ms=%.3f rdadvise_calls=%llu rdadvise_mib=%.1f "
-                + "expert_hit_rate=%.4f expert_hits=%llu expert_misses=%llu "
-                + "expert_evictions=%llu expert_reloads=%llu expert_read_mib=%.1f "
-                + "expert_load_p50_ms=%.3f expert_load_p95_ms=%.3f "
-                + "expert_load_p99_ms=%.3f io_hidden_pct=%.2f hit_fixup_layers=%llu "
-                + "router_readback_ms=%.4f cache_plan_ms=%.4f io_queue_ms=%.4f "
-                + "io_completion_to_fixup_ms=%.4f io_host_waits=%llu "
-                + "io_host_waits_avoided=%llu gpu_classified_hits=%llu "
-                + "gpu_classified_misses=%llu gpu_all_hit_layers=%llu "
-                + "prefetch_issued_per_token=%.2f prefetch_adopted_per_token=%.2f "
-                + "pre_ms=%.3f pre_release_ms=%.3f pre_pin_ms=%.3f pre_reserve_ms=%.3f "
-                + "embed_ms=%.3f gather_ms=%.3f loop_sample_ms=%.3f "
-                + "loop_progress_ms=%.3f loop_other_ms=%.3f",
-            ms(runner.totalCb1Nanos, snapshot.cb1),
-            ms(runner.totalIoNanos, snapshot.io),
-            ms(runner.totalCb2Nanos, snapshot.cb2),
-            ms(runner.totalHeadNanos, snapshot.head),
-            ms(runner.totalHeadFusedNanos, snapshot.headFused),
-            ms(runner.totalRDAdviseNanos, snapshot.rdadvise),
-            ms(runner.totalWaitNanos, snapshot.wait),
-            ms(runner.totalBodyNanos, snapshot.body),
-            runner.totalRDAdviseCalls - snapshot.rdadviseCalls,
-            Double(runner.totalRDAdviseBytes - snapshot.rdadviseBytes) / 1_048_576,
-            expert.hitRate, expert.hits, expert.misses, expert.evictions,
-            expert.reloads, Double(expert.bytesRead) / 1_048_576,
-            Double(expert.loadLatencyPercentile(0.50)) / 1_000_000,
-            Double(expert.loadLatencyPercentile(0.95)) / 1_000_000,
-            Double(expert.loadLatencyPercentile(0.99)) / 1_000_000,
-            hiddenPercent, runner.totalHitFixupLayers - snapshot.hitFixupLayers,
-            ms(runner.totalRouterReadbackNanos, snapshot.routerReadback),
-            ms(runner.totalCachePlanNanos, snapshot.cachePlan),
-            ms(runner.totalIOQueueNanos, snapshot.ioQueue),
-            ms(runner.totalIOCompletionToFixupSubmitNanos, snapshot.ioCompletionToFixup),
-            runner.totalExpertIOHostWaits - snapshot.ioHostWaits,
-            runner.totalExpertIOHostWaitsAvoided - snapshot.ioHostWaitsAvoided,
-            gpuHits, gpuMisses, gpuAllHit,
-            Double(runner.totalPrefetchIssued &- snapshot.prefetchIssued) / Double(tokens),
-            Double(runner.totalPrefetchAdopted &- snapshot.prefetchAdopted) / Double(tokens),
-            ms(runner.totalPreambleNanos, snapshot.preamble),
-            ms(runner.totalPreambleReleaseNanos, snapshot.preambleRelease),
-            ms(runner.totalPreamblePinNanos, snapshot.preamblePin),
-            ms(runner.totalPreambleReserveNanos, snapshot.preambleReserve),
-            ms(runner.totalEmbedNanos, snapshot.embed),
-            ms(runner.totalGatherNanos, snapshot.gather),
-            ms(runner.totalLoopSampleNanos, snapshot.loopSample),
-            ms(runner.totalLoopProgressNanos, snapshot.loopProgress),
-            ms(runner.totalLoopOtherNanos, snapshot.loopOther)))
+        print(
+            String(
+                format: "TinyTitan runner cb1_ms=%.3f io_ms=%.3f cb2_ms=%.3f "
+                    + "head_ms=%.3f head_fused_ms=%.3f rdadvise_ms=%.3f "
+                    + "wait_ms=%.3f body_ms=%.3f rdadvise_calls=%llu rdadvise_mib=%.1f "
+                    + "expert_hit_rate=%.4f expert_hits=%llu expert_misses=%llu "
+                    + "expert_evictions=%llu expert_reloads=%llu expert_read_mib=%.1f "
+                    + "expert_load_p50_ms=%.3f expert_load_p95_ms=%.3f "
+                    + "expert_load_p99_ms=%.3f io_hidden_pct=%.2f hit_fixup_layers=%llu "
+                    + "router_readback_ms=%.4f cache_plan_ms=%.4f io_queue_ms=%.4f "
+                    + "io_completion_to_fixup_ms=%.4f io_host_waits=%llu "
+                    + "io_host_waits_avoided=%llu gpu_classified_hits=%llu "
+                    + "gpu_classified_misses=%llu gpu_all_hit_layers=%llu "
+                    + "prefetch_issued_per_token=%.2f prefetch_adopted_per_token=%.2f "
+                    + "pre_ms=%.3f pre_release_ms=%.3f pre_pin_ms=%.3f pre_reserve_ms=%.3f "
+                    + "embed_ms=%.3f gather_ms=%.3f loop_sample_ms=%.3f "
+                    + "loop_progress_ms=%.3f loop_other_ms=%.3f",
+                ms(runner.totalCb1Nanos, snapshot.cb1),
+                ms(runner.totalIoNanos, snapshot.io),
+                ms(runner.totalCb2Nanos, snapshot.cb2),
+                ms(runner.totalHeadNanos, snapshot.head),
+                ms(runner.totalHeadFusedNanos, snapshot.headFused),
+                ms(runner.totalRDAdviseNanos, snapshot.rdadvise),
+                ms(runner.totalWaitNanos, snapshot.wait),
+                ms(runner.totalBodyNanos, snapshot.body),
+                runner.totalRDAdviseCalls - snapshot.rdadviseCalls,
+                Double(runner.totalRDAdviseBytes - snapshot.rdadviseBytes) / 1_048_576,
+                expert.hitRate, expert.hits, expert.misses, expert.evictions,
+                expert.reloads, Double(expert.bytesRead) / 1_048_576,
+                Double(expert.loadLatencyPercentile(0.50)) / 1_000_000,
+                Double(expert.loadLatencyPercentile(0.95)) / 1_000_000,
+                Double(expert.loadLatencyPercentile(0.99)) / 1_000_000,
+                hiddenPercent, runner.totalHitFixupLayers - snapshot.hitFixupLayers,
+                ms(runner.totalRouterReadbackNanos, snapshot.routerReadback),
+                ms(runner.totalCachePlanNanos, snapshot.cachePlan),
+                ms(runner.totalIOQueueNanos, snapshot.ioQueue),
+                ms(runner.totalIOCompletionToFixupSubmitNanos, snapshot.ioCompletionToFixup),
+                runner.totalExpertIOHostWaits - snapshot.ioHostWaits,
+                runner.totalExpertIOHostWaitsAvoided - snapshot.ioHostWaitsAvoided,
+                gpuHits, gpuMisses, gpuAllHit,
+                Double(runner.totalPrefetchIssued &- snapshot.prefetchIssued) / Double(tokens),
+                Double(runner.totalPrefetchAdopted &- snapshot.prefetchAdopted) / Double(tokens),
+                ms(runner.totalPreambleNanos, snapshot.preamble),
+                ms(runner.totalPreambleReleaseNanos, snapshot.preambleRelease),
+                ms(runner.totalPreamblePinNanos, snapshot.preamblePin),
+                ms(runner.totalPreambleReserveNanos, snapshot.preambleReserve),
+                ms(runner.totalEmbedNanos, snapshot.embed),
+                ms(runner.totalGatherNanos, snapshot.gather),
+                ms(runner.totalLoopSampleNanos, snapshot.loopSample),
+                ms(runner.totalLoopProgressNanos, snapshot.loopProgress),
+                ms(runner.totalLoopOtherNanos, snapshot.loopOther)))
         if let ring = runner.prefetchRingSummary { print("TinyTitan \(ring)") }
     }
 
@@ -1705,29 +1787,35 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         let summary = runner.kernelGPUTimingSummary()
         let totalGPU = summary.reduce(0) { $0 + $1.millis }
         for entry in summary {
-            print(String(
-                format: "TinyTitan kernel role=%@ gpu_ms=%.3f per_token_ms=%.3f count=%d",
-                entry.role, entry.millis, entry.millis / Double(tokens), entry.count))
+            print(
+                String(
+                    format: "TinyTitan kernel role=%@ gpu_ms=%.3f per_token_ms=%.3f count=%d",
+                    entry.role, entry.millis, entry.millis / Double(tokens), entry.count))
         }
         // Role sums overlap by design. Merged busy/span is the actual queue
         // occupancy and distinguishes useful concurrency from idle gaps.
         let occupancy = runner.kernelGPUOccupancy()
-        print(String(format: "TinyTitan kernel total_gpu_ms=%.3f gpu_share_of_decode=%.1f%%",
-            totalGPU,
-            result.decodeSeconds > 0
-                ? totalGPU / (result.decodeSeconds * 1000) * 100 : 0))
+        print(
+            String(
+                format: "TinyTitan kernel total_gpu_ms=%.3f gpu_share_of_decode=%.1f%%",
+                totalGPU,
+                result.decodeSeconds > 0
+                    ? totalGPU / (result.decodeSeconds * 1000) * 100 : 0))
         for gap in runner.kernelGPUGaps().prefix(8) {
-            print(String(
-                format: "TinyTitan gap %@ total_ms=%.1f per_token_ms=%.3f count=%d",
-                gap.transition, gap.millis, gap.millis / Double(tokens), gap.count))
+            print(
+                String(
+                    format: "TinyTitan gap %@ total_ms=%.1f per_token_ms=%.3f count=%d",
+                    gap.transition, gap.millis, gap.millis / Double(tokens), gap.count))
         }
-        print(String(format: "TinyTitan kernel busy_ms=%.3f span_ms=%.3f "
-            + "occupancy=%.1f%% busy_share_of_decode=%.1f%% busy_per_token_ms=%.3f",
-            occupancy.busyMillis, occupancy.spanMillis,
-            occupancy.spanMillis > 0
-                ? occupancy.busyMillis / occupancy.spanMillis * 100 : 0,
-            result.decodeSeconds > 0
-                ? occupancy.busyMillis / (result.decodeSeconds * 1000) * 100 : 0,
-            occupancy.busyMillis / Double(tokens)))
+        print(
+            String(
+                format: "TinyTitan kernel busy_ms=%.3f span_ms=%.3f "
+                    + "occupancy=%.1f%% busy_share_of_decode=%.1f%% busy_per_token_ms=%.3f",
+                occupancy.busyMillis, occupancy.spanMillis,
+                occupancy.spanMillis > 0
+                    ? occupancy.busyMillis / occupancy.spanMillis * 100 : 0,
+                result.decodeSeconds > 0
+                    ? occupancy.busyMillis / (result.decodeSeconds * 1000) * 100 : 0,
+                occupancy.busyMillis / Double(tokens)))
     }
 }

@@ -40,24 +40,28 @@ struct TokenizerTests {
 
     // MARK: - Encode / decode
 
-    @Test("Round-trip ASCII", arguments: [
-        "Hello, world.",
-        "The quick brown fox jumps over the lazy dog.",
-        "code:  let x = 42;  // comment",
-        "numbers 0 1 2 3 4 5 6 7 8 9",
-    ])
+    @Test(
+        "Round-trip ASCII",
+        arguments: [
+            "Hello, world.",
+            "The quick brown fox jumps over the lazy dog.",
+            "code:  let x = 42;  // comment",
+            "numbers 0 1 2 3 4 5 6 7 8 9",
+        ])
     func roundTripASCII(_ text: String) {
         let ids = tok.encode(text, addBOS: false)
         #expect(tok.decode(ids) == text)
     }
 
-    @Test("Round-trip multi-byte UTF-8", arguments: [
-        "你好，世界。",
-        "漢字",
-        "🦝 raccoon emoji",
-        "mixed 漢 and 🦝 and a",
-        "Здравствуй",
-    ])
+    @Test(
+        "Round-trip multi-byte UTF-8",
+        arguments: [
+            "你好，世界。",
+            "漢字",
+            "🦝 raccoon emoji",
+            "mixed 漢 and 🦝 and a",
+            "Здравствуй",
+        ])
     func roundTripMultibyte(_ text: String) {
         let ids = tok.encode(text, addBOS: false)
         #expect(tok.decode(ids) == text)
@@ -93,16 +97,18 @@ struct TokenizerTests {
         try assertStreams(target)
     }
 
-    @Test("Streaming detokenizer reassembles multi-byte UTF-8", arguments: [
-        "漢字",
-        "你好",
-        "🦝🦝🦝",
-        "mixed 漢 and 🦝",
-        "Здравствуй мир",
-        "ends with emoji 🦝",
-        "🦝 starts with emoji",
-        "🦝 middle 漢 end",
-    ])
+    @Test(
+        "Streaming detokenizer reassembles multi-byte UTF-8",
+        arguments: [
+            "漢字",
+            "你好",
+            "🦝🦝🦝",
+            "mixed 漢 and 🦝",
+            "Здравствуй мир",
+            "ends with emoji 🦝",
+            "🦝 starts with emoji",
+            "🦝 middle 漢 end",
+        ])
     func streamingMultibyte(_ target: String) throws {
         try assertStreams(target)
     }
@@ -113,18 +119,21 @@ struct TokenizerTests {
         var detok = GFDetokenizer(tokenizer: tok)
         for id in ids {
             let delta = try detok.push(id)
-            #expect(!delta.unicodeScalars.contains("\u{FFFD}"),
-                    "delta contained replacement char: '\(delta)'")
+            #expect(
+                !delta.unicodeScalars.contains("\u{FFFD}"),
+                "delta contained replacement char: '\(delta)'")
         }
         let tail = detok.flush()
         #expect(!tail.unicodeScalars.contains("\u{FFFD}"))
     }
 
-    @Test("Streaming detokenizer preserves long mixed output", arguments: [
-        "The quick brown fox jumps over the lazy dog. 0123456789\n",
-        "\u{E000}\u{E001}\u{E002}\u{E003}\u{E004}\u{E005}\u{E006}\u{E007}",
-        "TinyTitan 漢字 Здравствуй 🦝 café Ελληνικά \u{E000}\n",
-    ])
+    @Test(
+        "Streaming detokenizer preserves long mixed output",
+        arguments: [
+            "The quick brown fox jumps over the lazy dog. 0123456789\n",
+            "\u{E000}\u{E001}\u{E002}\u{E003}\u{E004}\u{E005}\u{E006}\u{E007}",
+            "TinyTitan 漢字 Здравствуй 🦝 café Ελληνικά \u{E000}\n",
+        ])
     func streamingLongOutput(_ seed: String) throws {
         var text = seed
         var ids = tok.encode(text, addBOS: false)
@@ -174,10 +183,12 @@ struct TokenizerTests {
         // The compact fixture keeps its base ByteLevel vocabulary dense and
         // the production added-token IDs sparse. Exercise both sets without ever
         // sampling one of the intentionally absent padded rows.
-        let denseCount = (0..<tok.vocabSize).first {
-            tok.tokenizer.convertIdToToken($0) == nil
-        }!
-        let validIDs = Array(0..<denseCount).map(Int32.init)
+        let denseCount = try #require(
+            (0..<tok.vocabSize).first {
+                tok.tokenizer.convertIdToToken($0) == nil
+            })
+        let validIDs =
+            Array(0..<denseCount).map(Int32.init)
             + tok.byteLevelDecoderConfiguration.addedTokens.keys
         for _ in 0..<64 {
             let ids = (0..<128).map { _ in
@@ -276,7 +287,8 @@ struct TokenizerTests {
             assembled += try detok.push(id)
         }
         assembled += detok.flush()
-        #expect(assembled == target, "stream reassembly mismatch: got '\(assembled)' want '\(target)'")
+        #expect(
+            assembled == target, "stream reassembly mismatch: got '\(assembled)' want '\(target)'")
     }
 }
 
@@ -306,7 +318,8 @@ struct TokenizerFolderResolutionTests {
         try seed(snapshot)
         // Compare canonical paths: the resolver standardises what it returns,
         // which adds the trailing slash a directory URL carries.
-        #expect(GFTokenizer.resolvedTokenizerFolder(forModelDirectory: snapshot)?.path
+        #expect(
+            GFTokenizer.resolvedTokenizerFolder(forModelDirectory: snapshot)?.path
                 == snapshot.path)
         // The sidecar lookup alone finds nothing here, which is what the
         // broken call sites were really asking for.
@@ -315,7 +328,8 @@ struct TokenizerFolderResolutionTests {
         // An install: tokenizer/ only.
         let install = root.appendingPathComponent("install")
         try seed(install.appendingPathComponent("tokenizer"))
-        #expect(GFTokenizer.resolvedTokenizerFolder(forModelDirectory: install)?.path
+        #expect(
+            GFTokenizer.resolvedTokenizerFolder(forModelDirectory: install)?.path
                 == install.appendingPathComponent("tokenizer").path)
 
         // Neither: refuse rather than name a folder with nothing in it.

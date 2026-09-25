@@ -38,9 +38,10 @@ extension TinyTitanBench {
         let group = 64
         let weightBytes = rows * n
         let groups = rows * (n / group)
-        print("cpu int8 affine gemv: \(rows)x\(n), "
-              + "\(Double(weightBytes) / 1e6) MB of weights per pass, "
-              + "\(iterations) passes")
+        print(
+            "cpu int8 affine gemv: \(rows)x\(n), "
+                + "\(Double(weightBytes) / 1e6) MB of weights per pass, "
+                + "\(iterations) passes")
         print("performance cores reported: \(Int8AffineGEMV.preferredThreads)")
 
         let weights = UnsafeMutablePointer<UInt8>.allocate(capacity: weightBytes)
@@ -49,49 +50,62 @@ extension TinyTitanBench {
         let x = UnsafeMutablePointer<Float>.allocate(capacity: n)
         let out = UnsafeMutablePointer<Float>.allocate(capacity: rows)
         defer {
-            weights.deallocate(); scales.deallocate(); biases.deallocate()
-            x.deallocate(); out.deallocate()
+            weights.deallocate()
+            scales.deallocate()
+            biases.deallocate()
+            x.deallocate()
+            out.deallocate()
         }
         var state: UInt64 = 0x2545_F491_4F6C_DD1D
         func next() -> UInt64 {
-            state ^= state << 13; state ^= state >> 7; state ^= state << 17
+            state ^= state << 13
+            state ^= state >> 7
+            state ^= state << 17
             return state
         }
         for i in 0..<weightBytes { weights[i] = UInt8(truncatingIfNeeded: next()) }
         // 1.0 and 0.0 as BF16 bit patterns: the arithmetic is the same
         // whatever the constants, and the measurement is of the reads.
-        for i in 0..<groups { scales[i] = 0x3F80; biases[i] = 0 }
+        for i in 0..<groups {
+            scales[i] = 0x3F80
+            biases[i] = 0
+        }
         for i in 0..<n { x[i] = Float(i % 7) * 0.125 }
 
         let perPass = Double(weightBytes + groups * 4)
-        print("  \("threads".padding(toLength: 8, withPad: " ", startingAt: 0))"
-              + "\("ms/pass".padding(toLength: 10, withPad: " ", startingAt: 0))"
-              + "\("GB/s".padding(toLength: 9, withPad: " ", startingAt: 0))"
-              + "2B tok/s at 8-bit")
+        print(
+            "  \("threads".padding(toLength: 8, withPad: " ", startingAt: 0))"
+                + "\("ms/pass".padding(toLength: 10, withPad: " ", startingAt: 0))"
+                + "\("GB/s".padding(toLength: 9, withPad: " ", startingAt: 0))"
+                + "2B tok/s at 8-bit")
         for threads in [1, 2, 4, 6, 8] {
             // One untimed pass so the first one's page faults are not the
             // measurement.
-            Int8AffineGEMV.threaded(weights: weights, scales: scales, biases: biases,
-                                    x: x, rows: rows, n: n, out: out, threads: threads)
+            Int8AffineGEMV.threaded(
+                weights: weights, scales: scales, biases: biases,
+                x: x, rows: rows, n: n, out: out, threads: threads)
             let started = ContinuousClock.now
             for _ in 0..<iterations {
-                Int8AffineGEMV.threaded(weights: weights, scales: scales, biases: biases,
-                                        x: x, rows: rows, n: n, out: out, threads: threads)
+                Int8AffineGEMV.threaded(
+                    weights: weights, scales: scales, biases: biases,
+                    x: x, rows: rows, n: n, out: out, threads: threads)
             }
             let elapsed = started.duration(to: .now)
-            let seconds = Double(elapsed.components.seconds)
+            let seconds =
+                Double(elapsed.components.seconds)
                 + Double(elapsed.components.attoseconds) / 1e18
             let perIteration = seconds / Double(iterations)
             let bandwidth = perPass / perIteration / 1e9
             // A 2B at 8-bit reads about 1.9 GB per token, the tied output
             // head included -- it is read in full for every token.
             let tokens = bandwidth / 1.9
-            print(String(format: "  %-8d%-10.2f%-9.1f%.1f",
-                         threads, perIteration * 1e3, bandwidth, tokens))
+            print(
+                String(
+                    format: "  %-8d%-10.2f%-9.1f%.1f",
+                    threads, perIteration * 1e3, bandwidth, tokens))
         }
         print("  (checksum \(out[0]))")
     }
-
 
     /// Hold the memory system at the side-engine's working width for a while.
     ///
@@ -100,23 +114,34 @@ extension TinyTitanBench {
     /// the CPU is reading. A side-engine that halves the throughput of the
     /// model the person is waiting for is not a side-engine.
     static func runCPULoad(seconds: Double, threads: Int) {
-        let rows = 8192, n = 8192, group = 64
-        let weightBytes = rows * n, groups = rows * (n / group)
+        let rows = 8192
+        let n = 8192
+        let group = 64
+        let weightBytes = rows * n
+        let groups = rows * (n / group)
         let weights = UnsafeMutablePointer<UInt8>.allocate(capacity: weightBytes)
         let scales = UnsafeMutablePointer<UInt16>.allocate(capacity: groups)
         let biases = UnsafeMutablePointer<UInt16>.allocate(capacity: groups)
         let x = UnsafeMutablePointer<Float>.allocate(capacity: n)
         let out = UnsafeMutablePointer<Float>.allocate(capacity: rows)
         defer {
-            weights.deallocate(); scales.deallocate(); biases.deallocate()
-            x.deallocate(); out.deallocate()
+            weights.deallocate()
+            scales.deallocate()
+            biases.deallocate()
+            x.deallocate()
+            out.deallocate()
         }
         var state: UInt64 = 0x2545_F491_4F6C_DD1D
         for i in 0..<weightBytes {
-            state ^= state << 13; state ^= state >> 7; state ^= state << 17
+            state ^= state << 13
+            state ^= state >> 7
+            state ^= state << 17
             weights[i] = UInt8(truncatingIfNeeded: state)
         }
-        for i in 0..<groups { scales[i] = 0x3F80; biases[i] = 0 }
+        for i in 0..<groups {
+            scales[i] = 0x3F80
+            biases[i] = 0
+        }
         for i in 0..<n { x[i] = Float(i % 7) * 0.125 }
 
         print("cpu load: \(threads) threads for \(seconds)s")
@@ -124,35 +149,38 @@ extension TinyTitanBench {
         var passes = 0
         let started = ContinuousClock.now
         while ContinuousClock.now < deadline {
-            Int8AffineGEMV.threaded(weights: weights, scales: scales, biases: biases,
-                                    x: x, rows: rows, n: n, out: out, threads: threads)
+            Int8AffineGEMV.threaded(
+                weights: weights, scales: scales, biases: biases,
+                x: x, rows: rows, n: n, out: out, threads: threads)
             passes += 1
         }
         let elapsed = started.duration(to: .now)
-        let taken = Double(elapsed.components.seconds)
+        let taken =
+            Double(elapsed.components.seconds)
             + Double(elapsed.components.attoseconds) / 1e18
         let bandwidth = Double(passes) * Double(weightBytes + groups * 4) / taken / 1e9
-        print(String(format: "  %d passes in %.1fs, %.1f GB/s (checksum %.0f)",
-                     passes, taken, bandwidth, out[0]))
+        print(
+            String(
+                format: "  %d passes in %.1fs, %.1f GB/s (checksum %.0f)",
+                passes, taken, bandwidth, out[0]))
     }
 
+    /// What the CPU commands could not load, and why both shapes were refused.
+    enum DenseModelError: Error, CustomStringConvertible {
+        case notAModel(String)
+        case unreadableVocabulary(String)
 
-/// What the CPU commands could not load, and why both shapes were refused.
-enum DenseModelError: Error, CustomStringConvertible {
-    case notAModel(String)
-    case unreadableVocabulary(String)
-
-    var description: String {
-        switch self {
-        case .notAModel(let path):
-            return "\(path) is neither a .gturbo install (no manifest.json) nor a "
-                + "safetensors snapshot (no config.json)"
-        case .unreadableVocabulary(let path):
-            return "\(path) carries neither a vocab.json mapping nor a tokenizer, "
-                + "so its continuations cannot be checked"
+        var description: String {
+            switch self {
+            case .notAModel(let path):
+                return "\(path) is neither a .gturbo install (no manifest.json) nor a "
+                    + "safetensors snapshot (no config.json)"
+            case .unreadableVocabulary(let path):
+                return "\(path) carries neither a vocab.json mapping nor a tokenizer, "
+                    + "so its continuations cannot be checked"
+            }
         }
     }
-}
 
     /// Loads a dense CPU model in either shape it ships in.
     ///
@@ -166,11 +194,14 @@ enum DenseModelError: Error, CustomStringConvertible {
     static func loadDenseSnapshot(_ path: String) throws -> AffineSnapshot {
         let directory = URL(fileURLWithPath: path)
         if FileManager.default.fileExists(
-            atPath: directory.appendingPathComponent("manifest.json").path) {
+            atPath: directory.appendingPathComponent("manifest.json").path)
+        {
             return try AffineSnapshot(gturbo: directory)
         }
-        guard FileManager.default.fileExists(
-            atPath: directory.appendingPathComponent("config.json").path) else {
+        guard
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("config.json").path)
+        else {
             throw DenseModelError.notAModel(path)
         }
         return try AffineSnapshot(directory: directory)
@@ -188,9 +219,11 @@ enum DenseModelError: Error, CustomStringConvertible {
     /// decoded id, so the two columns of the report read alike.
     static func denseVocabulary(
         _ path: String, directory: URL
-    ) throws -> (idFor: (String) -> Int?,
-                 textFor: (Int) -> String,
-                 labelFor: (String) -> String) {
+    ) throws -> (
+        idFor: (String) -> Int?,
+        textFor: (Int) -> String,
+        labelFor: (String) -> String
+    ) {
         let vocabularyURL = directory.appendingPathComponent("vocab.json")
         if FileManager.default.fileExists(atPath: vocabularyURL.path) {
             let object = try JSONSerialization.jsonObject(with: Data(contentsOf: vocabularyURL))
@@ -200,24 +233,28 @@ enum DenseModelError: Error, CustomStringConvertible {
             var inverse: [Int: String] = [:]
             inverse.reserveCapacity(mapping.count)
             for (text, id) in mapping { inverse[id] = text }
-            return ({ (word: String) -> Int? in mapping[word] },
-                    { (id: Int) -> String in inverse[id] ?? "?" },
-                    { (word: String) -> String in word })
+            return (
+                { (word: String) -> Int? in mapping[word] },
+                { (id: Int) -> String in inverse[id] ?? "?" },
+                { (word: String) -> String in word }
+            )
         }
         guard let tokenizer = try loadTokenizer(directory) else {
             throw DenseModelError.unreadableVocabulary(path)
         }
-        return ({ (word: String) -> Int? in
-            // The checks spell a leading space as U+0120, the byte-level
-            // encoding of a space. A word has to be exactly one token to be
-            // comparable with the reference's expectation.
-            let text = word.replacingOccurrences(of: "\u{120}", with: " ")
-            let ids = tokenizer.encode(text, addBOS: false)
-            return ids.count == 1 ? Int(ids[0]) : nil
-        }, { (id: Int) -> String in tokenizer.decode([Int32(id)]) },
-           { (word: String) -> String in
-               word.replacingOccurrences(of: "\u{120}", with: " ")
-           })
+        return (
+            { (word: String) -> Int? in
+                // The checks spell a leading space as U+0120, the byte-level
+                // encoding of a space. A word has to be exactly one token to be
+                // comparable with the reference's expectation.
+                let text = word.replacingOccurrences(of: "\u{120}", with: " ")
+                let ids = tokenizer.encode(text, addBOS: false)
+                return ids.count == 1 ? Int(ids[0]) : nil
+            }, { (id: Int) -> String in tokenizer.decode([Int32(id)]) },
+            { (word: String) -> String in
+                word.replacingOccurrences(of: "\u{120}", with: " ")
+            }
+        )
     }
 
     /// Qwen3.5-2B on the CPU, checked against the continuations that define
@@ -240,21 +277,28 @@ enum DenseModelError: Error, CustomStringConvertible {
             return Double(elapsed.components.seconds)
                 + Double(elapsed.components.attoseconds) / 1e18
         }
-        print("\(path): \(snapshot.configuration.layers) layers, "
-              + "hidden \(snapshot.configuration.hiddenSize), "
-              + "rotary \(snapshot.configuration.rotaryDim)/"
-              + "\(snapshot.configuration.headDim), "
-              + "loaded in \(String(format: "%.2fs", seconds(started)))")
+        print(
+            "\(path): \(snapshot.configuration.layers) layers, "
+                + "hidden \(snapshot.configuration.hiddenSize), "
+                + "rotary \(snapshot.configuration.rotaryDim)/"
+                + "\(snapshot.configuration.headDim), "
+                + "loaded in \(String(format: "%.2fs", seconds(started)))")
         print("threads: \(model.threads)")
 
         let vocabulary = try Self.denseVocabulary(path, directory: directory)
 
         let checks: [([String], String)] = [
             (["Once", "\u{120}upon", "\u{120}a"], "\u{120}time"),
-            (["The", "\u{120}capital", "\u{120}of", "\u{120}France", "\u{120}is"],
-             "\u{120}Paris"),
-            (["The", "\u{120}quick", "\u{120}brown", "\u{120}fox", "\u{120}jumps",
-              "\u{120}over", "\u{120}the", "\u{120}lazy"], "\u{120}dog"),
+            (
+                ["The", "\u{120}capital", "\u{120}of", "\u{120}France", "\u{120}is"],
+                "\u{120}Paris"
+            ),
+            (
+                [
+                    "The", "\u{120}quick", "\u{120}brown", "\u{120}fox", "\u{120}jumps",
+                    "\u{120}over", "\u{120}the", "\u{120}lazy",
+                ], "\u{120}dog"
+            ),
         ]
         var failures = 0
         for (index, (words, expected)) in checks.enumerated() {
@@ -263,7 +307,9 @@ enum DenseModelError: Error, CustomStringConvertible {
             let run = ContinuousClock.now
             for word in words {
                 guard let id = vocabulary.idFor(word) else {
-                    print("  no token for \(word)"); failures += 1; break
+                    print("  no token for \(word)")
+                    failures += 1
+                    break
                 }
                 logits = try model.step(token: id)
             }
@@ -276,10 +322,12 @@ enum DenseModelError: Error, CustomStringConvertible {
             let prompt = words.map { $0.replacingOccurrences(of: "\u{120}", with: " ") }
                 .joined()
             let rate = Double(words.count) / seconds(run)
-            print(String(format: "  %@ %-46@ -> %@ (%.2f), wanted %@  [%.1f tok/s]",
-                         ok ? "ok " : "FAIL", prompt as NSString,
-                         vocabulary.textFor(best), logits[best],
-                         vocabulary.labelFor(expected), rate))
+            print(
+                String(
+                    format: "  %@ %-46@ -> %@ (%.2f), wanted %@  [%.1f tok/s]",
+                    ok ? "ok " : "FAIL", prompt as NSString,
+                    vocabulary.textFor(best), logits[best],
+                    vocabulary.labelFor(expected), rate))
             if let dump {
                 try? FileManager.default.createDirectory(
                     at: dump, withIntermediateDirectories: true)
@@ -288,8 +336,10 @@ enum DenseModelError: Error, CustomStringConvertible {
                 try? payload.write(to: file)
             }
         }
-        print(failures == 0 ? "all continuations correct"
-              : "\(failures) of \(checks.count) wrong")
+        print(
+            failures == 0
+                ? "all continuations correct"
+                : "\(failures) of \(checks.count) wrong")
         // Exit non-zero on a mismatch. Without this the process returned 0
         // after printing "N of 3 wrong", so a scripted run -- and this command
         // exists to be scripted -- read a dead forward pass as a pass. The
@@ -297,7 +347,6 @@ enum DenseModelError: Error, CustomStringConvertible {
         // pass matches the oracle.
         exit(failures == 0 ? 0 : 1)
     }
-
 
     /// Held-out text through the CPU forward pass, as mean negative
     /// log-likelihood and perplexity.
@@ -315,10 +364,12 @@ enum DenseModelError: Error, CustomStringConvertible {
     /// `nll-out`, when given, is one negative log-likelihood per scored token,
     /// so a caller can compare two installs position by position instead of
     /// comparing two means.
-    static func runCPUQwen35Perplexity(snapshot path: String,
-                                       text: URL,
-                                       maximumTokens: Int,
-                                       nllOutput: URL?) throws {
+    static func runCPUQwen35Perplexity(
+        snapshot path: String,
+        text: URL,
+        maximumTokens: Int,
+        nllOutput: URL?
+    ) throws {
         let directory = URL(fileURLWithPath: path)
         let snapshot = try Self.loadDenseSnapshot(path)
         let requested = ProcessInfo.processInfo.environment["TINYTITAN_CPU35_THREADS"]
@@ -347,7 +398,8 @@ enum DenseModelError: Error, CustomStringConvertible {
             previous = ids[index]
         }
         let elapsed = started.duration(to: .now)
-        let seconds = Double(elapsed.components.seconds)
+        let seconds =
+            Double(elapsed.components.seconds)
             + Double(elapsed.components.attoseconds) / 1e18
 
         let mean = nlls.reduce(0, +) / Double(nlls.count)
@@ -355,13 +407,18 @@ enum DenseModelError: Error, CustomStringConvertible {
         // rather than merely the same file name.
         var tokenHash: UInt64 = 0xcbf2_9ce4_8422_2325
         for id in ids {
-            tokenHash = (tokenHash ^ UInt64(UInt32(truncatingIfNeeded: id)))
+            tokenHash =
+                (tokenHash ^ UInt64(UInt32(truncatingIfNeeded: id)))
                 &* 0x0000_0100_0000_01b3
         }
-        print(String(format: "%@: %d tokens scored, threads %d, token hash %016llx",
-                     path as NSString, nlls.count, model.threads, tokenHash))
-        print(String(format: "mean nll %.6f  perplexity %.6f  seconds %.1f  (%.1f tok/s)",
-                     mean, exp(mean), seconds, Double(nlls.count) / seconds))
+        print(
+            String(
+                format: "%@: %d tokens scored, threads %d, token hash %016llx",
+                path as NSString, nlls.count, model.threads, tokenHash))
+        print(
+            String(
+                format: "mean nll %.6f  perplexity %.6f  seconds %.1f  (%.1f tok/s)",
+                mean, exp(mean), seconds, Double(nlls.count) / seconds))
         if let nllOutput {
             let lines = nlls.map { String(format: "%.6f", $0) }.joined(separator: "\n")
             try (lines + "\n").write(to: nllOutput, atomically: true, encoding: .utf8)
@@ -382,7 +439,6 @@ enum DenseModelError: Error, CustomStringConvertible {
         return Double(peak) + log(total) - Double(logits[target])
     }
 
-
     /// The CPU side-engine's commands. Returns whether one ran, so `main`
     /// can dispatch them before it creates a Metal context.
     static func runCPUCommand(_ name: String, iterations: Int) throws -> Bool {
@@ -391,60 +447,72 @@ enum DenseModelError: Error, CustomStringConvertible {
             // Sustained load at one width, for measuring what the side-engine
             // costs the model the person is waiting for. `iterations` is
             // seconds here; the third argument is the thread count.
-            let threads = CommandLine.arguments.count > 3
+            let threads =
+                CommandLine.arguments.count > 3
                 ? Int(CommandLine.arguments[3]) ?? 4 : 4
             runCPULoad(seconds: Double(iterations), threads: threads)
         case "cpu35":
             // The side-engine's model, on the same continuations the numpy
             // reference checks itself with. Agreement here is what says the
             // Swift forward pass matches the oracle.
-            let snapshot = CommandLine.arguments.count > 2
+            let snapshot =
+                CommandLine.arguments.count > 2
                 ? CommandLine.arguments[2] : ".build/qwen35-2b-affine-8bit"
             // An optional directory to write each check's full logit vector
             // into, so parity is a number rather than an impression.
-            let dump = CommandLine.arguments.count > 3
+            let dump =
+                CommandLine.arguments.count > 3
                 ? URL(fileURLWithPath: CommandLine.arguments[3]) : nil
             try runCPUQwen35(snapshot: snapshot, dump: dump)
         case "cpu35gen":
             // End to end: real text in, real text out, through the engine's
             // own tokenizer. `TinyTitanBench cpu35gen <snapshot> "<prompt>" [n]`
-            let snapshot = CommandLine.arguments.count > 2
+            let snapshot =
+                CommandLine.arguments.count > 2
                 ? CommandLine.arguments[2] : ".build/qwen35-2b-affine-8bit"
-            let prompt = CommandLine.arguments.count > 3
+            let prompt =
+                CommandLine.arguments.count > 3
                 ? CommandLine.arguments[3] : "The capital of France is"
-            let limit = CommandLine.arguments.count > 4
+            let limit =
+                CommandLine.arguments.count > 4
                 ? Int(CommandLine.arguments[4]) ?? 32 : 32
             try runCPUQwen35Generation(snapshot: snapshot, prompt: prompt, limit: limit)
         case "cpu35batch":
             // A file of prompts in, a file of completions out, so an
             // experiment can be written in Python and still run on the real
             // engine. One JSON object per line, `{"prompt": ..., "max": n}`.
-            let snapshot = CommandLine.arguments.count > 2
+            let snapshot =
+                CommandLine.arguments.count > 2
                 ? CommandLine.arguments[2] : ".build/qwen35-2b-affine-8bit"
             guard CommandLine.arguments.count > 4 else {
                 print("usage: TinyTitanBench cpu35batch <snapshot> <in.jsonl> <out.jsonl>")
                 return true
             }
-            try runCPUQwen35Batch(snapshot: snapshot,
-                                  input: URL(fileURLWithPath: CommandLine.arguments[3]),
-                                  output: URL(fileURLWithPath: CommandLine.arguments[4]))
+            try runCPUQwen35Batch(
+                snapshot: snapshot,
+                input: URL(fileURLWithPath: CommandLine.arguments[3]),
+                output: URL(fileURLWithPath: CommandLine.arguments[4]))
         case "cpu35ppl":
             // Held-out text through the CPU forward pass: mean NLL and
             // perplexity, the sharper instrument the twenty-prompt A/B was
             // missing (TT-025).
             guard CommandLine.arguments.count > 3 else {
-                print("usage: TinyTitanBench cpu35ppl <snapshot> <text-file> "
-                      + "[maxTokens] [nll-out]")
+                print(
+                    "usage: TinyTitanBench cpu35ppl <snapshot> <text-file> "
+                        + "[maxTokens] [nll-out]")
                 return true
             }
             let snapshot = CommandLine.arguments[2]
             let text = URL(fileURLWithPath: CommandLine.arguments[3])
-            let maximum = CommandLine.arguments.count > 4
+            let maximum =
+                CommandLine.arguments.count > 4
                 ? Int(CommandLine.arguments[4]) ?? 1_024 : 1_024
-            let nll = CommandLine.arguments.count > 5
+            let nll =
+                CommandLine.arguments.count > 5
                 ? URL(fileURLWithPath: CommandLine.arguments[5]) : nil
-            try runCPUQwen35Perplexity(snapshot: snapshot, text: text,
-                                       maximumTokens: maximum, nllOutput: nll)
+            try runCPUQwen35Perplexity(
+                snapshot: snapshot, text: text,
+                maximumTokens: maximum, nllOutput: nll)
         case let other where other.hasPrefix("cpu"):
             runCPUGEMV(iterations: iterations)
         default:
@@ -453,13 +521,14 @@ enum DenseModelError: Error, CustomStringConvertible {
         return true
     }
 
-
     /// The side-engine answering in text, which is what everything above was
     /// for. The tokenizer is the engine's own, loaded straight out of the
     /// snapshot the converter wrote.
-    static func runCPUQwen35Generation(snapshot path: String,
-                                       prompt: String,
-                                       limit: Int) throws {
+    static func runCPUQwen35Generation(
+        snapshot path: String,
+        prompt: String,
+        limit: Int
+    ) throws {
         let directory = URL(fileURLWithPath: path)
         let snapshot = try Self.loadDenseSnapshot(path)
         let requested = ProcessInfo.processInfo.environment["TINYTITAN_CPU35_THREADS"]
@@ -471,29 +540,35 @@ enum DenseModelError: Error, CustomStringConvertible {
             exit(2)
         }
         let ids = tokenizer.encode(prompt, addBOS: false).map(Int.init)
-        print("prompt: \(prompt.debugDescription) -> \(ids.count) tokens, "
-              + "threads \(model.threads)")
+        print(
+            "prompt: \(prompt.debugDescription) -> \(ids.count) tokens, "
+                + "threads \(model.threads)")
         let started = ContinuousClock.now
-        let produced = try model.generate(prompt: ids, maximumTokens: limit,
-                                          stopping: [Int(tokenizer.eosID)])
+        let produced = try model.generate(
+            prompt: ids, maximumTokens: limit,
+            stopping: [Int(tokenizer.eosID)])
         let elapsed = started.duration(to: .now)
-        let seconds = Double(elapsed.components.seconds)
+        let seconds =
+            Double(elapsed.components.seconds)
             + Double(elapsed.components.attoseconds) / 1e18
         print("output: " + tokenizer.decode(produced.map(Int32.init)).debugDescription)
-        print(String(format: "%d prompt + %d generated in %.1fs (%.1f tok/s)",
-                     ids.count, produced.count, seconds,
-                     Double(ids.count + produced.count) / seconds))
+        print(
+            String(
+                format: "%d prompt + %d generated in %.1fs (%.1f tok/s)",
+                ids.count, produced.count, seconds,
+                Double(ids.count + produced.count) / seconds))
     }
-
 
     /// Run a file of prompts through the side-engine.
     ///
     /// The model loads once and the session resets between prompts, which is
     /// the shape every experiment wants and the shape a resident service
     /// will have: two gigabytes mapped once, then many short jobs.
-    static func runCPUQwen35Batch(snapshot path: String,
-                                  input: URL,
-                                  output: URL) throws {
+    static func runCPUQwen35Batch(
+        snapshot path: String,
+        input: URL,
+        output: URL
+    ) throws {
         let directory = URL(fileURLWithPath: path)
         let snapshot = try Self.loadDenseSnapshot(path)
         let requested = ProcessInfo.processInfo.environment["TINYTITAN_CPU35_THREADS"]
@@ -513,8 +588,9 @@ enum DenseModelError: Error, CustomStringConvertible {
         var tokens = 0
         for (index, line) in lines.enumerated() {
             guard let data = line.data(using: .utf8),
-                  let job = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let prompt = job["prompt"] as? String else { continue }
+                let job = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let prompt = job["prompt"] as? String
+            else { continue }
             let limit = (job["max"] as? Int) ?? 64
             model.reset()
             // `chat` renders the model's own template, which an
@@ -533,15 +609,16 @@ enum DenseModelError: Error, CustomStringConvertible {
                 rendered = prompt
             }
             let ids = tokenizer.encode(rendered, addBOS: false).map(Int.init)
-            let produced = try model.generate(prompt: ids, maximumTokens: limit,
-                                              stopping: [Int(tokenizer.eosID)])
+            let produced = try model.generate(
+                prompt: ids, maximumTokens: limit,
+                stopping: [Int(tokenizer.eosID)])
             tokens += ids.count + produced.count
             var record = job
             record["completion"] = tokenizer.decode(produced.map(Int32.init))
             record["prompt_tokens"] = ids.count
             record["completion_tokens"] = produced.count
             let encoded = try JSONSerialization.data(withJSONObject: record)
-            results.append(String(decoding: encoded, as: UTF8.self))
+            results.append(encoded.lossyUTF8String)
             if (index + 1) % 10 == 0 {
                 FileHandle.standardError.write(Data("  \(index + 1)/\(lines.count)\n".utf8))
             }
@@ -549,11 +626,14 @@ enum DenseModelError: Error, CustomStringConvertible {
         try results.joined(separator: "\n").appending("\n").write(
             to: output, atomically: true, encoding: .utf8)
         let elapsed = started.duration(to: .now)
-        let seconds = Double(elapsed.components.seconds)
+        let seconds =
+            Double(elapsed.components.seconds)
             + Double(elapsed.components.attoseconds) / 1e18
-        print(String(format: "%d prompts, %d tokens in %.1fs (%.1f tok/s) -> %@",
-                     results.count, tokens, seconds, Double(tokens) / seconds,
-                     output.path as NSString))
+        print(
+            String(
+                format: "%d prompts, %d tokens in %.1fs (%.1f tok/s) -> %@",
+                results.count, tokens, seconds, Double(tokens) / seconds,
+                output.path as NSString))
     }
 
     /// GFTokenizer loads asynchronously and these commands are one-shot

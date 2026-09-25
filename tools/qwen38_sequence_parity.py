@@ -5,6 +5,7 @@ Usage:  python3 tools/qwen38_sequence_parity.py <model-dir> <dump-dir>
 The dump directory holds one `posN` subdirectory per position, written by a
 run with `TINYTITAN_ACT_DUMP` and `TINYTITAN_ACT_DUMP_POSITIONS`.
 """
+
 import sys
 from pathlib import Path
 
@@ -41,17 +42,13 @@ def main():
         for layer, c in line:
             if layer % 4 == 0 or c < 0.99:
                 print(f"  L{layer:02d} entry  cos={c:.5f}")
-        drops = [(layer, line[i - 1][1] - c)
-                 for i, (layer, c) in enumerate(line) if i > 0]
+        drops = [(layer, line[i - 1][1] - c) for i, (layer, c) in enumerate(line) if i > 0]
         if drops:
             worst_layer, worst_drop = max(drops, key=lambda d: d[1])
-            print(f"  largest single-layer drop: L{worst_layer:02d} "
-                  f"-{worst_drop:.5f}")
-        dumped = np.fromfile(directory / "stack_out.f16",
-                             dtype=np.float16).astype(np.float32)
+            print(f"  largest single-layer drop: L{worst_layer:02d} -{worst_drop:.5f}")
+        dumped = np.fromfile(directory / "stack_out.f16", dtype=np.float16).astype(np.float32)
         top = np.argsort(-logits)[:5]
-        print(f"  stack out cos={cosine(stack_out, dumped):.5f}, "
-              f"reference top-5 {top.tolist()}")
+        print(f"  stack out cos={cosine(stack_out, dumped):.5f}, reference top-5 {top.tolist()}")
 
 
 if __name__ == "__main__":

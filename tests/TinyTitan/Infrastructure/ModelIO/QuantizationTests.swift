@@ -1,7 +1,8 @@
-import Testing
 import Foundation
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct QuantizationTests {
 
@@ -26,15 +27,16 @@ import TinyTitanValidationSupport
             let bound = amax / 7.0 + 1e-3
             for k in 0..<Quantization.groupSize {
                 let i = g * Quantization.groupSize + k
-                #expect(abs(r[i] - row[i]) <= bound,
-                        "i=\(i) orig=\(row[i]) rec=\(r[i]) bound=\(bound)")
+                #expect(
+                    abs(r[i] - row[i]) <= bound,
+                    "i=\(i) orig=\(row[i]) rec=\(r[i]) bound=\(bound)")
             }
         }
     }
 
     @Test func nibbleLayoutIsLowEvenHighOdd() {
         // Construct a row that exercises both nibble positions.
-        let row: [Float] = (0..<64).map { Float($0) - 31.5 }   // 64 values
+        let row: [Float] = (0..<64).map { Float($0) - 31.5 }  // 64 values
 
         let q = Quantization.quantizeInt4Affine(row)
         // Verify even-index weight comes from low nibble of byte 0.
@@ -42,7 +44,7 @@ import TinyTitanValidationSupport
         let lo = Int(b0 & 0x0F)
         let hi = Int(b0 >> 4)
         let scale = Quantization.bf16ToFloat(q.scales[0])
-        let bias  = Quantization.bf16ToFloat(q.biases[0])
+        let bias = Quantization.bf16ToFloat(q.biases[0])
         let recon0 = Float(lo) * scale + bias
         let recon1 = Float(hi) * scale + bias
         #expect(abs(recon0 - row[0]) <= scale + 1e-3)

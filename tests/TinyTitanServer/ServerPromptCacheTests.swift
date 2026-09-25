@@ -18,7 +18,7 @@ struct ServerPromptCacheTests {
     @Test func textContinuationUsesActualGeneratedHistoryAndOnlyPrefillsSuffix() async throws {
         let tokenizer = try await GFTokenizer.load(from: TokenizerFixture.folder())
         let initial = request(messages: [
-            GFTokenizer.Message(role: .user, content: "first"),
+            GFTokenizer.Message(role: .user, content: "first")
         ])
         let initialPrompt = tokenizer.encode(
             try tokenizer.applyChatTemplate(initial.messages),
@@ -37,10 +37,11 @@ struct ServerPromptCacheTests {
                 boundary: tokenizer.endOfTurnID,
                 reason: .endOfTurn))
 
-        let continuation = request(messages: initial.messages + [
-            GFTokenizer.Message(role: .assistant, content: "answer"),
-            GFTokenizer.Message(role: .user, content: "second"),
-        ])
+        let continuation = request(
+            messages: initial.messages + [
+                GFTokenizer.Message(role: .assistant, content: "answer"),
+                GFTokenizer.Message(role: .user, content: "second"),
+            ])
         let rendered = tokenizer.encode(
             try tokenizer.applyChatTemplate(continuation.messages),
             addBOS: false)
@@ -64,7 +65,7 @@ struct ServerPromptCacheTests {
     @Test func mismatchedLineageDomainAndUnsafeStopsMiss() async throws {
         let tokenizer = try await GFTokenizer.load(from: TokenizerFixture.folder())
         let initial = request(messages: [
-            GFTokenizer.Message(role: .user, content: "first"),
+            GFTokenizer.Message(role: .user, content: "first")
         ])
         let prompt = tokenizer.encode(
             try tokenizer.applyChatTemplate(initial.messages),
@@ -105,17 +106,18 @@ struct ServerPromptCacheTests {
         let rendered = tokenizer.encode(
             try tokenizer.applyChatTemplate(changed.messages),
             addBOS: false)
-        #expect(cache.match(
-            domain: domain,
-            request: changed,
-            renderedPromptIDs: rendered,
-            tokenizer: tokenizer) == .miss)
+        #expect(
+            cache.match(
+                domain: domain,
+                request: changed,
+                renderedPromptIDs: rendered,
+                tokenizer: tokenizer) == .miss)
     }
 
     @Test func tailCompletedStopStringDoesNotPublishPrefix() async throws {
         let tokenizer = try await GFTokenizer.load(from: TokenizerFixture.folder())
         let initial = request(messages: [
-            GFTokenizer.Message(role: .user, content: "first"),
+            GFTokenizer.Message(role: .user, content: "first")
         ])
         let prompt = tokenizer.encode(
             try tokenizer.applyChatTemplate(initial.messages),
@@ -145,7 +147,7 @@ struct ServerPromptCacheTests {
     @Test func multiPrefixChoosesLongestExactPrefixAndUsesLRUEviction() async throws {
         let tokenizer = try await GFTokenizer.load(from: TokenizerFixture.folder())
         let initial = request(messages: [
-            GFTokenizer.Message(role: .user, content: "first"),
+            GFTokenizer.Message(role: .user, content: "first")
         ])
         var cache = ServerPromptCache(maximumEntries: 2)
         let shortPublication = cache.publish(
@@ -176,10 +178,12 @@ struct ServerPromptCacheTests {
             request: initial,
             renderedPromptIDs: [1, 2, 3, 4],
             tokenizer: tokenizer)
-        #expect(match == .hit(
-            entryID: long.entry.id,
-            effectivePromptIDs: [1, 2, 3, 4],
-            cachedPromptTokens: 3))
+        #expect(
+            match
+                == .hit(
+                    entryID: long.entry.id,
+                    effectivePromptIDs: [1, 2, 3, 4],
+                    cachedPromptTokens: 3))
 
         let newestPublication = cache.publish(
             domain: domain,
@@ -206,7 +210,7 @@ struct ServerPromptCacheTests {
     @Test func identicalReplayReportsEntirePromptAsCached() async throws {
         let tokenizer = try await GFTokenizer.load(from: TokenizerFixture.folder())
         let initial = request(messages: [
-            GFTokenizer.Message(role: .user, content: "first"),
+            GFTokenizer.Message(role: .user, content: "first")
         ])
         let prompt = tokenizer.encode(
             try tokenizer.applyChatTemplate(initial.messages),
@@ -229,10 +233,12 @@ struct ServerPromptCacheTests {
             request: initial,
             renderedPromptIDs: prompt,
             tokenizer: tokenizer)
-        #expect(match == .hit(
-            entryID: entry.entry.id,
-            effectivePromptIDs: prompt,
-            cachedPromptTokens: prompt.count))
+        #expect(
+            match
+                == .hit(
+                    entryID: entry.entry.id,
+                    effectivePromptIDs: prompt,
+                    cachedPromptTokens: prompt.count))
     }
 
     /// Regression: the cache keys on the post-strip view of a request, so a
@@ -300,10 +306,12 @@ struct ServerPromptCacheTests {
         // The bridge is the *stripped* user turn; the reminder block never
         // reaches the model, and the raw turn would have produced a longer one.
         #expect(cached == kvBacked.count)
-        #expect(effective == kvBacked
-            + tokenizer.encodeTextContinuation(userContent: "second"))
-        #expect(effective != kvBacked
-            + tokenizer.encodeTextContinuation(userContent: rawSecond.content ?? ""))
+        #expect(
+            effective == kvBacked
+                + tokenizer.encodeTextContinuation(userContent: "second"))
+        #expect(
+            effective != kvBacked
+                + tokenizer.encodeTextContinuation(userContent: rawSecond.content ?? ""))
 
         // And the shape of the defect this guards: an entry keyed on the raw
         // messages still describes a KV range prefilled from the *stripped*
@@ -329,8 +337,9 @@ struct ServerPromptCacheTests {
             Issue.record("expected the raw-keyed cache to still hit")
             return
         }
-        #expect(rawEffective == kvBacked
-            + tokenizer.encodeTextContinuation(userContent: rawSecond.content ?? ""))
+        #expect(
+            rawEffective == kvBacked
+                + tokenizer.encodeTextContinuation(userContent: rawSecond.content ?? ""))
         #expect(rawEffective != effective)
     }
 
@@ -350,8 +359,9 @@ struct ServerPromptCacheTests {
         #expect(replaced.includeUsage == original.includeUsage)
         #expect(replaced.maximumCompletionTokens == original.maximumCompletionTokens)
         #expect(replaced.stripCLIPrompt == original.stripCLIPrompt)
-        #expect(replaced.generationConfig.maxNewTokens
-            == original.generationConfig.maxNewTokens)
+        #expect(
+            replaced.generationConfig.maxNewTokens
+                == original.generationConfig.maxNewTokens)
     }
 
     private func request(

@@ -27,8 +27,11 @@ final class ExpertPrefetchRing: @unchecked Sendable {
         var allocated: [Slot] = []
         allocated.reserveCapacity(slotCount)
         for index in 0..<slotCount {
-            guard let buffer = device.makeBuffer(length: expertStride,
-                                                 options: .storageModeShared) else {
+            guard
+                let buffer = device.makeBuffer(
+                    length: expertStride,
+                    options: .storageModeShared)
+            else {
                 throw ModelError.residentBufferWrapFailed
             }
             buffer.label = "decode.prefetch.\(index)"
@@ -59,22 +62,28 @@ final class ExpertPrefetchRing: @unchecked Sendable {
     private(set) var reclaimedQueueNanos: UInt64 = 0
     private(set) var reclaimedLoadNanos: UInt64 = 0
 
-    func begin(model: Model, layer: Int, experts: [Int], resident: Set<Int>,
-               currentLayer: Int) throws {
+    func begin(
+        model: Model, layer: Int, experts: [Int], resident: Set<Int>,
+        currentLayer: Int
+    ) throws {
         lock.lock()
         reclaimTerminalSlotsUnlocked(through: currentLayer)
         begins &+= 1
         for slot in slots {
-            if slot.expert < 0 { observedFree &+= 1; continue }
+            if slot.expert < 0 {
+                observedFree &+= 1
+                continue
+            }
             switch slot.operation?.state {
             case .submitted: observedSubmitted &+= 1
             case .inFlight: observedInFlight &+= 1
             default: observedHeld &+= 1
             }
         }
-        let active = Set(slots.compactMap { slot in
-            slot.layer == layer && slot.expert >= 0 ? slot.expert : nil
-        })
+        let active = Set(
+            slots.compactMap { slot in
+                slot.layer == layer && slot.expert >= 0 ? slot.expert : nil
+            })
         var seen: Set<Int> = []
         let wanted = experts.filter {
             !resident.contains($0) && !active.contains($0) && seen.insert($0).inserted
@@ -133,11 +142,13 @@ final class ExpertPrefetchRing: @unchecked Sendable {
     var summary: String {
         let b = Double(max(1, begins))
         let n = Double(max(1, reclaimedOps))
-        return String(format: "prefetch_ring begins=%d free=%.2f submitted=%.2f inflight=%.2f held=%.2f "
-                      + "spec_ops=%d spec_queue_ms=%.2f spec_load_ms=%.2f",
-                      begins, Double(observedFree) / b, Double(observedSubmitted) / b,
-                      Double(observedInFlight) / b, Double(observedHeld) / b,
-                      reclaimedOps, Double(reclaimedQueueNanos) / n / 1e6, Double(reclaimedLoadNanos) / n / 1e6)
+        return String(
+            format: "prefetch_ring begins=%d free=%.2f submitted=%.2f inflight=%.2f held=%.2f "
+                + "spec_ops=%d spec_queue_ms=%.2f spec_load_ms=%.2f",
+            begins, Double(observedFree) / b, Double(observedSubmitted) / b,
+            Double(observedInFlight) / b, Double(observedHeld) / b,
+            reclaimedOps, Double(reclaimedQueueNanos) / n / 1e6,
+            Double(reclaimedLoadNanos) / n / 1e6)
     }
 
     func readyBuffers(layer: Int, experts: [Int]) -> [Int: MTLBuffer] {
@@ -156,8 +167,10 @@ final class ExpertPrefetchRing: @unchecked Sendable {
     func consume(layer: Int, experts: Set<Int>) {
         lock.lock()
         defer { lock.unlock() }
-        for index in slots.indices where slots[index].layer == layer
-            && experts.contains(slots[index].expert) {
+        for index in slots.indices
+        where slots[index].layer == layer
+            && experts.contains(slots[index].expert)
+        {
             if let op = slots[index].operation {
                 reclaimedOps &+= 1
                 reclaimedQueueNanos &+= op.submissionToStartNanos

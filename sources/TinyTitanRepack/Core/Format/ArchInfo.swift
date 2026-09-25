@@ -28,8 +28,8 @@ enum RepackModelFamily: String, Sendable, Equatable {
 /// 1 = full attention, 2 = gated-DeltaNet linear attention.
 struct ArchInfo: Sendable, Equatable {
     let hiddenSize: Int
-    let intermediateSize: Int          // shared expert FFN
-    let moeIntermediateSize: Int       // per-expert FFN
+    let intermediateSize: Int  // shared expert FFN
+    let moeIntermediateSize: Int  // per-expert FFN
     let numHeads: Int
     let numKVHeads: Int
     let numFullKVHeads: Int
@@ -88,28 +88,30 @@ struct ArchInfo: Sendable, Equatable {
     /// Affine quantization group size of the source checkpoint.
     let quantGroupSize: Int
 
-    init(hiddenSize: Int, intermediateSize: Int, moeIntermediateSize: Int,
-         numHeads: Int, numKVHeads: Int, numFullKVHeads: Int,
-         headDim: Int, fullHeadDim: Int, vocabSize: Int, slidingWindow: Int,
-         finalLogitSoftcap: Double, ropeTheta: Double, fullRopeTheta: Double,
-         partialRotaryFactor: Double, numLayers: Int, numExperts: Int,
-         topKExperts: Int, tieWordEmbeddings: Bool, attentionKEqV: Bool,
-         fullAttentionLayerMask: [UInt8], hiddenActivation: String,
-         family: RepackModelFamily, attnOutputGate: Bool,
-         attentionScale: Double, embeddingScaledBySqrtHidden: Bool,
-         routerScaled: Bool, ffnSandwichNorms: Bool, sharedExpertGated: Bool,
-         ropeNeoxSubdim: Bool, linearNumKHeads: Int, linearNumVHeads: Int,
-         linearKeyHeadDim: Int, linearValueHeadDim: Int,
-         linearConvKernelSize: Int,
-         hcCount: Int = 0, hcLowRank: Int = 0,
-         indexerNumHeads: Int = 0, indexerNumKVHeads: Int = 0,
-         indexerHeadDim: Int = 0, indexerBudget: Int = 0,
-         indexerCompressRatio: Int = 0,
-         pleLayerIndices: [Int] = [], pleEmbedDim: Int = 0,
-         pleConvKernelSize: Int = 0, pleNgramSize: Int = 0,
-         pleVocabSizeBase: Int = 0, pleHeadsPerNgram: Int = 0,
-         pleVocabDivisor: Int = 0,
-         routerNormTopK: Bool = false, quantGroupSize: Int = 64) {
+    init(
+        hiddenSize: Int, intermediateSize: Int, moeIntermediateSize: Int,
+        numHeads: Int, numKVHeads: Int, numFullKVHeads: Int,
+        headDim: Int, fullHeadDim: Int, vocabSize: Int, slidingWindow: Int,
+        finalLogitSoftcap: Double, ropeTheta: Double, fullRopeTheta: Double,
+        partialRotaryFactor: Double, numLayers: Int, numExperts: Int,
+        topKExperts: Int, tieWordEmbeddings: Bool, attentionKEqV: Bool,
+        fullAttentionLayerMask: [UInt8], hiddenActivation: String,
+        family: RepackModelFamily, attnOutputGate: Bool,
+        attentionScale: Double, embeddingScaledBySqrtHidden: Bool,
+        routerScaled: Bool, ffnSandwichNorms: Bool, sharedExpertGated: Bool,
+        ropeNeoxSubdim: Bool, linearNumKHeads: Int, linearNumVHeads: Int,
+        linearKeyHeadDim: Int, linearValueHeadDim: Int,
+        linearConvKernelSize: Int,
+        hcCount: Int = 0, hcLowRank: Int = 0,
+        indexerNumHeads: Int = 0, indexerNumKVHeads: Int = 0,
+        indexerHeadDim: Int = 0, indexerBudget: Int = 0,
+        indexerCompressRatio: Int = 0,
+        pleLayerIndices: [Int] = [], pleEmbedDim: Int = 0,
+        pleConvKernelSize: Int = 0, pleNgramSize: Int = 0,
+        pleVocabSizeBase: Int = 0, pleHeadsPerNgram: Int = 0,
+        pleVocabDivisor: Int = 0,
+        routerNormTopK: Bool = false, quantGroupSize: Int = 64
+    ) {
         self.hiddenSize = hiddenSize
         self.intermediateSize = intermediateSize
         self.moeIntermediateSize = moeIntermediateSize
@@ -194,8 +196,10 @@ struct ArchInfo: Sendable, Equatable {
 
     // MARK: - Qwen3.5-MoE text (`model_type == "qwen3_5_moe"`)
 
-    private static func loadQwen35MoE(configPath: String,
-                                     tc: [String: Any]) throws -> ArchInfo {
+    private static func loadQwen35MoE(
+        configPath: String,
+        tc: [String: Any]
+    ) throws -> ArchInfo {
         func i(_ k: String) throws -> Int {
             guard let n = (tc[k] as? Int) ?? (tc[k] as? NSNumber)?.intValue else {
                 throw RepackError.configJsonInvalid(path: configPath, detail: "missing \(k)")
@@ -210,20 +214,24 @@ struct ArchInfo: Sendable, Equatable {
         for t in layerTypes {
             switch t {
             case "linear_attention": mask.append(2)
-            case "full_attention":   mask.append(1)
+            case "full_attention": mask.append(1)
             default:
                 throw RepackError.configJsonInvalid(
                     path: configPath, detail: "unknown layer_types entry \"\(t)\"")
             }
         }
         let rope = (tc["rope_parameters"] as? [String: Any]) ?? [:]
-        guard let theta = (rope["rope_theta"] as? Double)
-            ?? (rope["rope_theta"] as? NSNumber)?.doubleValue else {
+        guard
+            let theta = (rope["rope_theta"] as? Double)
+                ?? (rope["rope_theta"] as? NSNumber)?.doubleValue
+        else {
             throw RepackError.configJsonInvalid(
                 path: configPath, detail: "missing rope_parameters.rope_theta")
         }
-        guard let prf = (rope["partial_rotary_factor"] as? Double)
-            ?? (rope["partial_rotary_factor"] as? NSNumber)?.doubleValue else {
+        guard
+            let prf = (rope["partial_rotary_factor"] as? Double)
+                ?? (rope["partial_rotary_factor"] as? NSNumber)?.doubleValue
+        else {
             throw RepackError.configJsonInvalid(
                 path: configPath, detail: "missing rope_parameters.partial_rotary_factor")
         }
@@ -287,16 +295,20 @@ struct ArchInfo: Sendable, Equatable {
     ///     `topKExperts` are 0 and the planner writes no `packed_experts`
     ///   - its own family value, so a dense payload can never be handed to the
     ///     GPU loader
-    private static func loadQwen35Dense(configPath: String,
-                                        tc: [String: Any]) throws -> ArchInfo {
+    private static func loadQwen35Dense(
+        configPath: String,
+        tc: [String: Any]
+    ) throws -> ArchInfo {
         // The MoE loader is a reader for the shared DeltaNet/attention
         // contract, and it demands three keys a dense config does not carry.
         // Supplying them here rather than branching inside it keeps that
         // function's production cross-check exact for the models it is really
         // about; the values are overwritten below and never leave this call.
         var shared = tc
-        for key in ["shared_expert_intermediate_size", "moe_intermediate_size",
-                    "num_experts", "num_experts_per_tok"] where shared[key] == nil {
+        for key in [
+            "shared_expert_intermediate_size", "moe_intermediate_size",
+            "num_experts", "num_experts_per_tok",
+        ] where shared[key] == nil {
             shared[key] = 0
         }
         let base = try loadQwen35MoE(configPath: configPath, tc: shared)
@@ -356,12 +368,16 @@ struct ArchInfo: Sendable, Equatable {
     /// carries neither an embedding table nor an LM head: both are shared from
     /// the verified target model at runtime. Treating it as a distinct family
     /// keeps a draft sidecar from ever being accepted as a standalone target.
-    private static func loadQwen36MTP(configPath: String,
-                                      tc: [String: Any]) throws -> ArchInfo {
+    private static func loadQwen36MTP(
+        configPath: String,
+        tc: [String: Any]
+    ) throws -> ArchInfo {
         var base = try loadQwen35MoE(configPath: configPath, tc: tc)
-        guard let count = (tc["mtp_num_hidden_layers"] as? Int)
-            ?? (tc["mtp_num_hidden_layers"] as? NSNumber)?.intValue,
-              count == 1 else {
+        guard
+            let count = (tc["mtp_num_hidden_layers"] as? Int)
+                ?? (tc["mtp_num_hidden_layers"] as? NSNumber)?.intValue,
+            count == 1
+        else {
             throw RepackError.configJsonInvalid(
                 path: configPath,
                 detail: "Qwen3.6 MTP requires mtp_num_hidden_layers == 1")
@@ -425,9 +441,11 @@ struct ArchInfo: Sendable, Equatable {
     /// positions the interleaved mrope collapses exactly onto the existing
     /// NeoX-subdim rotary. Every field below is read from the config; nothing
     /// is inferred. See docs/qwen38-flash-next-port.md.
-    private static func loadQwen4Exp(configPath: String,
-                                     tc: [String: Any],
-                                     root: [String: Any]) throws -> ArchInfo {
+    private static func loadQwen4Exp(
+        configPath: String,
+        tc: [String: Any],
+        root: [String: Any]
+    ) throws -> ArchInfo {
         func i(_ k: String) throws -> Int {
             guard let n = (tc[k] as? Int) ?? (tc[k] as? NSNumber)?.intValue else {
                 throw RepackError.configJsonInvalid(
@@ -447,21 +465,25 @@ struct ArchInfo: Sendable, Equatable {
         for t in layerTypes {
             switch t {
             case "linear_attention": mask.append(2)
-            case "full_attention":   mask.append(1)
+            case "full_attention": mask.append(1)
             default:
                 throw RepackError.configJsonInvalid(
                     path: configPath, detail: "unknown layer_types entry \"\(t)\"")
             }
         }
         let rope = (tc["rope_parameters"] as? [String: Any]) ?? [:]
-        guard let theta = (rope["rope_theta"] as? Double)
-            ?? (rope["rope_theta"] as? NSNumber)?.doubleValue else {
+        guard
+            let theta = (rope["rope_theta"] as? Double)
+                ?? (rope["rope_theta"] as? NSNumber)?.doubleValue
+        else {
             throw RepackError.configJsonInvalid(
                 path: configPath, detail: "missing rope_parameters.rope_theta")
         }
-        guard let prf = (rope["partial_rotary_factor"] as? Double)
-            ?? (rope["partial_rotary_factor"] as? NSNumber)?.doubleValue
-            ?? (tc["partial_rotary_factor"] as? Double) else {
+        guard
+            let prf = (rope["partial_rotary_factor"] as? Double)
+                ?? (rope["partial_rotary_factor"] as? NSNumber)?.doubleValue
+                ?? (tc["partial_rotary_factor"] as? Double)
+        else {
             throw RepackError.configJsonInvalid(
                 path: configPath, detail: "missing partial_rotary_factor")
         }
@@ -476,9 +498,11 @@ struct ArchInfo: Sendable, Equatable {
         }
         // The quantized checkpoint declares its own affine group size; TinyTitan
         // must repack at whatever the source used, never at a default.
-        let quant = (root["quantization"] as? [String: Any])
+        let quant =
+            (root["quantization"] as? [String: Any])
             ?? (root["quantization_config"] as? [String: Any]) ?? [:]
-        let group = (quant["group_size"] as? Int)
+        let group =
+            (quant["group_size"] as? Int)
             ?? (quant["group_size"] as? NSNumber)?.intValue ?? 64
         let headDim = try i("head_dim")
 
@@ -547,8 +571,10 @@ struct ArchInfo: Sendable, Equatable {
     /// token's embedding. It has no linear-attention layers and no n-gram
     /// block, and it reports no embedding or head of its own -- both are the
     /// target's, shared rather than copied.
-    static func qwen38FlashNextMTP(from base: ArchInfo,
-                                   configPath: String) throws -> ArchInfo {
+    static func qwen38FlashNextMTP(
+        from base: ArchInfo,
+        configPath: String
+    ) throws -> ArchInfo {
         guard base.family == .qwen38flash else {
             throw RepackError.configJsonInvalid(
                 path: configPath,
@@ -614,8 +640,10 @@ struct ArchInfo: Sendable, Equatable {
     /// `ArchConfig.qwen38FlashNext`). A config claiming the production shape
     /// must agree on the load-bearing geometry; anything else is a different
     /// model wearing the same `model_type`.
-    private static func crossCheckQwen38FlashNext(_ a: ArchInfo,
-                                                  configPath: String) throws {
+    private static func crossCheckQwen38FlashNext(
+        _ a: ArchInfo,
+        configPath: String
+    ) throws {
         guard a.hiddenSize == 2560, a.numLayers == 48 else { return }
         var problems: [String] = []
         func want(_ ok: Bool, _ what: String) { if !ok { problems.append(what) } }
@@ -625,14 +653,18 @@ struct ArchInfo: Sendable, Equatable {
         want(a.vocabSize == 248_320, "vocab_size 248320")
         want(a.numHeads == 24 && a.numKVHeads == 2, "24 Q / 2 KV heads")
         want(a.headDim == 256, "head_dim 256")
-        want(a.linearNumKHeads == 16 && a.linearNumVHeads == 48,
-             "GDN 16 K / 48 V heads")
-        want(a.hcCount == 4 && a.hcLowRank == 320,
-             "hyper-connections 4 x 320")
-        want(a.indexerBudget == 2048 && a.indexerCompressRatio == 4,
-             "indexer budget 2048 / compress 4")
-        want(a.fullAttentionLayerMask.filter { $0 == 1 }.count == 12,
-             "12 full-attention layers")
+        want(
+            a.linearNumKHeads == 16 && a.linearNumVHeads == 48,
+            "GDN 16 K / 48 V heads")
+        want(
+            a.hcCount == 4 && a.hcLowRank == 320,
+            "hyper-connections 4 x 320")
+        want(
+            a.indexerBudget == 2048 && a.indexerCompressRatio == 4,
+            "indexer budget 2048 / compress 4")
+        want(
+            a.fullAttentionLayerMask.filter { $0 == 1 }.count == 12,
+            "12 full-attention layers")
         want(a.pleLayerIndices == [1], "ple_layer_ids [2] (1-based)")
         guard problems.isEmpty else {
             throw RepackError.configJsonInvalid(
@@ -648,8 +680,10 @@ struct ArchInfo: Sendable, Equatable {
     /// runtime module). A config that matches the production shape
     /// (hidden 2048, 40 layers) must agree on every field; toy/synthetic
     /// configs are exempt.
-    private static func crossCheckProductionQwen35MoE(_ a: ArchInfo,
-                                                      configPath: String) throws {
+    private static func crossCheckProductionQwen35MoE(
+        _ a: ArchInfo,
+        configPath: String
+    ) throws {
         guard a.hiddenSize == 2048, a.numLayers == 40 else { return }
         var expectedMask = [UInt8](repeating: 2, count: 40)
         for i in stride(from: 3, to: 40, by: 4) { expectedMask[i] = 1 }

@@ -38,14 +38,17 @@ function harness(options = {}) {
   const seen = [];
   const ctx = {
     // A service whose methods live on a prototype, like a cordis service.
-    llm: Object.assign(Object.create({
-      resolveModelInfo: () => ({ context: { contextWindow: 262144 } }),
-    }), {
-      stream: (opts) => {
-        seen.push(opts);
-        return opts;
+    llm: Object.assign(
+      Object.create({
+        resolveModelInfo: () => ({ context: { contextWindow: 262144 } }),
+      }),
+      {
+        stream: (opts) => {
+          seen.push(opts);
+          return opts;
+        },
       },
-    }),
+    ),
     tokenMeter: { measure: () => ({ totalTokens: 0 }) },
   };
   const Backend = createAuxiliaryQuietCompaction(RecordingBase);

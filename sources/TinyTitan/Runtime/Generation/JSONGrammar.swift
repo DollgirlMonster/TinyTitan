@@ -144,7 +144,7 @@ public struct JSONGrammar: Hashable, Sendable {
         guard stack.isEmpty else { return false }
         switch state {
         case .number(.zero), .number(.integer), .number(.fraction),
-             .number(.exponentDigits):
+            .number(.exponentDigits):
             return true
         case .enumeration(let enumeration):
             return enumeration.role == .value && enumeration.complete
@@ -292,7 +292,7 @@ public struct JSONGrammar: Hashable, Sendable {
     private var allowsWhitespace: Bool {
         switch state {
         case .value, .arrayStart, .objectStart, .objectKey, .objectColon,
-             .afterValue, .complete:
+            .afterValue, .complete:
             return true
         default:
             return false
@@ -307,8 +307,11 @@ public struct JSONGrammar: Hashable, Sendable {
             return beginEnumeration(literals, role: .value, first: byte)
         case .object(let properties, let required, let additional):
             guard byte == 0x7B else { return false }
-            stack.append(.object(ObjectFrame(properties: properties, required: required,
-                                             additional: additional, seen: [])))
+            stack.append(
+                .object(
+                    ObjectFrame(
+                        properties: properties, required: required,
+                        additional: additional, seen: [])))
             state = .objectStart
             return true
         case .array(let items):
@@ -322,8 +325,11 @@ public struct JSONGrammar: Hashable, Sendable {
         case .any:
             switch byte {
             case 0x7B:
-                stack.append(.object(ObjectFrame(properties: [:], required: [],
-                                                 additional: true, seen: [])))
+                stack.append(
+                    .object(
+                        ObjectFrame(
+                            properties: [:], required: [],
+                            additional: true, seen: [])))
                 state = .objectStart
                 return true
             case 0x5B:
@@ -350,7 +356,8 @@ public struct JSONGrammar: Hashable, Sendable {
             return true
         }
         if kinds.contains(.number) || kinds.contains(.integer),
-           byte == 0x2D || JSONGrammar.isDigit(byte) {
+            byte == 0x2D || JSONGrammar.isDigit(byte)
+        {
             return startNumber(byte)
         }
         if kinds.contains(.boolean), byte == 0x74 || byte == 0x66 {
@@ -396,13 +403,25 @@ public struct JSONGrammar: Hashable, Sendable {
             return true
         case .zero:
             // A leading zero may not be followed by another digit.
-            if byte == 0x2E, full { state = .number(.fractionStart); return true }
-            if byte == 0x65 || byte == 0x45, full { state = .number(.exponent); return true }
+            if byte == 0x2E, full {
+                state = .number(.fractionStart)
+                return true
+            }
+            if byte == 0x65 || byte == 0x45, full {
+                state = .number(.exponent)
+                return true
+            }
             return finishValue(consuming: byte)
         case .integer:
             if JSONGrammar.isDigit(byte) { return true }
-            if byte == 0x2E, full { state = .number(.fractionStart); return true }
-            if byte == 0x65 || byte == 0x45, full { state = .number(.exponent); return true }
+            if byte == 0x2E, full {
+                state = .number(.fractionStart)
+                return true
+            }
+            if byte == 0x65 || byte == 0x45, full {
+                state = .number(.exponent)
+                return true
+            }
             return finishValue(consuming: byte)
         case .fractionStart:
             guard JSONGrammar.isDigit(byte) else { return false }
@@ -410,11 +429,20 @@ public struct JSONGrammar: Hashable, Sendable {
             return true
         case .fraction:
             if JSONGrammar.isDigit(byte) { return true }
-            if byte == 0x65 || byte == 0x45 { state = .number(.exponent); return true }
+            if byte == 0x65 || byte == 0x45 {
+                state = .number(.exponent)
+                return true
+            }
             return finishValue(consuming: byte)
         case .exponent:
-            if byte == 0x2B || byte == 0x2D { state = .number(.exponentSign); return true }
-            if JSONGrammar.isDigit(byte) { state = .number(.exponentDigits); return true }
+            if byte == 0x2B || byte == 0x2D {
+                state = .number(.exponentSign)
+                return true
+            }
+            if JSONGrammar.isDigit(byte) {
+                state = .number(.exponentDigits)
+                return true
+            }
             return false
         case .exponentSign:
             guard JSONGrammar.isDigit(byte) else { return false }
@@ -441,12 +469,15 @@ public struct JSONGrammar: Hashable, Sendable {
     }
 
     private mutating func continueString(_ byte: UInt8, role: StringRole) -> Bool {
-        if byte == 0x5C { state = .escape(role); return true }
+        if byte == 0x5C {
+            state = .escape(role)
+            return true
+        }
         // A raw control character is not legal inside a JSON string.
         guard byte >= 0x20 else { return false }
         if byte == 0x22 {
             guard role == .key else { return finishValue() }
-            return finishKey(String(decoding: keyBytes, as: UTF8.self))
+            return finishKey(keyBytes.lossyUTF8String)
         }
         if role == .key { keyBytes.append(byte) }
         return true
@@ -482,8 +513,9 @@ public struct JSONGrammar: Hashable, Sendable {
             state = .unicode(remaining - 1, role)
             return true
         }
-        if role == .key, let scalar = UInt32(String(decoding: unicodeDigits, as: UTF8.self), radix: 16),
-           let unicode = Unicode.Scalar(scalar) {
+        if role == .key, let scalar = UInt32(unicodeDigits.lossyUTF8String, radix: 16),
+            let unicode = Unicode.Scalar(scalar)
+        {
             keyBytes.append(contentsOf: Array(String(Character(unicode)).utf8))
         }
         state = .string(role)
@@ -492,16 +524,21 @@ public struct JSONGrammar: Hashable, Sendable {
 
     // MARK: - Enumerations
 
-    private mutating func beginEnumeration(_ literals: [String], role: StringRole,
-                                           first byte: UInt8) -> Bool {
-        var enumeration = Enumeration(literals: literals, viable: Array(literals.indices),
-                                      matched: 0, role: role, complete: false)
+    private mutating func beginEnumeration(
+        _ literals: [String], role: StringRole,
+        first byte: UInt8
+    ) -> Bool {
+        var enumeration = Enumeration(
+            literals: literals, viable: Array(literals.indices),
+            matched: 0, role: role, complete: false)
         state = .enumeration(enumeration)
         return continueEnumeration(byte, enumeration: &enumeration)
     }
 
-    private mutating func continueEnumeration(_ byte: UInt8,
-                                              enumeration: inout Enumeration) -> Bool {
+    private mutating func continueEnumeration(
+        _ byte: UInt8,
+        enumeration: inout Enumeration
+    ) -> Bool {
         let extendable = enumeration.viable.contains { index in
             let bytes = Array(enumeration.literals[index].utf8)
             return enumeration.matched < bytes.count && bytes[enumeration.matched] == byte
@@ -532,7 +569,8 @@ public struct JSONGrammar: Hashable, Sendable {
             return finishKey(String(enumeration.literals[index].dropFirst().dropLast()))
         }
         if enumeration.role == .value, enumeration.complete,
-           !enumeration.hasLongerCandidate {
+            !enumeration.hasLongerCandidate
+        {
             return finishValue()
         }
         return true

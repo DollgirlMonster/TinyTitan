@@ -11,11 +11,13 @@ public struct InferenceStateSnapshotDescriptor: Codable, Equatable, Sendable {
     public let gdnSegmentLengths: [Int]
     public let payloadBytes: Int
 
-    public init(version: Int = currentVersion,
-                position: Int,
-                kvSegmentLengths: [Int],
-                gdnSegmentLengths: [Int],
-                payloadBytes: Int) {
+    public init(
+        version: Int = currentVersion,
+        position: Int,
+        kvSegmentLengths: [Int],
+        gdnSegmentLengths: [Int],
+        payloadBytes: Int
+    ) {
         self.version = version
         self.position = position
         self.kvSegmentLengths = kvSegmentLengths

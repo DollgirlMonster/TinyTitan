@@ -1,8 +1,9 @@
 import Foundation
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct SharedExpertInt4Tests {
     private static let d = 128
@@ -35,15 +36,16 @@ import TinyTitanValidationSupport
         let upScratch = try #require(Fp16Buffer.make(context.device, count: Self.f))
         let actScratch = try #require(Fp16Buffer.make(context.device, count: Self.f))
         let commandBuffer = try #require(context.queue.makeCommandBuffer())
-        try runtime.encode(commandBuffer: commandBuffer,
-                           x: xBuffer,
-                           gate: Self.projection(context, gatePack, rows: Self.f, cols: Self.d),
-                           up: Self.projection(context, upPack, rows: Self.f, cols: Self.d),
-                           down: Self.projection(context, downPack, rows: Self.d, cols: Self.f),
-                           y: yBuffer,
-                           scratchGate: gateScratch,
-                           scratchUp: upScratch,
-                           scratchAct: actScratch)
+        try runtime.encode(
+            commandBuffer: commandBuffer,
+            x: xBuffer,
+            gate: try Self.projection(context, gatePack, rows: Self.f, cols: Self.d),
+            up: try Self.projection(context, upPack, rows: Self.f, cols: Self.d),
+            down: try Self.projection(context, downPack, rows: Self.d, cols: Self.f),
+            y: yBuffer,
+            scratchGate: gateScratch,
+            scratchUp: upScratch,
+            scratchAct: actScratch)
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         #expect(commandBuffer.status == .completed)
@@ -52,31 +54,42 @@ import TinyTitanValidationSupport
         #expect(error < Tolerance.quantInt4 * 4, "shared-expert int4 rel=\(error)")
     }
 
-    private static func pack(_ values: [[Float]]) ->
-        (rows: [Quantization.Int4AffineRow], packed: [UInt8], scales: [UInt16], biases: [UInt16]) {
+    private static func pack(_ values: [[Float]]) -> (
+        rows: [Quantization.Int4AffineRow], packed: [UInt8], scales: [UInt16], biases: [UInt16]
+    ) {
         let rows = values.map(Quantization.quantizeInt4Affine)
-        return (rows,
-                rows.flatMap(\.packed),
-                rows.flatMap(\.scales),
-                rows.flatMap(\.biases))
+        return (
+            rows,
+            rows.flatMap(\.packed),
+            rows.flatMap(\.scales),
+            rows.flatMap(\.biases)
+        )
     }
 
     private static func projection(
         _ context: MetalContext,
-        _ packed: (rows: [Quantization.Int4AffineRow], packed: [UInt8], scales: [UInt16], biases: [UInt16]),
+        _ packed: (
+            rows: [Quantization.Int4AffineRow], packed: [UInt8], scales: [UInt16], biases: [UInt16]
+        ),
         rows: Int,
         cols: Int
-    ) -> SharedExpertProjection {
+    ) throws -> SharedExpertProjection {
         SharedExpertProjection(
-            weights: context.device.makeBuffer(bytes: packed.packed,
-                                                length: packed.packed.count,
-                                                options: .storageModeShared)!,
-            scales: context.device.makeBuffer(bytes: packed.scales,
-                                               length: packed.scales.count * 2,
-                                               options: .storageModeShared)!,
-            biases: context.device.makeBuffer(bytes: packed.biases,
-                                               length: packed.biases.count * 2,
-                                               options: .storageModeShared)!,
+            weights: try #require(
+                context.device.makeBuffer(
+                    bytes: packed.packed,
+                    length: packed.packed.count,
+                    options: .storageModeShared)),
+            scales: try #require(
+                context.device.makeBuffer(
+                    bytes: packed.scales,
+                    length: packed.scales.count * 2,
+                    options: .storageModeShared)),
+            biases: try #require(
+                context.device.makeBuffer(
+                    bytes: packed.biases,
+                    length: packed.biases.count * 2,
+                    options: .storageModeShared)),
             rows: UInt32(rows), cols: UInt32(cols))
     }
 }

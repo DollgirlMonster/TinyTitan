@@ -22,16 +22,18 @@ file.
 Rows that predate `repeat`/`content_chars` still render: the fields are derived
 when missing, so an archived file can be regenerated rather than lost.
 """
+
 import json
 import os
 import sys
 from collections import OrderedDict
 
-DEVICE = os.environ.get(
-    "DEVICE", "macOS 26.6.2, Swift 6.3.3, Apple M3 24 GB")
+DEVICE = os.environ.get("DEVICE", "macOS 26.6.2, Swift 6.3.3, Apple M3 24 GB")
 SERVER = os.environ.get(
-    "SERVER", ".build/release/TinyTitanServer --models-dir models "
-              "--model qwen3.5-2b_4-Bit --port 8091 --reasoning off")
+    "SERVER",
+    ".build/release/TinyTitanServer --models-dir models "
+    "--model qwen3.5-2b_4-Bit --port 8091 --reasoning off",
+)
 COMMIT = os.environ.get("COMMIT", "the commit this report is committed with")
 
 
@@ -72,8 +74,9 @@ def cell(stats, unit="", decimals=2):
 def by_key(rows):
     groups = OrderedDict()
     for row in rows:
-        groups.setdefault(
-            (row["label"], row["quant"], row["engine"], row["prompt"]), []).append(row)
+        groups.setdefault((row["label"], row["quant"], row["engine"], row["prompt"]), []).append(
+            row
+        )
     return groups
 
 
@@ -82,56 +85,103 @@ def answered(rows):
 
 
 def table(groups, prompt):
-    out = ["| Model | Quant | Engine | Repeats | Answered | Cold load s | TTFT s | Decode tok/s | End-to-end tok/s | Tokens | Finish |",
-           "| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
+    out = [
+        "| Model | Quant | Engine | Repeats | Answered | Cold load s | TTFT s | Decode tok/s | End-to-end tok/s | Tokens | Finish |",
+        "| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    ]
     for (label, quant, engine, row_prompt), rows in groups.items():
         if row_prompt != prompt:
             continue
         ok = [r for r in rows if r["status"] == "ok"]
         finishes = sorted({r.get("finish") for r in ok})
-        out.append("| {} | {}-bit | {} | {} | {}/{} | {} | {} | {} | {} | {} | `{}` |".format(
-            label, quant, engine, len(rows), answered(ok), len(rows),
-            cell(stat([r.get("load_s") for r in ok if r.get("cold")])),
-            cell(stat([r.get("ttft_s") for r in ok]), decimals=3),
-            cell(stat([r.get("decode_tok_s") for r in ok])),
-            cell(stat([r.get("e2e_tok_s") for r in ok])),
-            cell(stat([r.get("completion_tokens") for r in ok]), decimals=0),
-            "/".join(f or "-" for f in finishes)))
+        out.append(
+            "| {} | {}-bit | {} | {} | {}/{} | {} | {} | {} | {} | {} | `{}` |".format(
+                label,
+                quant,
+                engine,
+                len(rows),
+                answered(ok),
+                len(rows),
+                cell(stat([r.get("load_s") for r in ok if r.get("cold")])),
+                cell(stat([r.get("ttft_s") for r in ok]), decimals=3),
+                cell(stat([r.get("decode_tok_s") for r in ok])),
+                cell(stat([r.get("e2e_tok_s") for r in ok])),
+                cell(stat([r.get("completion_tokens") for r in ok]), decimals=0),
+                "/".join(f or "-" for f in finishes),
+            )
+        )
     return "\n".join(out)
 
 
 def thinkers_table(rows):
-    out = ["| Model | Quant | Engine | Prompt | Repeats | Reasoning chars | Answered | Finish |",
-           "| --- | ---: | --- | --- | ---: | ---: | ---: | --- |"]
-    groups = by_key([r for r in rows if r["status"] == "ok"
-                     and r.get("reasoning_chars", 0) > 0])
+    out = [
+        "| Model | Quant | Engine | Prompt | Repeats | Reasoning chars | Answered | Finish |",
+        "| --- | ---: | --- | --- | ---: | ---: | ---: | --- |",
+    ]
+    groups = by_key([r for r in rows if r["status"] == "ok" and r.get("reasoning_chars", 0) > 0])
     for (label, quant, engine, prompt), group_rows in groups.items():
-        out.append("| {} | {}-bit | {} | `{}` | {} | {} | {}/{} | `{}` |".format(
-            label, quant, engine, prompt, len(group_rows),
-            cell(stat([r.get("reasoning_chars") for r in group_rows]), decimals=0),
-            answered(group_rows), len(group_rows),
-            "/".join(sorted({r.get("finish") for r in group_rows}))))
+        out.append(
+            "| {} | {}-bit | {} | `{}` | {} | {} | {}/{} | `{}` |".format(
+                label,
+                quant,
+                engine,
+                prompt,
+                len(group_rows),
+                cell(stat([r.get("reasoning_chars") for r in group_rows]), decimals=0),
+                answered(group_rows),
+                len(group_rows),
+                "/".join(sorted({r.get("finish") for r in group_rows})),
+            )
+        )
     return "\n".join(out)
 
 
 def verbatim(rows, prompt, repeat=1):
     out = []
-    groups = by_key([r for r in rows
-                     if r["status"] == "ok" and r["prompt"] == prompt
-                     and r.get("repeat", 1) == repeat])
+    groups = by_key(
+        [
+            r
+            for r in rows
+            if r["status"] == "ok" and r["prompt"] == prompt and r.get("repeat", 1) == repeat
+        ]
+    )
     for (label, quant, engine, _), group_rows in groups.items():
         row = group_rows[0]
-        repeats = len([r for r in rows if r["label"] == label and r["quant"] == quant
-                       and r["engine"] == engine and r["prompt"] == prompt])
-        same = len({" ".join(r["content"].split())
-                    for r in rows if r["label"] == label and r["quant"] == quant
-                    and r["engine"] == engine and r["prompt"] == prompt}) == 1
-        note = f"identical in all {repeats} repeats" if same and repeats > 1 else \
-               "varies between repeats" if repeats > 1 else ""
-        out.append(f"#### {label} {quant}-bit, {engine}"
-                   + (f" — {note}" if note else ""))
-        out.append(f"`finish: {row.get('finish')}`, {row.get('completion_tokens')} tokens, "
-                   f"TTFT {row.get('ttft_s')} s, decode {row.get('decode_tok_s')} tok/s\n")
+        repeats = len(
+            [
+                r
+                for r in rows
+                if r["label"] == label
+                and r["quant"] == quant
+                and r["engine"] == engine
+                and r["prompt"] == prompt
+            ]
+        )
+        same = (
+            len(
+                {
+                    " ".join(r["content"].split())
+                    for r in rows
+                    if r["label"] == label
+                    and r["quant"] == quant
+                    and r["engine"] == engine
+                    and r["prompt"] == prompt
+                }
+            )
+            == 1
+        )
+        note = (
+            f"identical in all {repeats} repeats"
+            if same and repeats > 1
+            else "varies between repeats"
+            if repeats > 1
+            else ""
+        )
+        out.append(f"#### {label} {quant}-bit, {engine}" + (f" — {note}" if note else ""))
+        out.append(
+            f"`finish: {row.get('finish')}`, {row.get('completion_tokens')} tokens, "
+            f"TTFT {row.get('ttft_s')} s, decode {row.get('decode_tok_s')} tok/s\n"
+        )
         out.append("```text\n" + (row.get("content") or "") + "\n```")
         if row.get("reasoning"):
             out.append("Reasoning (`reasoning_content`):\n")
@@ -149,33 +199,42 @@ def main():
     ok = sum(1 for r in rows if r["status"] == "ok")
 
     print('<img src="assets/wordmark.svg" alt="TinyTitan" height="34">\n')
-    print("# \"Capital of Paris\" on every served model and engine\n")
-    print("A fixed, deliberately ambiguous prompt -- *\"Capital of Paris\"* -- sent to")
-    print(f"every model the local server serves, on every engine it serves it on, plus a")
+    print('# "Capital of Paris" on every served model and engine\n')
+    print('A fixed, deliberately ambiguous prompt -- *"Capital of Paris"* -- sent to')
+    print("every model the local server serves, on every engine it serves it on, plus a")
     print("plain control question, with **thinking off**. The tables are generated from")
     print("the raw rows by `benchmark/capital_of_paris_report.py`; the harness that")
     print("produced them is `benchmark/capital_of_paris_smartness.py`, both in the")
     print("[TinyTitan repository](https://github.com/Pummelchen/TinyTitan). The rows")
     print("themselves are gitignored, under")
-    print("`benchmark/benchmark-results/capital-of-paris-20260911T1935/` "
-          "(`results-v2-3x2.jsonl`")
+    print("`benchmark/benchmark-results/capital-of-paris-20260911T1935/` (`results-v2-3x2.jsonl`")
     print("for this page, `results.jsonl` for the single-pass first run).\n")
 
     print("## Protocol\n")
     print(f"- Commit `{COMMIT}`; `{DEVICE}`.")
     print(f"- Server: `{SERVER}`")
-    print("- Request: `POST /v1/chat/completions`, `temperature: 0`, `max_tokens: 128`, "
-          "`stream: true` with usage, `thinking off`.")
-    print(f"- {models} model/engine combinations x {len(prompts)} prompts x "
-          f"{repeats} repeats = **{len(rows)} measured runs**, {ok} of them ok.")
-    print("- One model resident at a time. A warm-up request runs only when the model "
-          "*changes*, with the prompt that is then measured, so a repeat is measured "
-          "on the resident model; `Cold load` is that warm-up, blank for repeats.")
-    print("- The three MTP draft heads are not standalone models -- the catalog "
-          "refuses them (`served only beside its target`) -- so they are not rows.")
-    print("- Times come from the SSE stream: TTFT is the first `content` or "
-          "`reasoning_content` delta, decode rate is `(completion_tokens - 1)` over "
-          "the time between that delta and the last one.\n")
+    print(
+        "- Request: `POST /v1/chat/completions`, `temperature: 0`, `max_tokens: 128`, "
+        "`stream: true` with usage, `thinking off`."
+    )
+    print(
+        f"- {models} model/engine combinations x {len(prompts)} prompts x "
+        f"{repeats} repeats = **{len(rows)} measured runs**, {ok} of them ok."
+    )
+    print(
+        "- One model resident at a time. A warm-up request runs only when the model "
+        "*changes*, with the prompt that is then measured, so a repeat is measured "
+        "on the resident model; `Cold load` is that warm-up, blank for repeats."
+    )
+    print(
+        "- The three MTP draft heads are not standalone models -- the catalog "
+        "refuses them (`served only beside its target`) -- so they are not rows."
+    )
+    print(
+        "- Times come from the SSE stream: TTFT is the first `content` or "
+        "`reasoning_content` delta, decode rate is `(completion_tokens - 1)` over "
+        "the time between that delta and the last one.\n"
+    )
 
     for index, prompt in enumerate(prompts):
         label = "the ambiguous prompt" if index == 0 else "the plain control question"
@@ -214,7 +273,7 @@ def main():
     print("  and 3.8-5.0 tok/s across the three repeats, and its GPU row is stable at")
     print("  1.46-1.48 s TTFT and 8.8-9.0 tok/s. The first fault-in of the 9.5 GB")
     print("  snapshot is the expensive moment, not the request.")
-    print("- **The 2B 4-bit \"degenerate\" reply is deterministic, not noise.** All three")
+    print('- **The 2B 4-bit "degenerate" reply is deterministic, not noise.** All three')
     print("  repeats produced the same text on the GPU path, the same install on the CPU")
     print("  answered cleanly (51 tokens), and the plain control prompt answered cleanly")
     print("  on both (8-9 tokens). So it is one install, one prompt, one engine -- and")
@@ -231,19 +290,26 @@ def main():
     print("## Rows worth looking at\n")
     empty = [r for r in rows if r["status"] == "ok" and r.get("content_chars", 0) == 0]
     if empty:
-        print(f"- **{len(empty)} run(s) produced no answer in `content`** -- the thought "
-              "used the whole budget before the answer began:")
+        print(
+            f"- **{len(empty)} run(s) produced no answer in `content`** -- the thought "
+            "used the whole budget before the answer began:"
+        )
         for r in empty:
-            print(f"  - {r['label']} {r['quant']}-bit {r['engine']}, "
-                  f"{r['reasoning_chars']} characters of reasoning, "
-                  f"finish `{r.get('finish')}`, prompt `{r['prompt']}`")
+            print(
+                f"  - {r['label']} {r['quant']}-bit {r['engine']}, "
+                f"{r['reasoning_chars']} characters of reasoning, "
+                f"finish `{r.get('finish')}`, prompt `{r['prompt']}`"
+            )
     truncated = [r for r in rows if r.get("finish") == "length"]
     if truncated:
         print(f"- **{len(truncated)} run(s) hit the token cap** (`finish_reason: length`).")
     failed = [r for r in rows if r["status"] != "ok"]
-    print(f"- **{len(failed)} run(s) failed.**" if failed else
-          "- **No run failed**: every request was served, including the ones whose "
-          "answer was empty.")
+    print(
+        f"- **{len(failed)} run(s) failed.**"
+        if failed
+        else "- **No run failed**: every request was served, including the ones whose "
+        "answer was empty."
+    )
     for r in failed:
         print(f"  - {r['label']} {r['quant']}-bit {r['engine']}: {r.get('error')}")
 

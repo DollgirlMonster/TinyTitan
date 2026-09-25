@@ -17,6 +17,7 @@ INT4 tensors are affine over groups of 64 along the row: a byte holds two
 values, low nibble first, and `value = q * scale + bias` with bf16 scale and
 bias per group.
 """
+
 import json
 import struct
 from pathlib import Path
@@ -41,8 +42,7 @@ class GTurboWeights:
         self.path = self.root / "model_weights.bin"
         self.manifest = json.loads((self.root / "manifest.json").read_text())
         with self.path.open("rb") as handle:
-            index_size, resident_size, count = struct.unpack(
-                "<QQQ", handle.read(HEADER_BYTES))
+            index_size, resident_size, count = struct.unpack("<QQQ", handle.read(HEADER_BYTES))
             handle.seek(0)
             index = handle.read(index_size)
         self.index_size = index_size
@@ -50,23 +50,41 @@ class GTurboWeights:
         self.entries = {}
         for i in range(count):
             base = HEADER_BYTES + i * ENTRY_BYTES
-            (name_off, name_len, dtype, _res, file_off, size,
-             s0, s1, s2, s3,
-             scale_off, scale_size, bias_off, bias_size) = struct.unpack_from(
-                "<IHBBQQIIIIQQQQ", index, base)
-            name = index[name_off:name_off + name_len].decode("utf-8")
+            (
+                name_off,
+                name_len,
+                dtype,
+                _res,
+                file_off,
+                size,
+                s0,
+                s1,
+                s2,
+                s3,
+                scale_off,
+                scale_size,
+                bias_off,
+                bias_size,
+            ) = struct.unpack_from("<IHBBQQIIIIQQQQ", index, base)
+            name = index[name_off : name_off + name_len].decode("utf-8")
             shape = tuple(d for d in (s0, s1, s2, s3) if d != 0)
             self.entries[name] = dict(
-                dtype=dtype, offset=file_off, size=size, shape=shape,
-                scale_offset=scale_off, scale_size=scale_size,
-                bias_offset=bias_off, bias_size=bias_size)
+                dtype=dtype,
+                offset=file_off,
+                size=size,
+                shape=shape,
+                scale_offset=scale_off,
+                scale_size=scale_size,
+                bias_offset=bias_off,
+                bias_size=bias_size,
+            )
         self._mmap = np.memmap(self.path, dtype=np.uint8, mode="r")
 
     def names(self, contains=""):
         return sorted(n for n in self.entries if contains in n)
 
     def _raw(self, offset, size):
-        return self._mmap[offset:offset + size]
+        return self._mmap[offset : offset + size]
 
     def get(self, name) -> np.ndarray:
         """Dequantized float32 tensor in its declared shape."""
@@ -98,14 +116,14 @@ class GTurboWeights:
             q[:, 1::2] = packed >> 4
         else:
             raise ValueError(
-                f"{name}: {row_bytes} bytes for {cols} values is neither "
-                "4-bit nor 8-bit")
+                f"{name}: {row_bytes} bytes for {cols} values is neither 4-bit nor 8-bit"
+            )
         scales = _bf16_to_f32(
             self._raw(e["scale_offset"], e["scale_size"]).view(np.uint16)
         ).reshape(rows, groups)
-        biases = _bf16_to_f32(
-            self._raw(e["bias_offset"], e["bias_size"]).view(np.uint16)
-        ).reshape(rows, groups)
+        biases = _bf16_to_f32(self._raw(e["bias_offset"], e["bias_size"]).view(np.uint16)).reshape(
+            rows, groups
+        )
         out = q.astype(np.float32).reshape(rows, groups, GROUP_SIZE)
         out = out * scales[:, :, None] + biases[:, :, None]
         return out.reshape(rows, cols)
@@ -140,7 +158,7 @@ class PackedExperts:
         def take(key):
             spec = record["tensors"][key]
             start = base + spec["offset"]
-            return blob[start:start + spec["size"]]
+            return blob[start : start + spec["size"]]
 
         # Width comes from the layout, not from an assumption: an 8-bit build
         # stores one byte per weight where a 4-bit one packs two, and reshaping

@@ -6,9 +6,10 @@ import Testing
 /// bundled here so server tests exercise the real ChatML pipeline offline.
 enum TokenizerFixture {
     static func folder() throws -> URL {
-        try #require(Bundle.module.url(
-            forResource: "ChatMLTokenizer",
-            withExtension: nil,
-            subdirectory: "Fixtures"))
+        try #require(
+            Bundle.module.url(
+                forResource: "ChatMLTokenizer",
+                withExtension: nil,
+                subdirectory: "Fixtures"))
     }
 }

@@ -42,8 +42,10 @@ public enum CPUOps {
 
     /// RMS norm over each `width`-long slice independently, which is how a
     /// per-head norm works: the statistics are the head's, not the layer's.
-    public static func rmsNormPerSlice(_ values: inout [Float], width: Int,
-                                       gamma: [Float], epsilon: Float) {
+    public static func rmsNormPerSlice(
+        _ values: inout [Float], width: Int,
+        gamma: [Float], epsilon: Float
+    ) {
         let slices = values.count / width
         for slice in 0..<slices {
             let base = slice * width
@@ -59,8 +61,10 @@ public enum CPUOps {
     /// L2-normalize each `width`-long slice. The delta rule wants unit keys
     /// and queries; without this the recurrent state's magnitude drifts with
     /// the input's.
-    public static func l2NormalizePerSlice(_ values: inout [Float], width: Int,
-                                           epsilon: Float) {
+    public static func l2NormalizePerSlice(
+        _ values: inout [Float], width: Int,
+        epsilon: Float
+    ) {
         let slices = values.count / width
         for slice in 0..<slices {
             let base = slice * width
@@ -88,8 +92,10 @@ public enum CPUOps {
     /// Partial: 64 of 256 for this model. The pairs are `(i, i + rotaryDim/2)`
     /// — a half-split within the rotated prefix, not adjacent elements, and
     /// not the whole head.
-    public static func applyRoPE(_ values: inout [Float], headDim: Int,
-                                 rotaryDim: Int, position: Int, theta: Float) {
+    public static func applyRoPE(
+        _ values: inout [Float], headDim: Int,
+        rotaryDim: Int, position: Int, theta: Float
+    ) {
         let half = rotaryDim / 2
         let heads = values.count / headDim
         for head in 0..<heads {
@@ -97,7 +103,8 @@ public enum CPUOps {
             for index in 0..<half {
                 let frequency = powf(theta, -Float(index) * 2 / Float(rotaryDim))
                 let angle = Float(position) * frequency
-                let cosine = cosf(angle), sine = sinf(angle)
+                let cosine = cosf(angle)
+                let sine = sinf(angle)
                 let a = values[base + index]
                 let b = values[base + half + index]
                 values[base + index] = a * cosine - b * sine
@@ -111,19 +118,27 @@ public enum CPUOps {
     /// Both widths appear in one snapshot: the 4-bit build keeps the tied
     /// embedding and the attention K/V at 8 bits, because that is where the
     /// measured error was.
-    public static func gemv(_ matrix: AffineSnapshot.Matrix,
-                            x: UnsafePointer<Float>,
-                            out: UnsafeMutablePointer<Float>,
-                            threads: Int) {
+    public static func gemv(
+        _ matrix: AffineSnapshot.Matrix,
+        x: UnsafePointer<Float>,
+        out: UnsafeMutablePointer<Float>,
+        threads: Int
+    ) throws {
         // The kernel's own row stride and group count both come from
         // `columns`, so a width that is not a whole number of groups mis-strides
         // every row after the first while still returning a full-length result.
         Int8AffineGEMV.requireWholeGroups(matrix.columns, "CPUTensorOps.gemv")
-        let weights = matrix.weights.baseAddress!.assumingMemoryBound(to: UInt8.self)
+        guard let weights = matrix.weights.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+            throw ModelError.internalInconsistency(
+                detail: "the affine matrix has no packed weights to multiply")
+        }
         let bytesPerRow = matrix.columns * matrix.bits / 8
         let groupsPerRow = matrix.columns / matrix.groupSize
-        let kernel: (UnsafePointer<UInt8>, UnsafePointer<UInt16>, UnsafePointer<UInt16>,
-                     Int, UnsafeMutablePointer<Float>) -> Void
+        let kernel:
+            (
+                UnsafePointer<UInt8>, UnsafePointer<UInt16>, UnsafePointer<UInt16>,
+                Int, UnsafeMutablePointer<Float>
+            ) -> Void
         switch matrix.bits {
         case 8:
             kernel = { w, s, b, rows, o in
@@ -164,10 +179,11 @@ public enum CPUOps {
             let first = slice * chunk
             guard first < matrix.rows else { return }
             let count = min(chunk, matrix.rows - first)
-            capturedKernel(capturedWeights + first * bytesPerRow,
-                           matrix.scales + first * groupsPerRow,
-                           matrix.biases + first * groupsPerRow,
-                           count, capturedOut + first)
+            capturedKernel(
+                capturedWeights + first * bytesPerRow,
+                matrix.scales + first * groupsPerRow,
+                matrix.biases + first * groupsPerRow,
+                count, capturedOut + first)
         }
     }
 }

@@ -14,9 +14,10 @@ public struct RemoteInstallPaths: Sendable, Equatable {
         let standardized = URL(fileURLWithPath: outputDirectory).standardizedFileURL
         let basename = standardized.lastPathComponent.precomposedStringWithCanonicalMapping
         guard !basename.isEmpty,
-              basename != ".",
-              basename != "..",
-              !basename.contains("/") else {
+            basename != ".",
+            basename != "..",
+            !basename.contains("/")
+        else {
             throw RepackError.installPathUnsafe(
                 path: outputDirectory,
                 detail: "invalid output basename")
@@ -93,10 +94,12 @@ public final class InstallLock: @unchecked Sendable {
             // Close the validate-then-use TOCTOU window for the state paths:
             // re-open each present entry with O_NOFOLLOW and validate the
             // opened descriptor's type, instead of trusting the earlier lstat.
-            try verifyOpenedEntry(path: paths.partialDirectory,
-                                  allowedKinds: [.directory])
-            try verifyOpenedEntry(path: paths.checkpointFile,
-                                  allowedKinds: [.regular])
+            try verifyOpenedEntry(
+                path: paths.partialDirectory,
+                allowedKinds: [.directory])
+            try verifyOpenedEntry(
+                path: paths.checkpointFile,
+                allowedKinds: [.regular])
             return InstallLock(paths: paths, descriptor: descriptor)
         } catch {
             _ = flock(descriptor, LOCK_UN)
@@ -108,8 +111,10 @@ public final class InstallLock: @unchecked Sendable {
     /// Opens `path` with O_NOFOLLOW and confirms the descriptor is one of the
     /// allowed kinds. Absent entries pass (they may be created later under the
     /// lock); a symlink or wrong-typed entry fails the open.
-    private static func verifyOpenedEntry(path: String,
-                                          allowedKinds: Set<Posix.EntryKind>) throws {
+    private static func verifyOpenedEntry(
+        path: String,
+        allowedKinds: Set<Posix.EntryKind>
+    ) throws {
         let kind = try Posix.entryKind(path)
         if kind == .absent { return }
         guard allowedKinds.contains(kind) else {
@@ -122,7 +127,8 @@ public final class InstallLock: @unchecked Sendable {
         case .directory:
             let fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             guard fd >= 0, fstat(fd, &info) == 0,
-                  (info.st_mode & S_IFMT) == S_IFDIR else {
+                (info.st_mode & S_IFMT) == S_IFDIR
+            else {
                 if fd >= 0 { close(fd) }
                 throw RepackError.installPathUnsafe(
                     path: path,
@@ -132,7 +138,8 @@ public final class InstallLock: @unchecked Sendable {
         case .regular:
             let fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
             guard fd >= 0, fstat(fd, &info) == 0,
-                  (info.st_mode & S_IFMT) == S_IFREG else {
+                (info.st_mode & S_IFMT) == S_IFREG
+            else {
                 if fd >= 0 { close(fd) }
                 throw RepackError.installPathUnsafe(
                     path: path,

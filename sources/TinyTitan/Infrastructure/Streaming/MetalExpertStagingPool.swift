@@ -28,9 +28,10 @@ public final class MetalExpertStagingPool: @unchecked Sendable {
         var allocated: [MTLBuffer] = []
         allocated.reserveCapacity(slotCapacity)
         for _ in 0..<slotCapacity {
-            guard let buffer = device.makeBuffer(
-                length: byteCount,
-                options: .storageModeShared)
+            guard
+                let buffer = device.makeBuffer(
+                    length: byteCount,
+                    options: .storageModeShared)
             else {
                 throw ModelError.residentBufferWrapFailed
             }
@@ -49,8 +50,9 @@ public final class MetalExpertStagingPool: @unchecked Sendable {
         defer { lock.unlock() }
         guard !leased else { return nil }
         leased = true
-        return MetalExpertStagingLease(pool: self,
-                                       buffers: Array(buffers.prefix(count)))
+        return MetalExpertStagingLease(
+            pool: self,
+            buffers: Array(buffers.prefix(count)))
     }
 
     fileprivate func release() {
@@ -96,10 +98,12 @@ final class MetalExpertStagingTransfer: @unchecked Sendable {
     private let destinationOffsets: [Int]
     private let byteCount: Int
 
-    init(lease: MetalExpertStagingLease,
-         destinations: [MTLBuffer],
-         destinationOffsets: [Int],
-         byteCount: Int) {
+    init(
+        lease: MetalExpertStagingLease,
+        destinations: [MTLBuffer],
+        destinationOffsets: [Int],
+        byteCount: Int
+    ) {
         precondition(lease.buffers.count == destinations.count)
         precondition(destinations.count == destinationOffsets.count)
         precondition(byteCount > 0)
@@ -116,15 +120,17 @@ final class MetalExpertStagingTransfer: @unchecked Sendable {
         for index in destinations.indices {
             let destinationOffset = destinationOffsets[index]
             guard destinationOffset >= 0,
-                  destinations[index].length - destinationOffset >= byteCount,
-                  lease.buffers[index].length >= byteCount else {
+                destinations[index].length - destinationOffset >= byteCount,
+                lease.buffers[index].length >= byteCount
+            else {
                 blit.endEncoding()
                 throw ModelError.internalInconsistency(
                     detail: "Metal I/O staging transfer range is out of bounds")
             }
-            blit.copy(from: lease.buffers[index], sourceOffset: 0,
-                      to: destinations[index], destinationOffset: destinationOffset,
-                      size: byteCount)
+            blit.copy(
+                from: lease.buffers[index], sourceOffset: 0,
+                to: destinations[index], destinationOffset: destinationOffset,
+                size: byteCount)
         }
         blit.endEncoding()
     }

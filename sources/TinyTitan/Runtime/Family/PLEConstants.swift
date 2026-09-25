@@ -38,7 +38,8 @@ public struct PLEConstants: Decodable, Sendable {
     /// plus its own vocabulary.
     public var tableRowCount: UInt64 {
         guard let offset = ngramHeadsOffsets.last,
-              let vocab = ngramHeadsVocabSizes.last else { return 0 }
+            let vocab = ngramHeadsVocabSizes.last
+        else { return 0 }
         return UInt64(offset) + UInt64(vocab)
     }
 
@@ -52,22 +53,27 @@ public struct PLEConstants: Decodable, Sendable {
     /// rows of the wrong width, silently. `PLEHash`'s own consistency checks are
     /// preconditions, so this must run *before* `makeHash()` to turn a corrupt
     /// sidecar into a report rather than a trap.
-    public func validate(embedDim: Int,
-                         ngramSize: Int,
-                         headsPerNgram: Int) throws {
+    public func validate(
+        embedDim: Int,
+        ngramSize: Int,
+        headsPerNgram: Int
+    ) throws {
         let headCount = headsPerNgram * (self.ngramSize - 1)
         guard self.ngramSize == ngramSize else {
-            throw ModelError.archMismatch(field: "ple.ngramSize",
-                                          expected: "\(ngramSize)",
-                                          actual: "\(self.ngramSize)")
+            throw ModelError.archMismatch(
+                field: "ple.ngramSize",
+                expected: "\(ngramSize)",
+                actual: "\(self.ngramSize)")
         }
         guard self.headsPerNgram == headsPerNgram else {
-            throw ModelError.archMismatch(field: "ple.headsPerNgram",
-                                          expected: "\(headsPerNgram)",
-                                          actual: "\(self.headsPerNgram)")
+            throw ModelError.archMismatch(
+                field: "ple.headsPerNgram",
+                expected: "\(headsPerNgram)",
+                actual: "\(self.headsPerNgram)")
         }
         guard ngramHeadsOffsets.count == headCount,
-              ngramHeadsVocabSizes.count == headCount else {
+            ngramHeadsVocabSizes.count == headCount
+        else {
             throw ModelError.archMismatch(
                 field: "ple_constants.json head tables",
                 expected: "\(headCount) entries each",
@@ -83,11 +89,12 @@ public struct PLEConstants: Decodable, Sendable {
     }
 
     public func makeHash() -> PLEHash {
-        PLEHash(multipliers: layerMultipliers.map { UInt64(bitPattern: $0) },
-                offsets: ngramHeadsOffsets.map { UInt64(bitPattern: $0) },
-                vocabSizes: ngramHeadsVocabSizes.map { UInt64(bitPattern: $0) },
-                ngramSize: ngramSize,
-                headsPerNgram: headsPerNgram,
-                eosTokenID: eosTokenID)
+        PLEHash(
+            multipliers: layerMultipliers.map { UInt64(bitPattern: $0) },
+            offsets: ngramHeadsOffsets.map { UInt64(bitPattern: $0) },
+            vocabSizes: ngramHeadsVocabSizes.map { UInt64(bitPattern: $0) },
+            ngramSize: ngramSize,
+            headsPerNgram: headsPerNgram,
+            eosTokenID: eosTokenID)
     }
 }

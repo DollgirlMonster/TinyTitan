@@ -38,7 +38,8 @@ do {
     // Without --reasoning these are the --thinking / --reasoning-effort
     // values verbatim and nothing is read from disk; the router fits the
     // level per model itself, so it needs nothing from here.
-    let reasoning = arguments.modelsDirectory == nil
+    let reasoning =
+        arguments.modelsDirectory == nil
         ? try arguments.singleModelReasoning(directory: modelURL)
         : (thinking: arguments.thinkingMode, effort: arguments.reasoningEffort)
     // Built lazily: the CPU engine serves an affine snapshot, which has no
@@ -49,14 +50,16 @@ do {
     // to one under MTP, and both the plan and the coordinator read it so they
     // cannot disagree.
     let concurrency = arguments.sessionSlots
-    let makePlan = { ModelSessionPlan.from(
-        arguments: arguments,
-        modelDirectory: modelURL,
-        thinking: reasoning.thinking,
-        reasoningEffort: reasoning.effort,
-        mtpModelDirectory: arguments.mtpModel.map {
-            URL(fileURLWithPath: $0).standardizedFileURL
-        }) }
+    let makePlan = {
+        ModelSessionPlan.from(
+            arguments: arguments,
+            modelDirectory: modelURL,
+            thinking: reasoning.thinking,
+            reasoningEffort: reasoning.effort,
+            mtpModelDirectory: arguments.mtpModel.map {
+                URL(fileURLWithPath: $0).standardizedFileURL
+            })
+    }
 
     let backend: any ServerInferenceBackend
     let facts: ModelSessionFacts
@@ -92,24 +95,27 @@ do {
             try await routing.preload()
         }
         let gpu = catalog.entries.filter { $0.backend == .gpu }.count
-        print("catalog: \(catalog.entries.count) models (\(gpu) gpu, "
-            + "\(catalog.entries.count - gpu) cpu) in \(catalog.directory.path); "
-            + (arguments.lazyLoad ? "\(initial.id) loads on the first request" : "loaded \(initial.id)"))
+        print(
+            "catalog: \(catalog.entries.count) models (\(gpu) gpu, "
+                + "\(catalog.entries.count - gpu) cpu) in \(catalog.directory.path); "
+                + (arguments.lazyLoad
+                    ? "\(initial.id) loads on the first request" : "loaded \(initial.id)"))
         router = routing
         backend = routing
         initialEngine = initial.backend.rawValue
-        facts = ModelSessionFacts(modelID: initial.id,
-                                  prefillChunkTokens: 0,
-                                  // The mode the initial model will really run,
-                                  // not the one requested: the rule lives in
-                                  // `initialPromptCacheMode` so the banner, the
-                                  // residency line and a test all read the same
-                                  // answer, and the CPU arm is testable without
-                                  // a catalog on disk.
-                                  promptCacheMode: ServerModelSession.initialPromptCacheMode(
-                                      backend: initial.backend,
-                                      requested: arguments.promptCacheMode,
-                                      maxConcurrentSequences: concurrency))
+        facts = ModelSessionFacts(
+            modelID: initial.id,
+            prefillChunkTokens: 0,
+            // The mode the initial model will really run,
+            // not the one requested: the rule lives in
+            // `initialPromptCacheMode` so the banner, the
+            // residency line and a test all read the same
+            // answer, and the CPU arm is testable without
+            // a catalog on disk.
+            promptCacheMode: ServerModelSession.initialPromptCacheMode(
+                backend: initial.backend,
+                requested: arguments.promptCacheMode,
+                maxConcurrentSequences: concurrency))
         reasoningProfile = routing.servedModel(named: initial.id)?.reasoningProfile
     } else if arguments.cpu {
         // A different engine entirely: no Metal context, no expert
@@ -125,20 +131,24 @@ do {
             thinkingMode: reasoning.thinking)
         backend = cpuBackend
         let elapsed = started.duration(to: .now)
-        let seconds = Double(elapsed.components.seconds)
+        let seconds =
+            Double(elapsed.components.seconds)
             + Double(elapsed.components.attoseconds) / 1e18
-        let identifier = arguments.modelIDOverride
+        let identifier =
+            arguments.modelIDOverride
             ?? directory.lastPathComponent
         facts = ModelSessionFacts(
             modelID: identifier,
             prefillChunkTokens: 0,
             promptCacheMode: .off,
             expertCacheSlots: 0)
-        print(String(format: "CPU engine: %@ %@in %.1fs, %d threads",
-                     identifier,
-                     cpuBackend.residentBytes > 0
-                        ? "\(cpuBackend.residentBytes / 1_000_000) MB resident, " : "",
-                     seconds, cpuBackend.threads))
+        print(
+            String(
+                format: "CPU engine: %@ %@in %.1fs, %d threads",
+                identifier,
+                cpuBackend.residentBytes > 0
+                    ? "\(cpuBackend.residentBytes / 1_000_000) MB resident, " : "",
+                seconds, cpuBackend.threads))
         reasoningProfile = ServerReasoningProfile(
             family: .qwen36,
             thinkingMode: reasoning.thinking,
@@ -169,8 +179,9 @@ do {
     // The coordinator owns the "a client generation is in flight" signal, and
     // the resident side-engine reads it to choose its width, so it is built
     // here and handed to both.
-    let coordinator = ServerCoordinator(queueLimit: arguments.queueLimit,
-                                        width: concurrency)
+    let coordinator = ServerCoordinator(
+        queueLimit: arguments.queueLimit,
+        width: concurrency)
 
     // Persistent memory wraps whatever backend was built: one decorator on
     // the way in, and nothing at all when it is disabled. The side-engine is
@@ -189,12 +200,15 @@ do {
         router: router,
         coordinator: coordinator)
     _ = try await server.start(port: arguments.port)
-    let diskCache = facts.promptCacheMode == .off
+    let diskCache =
+        facts.promptCacheMode == .off
         ? "off" : arguments.promptCacheDiskDirectory ?? "off"
-    let cacheMemoryMiB = facts.promptCacheMode == .off
+    let cacheMemoryMiB =
+        facts.promptCacheMode == .off
         ? 0 : arguments.promptCacheMemoryMiB
     let mtp = arguments.mtpModel == nil ? "off" : "on:\(arguments.mtpMemoryMiB)MiB"
-    let residencyBanner = arguments.managesResidency
+    let residencyBanner =
+        arguments.managesResidency
         ? " lazy_load=on idle_unload=\(arguments.idleUnloadSeconds > 0 ? "\(arguments.idleUnloadSeconds)s" : "off")"
         : ""
     if let router {
@@ -204,17 +218,22 @@ do {
         // the initial model's engine and real mode, and the residency line
         // reports both again on every load and switch.
         let engine = initialEngine.map { " engine=\($0)" } ?? ""
-        print("TinyTitanServer \(ServerVersion.current) ready at http://127.0.0.1:\(arguments.port) models=\(router.servedModels.count) initial=\(facts.modelID)\(engine) context=\(arguments.maxContext) concurrency=\(concurrency) prompt_cache=\(facts.promptCacheMode.rawValue) reasoning=\(arguments.requestedReasoningLevel.rawValue) dynamic=on")
+        print(
+            "TinyTitanServer \(ServerVersion.current) ready at http://127.0.0.1:\(arguments.port) models=\(router.servedModels.count) initial=\(facts.modelID)\(engine) context=\(arguments.maxContext) concurrency=\(concurrency) prompt_cache=\(facts.promptCacheMode.rawValue) reasoning=\(arguments.requestedReasoningLevel.rawValue) dynamic=on"
+        )
     } else {
-        print("TinyTitanServer \(ServerVersion.current) ready at http://127.0.0.1:\(arguments.port) model=\(facts.modelID) context=\(arguments.maxContext) concurrency=\(concurrency) prefill_chunk=\(facts.prefillChunkTokens)\(facts.expertCacheSlots > 0 ? " expert_slots=\(facts.expertCacheSlots)" : "") prompt_cache=\(facts.promptCacheMode.rawValue) prompt_cache_memory_mib=\(cacheMemoryMiB) prompt_cache_disk=\(diskCache) thinking=\(reasoning.thinking.rawValue) mtp=\(mtp)\(residencyBanner)")
+        print(
+            "TinyTitanServer \(ServerVersion.current) ready at http://127.0.0.1:\(arguments.port) model=\(facts.modelID) context=\(arguments.maxContext) concurrency=\(concurrency) prefill_chunk=\(facts.prefillChunkTokens)\(facts.expertCacheSlots > 0 ? " expert_slots=\(facts.expertCacheSlots)" : "") prompt_cache=\(facts.promptCacheMode.rawValue) prompt_cache_memory_mib=\(cacheMemoryMiB) prompt_cache_disk=\(diskCache) thinking=\(reasoning.thinking.rawValue) mtp=\(mtp)\(residencyBanner)"
+        )
     }
     WatchdogConfiguration.shared.announce()
     if arguments.unloadDiscardsWarmCache {
-        FileHandle.standardError.write(Data(
-            ("warning: --idle-unload-seconds drops the in-memory prompt cache with "
-                + "the model; add --prompt-cache-disk <dir> so entries survive an "
-                + "unload, or the first request after each unload pays a full "
-                + "cold prefill\n").utf8))
+        FileHandle.standardError.write(
+            Data(
+                ("warning: --idle-unload-seconds drops the in-memory prompt cache with "
+                    + "the model; add --prompt-cache-disk <dir> so entries survive an "
+                    + "unload, or the first request after each unload pays a full "
+                    + "cold prefill\n").utf8))
     }
 
     _ = await signals.wait()

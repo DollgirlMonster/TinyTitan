@@ -17,8 +17,15 @@
  * @module dsh-tinytitan/generate
  */
 import { execFileSync } from "node:child_process";
-import { accessSync, constants, copyFileSync, existsSync, readFileSync, statSync, writeFileSync }
-  from "node:fs";
+import {
+  accessSync,
+  constants,
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { delimiter, join } from "node:path";
 
 import { scanModelsFolder } from "./catalog-scan.js";
@@ -112,7 +119,12 @@ export function catalogRows(models) {
       const backend = textField(model.backend);
       if (backend !== "gpu" && backend !== "cpu") throw new Error(`backend ${backend}`);
       const quant = model.quant;
-      if (quant === undefined || quant === null || quant === "" || !Number.isFinite(Number(quant))) {
+      if (
+        quant === undefined ||
+        quant === null ||
+        quant === "" ||
+        !Number.isFinite(Number(quant))
+      ) {
         throw new Error("quant");
       }
       // Not used by the block, but the shell parser formats it and skips the
@@ -493,8 +505,10 @@ export function generateRoute({
   let source = "folder";
   if (binary !== null) {
     try {
-      const stdout = run(binary, ["--catalog", "--models-dir", directory],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      const stdout = run(binary, ["--catalog", "--models-dir", directory], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
       const parsed = JSON.parse(String(stdout));
       if (parsed !== null && typeof parsed === "object" && Array.isArray(parsed.models)) {
         catalog = parsed;
@@ -503,13 +517,17 @@ export function generateRoute({
         log('dsh-tinytitan: the server catalog carried no "models" list; reading models/ directly');
       }
     } catch (error) {
-      const detail = String(error?.stderr ?? error?.message ?? error).trim().split("\n")[0]
-        || "the server catalog could not be read";
+      const detail =
+        String(error?.stderr ?? error?.message ?? error)
+          .trim()
+          .split("\n")[0] || "the server catalog could not be read";
       log(`dsh-tinytitan: the server catalog failed (${detail}); reading models/ directly`);
     }
   } else {
-    log("dsh-tinytitan: no TinyTitan server binary (set serverBinary or TINYTITAN_SERVER); "
-      + "reading models/ directly");
+    log(
+      "dsh-tinytitan: no TinyTitan server binary (set serverBinary or TINYTITAN_SERVER); " +
+        "reading models/ directly",
+    );
   }
   if (catalog === null) {
     const scanned = scanModelsFolder(directory, { env });
@@ -529,15 +547,22 @@ export function generateRoute({
   if (!existsSync(path)) {
     const detail = `no DSH settings file at ${path}`;
     log(`dsh-tinytitan: ${detail}; leaving the llm-pi-ai route as it is`);
-    return { status: "missing", detail, serverBinary: binary, modelsDir: directory,
-             settingsPath: path };
+    return {
+      status: "missing",
+      detail,
+      serverBinary: binary,
+      modelsDir: directory,
+      settingsPath: path,
+    };
   }
   try {
     const block = buildBlock(rows, { port, provider, context, maxTokens, reasoning });
     const written = writeRouteSettings({ settingsPath: path, block, stamp, backup });
     const detail = written.changed ? "written" : "already current";
-    log(`dsh-tinytitan: route refreshed with the built-in generator `
-      + `(${rows.length} model(s) from the ${source}, ${detail})`);
+    log(
+      `dsh-tinytitan: route refreshed with the built-in generator ` +
+        `(${rows.length} model(s) from the ${source}, ${detail})`,
+    );
     return {
       status: "written-self-contained",
       detail,
@@ -549,9 +574,16 @@ export function generateRoute({
       backup: written.backup,
     };
   } catch (error) {
-    const detail = String(error?.message ?? error).trim().split("\n")[0];
+    const detail = String(error?.message ?? error)
+      .trim()
+      .split("\n")[0];
     log(`dsh-tinytitan: route refresh failed: ${detail}`);
-    return { status: "failed", detail, serverBinary: binary, modelsDir: directory,
-             settingsPath: path };
+    return {
+      status: "failed",
+      detail,
+      serverBinary: binary,
+      modelsDir: directory,
+      settingsPath: path,
+    };
   }
 }

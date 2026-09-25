@@ -30,17 +30,21 @@ try:
     from safetensors import safe_open
     from safetensors.numpy import save_file
 except ImportError as exc:  # pragma: no cover
-    sys.exit(f"missing dependency: {exc}\n"
-             f"  install them for the interpreter running this file: {sys.executable}\n"
-             "    -m pip install safetensors numpy ml_dtypes\n"
-             "  (or point TINYTITAN_PYTHON at another Python 3.10+)")
+    sys.exit(
+        f"missing dependency: {exc}\n"
+        f"  install them for the interpreter running this file: {sys.executable}\n"
+        "    -m pip install safetensors numpy ml_dtypes\n"
+        "  (or point TINYTITAN_PYTHON at another Python 3.10+)"
+    )
 _spec = importlib.util.spec_from_file_location(
-    "prepare_qwen38", Path(__file__).parent / "prepare_qwen38.py")
+    "prepare_qwen38", Path(__file__).parent / "prepare_qwen38.py"
+)
 pq = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pq)
 
 _patch_spec = importlib.util.spec_from_file_location(
-    "patch_snapshot_precision", Path(__file__).parent / "patch_snapshot_precision.py")
+    "patch_snapshot_precision", Path(__file__).parent / "patch_snapshot_precision.py"
+)
 patcher = importlib.util.module_from_spec(_patch_spec)
 _patch_spec.loader.exec_module(patcher)
 
@@ -48,7 +52,7 @@ _patch_spec.loader.exec_module(patcher)
 def expected(ck_header_for, ck_index: dict, width: int) -> dict[str, tuple[str, int | None, list]]:
     """Map each output tensor name -> (source name, bits, shape)."""
     out: dict[str, tuple[str, int | None, list]] = {}
-    for name, shard in ck_index["weight_map"].items():
+    for name, _shard in ck_index["weight_map"].items():
         if pq.is_multimodal(name) or pq.is_ngram(name) or pq.is_ple_buffer(name):
             continue
         shape = ck_header_for(name)
@@ -79,15 +83,16 @@ def main() -> int:
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args()
 
-    snap_index = json.loads(
-        (args.snapshot / "model.safetensors.index.json").read_text())
+    snap_index = json.loads((args.snapshot / "model.safetensors.index.json").read_text())
     if args.index and args.index.exists():
         ck_index = json.loads(args.index.read_text())
     else:
         import subprocess
+
         url = f"https://huggingface.co/{pq.REPO}/raw/main/model.safetensors.index.json"
-        ck_index = json.loads(subprocess.run(["curl", "-sfL", url],
-                                             capture_output=True, check=True).stdout)
+        ck_index = json.loads(
+            subprocess.run(["curl", "-sfL", url], capture_output=True, check=True).stdout
+        )
 
     shape_cache: dict[str, list] = {}
 
@@ -132,9 +137,14 @@ def main() -> int:
     # unfolded snapshot is structurally perfect and produces fluent nonsense.
     # Sample the affected tensors against the checkpoint and say so.
     unfolded: list[str] = []
-    fold_names = [n for n in want
-                  if (n[:-len(".weight")] if n.endswith(".weight") else n)
-                  .endswith(pq.UNIT_OFFSET_NORM_SUFFIXES) and n in have]
+    fold_names = [
+        n
+        for n in want
+        if (n[: -len(".weight")] if n.endswith(".weight") else n).endswith(
+            pq.UNIT_OFFSET_NORM_SUFFIXES
+        )
+        and n in have
+    ]
     for name in fold_names[:6]:
         src = want[name][0]
         shard = snap_index["weight_map"][name]
@@ -148,18 +158,21 @@ def main() -> int:
 
     print(f"snapshot : {args.snapshot}")
     print(f"policy   : {args.bits}-bit build, {len(want)} tensors expected")
-    print(f"norm fold: {len(fold_names)} tensors need the +1; "
-          f"{'UNFOLDED -- rebuild or repair' if unfolded else 'folded'} "
-          f"(sampled {min(len(fold_names), 6)})")
+    print(
+        f"norm fold: {len(fold_names)} tensors need the +1; "
+        f"{'UNFOLDED -- rebuild or repair' if unfolded else 'folded'} "
+        f"(sampled {min(len(fold_names), 6)})"
+    )
     print(f"missing  : {len(missing)}")
     print(f"extra    : {len(extra)}")
     print(f"wrong bits: {len(wrong)}")
     print(f"wrong dtype: {len(dtypes)}")
     for group, items in (("missing", missing), ("extra", extra)):
         if items:
-            import collections, re
-            counts = collections.Counter(
-                re.sub(r"layers\.\d+\.", "layers.N.", i) for i in items)
+            import collections
+            import re
+
+            counts = collections.Counter(re.sub(r"layers\.\d+\.", "layers.N.", i) for i in items)
             for k, v in sorted(counts.items())[:8]:
                 print(f"   {group:8} x{v:<3} {k}")
     for name, wantb, gotb in wrong[:8]:
@@ -169,8 +182,11 @@ def main() -> int:
 
     if args.check:
         ok = not (missing or extra or wrong or dtypes or unfolded)
-        print("\nsnapshot matches the converter policy" if ok
-              else "\nsnapshot has drifted from the converter policy")
+        print(
+            "\nsnapshot matches the converter policy"
+            if ok
+            else "\nsnapshot has drifted from the converter policy"
+        )
         return 0 if ok else 1
     if not (missing or extra or wrong or dtypes or unfolded):
         print("\nnothing to do")
@@ -183,8 +199,11 @@ def main() -> int:
     for name in missing:
         src = want[name][0]
         sibling = next((n for n in want if want[n][0] == src and n in have), None)
-        shard = snap_index["weight_map"][sibling] if sibling else \
-            sorted(set(snap_index["weight_map"].values()))[0]
+        shard = (
+            snap_index["weight_map"][sibling]
+            if sibling
+            else sorted(set(snap_index["weight_map"].values()))[0]
+        )
         touched.setdefault(shard, []).append(name)
     for name, _w, _g in wrong:
         touched.setdefault(snap_index["weight_map"][name], []).append(name)
@@ -216,21 +235,21 @@ def main() -> int:
                 # it. A passthrough tensor must go back to bf16: the resident
                 # index stores a dtype per entry and the runtime rejects the
                 # install outright if a norm arrives as F32.
-                block[name] = np.ascontiguousarray(
-                    pq.fold_unit_offset(name, piece)).astype(ml_dtypes.bfloat16)
+                block[name] = np.ascontiguousarray(pq.fold_unit_offset(name, piece)).astype(
+                    ml_dtypes.bfloat16
+                )
                 for k in (stem + ".scales", stem + ".biases"):
-                    block.pop(k, None); snap_index["weight_map"].pop(k, None)
+                    block.pop(k, None)
+                    snap_index["weight_map"].pop(k, None)
                 snap_index["weight_map"][name] = shard
             else:
-                packed, scales, biases = pq.quantize_affine(
-                    np.ascontiguousarray(piece), bits)
+                packed, scales, biases = pq.quantize_affine(np.ascontiguousarray(piece), bits)
                 block[name] = packed
                 block[stem + ".scales"] = scales
                 block[stem + ".biases"] = biases
                 for k in (name, stem + ".scales", stem + ".biases"):
                     snap_index["weight_map"][k] = shard
-            print(f"    {name.split('language_model.')[-1]} "
-                  f"-> {bits or 'passthrough'}", flush=True)
+            print(f"    {name.split('language_model.')[-1]} -> {bits or 'passthrough'}", flush=True)
         tmp = path.with_suffix(".safetensors.new")
         save_file(block, str(tmp))
         tmp.replace(path)
@@ -240,10 +259,8 @@ def main() -> int:
         with safe_open(args.snapshot / shard, framework="np") as f:
             total += sum(f.get_tensor(k).nbytes for k in f.keys())
     snap_index["metadata"]["total_size"] = total
-    (args.snapshot / "model.safetensors.index.json").write_text(
-        json.dumps(snap_index, indent=1))
-    print(f"\nindex rewritten: {len(snap_index['weight_map'])} tensors, "
-          f"{total / 1e9:.1f} GB")
+    (args.snapshot / "model.safetensors.index.json").write_text(json.dumps(snap_index, indent=1))
+    print(f"\nindex rewritten: {len(snap_index['weight_map'])} tensors, {total / 1e9:.1f} GB")
     return 0
 
 
@@ -252,11 +269,11 @@ def _slice(value: np.ndarray, out_name: str) -> np.ndarray:
     if out_name.endswith("switch_mlp.gate_proj.weight"):
         return value[:, : value.shape[1] // 2, :]
     if out_name.endswith("switch_mlp.up_proj.weight"):
-        return value[:, value.shape[1] // 2:, :]
+        return value[:, value.shape[1] // 2 :, :]
     if out_name.endswith("indexer.index_q_proj.weight"):
-        return value[:pq.INDEXER_QUERY_ROWS]
+        return value[: pq.INDEXER_QUERY_ROWS]
     if out_name.endswith("indexer.index_k_proj.weight"):
-        return value[pq.INDEXER_QUERY_ROWS:]
+        return value[pq.INDEXER_QUERY_ROWS :]
     return value
 
 

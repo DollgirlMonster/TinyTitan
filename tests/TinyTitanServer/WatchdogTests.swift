@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
@@ -18,15 +19,20 @@ import Testing
         WatchdogConfiguration(isEnabled: true)
     }
 
-    private func feed(_ text: String,
-                      configuration: WatchdogConfiguration) -> WatchdogVerdict {
+    private func feed(
+        _ text: String,
+        configuration: WatchdogConfiguration
+    ) -> WatchdogVerdict {
         var watchdog = LoopWatchdog(configuration: configuration)
         var verdict = WatchdogVerdict.fine
         // One byte at a time: chunk boundaries must not change the answer,
         // and a token is rarely a tidy unit anyway.
         for character in text {
             let result = watchdog.observe(String(character), at: .now)
-            if result != .fine { verdict = result; break }
+            if result != .fine {
+                verdict = result
+                break
+            }
         }
         return verdict
     }
@@ -41,8 +47,10 @@ import Testing
     private let looped = "Wait, I need to check the facts again. "
 
     @Test func loopTripsOnARepeatedPhrase() {
-        #expect(feed(String(repeating: looped, count: 8),
-                     configuration: observing) != .fine)
+        #expect(
+            feed(
+                String(repeating: looped, count: 8),
+                configuration: observing) != .fine)
     }
 
     /// A model can think in circles until its budget is gone. Since thinking
@@ -74,9 +82,11 @@ import Testing
     /// it fired on 8.1% of the recorded corpus.
     @Test func loopDoesNotTripOnAFewRepeats() {
         for count in 2...4 {
-            #expect(feed(String(repeating: looped, count: count),
-                         configuration: observing) == .fine,
-                    Comment(rawValue: "\(count) repeats should not be a loop"))
+            #expect(
+                feed(
+                    String(repeating: looped, count: count),
+                    configuration: observing) == .fine,
+                Comment(rawValue: "\(count) repeats should not be a loop"))
         }
     }
 
@@ -93,13 +103,13 @@ import Testing
     /// Ordinary prose of the same length is untouched.
     @Test func loopIgnoresOrdinaryProse() {
         let prose = """
-        The town of Ashgrove sits where the river bends, and the ferry has \
-        run on Sundays since the bridge went down. Marcus keeps the ledger \
-        in the back room of the inn, which burned in the autumn of the year \
-        the photograph was taken, and Rosa has never once agreed with him \
-        about what the photograph shows. The road north is closed until the \
-        thaw, so nobody has left the valley since the first snow.
-        """
+            The town of Ashgrove sits where the river bends, and the ferry has \
+            run on Sundays since the bridge went down. Marcus keeps the ledger \
+            in the back room of the inn, which burned in the autumn of the year \
+            the photograph was taken, and Rosa has never once agreed with him \
+            about what the photograph shows. The road north is closed until the \
+            thaw, so nobody has left the valley since the first snow.
+            """
         #expect(feed(prose, configuration: observing) == .fine)
     }
 
@@ -108,7 +118,8 @@ import Testing
     @Test func loopIgnoresRepetitiveCode() {
         var code = "switch token {\n"
         for index in 0..<30 {
-            code += "    case .symbol\(index): return Token(kind: .symbol\(index), "
+            code +=
+                "    case .symbol\(index): return Token(kind: .symbol\(index), "
                 + "offset: offset, length: \(index))\n"
         }
         code += "    default: return nil\n}\n"
@@ -118,14 +129,22 @@ import Testing
     /// A table rule, a line of dashes and a block of indentation all repeat
     /// perfectly. None is a loop, and the variety test is what says so.
     @Test func loopIgnoresRulesBordersAndIndentation() {
-        #expect(feed(String(repeating: "|---", count: 200),
-                     configuration: observing) == .fine)
-        #expect(feed(String(repeating: "-", count: 800),
-                     configuration: observing) == .fine)
-        #expect(feed(String(repeating: " ", count: 800),
-                     configuration: observing) == .fine)
-        #expect(feed(String(repeating: "= ", count: 400),
-                     configuration: observing) == .fine)
+        #expect(
+            feed(
+                String(repeating: "|---", count: 200),
+                configuration: observing) == .fine)
+        #expect(
+            feed(
+                String(repeating: "-", count: 800),
+                configuration: observing) == .fine)
+        #expect(
+            feed(
+                String(repeating: " ", count: 800),
+                configuration: observing) == .fine)
+        #expect(
+            feed(
+                String(repeating: "= ", count: 400),
+                configuration: observing) == .fine)
     }
 
     /// A phrase that recurs naturally across a long document ages out of the
@@ -149,17 +168,20 @@ import Testing
             "Chapter \(index): the ledger recorded a crossing on the \(index)th, "
                 + "and the weather that week was below what the almanac promised.\n"
         }.joined()
-        #expect(feed(list, configuration: observing) != .fine,
-                "a template trips it; the calibration corpus measures how often")
+        #expect(
+            feed(list, configuration: observing) != .fine,
+            "a template trips it; the calibration corpus measures how often")
     }
 
     /// Prose with a real vocabulary, so a test about one property is not
     /// quietly testing another.
     static func variedProse(seed: UInt64, bytes: Int) -> String {
-        let words = ["ledger", "crossing", "almanac", "thaw", "ferry", "ashgrove",
-                     "photograph", "chapter", "inn", "valley", "snow", "river",
-                     "bridge", "autumn", "marcus", "rosa", "harbour", "lantern",
-                     "orchard", "mill", "quarry", "shepherd", "meadow", "tide"]
+        let words = [
+            "ledger", "crossing", "almanac", "thaw", "ferry", "ashgrove",
+            "photograph", "chapter", "inn", "valley", "snow", "river",
+            "bridge", "autumn", "marcus", "rosa", "harbour", "lantern",
+            "orchard", "mill", "quarry", "shepherd", "meadow", "tide",
+        ]
         var state = seed &+ 0x9E37_79B9_7F4A_7C15
         var text = ""
         while text.utf8.count < bytes {
@@ -188,7 +210,8 @@ import Testing
             let started = ContinuousClock.now
             _ = watchdog.observe(text, at: .now)
             let elapsed = started.duration(to: .now)
-            let seconds = Double(elapsed.components.seconds)
+            let seconds =
+                Double(elapsed.components.seconds)
                 + Double(elapsed.components.attoseconds) / 1e18
             return seconds * 1e9 / Double(bytes)
         }
@@ -200,11 +223,12 @@ import Testing
         func bestOf(_ bytes: Int) -> Double {
             (0..<5).map { _ in nanosPerByte(bytes) }.min() ?? .infinity
         }
-        _ = nanosPerByte(1 << 12)                    // warm the allocator
+        _ = nanosPerByte(1 << 12)  // warm the allocator
         let small = bestOf(1 << 13)
-        let large = bestOf(1 << 17)                  // sixteen times as long
-        #expect(large < small * 4,
-                Comment(rawValue: "per-byte cost grew from \(small) to \(large) ns"))
+        let large = bestOf(1 << 17)  // sixteen times as long
+        #expect(
+            large < small * 4,
+            Comment(rawValue: "per-byte cost grew from \(small) to \(large) ns"))
     }
 
     // MARK: stall
@@ -213,15 +237,17 @@ import Testing
     /// for minutes -- this project has measured 652 s of it -- and a
     /// watchdog that counted from the request would stop every long prompt.
     @Test func stallIgnoresPrefill() {
-        var watchdog = StallWatchdog(configuration:
-            WatchdogConfiguration(isEnabled: true, stallSeconds: 1))
+        var watchdog = StallWatchdog(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, stallSeconds: 1))
         let start = ContinuousClock.now
         #expect(watchdog.check(at: start.advanced(by: .seconds(600))) == .fine)
     }
 
     @Test func stallFiresAfterTheThresholdAndNotBefore() {
-        var watchdog = StallWatchdog(configuration:
-            WatchdogConfiguration(isEnabled: true, stallSeconds: 90))
+        var watchdog = StallWatchdog(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, stallSeconds: 90))
         let start = ContinuousClock.now
         _ = watchdog.observe("first token", at: start)
         #expect(watchdog.check(at: start.advanced(by: .seconds(89))) == .fine)
@@ -231,8 +257,9 @@ import Testing
     /// The slowest decode this project has measured is 6.7 tok/s. A stream
     /// that is merely slow must never trip.
     @Test func stallIgnoresASlowButProgressingStream() {
-        var watchdog = StallWatchdog(configuration:
-            WatchdogConfiguration(isEnabled: true, stallSeconds: 90))
+        var watchdog = StallWatchdog(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, stallSeconds: 90))
         var now = ContinuousClock.now
         for _ in 0..<200 {
             _ = watchdog.observe("token ", at: now)
@@ -244,8 +271,9 @@ import Testing
     /// It reports once. A stall that persisted would otherwise fill the log
     /// with one line per tick.
     @Test func stallReportsOnce() {
-        var watchdog = StallWatchdog(configuration:
-            WatchdogConfiguration(isEnabled: true, stallSeconds: 10))
+        var watchdog = StallWatchdog(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, stallSeconds: 10))
         let start = ContinuousClock.now
         _ = watchdog.observe("x", at: start)
         #expect(watchdog.check(at: start.advanced(by: .seconds(20))) != .fine)
@@ -258,8 +286,10 @@ import Testing
     /// program belonged, and the request reported a clean stop.
     @Test func stubFiresOnAnEmptyNormalFinish() {
         var watchdog = StubWatchdog(configuration: observing)
-        #expect(watchdog.finish(visibleBytes: 20, requestBytes: 700,
-                                finishReason: "stop") != .fine)
+        #expect(
+            watchdog.finish(
+                visibleBytes: 20, requestBytes: 700,
+                finishReason: "stop") != .fine)
     }
 
     /// The case that found this rule's missing half. On the first request of
@@ -269,43 +299,56 @@ import Testing
     /// question can tell the two apart.
     @Test func stubIgnoresAShortAnswerToAShortQuestion() {
         var watchdog = StubWatchdog(configuration: observing)
-        #expect(watchdog.finish(visibleBytes: 3, requestBytes: 7,
-                                finishReason: "stop") == .fine)
+        #expect(
+            watchdog.finish(
+                visibleBytes: 3, requestBytes: 7,
+                finishReason: "stop") == .fine)
     }
 
     /// It is the last user message that counts, not the prompt: an agent
     /// harness puts a long system prompt in front of every question,
     /// including the one-word ones.
     @Test func stubMeasuresWhatWasAskedNotWhatWasSent() {
-        var watchdog = StubWatchdog(configuration:
-            WatchdogConfiguration(isEnabled: true, stubAskedBytes: 200))
-        #expect(watchdog.finish(visibleBytes: 4, requestBytes: 199,
-                                finishReason: "stop") == .fine)
-        #expect(watchdog.finish(visibleBytes: 4, requestBytes: 200,
-                                finishReason: "stop") != .fine)
+        var watchdog = StubWatchdog(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, stubAskedBytes: 200))
+        #expect(
+            watchdog.finish(
+                visibleBytes: 4, requestBytes: 199,
+                finishReason: "stop") == .fine)
+        #expect(
+            watchdog.finish(
+                visibleBytes: 4, requestBytes: 200,
+                finishReason: "stop") != .fine)
     }
 
     /// A short reply that ended in a tool call is a normal turn of a tool
     /// loop, not a stub.
     @Test func stubIgnoresAToolCall() {
         var watchdog = StubWatchdog(configuration: observing)
-        #expect(watchdog.finish(visibleBytes: 20, requestBytes: 700,
-                                finishReason: "tool_calls") == .fine)
+        #expect(
+            watchdog.finish(
+                visibleBytes: 20, requestBytes: 700,
+                finishReason: "tool_calls") == .fine)
     }
 
     /// A truncated reply already tells the client what happened through
     /// `length`; saying it twice adds nothing.
     @Test func stubIgnoresALengthFinish() {
         var watchdog = StubWatchdog(configuration: observing)
-        #expect(watchdog.finish(visibleBytes: 20, requestBytes: 700,
-                                finishReason: "length") == .fine)
+        #expect(
+            watchdog.finish(
+                visibleBytes: 20, requestBytes: 700,
+                finishReason: "length") == .fine)
     }
 
     @Test func stubIgnoresARealAnswer() {
         var watchdog = StubWatchdog(configuration: observing)
         let answer = String(repeating: "a real answer. ", count: 40)
-        #expect(watchdog.finish(visibleBytes: answer.utf8.count, requestBytes: 700,
-                                finishReason: "stop") == .fine)
+        #expect(
+            watchdog.finish(
+                visibleBytes: answer.utf8.count, requestBytes: 700,
+                finishReason: "stop") == .fine)
     }
 
     /// The 151-token book reply is deliberately outside this watchdog's
@@ -313,19 +356,29 @@ import Testing
     /// what was asked, and that judgement is not this detector's to make.
     @Test func stubDoesNotReachForTheShortAnswerCase() {
         var watchdog = StubWatchdog(configuration: observing)
-        #expect(watchdog.finish(visibleBytes: 600, requestBytes: 700,
-                                finishReason: "stop") == .fine)
+        #expect(
+            watchdog.finish(
+                visibleBytes: 600, requestBytes: 700,
+                finishReason: "stop") == .fine)
     }
 
     // MARK: ping-pong
 
     private func message(callingTool name: String, arguments: String) -> GFTokenizer.Message {
-        let value = try! JSONDecoder().decode(JSONValue.self, from: Data(arguments.utf8))
+        // The arguments here are literals written by this file. A decode failure
+        // is a fixture typo, reported as a test issue so the suite keeps running
+        // (and this test fails) instead of taking the process down.
+        let decoded = try? JSONDecoder().decode(JSONValue.self, from: Data(arguments.utf8))
+        if decoded == nil {
+            Issue.record("tool-call arguments did not decode: \(arguments)")
+        }
         return GFTokenizer.Message(
             role: .assistant,
             content: nil,
-            toolCalls: [GFTokenizer.HistoricalToolCall(
-                id: UUID().uuidString, name: name, arguments: value)])
+            toolCalls: [
+                GFTokenizer.HistoricalToolCall(
+                    id: UUID().uuidString, name: name, arguments: decoded ?? .null)
+            ])
     }
 
     @Test func pingPongFiresOnTheSameCallThreeTimes() {
@@ -355,8 +408,10 @@ import Testing
     @Test func pingPongRunIsBrokenByAUserTurn() {
         var messages: [GFTokenizer.Message] = []
         for _ in 0..<3 {
-            messages.append(message(callingTool: "read_file",
-                                    arguments: #"{"path":"main.swift"}"#))
+            messages.append(
+                message(
+                    callingTool: "read_file",
+                    arguments: #"{"path":"main.swift"}"#))
             messages.append(GFTokenizer.Message(role: .user, content: "and now?"))
         }
         #expect(PingPongWatchdog.inspect(messages, configuration: observing) == .fine)
@@ -367,10 +422,14 @@ import Testing
     @Test func pingPongSurvivesTheToolResultsBetweenCalls() {
         var messages: [GFTokenizer.Message] = []
         for _ in 0..<3 {
-            messages.append(message(callingTool: "read_file",
-                                    arguments: #"{"path":"main.swift"}"#))
-            messages.append(GFTokenizer.Message(role: .tool, content: "not found",
-                                                toolCallID: "x"))
+            messages.append(
+                message(
+                    callingTool: "read_file",
+                    arguments: #"{"path":"main.swift"}"#))
+            messages.append(
+                GFTokenizer.Message(
+                    role: .tool, content: "not found",
+                    toolCallID: "x"))
         }
         #expect(PingPongWatchdog.inspect(messages, configuration: observing) != .fine)
     }
@@ -429,8 +488,9 @@ import Testing
     /// Naming a watchdog in the acting list is the only thing that turns a
     /// concern into a stop, and the reason reaches the content (B4).
     @Test func actingTurnsAConcernIntoAStop() {
-        var set = WatchdogSet(configuration:
-            WatchdogConfiguration(isEnabled: true, acting: [.loop]))
+        var set = WatchdogSet(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, acting: [.loop]))
         set.observe(String(repeating: "Wait, I need to check the facts again. ", count: 8))
         #expect(set.wantsStop)
         #expect(set.trips.first?.acted == true)
@@ -439,8 +499,9 @@ import Testing
 
     /// Acting on one kind does not enable another.
     @Test func actingIsPerKind() {
-        var set = WatchdogSet(configuration:
-            WatchdogConfiguration(isEnabled: true, acting: [.stall]))
+        var set = WatchdogSet(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, acting: [.stall]))
         set.observe(String(repeating: "Wait, I need to check the facts again. ", count: 8))
         #expect(set.trips.count == 1)
         #expect(set.wantsStop == false)
@@ -459,8 +520,9 @@ import Testing
         #expect(configuration.acting == [.loop])
         #expect(configuration.acts(.pingpong) == false)
 
-        var set = WatchdogSet(configuration:
-            WatchdogConfiguration(isEnabled: true, acting: Set(WatchdogKind.allCases)))
+        var set = WatchdogSet(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, acting: Set(WatchdogKind.allCases)))
         set.record(pingPong: .concern("tool read_file called 3 times in a row"))
         #expect(set.trips.count == 1)
         #expect(set.trips.first?.acted == false)
@@ -484,12 +546,14 @@ import Testing
     /// is the case that must never regress: the feature is off for almost
     /// everyone, and even on it should be invisible until something breaks.
     @Test func aCleanGenerationIsUntouched() {
-        var set = WatchdogSet(configuration:
-            WatchdogConfiguration(isEnabled: true, acting: Set(WatchdogKind.allCases)))
+        var set = WatchdogSet(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, acting: Set(WatchdogKind.allCases)))
         set.observe("The ferry runs on Sundays.")
         set.finish(visibleBytes: 400, requestBytes: 700, finishReason: "stop")
-        let outcome = set.resolve(content: "The ferry runs on Sundays.",
-                                  finishReason: "stop")
+        let outcome = set.resolve(
+            content: "The ferry runs on Sundays.",
+            finishReason: "stop")
         #expect(outcome.note == nil)
         #expect(outcome.content == "The ferry runs on Sundays.")
         #expect(outcome.finishReason == "stop")
@@ -499,8 +563,9 @@ import Testing
     /// honest reason either protocol offers -- and the truth is told in the
     /// content, which is the one place that cannot break a client.
     @Test func aStoppedGenerationIsReportedAsLengthAndSaysWhy() {
-        var set = WatchdogSet(configuration:
-            WatchdogConfiguration(isEnabled: true, acting: [.loop]))
+        var set = WatchdogSet(
+            configuration:
+                WatchdogConfiguration(isEnabled: true, acting: [.loop]))
         set.observe(String(repeating: "Wait, I need to check the facts again. ", count: 8))
         let outcome = set.resolve(content: "partial answer", finishReason: "stop")
         #expect(outcome.finishReason == "length")
@@ -544,9 +609,11 @@ import Testing
             let defaults: [String: Int]
             let cases: [Case]
         }
-        let url = try #require(Bundle.module.url(forResource: "watchdog-cases",
-                                                 withExtension: "json",
-                                                 subdirectory: "Fixtures"))
+        let url = try #require(
+            Bundle.module.url(
+                forResource: "watchdog-cases",
+                withExtension: "json",
+                subdirectory: "Fixtures"))
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
         // The fixture also records the thresholds it was measured at, so a
         // default changed on one side and not the other fails here rather
@@ -560,8 +627,9 @@ import Testing
         for testCase in fixture.cases {
             let text = String(repeating: testCase.text, count: testCase.repeatCount ?? 1)
             let tripped = feed(text, configuration: configuration) != .fine
-            #expect(tripped == testCase.loopTrips,
-                    Comment(rawValue: "\(testCase.name): swift said \(tripped)"))
+            #expect(
+                tripped == testCase.loopTrips,
+                Comment(rawValue: "\(testCase.name): swift said \(tripped)"))
         }
     }
 

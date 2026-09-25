@@ -23,6 +23,7 @@ of the same weights on identical tokens, so training contamination affects
 both arms equally. `--text` names a file instead, and `--tokens` bounds the
 work (1024 by default).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -67,10 +68,14 @@ def corpus_text(named: str | None) -> tuple[str, list[str]]:
 def score(install: str, text: Path, tokens: int, nll_out: Path) -> dict:
     result = subprocess.run(
         [str(BENCH), "cpu35ppl", install, str(text), str(tokens), str(nll_out)],
-        capture_output=True, text=True, timeout=7200)
+        capture_output=True,
+        text=True,
+        timeout=7200,
+    )
     if result.returncode != 0:
-        raise SystemExit(f"{install}: cpu35ppl exited {result.returncode}\n"
-                         + result.stderr[-2000:])
+        raise SystemExit(
+            f"{install}: cpu35ppl exited {result.returncode}\n" + result.stderr[-2000:]
+        )
     header = HEADER.search(result.stdout)
     summary = SUMMARY.search(result.stdout)
     if not header or not summary:
@@ -81,13 +86,12 @@ def score(install: str, text: Path, tokens: int, nll_out: Path) -> dict:
         "mean_nll": float(summary.group(1)),
         "perplexity": float(summary.group(2)),
         "seconds": float(summary.group(3)),
-        "nlls": [float(line) for line in
-                 nll_out.read_text(encoding="utf-8").splitlines()],
+        "nlls": [float(line) for line in nll_out.read_text(encoding="utf-8").splitlines()],
     }
 
 
 def paired(baseline: list[float], other: list[float]) -> tuple[float, float, float]:
-    differences = [a - b for a, b in zip(baseline, other)]
+    differences = [a - b for a, b in zip(baseline, other, strict=False)]
     count = len(differences)
     mean = sum(differences) / count
     if count < 2:
@@ -98,15 +102,19 @@ def paired(baseline: list[float], other: list[float]) -> tuple[float, float, flo
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("installs", nargs="+", help="two or more installs of one model; "
-                    "the first is the baseline")
-    ap.add_argument("--tokens", type=int, default=1024,
-                    help="token positions to score (default 1024)")
+    ap.add_argument(
+        "installs", nargs="+", help="two or more installs of one model; the first is the baseline"
+    )
+    ap.add_argument(
+        "--tokens", type=int, default=1024, help="token positions to score (default 1024)"
+    )
     ap.add_argument("--text", help="score this file instead of the default corpus")
     args = ap.parse_args()
     if not BENCH.exists():
-        print(f"build it first: swift build -c release --product TinyTitanBench\n"
-              f"  missing {BENCH}", file=sys.stderr)
+        print(
+            f"build it first: swift build -c release --product TinyTitanBench\n  missing {BENCH}",
+            file=sys.stderr,
+        )
         return 2
 
     body, sources = corpus_text(args.text)
@@ -119,26 +127,27 @@ def main() -> int:
             print(f"\n=== {install}")
             run = score(install, text, args.tokens, Path(tmp) / f"nll{index}.txt")
             runs.append(run)
-            print(f"  mean nll {run['mean_nll']:.6f}  perplexity "
-                  f"{run['perplexity']:.6f}  {run['seconds']:.1f}s  "
-                  f"hash {run['hash']}")
+            print(
+                f"  mean nll {run['mean_nll']:.6f}  perplexity "
+                f"{run['perplexity']:.6f}  {run['seconds']:.1f}s  "
+                f"hash {run['hash']}"
+            )
 
     baseline = runs[0]
     print(f"\n=== paired against {baseline['install']}")
-    print(f"{'install':44s} {'dNLL':>10s} {'±se':>9s} {'t':>8s} "
-          f"{'ppl ratio':>10s} {'n':>6s}")
+    print(f"{'install':44s} {'dNLL':>10s} {'±se':>9s} {'t':>8s} {'ppl ratio':>10s} {'n':>6s}")
     for run in runs[1:]:
         if run["hash"] != baseline["hash"]:
-            print(f"{run['install']:44s} refused: token hash {run['hash']} "
-                  f"!= {baseline['hash']}")
+            print(f"{run['install']:44s} refused: token hash {run['hash']} != {baseline['hash']}")
             continue
         mean, stderr, t = paired(baseline["nlls"], run["nlls"])
         ratio = math.exp(mean)
         count = len(run["nlls"])
-        print(f"{run['install']:44s} {mean:+10.6f} {stderr:9.6f} {t:8.2f} "
-              f"{ratio:10.6f} {count:6d}")
-    print("\ndNLL is baseline minus install, per token position; positive means the "
-          "baseline is worse. t is the paired statistic over the same positions.")
+        print(f"{run['install']:44s} {mean:+10.6f} {stderr:9.6f} {t:8.2f} {ratio:10.6f} {count:6d}")
+    print(
+        "\ndNLL is baseline minus install, per token position; positive means the "
+        "baseline is worse. t is the paired statistic over the same positions."
+    )
     return 0
 
 

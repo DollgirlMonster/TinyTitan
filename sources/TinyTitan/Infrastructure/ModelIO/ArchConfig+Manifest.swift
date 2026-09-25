@@ -36,8 +36,10 @@ extension ArchConfig {
 
     /// The architecture to load a model at: its family's preset when there is
     /// one, otherwise the manifest's own declaration.
-    public static func resolved(forFamily family: ModelFamily,
-                                directoryURL: URL) throws -> ArchConfig {
+    public static func resolved(
+        forFamily family: ModelFamily,
+        directoryURL: URL
+    ) throws -> ArchConfig {
         if let preset = knownArchitectures[family] { return preset }
         // Only the dense family is known to be readable this way. Anything else
         // keeps the previous behaviour: refused by name.
@@ -54,8 +56,9 @@ extension ArchConfig {
     static func from(manifest arch: ManifestArch, family: ModelFamily) throws -> ArchConfig {
         func required<T>(_ value: T?, _ field: String) throws -> T {
             guard let value else {
-                throw ArchResolutionError.manifestOmitsField(family: family.rawValue,
-                                                            field: field)
+                throw ArchResolutionError.manifestOmitsField(
+                    family: family.rawValue,
+                    field: field)
             }
             return value
         }
@@ -97,8 +100,9 @@ extension ArchConfig {
             family: family,
             attnOutputGate: try required(arch.attnOutputGate, "attnOutputGate"),
             attentionScale: try required(arch.attentionScale, "attentionScale"),
-            embeddingScaledBySqrtHidden: try required(arch.embeddingScaledBySqrtHidden,
-                                                      "embeddingScaledBySqrtHidden"),
+            embeddingScaledBySqrtHidden: try required(
+                arch.embeddingScaledBySqrtHidden,
+                "embeddingScaledBySqrtHidden"),
             routerScaled: try required(arch.routerScaled, "routerScaled"),
             ffnSandwichNorms: try required(arch.ffnSandwichNorms, "ffnSandwichNorms"),
             sharedExpertGated: try required(arch.sharedExpertGated, "sharedExpertGated"),

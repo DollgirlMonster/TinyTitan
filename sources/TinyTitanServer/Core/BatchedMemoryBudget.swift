@@ -12,8 +12,10 @@ enum BatchedMemoryBudget {
     /// Bytes the slots may occupy: half of physical memory, less the wired
     /// expert cache. The other half is left for the weights, the allocator and
     /// the rest of the machine. Never negative.
-    static func slotBudgetBytes(physicalMemory: UInt64,
-                                expertCacheBudgetBytes: Int) -> Int {
+    static func slotBudgetBytes(
+        physicalMemory: UInt64,
+        expertCacheBudgetBytes: Int
+    ) -> Int {
         guard physicalMemory > 0 else { return Int.max }
         return max(0, Int(physicalMemory / 2) - max(0, expertCacheBudgetBytes))
     }
@@ -31,9 +33,11 @@ enum BatchedMemoryBudget {
     ///
     /// Always at least one: the single-sequence path must stay available even
     /// when the model is too large for the budget to hold a second slot.
-    static func effectiveSlots(requested: Int,
-                               perSlotBytes: Int,
-                               budgetBytes: Int) -> Int {
+    static func effectiveSlots(
+        requested: Int,
+        perSlotBytes: Int,
+        budgetBytes: Int
+    ) -> Int {
         guard requested > 1 else { return max(1, requested) }
         guard perSlotBytes > 0 else {
             // Unknown size cannot be budgeted; trust the request rather than
@@ -49,20 +53,23 @@ enum BatchedMemoryBudget {
     /// Worst-case bytes one sequence occupies: KV at the full context, GDN
     /// recurrent state, and the raw-completion scratch (two FP16 logits
     /// buffers plus a token slot).
-    static func perSlotBytes(config: ArchConfig,
-                             maxContext: Int,
-                             precision: KVCachePrecision,
-                             fp16RingEnabled: Bool,
-                             slidingWindow: Int,
-                             maxPrefillChunkTokens: Int,
-                             vocab: Int) -> Int {
+    static func perSlotBytes(
+        config: ArchConfig,
+        maxContext: Int,
+        precision: KVCachePrecision,
+        fp16RingEnabled: Bool,
+        slidingWindow: Int,
+        maxPrefillChunkTokens: Int,
+        vocab: Int
+    ) -> Int {
         let kv = KVCacheManager.worstCaseBytes(
             config: config, maxContext: maxContext, precision: precision,
             slots: 1, fp16RingEnabled: fp16RingEnabled,
             slidingWindow: slidingWindow,
             maxPrefillChunkTokens: maxPrefillChunkTokens)
         let gdn = GDNStateManager.worstCaseBytes(config: config, slots: 1)
-        let scratch = 2 * vocab * MemoryLayout<Float16>.size
+        let scratch =
+            2 * vocab * MemoryLayout<Float16>.size
             + MemoryLayout<UInt32>.size
         return kv + gdn + scratch
     }

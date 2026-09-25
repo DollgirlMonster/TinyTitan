@@ -55,6 +55,7 @@ TINYTITAN_CLIENTS=(
 #
 # Kept here rather than in the installer so the installer, the model installer
 # and any future menu cannot disagree about what exists or how big it is.
+# shellcheck disable=SC2034  # consumed by install_models.sh and the installer's menu
 TINYTITAN_MODEL_CHOICES=(
   "ornith15-8bit|Ornith 1.5 35B-A3B|8|36.9|Recommended. Best measured coding and tooling results."
   "ornith15|Ornith 1.5 35B-A3B|4|19.5|The same model at 4-bit: half the disk, faster decode."
@@ -183,6 +184,7 @@ tinytitan_resolve_model() {
       TINYTITAN_MODEL_ENGINES="gpu,cpu"
       TINYTITAN_MODEL_THINKING="off,on" ;;
     qwen35-9b|qwen3.5-9b)
+      # shellcheck disable=SC2034  # read by callers of tinytitan_resolve_model
       TINYTITAN_MODEL_KEY=qwen35-9b
       TINYTITAN_MODEL_STEM="qwen3.5_9B"
       TINYTITAN_MODEL_LABEL="Qwen 3.5 9B"
@@ -197,6 +199,7 @@ tinytitan_resolve_model() {
 
 # tinytitan_resolve_quant <4|8|4bit|8bit> -> TINYTITAN_QUANT ("4bit"/"8bit"), TINYTITAN_QUANT_DIR ("4Bit"/"8Bit")
 tinytitan_resolve_quant() {
+  # shellcheck disable=SC2034  # TINYTITAN_QUANT/QUANT_DIR are read by the caller
   case "${1:-}" in
     4|4bit) TINYTITAN_QUANT=4bit; TINYTITAN_QUANT_DIR=4Bit ;;
     8|8bit) TINYTITAN_QUANT=8bit; TINYTITAN_QUANT_DIR=8Bit ;;
@@ -373,8 +376,10 @@ tinytitan_static_catalog() {
     done
     (( added )) || missing+=("$TINYTITAN_MODEL_LABEL")
   done
+# shellcheck disable=SC2034  # read by server_launcher.sh and install_models.sh
   (( ${#missing[@]} > 0 )) && TINYTITAN_CATALOG_MISSING=("${missing[@]+"${missing[@]}"}")
   if (( ${#TINYTITAN_CAT_ID[@]} == 0 )); then
+    # shellcheck disable=SC2034  # read by dsh_route.sh and server_launcher.sh
     TINYTITAN_CATALOG_ERROR="no install under $models_dir matches the built-in list"
     return 1
   fi

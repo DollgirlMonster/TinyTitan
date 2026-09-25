@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanMemory
 
 /// The contract every backend has to satisfy.
@@ -9,9 +10,11 @@ import Testing
 /// drift on the rules that matter: scope isolation, value limits, bootstrap
 /// bounds, and what a rewrite does to timestamps.
 @Suite struct MemoryStoreConformanceTests {
-    private func scope(_ workspace: String = "repo-a",
-                       user: String = "local",
-                       namespace: String = "tinytitan") throws -> MemoryScope {
+    private func scope(
+        _ workspace: String = "repo-a",
+        user: String = "local",
+        namespace: String = "tinytitan"
+    ) throws -> MemoryScope {
         try MemoryScope(namespace: namespace, user: user, workspace: workspace)
     }
 
@@ -20,10 +23,11 @@ import Testing
     @Test func setThenGetReturnsTheRecord() async throws {
         let store = InMemoryStore()
         let scope = try scope()
-        let record = MemoryRecord(key: try key("decisions/sync"),
-                                  value: "FooManager stays; it prevents a background sync race.",
-                                  importance: 0.9,
-                                  tags: ["sync", "concurrency"])
+        let record = MemoryRecord(
+            key: try key("decisions/sync"),
+            value: "FooManager stays; it prevents a background sync race.",
+            importance: 0.9,
+            tags: ["sync", "concurrency"])
         try await store.set(record, in: scope)
 
         let loaded = try await store.get(try key("decisions/sync"), in: scope)
@@ -39,12 +43,16 @@ import Testing
         // JSON is stored verbatim: structure is the model's business, and a
         // store that reformats it would break round-tripping.
         let json = #"{"stack":["swift","metal"],"note":"emoji ok 🧠","n":3}"#
-        try await store.set(MemoryRecord(key: try key("architecture/stack"), value: json), in: scope)
-        try await store.set(MemoryRecord(key: try key("notes/prose"),
-                                         value: "Ünïcode, newlines\nand \"quotes\"."), in: scope)
+        try await store.set(
+            MemoryRecord(key: try key("architecture/stack"), value: json), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("notes/prose"),
+                value: "Ünïcode, newlines\nand \"quotes\"."), in: scope)
 
         #expect(try await store.get(try key("architecture/stack"), in: scope)?.value == json)
-        #expect(try await store.get(try key("notes/prose"), in: scope)?.value.contains("\n") == true)
+        #expect(
+            try await store.get(try key("notes/prose"), in: scope)?.value.contains("\n") == true)
     }
 
     @Test func deleteRemovesOnlyTheNamedKey() async throws {
@@ -65,7 +73,8 @@ import Testing
         let store = InMemoryStore()
         let repoA = try scope("repo-a")
         let repoB = try scope("repo-b")
-        try await store.set(MemoryRecord(key: try key("decisions/db"), value: "postgres"), in: repoA)
+        try await store.set(
+            MemoryRecord(key: try key("decisions/db"), value: "postgres"), in: repoA)
 
         #expect(try await store.get(try key("decisions/db"), in: repoB) == nil)
         #expect(try await store.list(prefix: "", limit: 50, in: repoB).isEmpty)
@@ -90,7 +99,8 @@ import Testing
         let store = InMemoryStore()
         let scope = try scope()
         for index in 0..<5 {
-            try await store.set(MemoryRecord(key: try key("tasks/t\(index)"), value: "t"), in: scope)
+            try await store.set(
+                MemoryRecord(key: try key("tasks/t\(index)"), value: "t"), in: scope)
         }
         try await store.set(MemoryRecord(key: try key("decisions/d"), value: "d"), in: scope)
 
@@ -104,10 +114,14 @@ import Testing
     @Test func searchRanksKeyMatchesAboveBodyMatches() async throws {
         let store = InMemoryStore()
         let scope = try scope()
-        try await store.set(MemoryRecord(key: try key("decisions/sync"),
-                                         value: "Keep FooManager."), in: scope)
-        try await store.set(MemoryRecord(key: try key("notes/misc"),
-                                         value: "We briefly discussed sync yesterday."), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("decisions/sync"),
+                value: "Keep FooManager."), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("notes/misc"),
+                value: "We briefly discussed sync yesterday."), in: scope)
 
         let hits = try await store.search(MemoryQuery(text: "sync architecture"), in: scope)
         #expect(hits.first?.key.rawValue == "decisions/sync")
@@ -120,12 +134,18 @@ import Testing
     @Test func searchFiltersByTagsPrefixAndImportance() async throws {
         let store = InMemoryStore()
         let scope = try scope()
-        try await store.set(MemoryRecord(key: try key("decisions/a"), value: "x",
-                                         importance: 0.9, tags: ["sync"]), in: scope)
-        try await store.set(MemoryRecord(key: try key("decisions/b"), value: "x",
-                                         importance: 0.1, tags: ["ui"]), in: scope)
-        try await store.set(MemoryRecord(key: try key("notes/c"), value: "x",
-                                         importance: 0.9, tags: ["sync"]), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("decisions/a"), value: "x",
+                importance: 0.9, tags: ["sync"]), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("decisions/b"), value: "x",
+                importance: 0.1, tags: ["ui"]), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("notes/c"), value: "x",
+                importance: 0.9, tags: ["sync"]), in: scope)
 
         #expect(try await store.search(MemoryQuery(tags: ["sync"]), in: scope).count == 2)
         #expect(try await store.search(MemoryQuery(prefix: "decisions/"), in: scope).count == 2)
@@ -150,9 +170,10 @@ import Testing
         let store = InMemoryStore()
         let scope = try scope()
         let key = try key("architecture/sync")
-        let original = MemoryRecord(key: key, value: "v1",
-                                    createdAt: Date(timeIntervalSince1970: 1_000),
-                                    updatedAt: Date(timeIntervalSince1970: 1_000))
+        let original = MemoryRecord(
+            key: key, value: "v1",
+            createdAt: Date(timeIntervalSince1970: 1_000),
+            updatedAt: Date(timeIntervalSince1970: 1_000))
         try await store.set(original, in: scope)
         try await store.set(MemoryRecord(key: key, value: "v2"), in: scope)
 
@@ -176,8 +197,9 @@ import Testing
         // at a time.
         try await store.append(String(repeating: "y", count: 100), to: try key("grow"), in: scope)
         await #expect(throws: MemoryError.self) {
-            try await store.append(String(repeating: "y", count: 100),
-                                   to: try self.key("grow"), in: scope)
+            try await store.append(
+                String(repeating: "y", count: 100),
+                to: try self.key("grow"), in: scope)
         }
     }
 
@@ -186,9 +208,11 @@ import Testing
         let store = InMemoryStore(limits: limits)
         let scope = try scope()
         for index in 0..<10 {
-            try await store.set(MemoryRecord(key: try key("facts/f\(index)"),
-                                             value: "value \(index)",
-                                             importance: Double(index) / 10), in: scope)
+            try await store.set(
+                MemoryRecord(
+                    key: try key("facts/f\(index)"),
+                    value: "value \(index)",
+                    importance: Double(index) / 10), in: scope)
         }
 
         let bootstrap = try await store.sessionInit(MemorySession(id: "s1"), in: scope)
@@ -200,8 +224,10 @@ import Testing
         // The byte ceiling binds even when the count would not.
         let tight = InMemoryStore(limits: MemoryLimits(bootstrapRecords: 100, bootstrapBytes: 40))
         for index in 0..<10 {
-            try await tight.set(MemoryRecord(key: try key("facts/g\(index)"),
-                                             value: String(repeating: "z", count: 30)), in: scope)
+            try await tight.set(
+                MemoryRecord(
+                    key: try key("facts/g\(index)"),
+                    value: String(repeating: "z", count: 30)), in: scope)
         }
         let bounded = try await tight.sessionInit(MemorySession(id: "s2"), in: scope)
         #expect(bounded.totalBytes <= 40)
@@ -211,11 +237,14 @@ import Testing
     @Test func sessionInitNeverReturnsTheWholeStore() async throws {
         // The property that matters most: no configuration of the store makes
         // session start hand back everything it holds.
-        let store = InMemoryStore(limits: MemoryLimits(bootstrapRecords: 20, bootstrapBytes: 8 * 1024))
+        let store = InMemoryStore(
+            limits: MemoryLimits(bootstrapRecords: 20, bootstrapBytes: 8 * 1024))
         let scope = try scope()
         for index in 0..<500 {
-            try await store.set(MemoryRecord(key: try key("facts/f\(index)"),
-                                             value: String(repeating: "x", count: 500)), in: scope)
+            try await store.set(
+                MemoryRecord(
+                    key: try key("facts/f\(index)"),
+                    value: String(repeating: "x", count: 500)), in: scope)
         }
 
         let bootstrap = try await store.sessionInit(MemorySession(id: "s"), in: scope)

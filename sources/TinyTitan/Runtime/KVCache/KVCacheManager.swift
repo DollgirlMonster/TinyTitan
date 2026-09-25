@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 import Metal
 
 /// Which attention variant a layer runs. Qwen 3.6 interleaves 30
@@ -69,8 +69,8 @@ public final class KVCacheManager {
 
     private var kBuffers: [MTLBuffer]
     private var vBuffers: [MTLBuffer]
-    private let strides:  [Int]         // bytes per token, per layer
-    private let kinds:    [LayerKind]
+    private let strides: [Int]  // bytes per token, per layer
+    private let kinds: [LayerKind]
     private var capacityTokens: [Int]
     private let valueBytes: [Int]
 
@@ -99,18 +99,21 @@ public final class KVCacheManager {
     private static let fp16Size = 2
     public static let quantizationGroupSize = 64
 
-    public init(device: MTLDevice,
-                config: ArchConfig,
-                maxContext: Int,
-                slots: Int = 1,
-                fp16RingEnabled: Bool = false,
-                precision: KVCachePrecision = .fp16,
-                slidingWindow: Int? = nil,
-                maxPrefillChunkTokens: Int = 128) throws {
+    public init(
+        device: MTLDevice,
+        config: ArchConfig,
+        maxContext: Int,
+        slots: Int = 1,
+        fp16RingEnabled: Bool = false,
+        precision: KVCachePrecision = .fp16,
+        slidingWindow: Int? = nil,
+        maxPrefillChunkTokens: Int = 128
+    ) throws {
         precondition(maxContext > 0, "maxContext must be positive")
         precondition(maxPrefillChunkTokens > 0, "maxPrefillChunkTokens must be positive")
-        precondition(slots > 0 && slots <= Self.maximumSlots,
-                     "slots must be between 1 and \(Self.maximumSlots)")
+        precondition(
+            slots > 0 && slots <= Self.maximumSlots,
+            "slots must be between 1 and \(Self.maximumSlots)")
         self.device = device
         self.config = config
         self.maxContext = maxContext
@@ -120,10 +123,11 @@ public final class KVCacheManager {
         let ringEnabled = fp16RingEnabled
         self.fp16RingEnabled = ringEnabled
 
-        let swaStride  = config.numKVHeads     * config.headDim     * Self.fp16Size
-        let fullStride = config.numFullKVHeads * config.fullHeadDim  * Self.fp16Size
-        let swaCapacity = min(maxContext,
-                              max(1, (slidingWindow ?? config.slidingWindow) + maxPrefillChunkTokens))
+        let swaStride = config.numKVHeads * config.headDim * Self.fp16Size
+        let fullStride = config.numFullKVHeads * config.fullHeadDim * Self.fp16Size
+        let swaCapacity = min(
+            maxContext,
+            max(1, (slidingWindow ?? config.slidingWindow) + maxPrefillChunkTokens))
 
         var ks: [MTLBuffer] = []
         var vs: [MTLBuffer] = []
@@ -140,7 +144,7 @@ public final class KVCacheManager {
 
         // Linear-attention layers keep no per-token K/V rows; they share one
         // page-sized placeholder so the parallel arrays stay non-optional.
-        var linearPlaceholder: MTLBuffer? = nil
+        var linearPlaceholder: MTLBuffer?
 
         for layer in 0..<config.numLayers {
             let maskValue = config.fullAttentionLayerMask[layer]
@@ -149,8 +153,11 @@ public final class KVCacheManager {
                 if let existing = linearPlaceholder {
                     placeholder = existing
                 } else {
-                    guard let made = device.makeBuffer(length: Int(getpagesize()),
-                                                       options: .storageModeShared) else {
+                    guard
+                        let made = device.makeBuffer(
+                            length: Int(getpagesize()),
+                            options: .storageModeShared)
+                    else {
                         throw ModelError.residentBufferWrapFailed
                     }
                     made.label = "kv.linear-placeholder"
@@ -178,7 +185,8 @@ public final class KVCacheManager {
             // 13.80 s of decode at maxContext 8192 against 22.44 s at 262144.
             // Growing keeps a short conversation at a short conversation's cost
             // while leaving the advertised limit reachable.
-            let capacity = ringEnabled && !isFull
+            let capacity =
+                ringEnabled && !isFull
                 ? swaCapacity
                 : min(maxContext, Self.initialCapacityTokens)
             let length = slots * capacity * stride
@@ -203,8 +211,8 @@ public final class KVCacheManager {
 
         self.kBuffers = ks
         self.vBuffers = vs
-        self.strides  = st
-        self.kinds    = kd
+        self.strides = st
+        self.kinds = kd
         self.capacityTokens = caps
         self.valueBytes = valueByteCounts
     }
@@ -223,13 +231,15 @@ public final class KVCacheManager {
     /// what it maps at load. It mirrors the layout `init` builds, and a test
     /// compares the two against each other so a storage-format change cannot
     /// leave the formula quietly wrong.
-    public static func worstCaseBytes(config: ArchConfig,
-                                      maxContext: Int,
-                                      precision: KVCachePrecision = .fp16,
-                                      slots: Int = 1,
-                                      fp16RingEnabled: Bool = false,
-                                      slidingWindow: Int? = nil,
-                                      maxPrefillChunkTokens: Int = 128) -> Int {
+    public static func worstCaseBytes(
+        config: ArchConfig,
+        maxContext: Int,
+        precision: KVCachePrecision = .fp16,
+        slots: Int = 1,
+        fp16RingEnabled: Bool = false,
+        slidingWindow: Int? = nil,
+        maxPrefillChunkTokens: Int = 128
+    ) -> Int {
         precondition(maxContext > 0, "maxContext must be positive")
         precondition(slots > 0, "slots must be positive")
         var total = 0
@@ -237,15 +247,19 @@ public final class KVCacheManager {
             let maskValue = config.fullAttentionLayerMask[layer]
             if maskValue == 2 { continue }
             let isFull = maskValue != 0
-            let elements = isFull
+            let elements =
+                isFull
                 ? config.numFullKVHeads * config.fullHeadDim
                 : config.numKVHeads * config.headDim
             let stride = rowLayout(elements: elements, precision: precision).stride
             let capacity: Int
             if fp16RingEnabled && !isFull {
-                capacity = min(maxContext,
-                               max(1, (slidingWindow ?? config.slidingWindow)
-                                   + maxPrefillChunkTokens))
+                capacity = min(
+                    maxContext,
+                    max(
+                        1,
+                        (slidingWindow ?? config.slidingWindow)
+                            + maxPrefillChunkTokens))
             } else {
                 capacity = maxContext
             }
@@ -288,7 +302,8 @@ public final class KVCacheManager {
             let stride = strides[layer]
             let length = slots * target * stride
             guard let newK = device.makeBuffer(length: length, options: .storageModeShared),
-                  let newV = device.makeBuffer(length: length, options: .storageModeShared) else {
+                let newV = device.makeBuffer(length: length, options: .storageModeShared)
+            else {
                 throw ModelError.residentBufferWrapFailed
             }
             newK.label = "kv.K.layer\(layer)"
@@ -298,10 +313,12 @@ public final class KVCacheManager {
             for s in 0..<slots {
                 let usedBytes = min(current, positions[s]) * stride
                 guard usedBytes > 0 else { continue }
-                memcpy(newK.contents() + s * target * stride,
-                       kBuffers[layer].contents() + s * current * stride, usedBytes)
-                memcpy(newV.contents() + s * target * stride,
-                       vBuffers[layer].contents() + s * current * stride, usedBytes)
+                memcpy(
+                    newK.contents() + s * target * stride,
+                    kBuffers[layer].contents() + s * current * stride, usedBytes)
+                memcpy(
+                    newV.contents() + s * target * stride,
+                    vBuffers[layer].contents() + s * current * stride, usedBytes)
             }
             kBuffers[layer] = newK
             vBuffers[layer] = newV
@@ -335,11 +352,14 @@ public final class KVCacheManager {
     }
 
     /// Write target for this layer's K projection at `position` in `slot`.
-    public func kSlot(layer: Int, position: Int,
-                      slot: Int = 0) -> (buffer: MTLBuffer, offset: Int) {
+    public func kSlot(
+        layer: Int, position: Int,
+        slot: Int = 0
+    ) -> (buffer: MTLBuffer, offset: Int) {
         precondition(kinds[layer] != .linear, "linear layers have no KV slots")
         validateRange(start: position, count: 1)
-        let token = regionBase(layer: layer, slot: slot)
+        let token =
+            regionBase(layer: layer, slot: slot)
             + physicalSlot(layer: layer, position: position)
         return (kBuffers[layer], token * strides[layer])
     }
@@ -347,29 +367,38 @@ public final class KVCacheManager {
     /// Write target for this layer's V projection at `position` in `slot`.
     /// Always distinct from `kSlot`: K runs per-head k_norm + RoPE while V is
     /// normed differently, so the two buffers cannot alias.
-    public func vSlot(layer: Int, position: Int,
-                      slot: Int = 0) -> (buffer: MTLBuffer, offset: Int) {
+    public func vSlot(
+        layer: Int, position: Int,
+        slot: Int = 0
+    ) -> (buffer: MTLBuffer, offset: Int) {
         precondition(kinds[layer] != .linear, "linear layers have no KV slots")
         validateRange(start: position, count: 1)
-        let token = regionBase(layer: layer, slot: slot)
+        let token =
+            regionBase(layer: layer, slot: slot)
             + physicalSlot(layer: layer, position: position)
         return (vBuffers[layer], token * strides[layer])
     }
 
-    public func kRange(layer: Int, start: Int, count: Int,
-                       slot: Int = 0) -> (buffer: MTLBuffer, offset: Int, stride: Int) {
+    public func kRange(
+        layer: Int, start: Int, count: Int,
+        slot: Int = 0
+    ) -> (buffer: MTLBuffer, offset: Int, stride: Int) {
         validateRange(start: start, count: count)
         validateContiguousPhysicalRange(layer: layer, start: start, count: count)
-        let token = regionBase(layer: layer, slot: slot)
+        let token =
+            regionBase(layer: layer, slot: slot)
             + physicalSlot(layer: layer, position: start)
         return (kBuffers[layer], token * strides[layer], strides[layer])
     }
 
-    public func vRange(layer: Int, start: Int, count: Int,
-                       slot: Int = 0) -> (buffer: MTLBuffer, offset: Int, stride: Int) {
+    public func vRange(
+        layer: Int, start: Int, count: Int,
+        slot: Int = 0
+    ) -> (buffer: MTLBuffer, offset: Int, stride: Int) {
         validateRange(start: start, count: count)
         validateContiguousPhysicalRange(layer: layer, start: start, count: count)
-        let token = regionBase(layer: layer, slot: slot)
+        let token =
+            regionBase(layer: layer, slot: slot)
             + physicalSlot(layer: layer, position: start)
         return (vBuffers[layer], token * strides[layer], strides[layer])
     }
@@ -385,9 +414,10 @@ public final class KVCacheManager {
     public func keyView(layer: Int, slot: Int, validTokenCount: Int) -> KVView {
         validateSlot(slot)
         validateValidTokenCount(validTokenCount)
-        return makeView(buffer: kBuffers[layer], layer: layer,
-                        offset: regionBase(layer: layer, slot: slot) * strides[layer],
-                        validTokenCount: validTokenCount)
+        return makeView(
+            buffer: kBuffers[layer], layer: layer,
+            offset: regionBase(layer: layer, slot: slot) * strides[layer],
+            validTokenCount: validTokenCount)
     }
 
     public func valueView(layer: Int) -> KVView {
@@ -409,23 +439,30 @@ public final class KVCacheManager {
     public func valueView(layer: Int, slot: Int, validTokenCount: Int) -> KVView {
         validateSlot(slot)
         validateValidTokenCount(validTokenCount)
-        return makeView(buffer: vBuffers[layer], layer: layer,
-                        offset: regionBase(layer: layer, slot: slot) * strides[layer],
-                        validTokenCount: validTokenCount)
+        return makeView(
+            buffer: vBuffers[layer], layer: layer,
+            offset: regionBase(layer: layer, slot: slot) * strides[layer],
+            validTokenCount: validTokenCount)
     }
 
-    public func keyRangeView(layer: Int, start: Int, count: Int,
-                             slot: Int = 0) -> KVView {
+    public func keyRangeView(
+        layer: Int, start: Int, count: Int,
+        slot: Int = 0
+    ) -> KVView {
         let range = kRange(layer: layer, start: start, count: count, slot: slot)
-        return makeView(buffer: range.buffer, layer: layer, offset: range.offset,
-                        validTokenCount: count)
+        return makeView(
+            buffer: range.buffer, layer: layer, offset: range.offset,
+            validTokenCount: count)
     }
 
-    public func valueRangeView(layer: Int, start: Int, count: Int,
-                               slot: Int = 0) -> KVView {
+    public func valueRangeView(
+        layer: Int, start: Int, count: Int,
+        slot: Int = 0
+    ) -> KVView {
         let range = vRange(layer: layer, start: start, count: count, slot: slot)
-        return makeView(buffer: range.buffer, layer: layer, offset: range.offset,
-                        validTokenCount: count)
+        return makeView(
+            buffer: range.buffer, layer: layer, offset: range.offset,
+            validTokenCount: count)
     }
 
     /// Advance slot 0's cursor once the current token's K/V are written across
@@ -437,8 +474,9 @@ public final class KVCacheManager {
     public func advance(slot: Int, by count: Int) {
         validateSlot(slot)
         precondition(count >= 0, "advance count must be non-negative")
-        precondition(positions[slot] + count <= maxContext,
-                     "advance would exceed maxContext")
+        precondition(
+            positions[slot] + count <= maxContext,
+            "advance would exceed maxContext")
         positions[slot] += count
     }
 
@@ -511,8 +549,10 @@ public final class KVCacheManager {
         return lengths
     }
 
-    func appendSnapshotPayload(to payload: inout Data,
-                               segmentLengths: [Int]) throws {
+    func appendSnapshotPayload(
+        to payload: inout Data,
+        segmentLengths: [Int]
+    ) throws {
         let expected = try snapshotSegmentLengths(at: position)
         guard segmentLengths == expected else {
             throw InferenceStateSnapshotError.invalidLayout
@@ -520,20 +560,24 @@ public final class KVCacheManager {
         var segment = 0
         for layer in 0..<config.numLayers where kinds[layer] != .linear {
             let kLength = segmentLengths[segment]
-            payload.append(kBuffers[layer].contents().assumingMemoryBound(to: UInt8.self),
-                           count: kLength)
+            payload.append(
+                kBuffers[layer].contents().assumingMemoryBound(to: UInt8.self),
+                count: kLength)
             segment += 1
             let vLength = segmentLengths[segment]
-            payload.append(vBuffers[layer].contents().assumingMemoryBound(to: UInt8.self),
-                           count: vLength)
+            payload.append(
+                vBuffers[layer].contents().assumingMemoryBound(to: UInt8.self),
+                count: vLength)
             segment += 1
         }
     }
 
-    func restoreSnapshot(position snapshotPosition: Int,
-                         segmentLengths: [Int],
-                         bytes: UnsafeRawBufferPointer,
-                         offset: inout Int) throws {
+    func restoreSnapshot(
+        position snapshotPosition: Int,
+        segmentLengths: [Int],
+        bytes: UnsafeRawBufferPointer,
+        offset: inout Int
+    ) throws {
         // Grow to the snapshot's position *before* computing the expected
         // lengths, because those lengths are a function of capacity:
         // `snapshotSegmentLengths` records `min(position, capacity)`. The saving
@@ -552,30 +596,35 @@ public final class KVCacheManager {
         var segment = 0
         for layer in 0..<config.numLayers where kinds[layer] != .linear {
             let kLength = segmentLengths[segment]
-            try copySnapshotSegment(bytes: bytes,
-                                    offset: &offset,
-                                    length: kLength,
-                                    destination: kBuffers[layer])
+            try copySnapshotSegment(
+                bytes: bytes,
+                offset: &offset,
+                length: kLength,
+                destination: kBuffers[layer])
             segment += 1
             let vLength = segmentLengths[segment]
-            try copySnapshotSegment(bytes: bytes,
-                                    offset: &offset,
-                                    length: vLength,
-                                    destination: vBuffers[layer])
+            try copySnapshotSegment(
+                bytes: bytes,
+                offset: &offset,
+                length: vLength,
+                destination: vBuffers[layer])
             segment += 1
         }
         positions[0] = snapshotPosition
     }
 
-    private func copySnapshotSegment(bytes: UnsafeRawBufferPointer,
-                                     offset: inout Int,
-                                     length: Int,
-                                     destination: MTLBuffer) throws {
+    private func copySnapshotSegment(
+        bytes: UnsafeRawBufferPointer,
+        offset: inout Int,
+        length: Int,
+        destination: MTLBuffer
+    ) throws {
         guard length <= destination.length,
-              offset >= 0,
-              length >= 0,
-              offset <= bytes.count - length,
-              let source = bytes.baseAddress?.advanced(by: offset) else {
+            offset >= 0,
+            length >= 0,
+            offset <= bytes.count - length,
+            let source = bytes.baseAddress?.advanced(by: offset)
+        else {
             throw InferenceStateSnapshotError.invalidLayout
         }
         memcpy(destination.contents(), source, length)
@@ -585,19 +634,25 @@ public final class KVCacheManager {
     private func validateRange(start: Int, count: Int) {
         precondition(count >= 0, "count must be non-negative")
         precondition(start >= 0, "start must be non-negative")
-        precondition(start + count <= maxContext,
-                     "range \(start)..<\(start + count) exceeds maxContext \(maxContext)")
+        precondition(
+            start + count <= maxContext,
+            "range \(start)..<\(start + count) exceeds maxContext \(maxContext)")
     }
 
-    private func makeView(buffer: MTLBuffer, layer: Int, offset: Int,
-                          validTokenCount: Int) -> KVView {
-        KVView(buffer: buffer, offset: offset, stride: strides[layer],
-               validTokenCount: validTokenCount, precision: precision,
-               valueBytes: valueBytes[layer], groupSize: Self.quantizationGroupSize)
+    private func makeView(
+        buffer: MTLBuffer, layer: Int, offset: Int,
+        validTokenCount: Int
+    ) -> KVView {
+        KVView(
+            buffer: buffer, offset: offset, stride: strides[layer],
+            validTokenCount: validTokenCount, precision: precision,
+            valueBytes: valueBytes[layer], groupSize: Self.quantizationGroupSize)
     }
 
-    private static func rowLayout(elements: Int,
-                                  precision: KVCachePrecision) -> (stride: Int, valueBytes: Int) {
+    private static func rowLayout(
+        elements: Int,
+        precision: KVCachePrecision
+    ) -> (stride: Int, valueBytes: Int) {
         if precision == .fp16 {
             return (elements * fp16Size, elements * fp16Size)
         }
@@ -609,13 +664,15 @@ public final class KVCacheManager {
 
     private func validateValidTokenCount(_ count: Int) {
         precondition(count >= 0, "validTokenCount must be non-negative")
-        precondition(count <= maxContext,
-                     "validTokenCount \(count) exceeds maxContext \(maxContext)")
+        precondition(
+            count <= maxContext,
+            "validTokenCount \(count) exceeds maxContext \(maxContext)")
     }
 
     private func validateSlot(_ slot: Int) {
-        precondition(slot >= 0 && slot < slots,
-                     "slot \(slot) is out of range 0..<\(slots)")
+        precondition(
+            slot >= 0 && slot < slots,
+            "slot \(slot) is out of range 0..<\(slots)")
     }
 
     private func physicalSlot(layer: Int, position: Int) -> Int {
@@ -627,8 +684,9 @@ public final class KVCacheManager {
         guard count > 0, fp16RingEnabled, kinds[layer] == .swa else { return }
         let capacity = capacityTokens[layer]
         let physicalStart = start % capacity
-        precondition(physicalStart + count <= capacity,
-                     "range \(start)..<\(start + count) wraps KV ring capacity \(capacity)")
+        precondition(
+            physicalStart + count <= capacity,
+            "range \(start)..<\(start + count) wraps KV ring capacity \(capacity)")
     }
 
     private func advise(_ buffer: MTLBuffer, pageSize: Int, seen: inout Set<ObjectIdentifier>) {

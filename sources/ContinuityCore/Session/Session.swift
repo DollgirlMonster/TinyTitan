@@ -27,13 +27,15 @@ public struct Session: Identifiable, Codable, Sendable, Equatable {
     /// session from a coding session at a glance.
     public let tag: String?
 
-    public init(id: UUID = UUID(),
-                taskID: UUID,
-                startedAt: Date = Date(),
-                endedAt: Date? = nil,
-                model: String? = nil,
-                externalID: String? = nil,
-                tag: String? = nil) {
+    public init(
+        id: UUID = UUID(),
+        taskID: UUID,
+        startedAt: Date = Date(),
+        endedAt: Date? = nil,
+        model: String? = nil,
+        externalID: String? = nil,
+        tag: String? = nil
+    ) {
         self.id = id
         self.taskID = taskID
         self.startedAt = startedAt
@@ -61,11 +63,13 @@ public struct ContinuityTask: Identifiable, Codable, Sendable, Equatable {
     public let createdAt: Date
     public var updatedAt: Date
 
-    public init(id: UUID = UUID(),
-                title: String,
-                objective: String = "",
-                createdAt: Date = Date(),
-                updatedAt: Date = Date()) {
+    public init(
+        id: UUID = UUID(),
+        title: String,
+        objective: String = "",
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
         self.id = id
         self.title = title
         self.objective = objective

@@ -1,5 +1,6 @@
-import Testing
 import Metal
+import Testing
+
 @testable import TinyTitan
 
 @Suite struct PrefillChunkScratchTests {
@@ -44,12 +45,15 @@ import Metal
 
     @Test func layoutClampsChunkSizeToRuntimeBounds() {
         #expect(PrefillChunkScratchLayout(config: .qwen36_35B_A3B, chunkTokens: 0).chunkTokens == 1)
-        #expect(PrefillChunkScratchLayout(config: .qwen36_35B_A3B, chunkTokens: 8_192).chunkTokens == 4_096)
+        #expect(
+            PrefillChunkScratchLayout(config: .qwen36_35B_A3B, chunkTokens: 8_192).chunkTokens
+                == 4_096)
     }
 
     @Test func qwenLongChunkScratchRemainsBounded() {
-        let layout = PrefillChunkScratchLayout(config: .qwen36_35B_A3B,
-                                               chunkTokens: 4_096)
+        let layout = PrefillChunkScratchLayout(
+            config: .qwen36_35B_A3B,
+            chunkTokens: 4_096)
         #expect(layout.chunkTokens == 4_096)
         #expect(layout.totalPersistentBytes < 1_024 * 1_048_576)
     }
@@ -66,11 +70,19 @@ import Metal
         #expect(scratch.denseX.length == layout.denseXElements * MemoryLayout<Float16>.stride)
         #expect(scratch.routedX.length == layout.routedXElements * MemoryLayout<Float16>.stride)
         #expect(scratch.routerX.length == layout.routerXElements * MemoryLayout<Float16>.stride)
-        #expect(scratch.routePartials.length == layout.routePartialElements * MemoryLayout<Float16>.stride)
+        #expect(
+            scratch.routePartials.length == layout.routePartialElements
+                * MemoryLayout<Float16>.stride)
         #expect(scratch.routeIDs.length == layout.routeIDElements * MemoryLayout<UInt32>.stride)
-        #expect(scratch.routeWeights.length == layout.routeWeightElements * MemoryLayout<Float16>.stride)
-        #expect(scratch.routedGateUpActScratch.length == layout.routedGateUpActElements * MemoryLayout<Float16>.stride)
-        #expect(scratch.routedDownScratch.length == layout.routedDownOutputElements * MemoryLayout<Float16>.stride)
+        #expect(
+            scratch.routeWeights.length == layout.routeWeightElements * MemoryLayout<Float16>.stride
+        )
+        #expect(
+            scratch.routedGateUpActScratch.length == layout.routedGateUpActElements
+                * MemoryLayout<Float16>.stride)
+        #expect(
+            scratch.routedDownScratch.length == layout.routedDownOutputElements
+                * MemoryLayout<Float16>.stride)
         #expect(scratch.hidden.storageMode == MTLStorageMode.private)
         #expect(scratch.denseX.storageMode == MTLStorageMode.private)
         #expect(scratch.routedX.storageMode == MTLStorageMode.private)

@@ -171,7 +171,8 @@ export function supportDecision(version, supported = SUPPORTED_DSH_VERSION) {
     : "the DeepSeek Harness version could not be read";
   return {
     run: false,
-    refusal: `dsh-lan-manager: ${what}, and this plugin supports ${supported} exactly — ` +
+    refusal:
+      `dsh-lan-manager: ${what}, and this plugin supports ${supported} exactly — ` +
       "not older, not newer, and not a build from main. It registers an API into " +
       "your harness, so it is not running here. DSH itself is unaffected and keeps " +
       `working; pin the harness to ${supported}, or remove this plugin.`,

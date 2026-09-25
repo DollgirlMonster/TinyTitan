@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import TinyTitan
 
 /// The decode inner loop of the CPU side-engine.
@@ -40,10 +41,17 @@ import Foundation
                 biases.withUnsafeBufferPointer { b in
                     x.withUnsafeBufferPointer { xp in
                         out.withUnsafeMutableBufferPointer { o in
+                            // The arrays are non-empty by construction; an empty
+                            // one would leave the output untouched rather than
+                            // trapping inside the kernel call.
+                            guard let wBase = w.baseAddress, let sBase = s.baseAddress,
+                                let bBase = b.baseAddress, let xpBase = xp.baseAddress,
+                                let oBase = o.baseAddress
+                            else { return }
                             Int8AffineGEMV.apply(
-                                weights: w.baseAddress!, scales: s.baseAddress!,
-                                biases: b.baseAddress!, x: xp.baseAddress!,
-                                rows: rowValues.count, n: n, out: o.baseAddress!)
+                                weights: wBase, scales: sBase,
+                                biases: bBase, x: xpBase,
+                                rows: rowValues.count, n: n, out: oBase)
                         }
                     }
                 }
@@ -65,7 +73,8 @@ import Foundation
     @Test func singleGroupMatchesTheReference() {
         let x = Self.pseudorandom(64, seed: 11)
         let rows = (0..<3).map { Self.pseudorandom(64, seed: UInt64(100 + $0)) }
-        let got = Self.run(rows: rows, x: x), want = Self.reference(rows: rows, x: x)
+        let got = Self.run(rows: rows, x: x)
+        let want = Self.reference(rows: rows, x: x)
         for (a, b) in zip(got, want) {
             #expect(abs(a - b) <= 1e-3 * max(1, abs(b)))
         }
@@ -77,10 +86,12 @@ import Foundation
         for n in [2048, 6144] {
             let x = Self.pseudorandom(n, seed: 7)
             let rows = (0..<5).map { Self.pseudorandom(n, seed: UInt64(n + $0)) }
-            let got = Self.run(rows: rows, x: x), want = Self.reference(rows: rows, x: x)
+            let got = Self.run(rows: rows, x: x)
+            let want = Self.reference(rows: rows, x: x)
             for (index, (a, b)) in zip(got, want).enumerated() {
-                #expect(abs(a - b) <= 1e-3 * max(1, abs(b)),
-                        "row \(index) at n=\(n): \(a) vs \(b)")
+                #expect(
+                    abs(a - b) <= 1e-3 * max(1, abs(b)),
+                    "row \(index) at n=\(n): \(a) vs \(b)")
             }
         }
     }
@@ -117,14 +128,15 @@ import Foundation
     /// accumulation identically.
     @Test func agreesWithTheFourBitPathOnRepresentableValues() {
         let n = 64
-        let row = (0..<n).map { Float($0 % 16) }   // exact 4-bit levels
+        let row = (0..<n).map { Float($0 % 16) }  // exact 4-bit levels
         let x = Self.pseudorandom(n, seed: 5)
         let eight = Self.run(rows: [row], x: x)[0]
         let four = Quantization.dequantizeInt4Affine(
             Quantization.quantizeInt4Affine(row), n: n)
         let want = zip(four, x).reduce(0) { $0 + $1.0 * $1.1 }
-        #expect(abs(eight - want) <= 1e-3 * max(1, abs(want)),
-                "8-bit \(eight) vs 4-bit reference \(want)")
+        #expect(
+            abs(eight - want) <= 1e-3 * max(1, abs(want)),
+            "8-bit \(eight) vs 4-bit reference \(want)")
     }
 
     /// Threading splits rows, so its result must be bit-identical to the
@@ -135,7 +147,9 @@ import Foundation
         let x = Self.pseudorandom(n, seed: 31)
         let rowValues = (0..<600).map { Self.pseudorandom(n, seed: UInt64(900 + $0)) }
         let quantised = rowValues.map { Quantization.quantizeInt8Affine($0) }
-        var weights: [UInt8] = [], scales: [UInt16] = [], biases: [UInt16] = []
+        var weights: [UInt8] = []
+        var scales: [UInt16] = []
+        var biases: [UInt16] = []
         for row in quantised {
             weights.append(contentsOf: row.packed)
             scales.append(contentsOf: row.scales)
@@ -147,16 +161,24 @@ import Foundation
             scales.withUnsafeBufferPointer { s in
                 biases.withUnsafeBufferPointer { b in
                     x.withUnsafeBufferPointer { xp in
+                        guard let wBase = w.baseAddress, let sBase = s.baseAddress,
+                            let bBase = b.baseAddress, let xpBase = xp.baseAddress
+                        else {
+                            return
+                        }
                         one.withUnsafeMutableBufferPointer { o in
-                            Int8AffineGEMV.apply(weights: w.baseAddress!, scales: s.baseAddress!,
-                                           biases: b.baseAddress!, x: xp.baseAddress!,
-                                           rows: rowValues.count, n: n, out: o.baseAddress!)
+                            guard let oBase = o.baseAddress else { return }
+                            Int8AffineGEMV.apply(
+                                weights: wBase, scales: sBase,
+                                biases: bBase, x: xpBase,
+                                rows: rowValues.count, n: n, out: oBase)
                         }
                         many.withUnsafeMutableBufferPointer { o in
+                            guard let oBase = o.baseAddress else { return }
                             Int8AffineGEMV.threaded(
-                                weights: w.baseAddress!, scales: s.baseAddress!,
-                                biases: b.baseAddress!, x: xp.baseAddress!,
-                                rows: rowValues.count, n: n, out: o.baseAddress!)
+                                weights: wBase, scales: sBase,
+                                biases: bBase, x: xpBase,
+                                rows: rowValues.count, n: n, out: oBase)
                         }
                     }
                 }

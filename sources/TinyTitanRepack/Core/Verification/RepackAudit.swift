@@ -64,7 +64,7 @@ public final class RepackAudit {
             filesArr.append([
                 "path": f.relativePath,
                 "size": f.size,
-                "sha256": f.sha256
+                "sha256": f.sha256,
             ])
         }
         var retryArr: [[String: Any]] = []
@@ -72,7 +72,7 @@ public final class RepackAudit {
             retryArr.append([
                 "label": retry.label,
                 "attempt": retry.attempt,
-                "detail": retry.detail
+                "detail": retry.detail,
             ])
         }
         var dict: [String: Any] = [
@@ -95,7 +95,7 @@ public final class RepackAudit {
             "remote_range_streaming_supported": remoteRangeStreamingSupported,
             "largest_remote_transfer_bytes": largestRemoteTransferBytes,
             "remote_retries": retryArr,
-            "output_files": filesArr
+            "output_files": filesArr,
         ]
         if let remoteRepoID {
             dict["remote_repo_id"] = remoteRepoID
@@ -106,7 +106,8 @@ public final class RepackAudit {
         if let remoteResolvedCommit {
             dict["remote_resolved_commit"] = remoteResolvedCommit
         }
-        return try JSONSerialization.data(withJSONObject: dict,
+        return try JSONSerialization.data(
+            withJSONObject: dict,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
 }

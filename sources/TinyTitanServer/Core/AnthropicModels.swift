@@ -28,7 +28,9 @@ public struct AnthropicErrorEnvelope: Codable, Equatable, Sendable {
     /// The Anthropic rendering of a server request error. The validator
     /// speaks OpenAI (message, param, code); the Anthropic API names the
     /// field inside the message, so the two are folded together here.
-    public static func from(_ error: ServerRequestError, requestID: String? = nil) -> AnthropicErrorEnvelope {
+    public static func from(_ error: ServerRequestError, requestID: String? = nil)
+        -> AnthropicErrorEnvelope
+    {
         switch error {
         case .invalid(let message, let param, _):
             return AnthropicErrorEnvelope(
@@ -152,8 +154,9 @@ public enum AnthropicMapper {
             var out: [String] = []
             for (index, block) in blocks.enumerated() {
                 guard case .object(let dict) = block,
-                      case .string("text")? = dict["type"],
-                      case .string(let text)? = dict["text"] else {
+                    case .string("text")? = dict["type"],
+                    case .string(let text)? = dict["text"]
+                else {
                     throw invalid("system blocks must be text blocks", "system.\(index)")
                 }
                 out.append(text)
@@ -178,14 +181,16 @@ public enum AnthropicMapper {
                     throw invalid("content blocks must have a type", "\(param).content.\(index)")
                 }
                 guard type == "text", case .string(let text)? = dict["text"] else {
-                    throw unsupported("\(type) blocks in tool results are not supported; this server is text-only",
-                                      "\(param).content.\(index)")
+                    throw unsupported(
+                        "\(type) blocks in tool results are not supported; this server is text-only",
+                        "\(param).content.\(index)")
                 }
                 out.append(text)
             }
             return out.joined(separator: "\n")
         default:
-            throw invalid("tool_result content must be a string or an array of blocks", "\(param).content")
+            throw invalid(
+                "tool_result content must be a string or an array of blocks", "\(param).content")
         }
     }
 
@@ -193,16 +198,21 @@ public enum AnthropicMapper {
     /// a user message with tool results becomes tool messages (then any text
     /// as a user message); an assistant message becomes one assistant message
     /// carrying its text and tool calls.
-    static func chatMessages(for message: AnthropicMessagesRequest.Message,
-                             index: Int) throws -> [OpenAIChatMessage] {
+    static func chatMessages(
+        for message: AnthropicMessagesRequest.Message,
+        index: Int
+    ) throws -> [OpenAIChatMessage] {
         let param = "messages.\(index)"
         guard ["user", "assistant", "system"].contains(message.role) else {
             throw invalid("role must be user, assistant or system", "\(param).role")
         }
         switch message.content {
         case .string(let text):
-            return [OpenAIChatMessage(role: message.role, content: .text(text),
-                                      toolCalls: nil, toolCallID: nil, name: nil)]
+            return [
+                OpenAIChatMessage(
+                    role: message.role, content: .text(text),
+                    toolCalls: nil, toolCallID: nil, name: nil)
+            ]
         case .array(let blocks):
             var text: [String] = []
             var toolCalls: [OpenAIToolCall] = []
@@ -222,14 +232,16 @@ public enum AnthropicMapper {
                     guard message.role == "assistant" else {
                         throw invalid("tool_use blocks belong to assistant messages", blockParam)
                     }
-                    guard case .string(let id)? = dict["id"], case .string(let name)? = dict["name"] else {
+                    guard case .string(let id)? = dict["id"], case .string(let name)? = dict["name"]
+                    else {
                         throw invalid("tool_use requires id and name", blockParam)
                     }
                     let input = dict["input"] ?? .object([:])
                     let arguments = (try? input.encoded(sortedKeys: true)) ?? "{}"
-                    toolCalls.append(OpenAIToolCall(
-                        id: id, type: "function",
-                        function: OpenAIFunctionCall(name: name, arguments: arguments)))
+                    toolCalls.append(
+                        OpenAIToolCall(
+                            id: id, type: "function",
+                            function: OpenAIFunctionCall(name: name, arguments: arguments)))
                 case "tool_result":
                     guard message.role == "user" else {
                         throw invalid("tool_result blocks belong to user messages", blockParam)
@@ -241,16 +253,18 @@ public enum AnthropicMapper {
                     if case .bool(true)? = dict["is_error"], !result.hasPrefix("Error") {
                         result = "Error: " + result
                     }
-                    toolResults.append(OpenAIChatMessage(
-                        role: "tool", content: .text(result),
-                        toolCalls: nil, toolCallID: useID, name: nil))
+                    toolResults.append(
+                        OpenAIChatMessage(
+                            role: "tool", content: .text(result),
+                            toolCalls: nil, toolCallID: useID, name: nil))
                 case "thinking", "redacted_thinking":
                     // Replayed thoughts from an earlier turn. TinyTitan never
                     // renders a model's prior thinking into its prompt.
                     continue
                 case "image", "document", "search_result", "server_tool_use",
-                     "web_search_tool_result", "container_upload":
-                    throw unsupported("\(type) blocks are not supported; this server is text-only", blockParam)
+                    "web_search_tool_result", "container_upload":
+                    throw unsupported(
+                        "\(type) blocks are not supported; this server is text-only", blockParam)
                 default:
                     throw unsupported("unsupported content block type \(type)", blockParam)
                 }
@@ -258,15 +272,17 @@ public enum AnthropicMapper {
             var out = toolResults
             if message.role == "assistant" {
                 let joined = text.joined(separator: "\n")
-                out.append(OpenAIChatMessage(
-                    role: "assistant",
-                    content: joined.isEmpty && !toolCalls.isEmpty ? nil : .text(joined),
-                    toolCalls: toolCalls.isEmpty ? nil : toolCalls,
-                    toolCallID: nil, name: nil))
+                out.append(
+                    OpenAIChatMessage(
+                        role: "assistant",
+                        content: joined.isEmpty && !toolCalls.isEmpty ? nil : .text(joined),
+                        toolCalls: toolCalls.isEmpty ? nil : toolCalls,
+                        toolCallID: nil, name: nil))
             } else if !text.isEmpty || toolResults.isEmpty {
-                out.append(OpenAIChatMessage(
-                    role: "user", content: .text(text.joined(separator: "\n")),
-                    toolCalls: nil, toolCallID: nil, name: nil))
+                out.append(
+                    OpenAIChatMessage(
+                        role: "user", content: .text(text.joined(separator: "\n")),
+                        toolCalls: nil, toolCallID: nil, name: nil))
             }
             return out
         default:
@@ -285,17 +301,27 @@ public enum AnthropicMapper {
                 throw invalid("tools must be objects", param)
             }
             if case .string(let type)? = dict["type"], type != "custom" {
-                throw unsupported("tool type \(type) is not supported; only custom (function) tools are available", "\(param).type")
+                throw unsupported(
+                    "tool type \(type) is not supported; only custom (function) tools are available",
+                    "\(param).type")
             }
             guard case .string(let name)? = dict["name"] else {
                 throw invalid("tool requires a name", "\(param).name")
             }
             let description: String?
-            if case .string(let text)? = dict["description"] { description = text } else { description = nil }
-            let schema = dict["input_schema"] ?? .object(["type": .string("object"), "properties": .object([:])])
-            return OpenAITool(type: "function",
-                              function: OpenAIFunctionDefinition(name: name, description: description,
-                                                                 parameters: schema))
+            if case .string(let text)? = dict["description"] {
+                description = text
+            } else {
+                description = nil
+            }
+            let schema =
+                dict["input_schema"]
+                ?? .object(["type": .string("object"), "properties": .object([:])])
+            return OpenAITool(
+                type: "function",
+                function: OpenAIFunctionDefinition(
+                    name: name, description: description,
+                    parameters: schema))
         }
     }
 
@@ -307,14 +333,17 @@ public enum AnthropicMapper {
             throw invalid("tool_choice must be an object with a type", "tool_choice")
         }
         if case .bool(true)? = dict["disable_parallel_tool_use"] {
-            throw unsupported("disable_parallel_tool_use is not supported", "tool_choice.disable_parallel_tool_use")
+            throw unsupported(
+                "disable_parallel_tool_use is not supported",
+                "tool_choice.disable_parallel_tool_use")
         }
         switch type {
         case "auto": return .string("auto")
         case "none": return .string("none")
         case "any", "tool":
-            throw unsupported("tool_choice \(type) is not supported; the model chooses whether to call a tool",
-                              "tool_choice.type")
+            throw unsupported(
+                "tool_choice \(type) is not supported; the model chooses whether to call a tool",
+                "tool_choice.type")
         default:
             throw invalid("tool_choice type must be auto, any, tool or none", "tool_choice.type")
         }
@@ -345,7 +374,8 @@ public enum AnthropicMapper {
     /// the empty string, because an Anthropic signature is an attestation this
     /// server cannot produce and a made-up token would only pretend to be
     /// verifiable. Turning the level off is therefore what removes the block.
-    static func requestedThinking(_ thinking: JSONValue?, maxTokens: Int) throws -> ReasoningLevel? {
+    static func requestedThinking(_ thinking: JSONValue?, maxTokens: Int) throws -> ReasoningLevel?
+    {
         guard let thinking else { return nil }
         guard case .object(let dict) = thinking, case .string(let type)? = dict["type"] else {
             throw invalid("thinking must be an object with a type", "thinking")
@@ -357,13 +387,16 @@ public enum AnthropicMapper {
             return nil
         case "enabled":
             guard case .integer(let budget)? = dict["budget_tokens"] else {
-                throw invalid("thinking.budget_tokens is required when thinking is enabled", "thinking.budget_tokens")
+                throw invalid(
+                    "thinking.budget_tokens is required when thinking is enabled",
+                    "thinking.budget_tokens")
             }
             guard budget >= 1024 else {
                 throw invalid("budget_tokens must be at least 1024", "thinking.budget_tokens")
             }
             guard budget < maxTokens else {
-                throw invalid("budget_tokens must be less than max_tokens", "thinking.budget_tokens")
+                throw invalid(
+                    "budget_tokens must be less than max_tokens", "thinking.budget_tokens")
             }
             // Three rungs, because the effort templates this project ships
             // define exactly three (low|medium|xhigh) and the binary ones map
@@ -386,7 +419,8 @@ public enum AnthropicMapper {
     /// shape means, which is how it has always been treated.
     static func responseFormat(_ format: JSONValue?) throws -> JSONValue? {
         guard let format, case .object(let dict) = format,
-              case .string(let type)? = dict["type"] else {
+            case .string(let type)? = dict["type"]
+        else {
             return nil
         }
         switch type {
@@ -400,8 +434,10 @@ public enum AnthropicMapper {
             }
             var wrapper: [String: JSONValue] = ["schema": schema]
             if let name = dict["name"] { wrapper["name"] = name }
-            return .object(["type": .string("json_schema"),
-                            "json_schema": .object(wrapper)])
+            return .object([
+                "type": .string("json_schema"),
+                "json_schema": .object(wrapper),
+            ])
         default:
             throw unsupported(
                 "output_config.format \(type) is not supported; use json_object or json_schema",
@@ -413,8 +449,10 @@ public enum AnthropicMapper {
     /// validator and the one generation path serve both APIs. No server profile
     /// is taken: everything the served model contributes is applied by the
     /// validator, and the reasoning level is the request's own.
-    public static func chatRequest(_ request: AnthropicMessagesRequest,
-                                   maxContext: Int = Int.max) throws -> OpenAIChatRequest {
+    public static func chatRequest(
+        _ request: AnthropicMessagesRequest,
+        maxContext: Int = Int.max
+    ) throws -> OpenAIChatRequest {
         guard let requestedMaxTokens = request.maxTokens else {
             throw invalid("field required", "max_tokens")
         }
@@ -444,8 +482,11 @@ public enum AnthropicMapper {
         // Chat Completions puts in `response_format`; it is reshaped into that
         // spelling so the one validator parses it.
         let outputFormat: JSONValue?
-        if case .object(let config)? = request.outputConfig { outputFormat = config["format"] }
-        else { outputFormat = nil }
+        if case .object(let config)? = request.outputConfig {
+            outputFormat = config["format"]
+        } else {
+            outputFormat = nil
+        }
         let responseFormat = try AnthropicMapper.responseFormat(outputFormat)
         if request.container != nil {
             throw unsupported("containers are not supported", "container")
@@ -489,7 +530,9 @@ public enum AnthropicMapper {
                 // Consecutive user text turns combine into one, as the API
                 // itself documents; the template renders one turn per role.
                 if chat.role == "user", let previous = messages.last, previous.role == "user",
-                   case .text(let earlier)? = previous.content, case .text(let later)? = chat.content {
+                    case .text(let earlier)? = previous.content,
+                    case .text(let later)? = chat.content
+                {
                     messages[messages.count - 1] = OpenAIChatMessage(
                         role: "user", content: .text(earlier + "\n\n" + later),
                         toolCalls: nil, toolCallID: nil, name: nil)
@@ -499,14 +542,16 @@ public enum AnthropicMapper {
             }
         }
         if !systemParts.isEmpty {
-            messages.insert(OpenAIChatMessage(
-                role: "system", content: .text(systemParts.joined(separator: "\n\n")),
-                toolCalls: nil, toolCallID: nil, name: nil), at: 0)
+            messages.insert(
+                OpenAIChatMessage(
+                    role: "system", content: .text(systemParts.joined(separator: "\n\n")),
+                    toolCalls: nil, toolCallID: nil, name: nil), at: 0)
         }
         guard messages.contains(where: { $0.role != "system" }) else {
             throw invalid("at least one user message is required", "messages")
         }
-        let stop: OpenAIStop? = (request.stopSequences?.isEmpty ?? true) ? nil : .many(request.stopSequences ?? [])
+        let stop: OpenAIStop? =
+            (request.stopSequences?.isEmpty ?? true) ? nil : .many(request.stopSequences ?? [])
         return OpenAIChatRequest(
             model: request.model,
             messages: messages,
@@ -536,7 +581,9 @@ public enum AnthropicMapper {
     }
 
     /// The count_tokens body, as a Messages request without generation.
-    public static func chatRequest(counting request: AnthropicCountTokensRequest) throws -> OpenAIChatRequest {
+    public static func chatRequest(counting request: AnthropicCountTokensRequest) throws
+        -> OpenAIChatRequest
+    {
         let full = AnthropicMessagesRequest(
             model: request.model, messages: request.messages, maxTokens: 1,
             system: request.system, metadata: nil, stopSequences: nil, stream: false,
@@ -565,7 +612,9 @@ public enum AnthropicBuilder {
     /// Anthropic's stop_reason for a completion: tool calls first (a turn
     /// that called a tool ends with tool_use whatever else it said), then the
     /// output cap, then a matched stop string, then a natural end.
-    public static func stopReason(for completion: ServerCompletion) -> (reason: String, sequence: String?) {
+    public static func stopReason(for completion: ServerCompletion) -> (
+        reason: String, sequence: String?
+    ) {
         if !completion.toolCalls.isEmpty { return ("tool_use", nil) }
         if completion.finishReason == "length" { return ("max_tokens", nil) }
         if let stop = completion.stopSequence { return ("stop_sequence", stop) }
@@ -577,8 +626,10 @@ public enum AnthropicBuilder {
     }
 
     public static func toolUseBlock(_ call: ParsedToolCall) -> [String: Any] {
-        ["type": "tool_use", "id": call.id, "name": call.name,
-         "input": call.arguments.foundationObject()]
+        [
+            "type": "tool_use", "id": call.id, "name": call.name,
+            "input": call.arguments.foundationObject(),
+        ]
     }
 
     /// The signature on every thinking block this server returns: empty.
@@ -625,12 +676,14 @@ public enum AnthropicBuilder {
         ]
     }
 
-    public static func messageObject(id: String,
-                                     model: String,
-                                     content: [[String: Any]],
-                                     stopReason: String?,
-                                     stopSequence: String?,
-                                     usage: [String: Any]) -> [String: Any] {
+    public static func messageObject(
+        id: String,
+        model: String,
+        content: [[String: Any]],
+        stopReason: String?,
+        stopSequence: String?,
+        usage: [String: Any]
+    ) -> [String: Any] {
         [
             "id": id,
             "type": "message",
@@ -660,7 +713,9 @@ public enum AnthropicBuilder {
     }
 
     public static func modelObject(id: String, displayName: String? = nil) -> [String: Any] {
-        ["type": "model", "id": id, "display_name": displayName ?? id,
-         "created_at": ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: 0))]
+        [
+            "type": "model", "id": id, "display_name": displayName ?? id,
+            "created_at": ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: 0)),
+        ]
     }
 }

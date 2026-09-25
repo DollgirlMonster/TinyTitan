@@ -20,13 +20,15 @@ public struct RemoteInstallCheckpoint: Codable, Sendable, Equatable {
     public let totalSourceBytes: UInt64
     public var completedRanges: [RemoteCompletedRange]
 
-    public init(repoID: String,
-                requestedRevision: String,
-                resolvedCommit: String,
-                sourceIndexSHA256: String,
-                planFingerprint: String,
-                totalSourceBytes: UInt64,
-                completedRanges: [RemoteCompletedRange] = []) {
+    public init(
+        repoID: String,
+        requestedRevision: String,
+        resolvedCommit: String,
+        sourceIndexSHA256: String,
+        planFingerprint: String,
+        totalSourceBytes: UInt64,
+        completedRanges: [RemoteCompletedRange] = []
+    ) {
         self.schema = Self.schemaVersion
         self.repoID = repoID
         self.requestedRevision = requestedRevision
@@ -63,10 +65,12 @@ public struct RemoteInstallCheckpoint: Codable, Sendable, Equatable {
         try Posix.atomicWrite(data, to: path, durableIn: parentDirectory)
     }
 
-    public func matches(repoID: String,
-                        requestedRevision: String,
-                        sourceIndexSHA256: String,
-                        planFingerprint: String) -> Bool {
+    public func matches(
+        repoID: String,
+        requestedRevision: String,
+        sourceIndexSHA256: String,
+        planFingerprint: String
+    ) -> Bool {
         self.repoID == repoID
             && self.requestedRevision == requestedRevision
             && self.sourceIndexSHA256 == sourceIndexSHA256
@@ -90,24 +94,26 @@ public struct RemoteInstallCheckpoint: Codable, Sendable, Equatable {
 
     private func validate(path: String) throws {
         guard schema == Self.schemaVersion,
-              !repoID.isEmpty,
-              !requestedRevision.isEmpty,
-              resolvedCommit.count == 40,
-              sourceIndexSHA256.count == 64,
-              planFingerprint.count == 64,
-              totalSourceBytes > 0 else {
+            !repoID.isEmpty,
+            !requestedRevision.isEmpty,
+            resolvedCommit.count == 40,
+            sourceIndexSHA256.count == 64,
+            planFingerprint.count == 64,
+            totalSourceBytes > 0
+        else {
             throw RepackError.installStateCorrupt(
                 path: path,
                 detail: "invalid checkpoint identity")
         }
         let ids = completedRanges.map(\.id)
         guard Set(ids).count == ids.count,
-              completedRanges.allSatisfy({
-                  !$0.id.isEmpty
-                      && $0.destinationDigest.count == 64
-                      && $0.sourceBytes > 0
-                      && $0.destinationBytes > 0
-              }) else {
+            completedRanges.allSatisfy({
+                !$0.id.isEmpty
+                    && $0.destinationDigest.count == 64
+                    && $0.sourceBytes > 0
+                    && $0.destinationBytes > 0
+            })
+        else {
             throw RepackError.installStateCorrupt(
                 path: path,
                 detail: "invalid completed range")
@@ -119,8 +125,9 @@ public struct RemoteInstallCheckpoint: Codable, Sendable, Equatable {
             let nextDestination = destinationTotal.addingReportingOverflow(
                 range.destinationBytes)
             guard !nextSource.overflow,
-                  nextSource.partialValue <= totalSourceBytes,
-                  !nextDestination.overflow else {
+                nextSource.partialValue <= totalSourceBytes,
+                !nextDestination.overflow
+            else {
                 throw RepackError.installStateCorrupt(
                     path: path,
                     detail: "completed range byte totals are invalid")

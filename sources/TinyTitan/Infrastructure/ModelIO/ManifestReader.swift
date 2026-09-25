@@ -100,13 +100,16 @@ public struct ManifestQuant: Decodable, Equatable, Sendable {
     /// applies is how a kernel comes to read the wrong number of bytes -- no
     /// error, just a wrong model -- so every check and every binding that can
     /// see a tensor name resolves through here.
-    public func slot(forTensorNamed name: String, overrides: [String: Int],
-                     fallback: ManifestQuantSlot) -> ManifestQuantSlot {
+    public func slot(
+        forTensorNamed name: String, overrides: [String: Int],
+        fallback: ManifestQuantSlot
+    ) -> ManifestQuantSlot {
         let stem = name.hasSuffix(".weight") ? String(name.dropLast(".weight".count)) : name
         guard let bits = overrides[stem], bits != fallback.weightBits else { return fallback }
-        return ManifestQuantSlot(weightBits: bits, scheme: fallback.scheme,
-                                 scaleType: fallback.scaleType, biasType: fallback.biasType,
-                                 groupSize: fallback.groupSize)
+        return ManifestQuantSlot(
+            weightBits: bits, scheme: fallback.scheme,
+            scaleType: fallback.scaleType, biasType: fallback.biasType,
+            groupSize: fallback.groupSize)
     }
 
     /// The width a *role's* tensors are stored at: the override the manifest
@@ -122,9 +125,11 @@ public struct ManifestQuant: Decodable, Equatable, Sendable {
     /// enforced by the loader (`Model.validateRoleUniformity`), so there is
     /// never more than one value to find; sorting means that if one ever slips
     /// past, the width does not change between runs.
-    public static func roleWeightBits(roleSuffix: String,
-                                      overrides: [String: Int],
-                                      fallback: Int) -> Int {
+    public static func roleWeightBits(
+        roleSuffix: String,
+        overrides: [String: Int],
+        fallback: Int
+    ) -> Int {
         overrides.sorted { $0.key < $1.key }
             .first { $0.key.hasSuffix(roleSuffix) }?.value ?? fallback
     }
@@ -185,9 +190,11 @@ public enum ManifestReader {
         "packed_experts/layout.json",
     ]
 
-    public static func load(directoryURL: URL,
-                            expecting: ArchConfig,
-                            maxBytes: UInt64 = defaultMaxBytes) throws -> Manifest {
+    public static func load(
+        directoryURL: URL,
+        expecting: ArchConfig,
+        maxBytes: UInt64 = defaultMaxBytes
+    ) throws -> Manifest {
         let directory = try GTurboModelDirectory(rootURL: directoryURL)
         let data: Data
         do {
@@ -198,8 +205,10 @@ public enum ManifestReader {
         return try decode(data: data, expecting: expecting)
     }
 
-    package static func decode(data: Data,
-                               expecting: ArchConfig) throws -> Manifest {
+    package static func decode(
+        data: Data,
+        expecting: ArchConfig
+    ) throws -> Manifest {
         let manifest: Manifest
         do {
             let wire = try GTurboManifestCodec.decodeUnchecked(data)
@@ -207,9 +216,11 @@ public enum ManifestReader {
                 throw ModelError.notAGTurboDirectory
             }
             guard wire.versionMajor == GTurboFormatV1.versionMajor,
-                  wire.versionMinor >= 0 else {
-                throw ModelError.unsupportedVersion(major: wire.versionMajor,
-                                                    minor: wire.versionMinor)
+                wire.versionMinor >= 0
+            else {
+                throw ModelError.unsupportedVersion(
+                    major: wire.versionMajor,
+                    minor: wire.versionMinor)
             }
             for key in wire.flags.keys where !GTurboFormatV1.knownFlags.contains(key) {
                 throw ModelError.unknownFlag(name: key)
@@ -239,8 +250,10 @@ public enum ManifestReader {
     /// engine's reader takes the manifest's own facts instead. Everything the
     /// format itself guarantees -- magic, version, known flags, page-aligned
     /// expert stride, the wire-level codec rules -- is still checked here.
-    public static func read(directoryURL: URL,
-                            maxBytes: UInt64 = defaultMaxBytes) throws -> Manifest {
+    public static func read(
+        directoryURL: URL,
+        maxBytes: UInt64 = defaultMaxBytes
+    ) throws -> Manifest {
         let directory = try GTurboModelDirectory(rootURL: directoryURL)
         let data: Data
         do {
@@ -255,9 +268,11 @@ public enum ManifestReader {
                 throw ModelError.notAGTurboDirectory
             }
             guard wire.versionMajor == GTurboFormatV1.versionMajor,
-                  wire.versionMinor >= 0 else {
-                throw ModelError.unsupportedVersion(major: wire.versionMajor,
-                                                    minor: wire.versionMinor)
+                wire.versionMinor >= 0
+            else {
+                throw ModelError.unsupportedVersion(
+                    major: wire.versionMajor,
+                    minor: wire.versionMinor)
             }
             for key in wire.flags.keys where !GTurboFormatV1.knownFlags.contains(key) {
                 throw ModelError.unknownFlag(name: key)
@@ -308,23 +323,30 @@ public enum ManifestReader {
         // architecture and fails on a hidden-size mismatch rather than being
         // identified.
         if let declared = wire.arch.family,
-           let family = ModelFamily(rawValue: declared) {
-            return ManifestIdentity(modelID: wire.modelID, family: family,
-                                    weightBits: bits)
+            let family = ModelFamily(rawValue: declared)
+        {
+            return ManifestIdentity(
+                modelID: wire.modelID, family: family,
+                weightBits: bits)
         }
         let mtp = ArchConfig.qwen36MTP
         if wire.arch.numLayers == mtp.numLayers,
-           wire.arch.slidingWindow == mtp.slidingWindow,
-           wire.arch.fullAttentionLayerMask == mtp.fullAttentionLayerMask.map(Int.init) {
-            return ManifestIdentity(modelID: wire.modelID, family: .qwen36MTP,
-                                    weightBits: bits)
+            wire.arch.slidingWindow == mtp.slidingWindow,
+            wire.arch.fullAttentionLayerMask == mtp.fullAttentionLayerMask.map(Int.init)
+        {
+            return ManifestIdentity(
+                modelID: wire.modelID, family: .qwen36MTP,
+                weightBits: bits)
         }
-        return ManifestIdentity(modelID: wire.modelID, family: .qwen36,
-                                weightBits: bits)
+        return ManifestIdentity(
+            modelID: wire.modelID, family: .qwen36,
+            weightBits: bits)
     }
 
-    static func validate(_ m: Manifest,
-                         against expected: ArchConfig) throws {
+    static func validate(
+        _ m: Manifest,
+        against expected: ArchConfig
+    ) throws {
         if m.flags["turboQuantKV"] == true {
             throw ModelError.indexCorrupt(
                 detail: "manifest requests removed TurboQuant KV runtime support")
@@ -333,11 +355,13 @@ public enum ManifestReader {
         if let quant = m.quant {
             try validateQuant(quant, family: expected.family)
         } else if expected.numLayers == ArchConfig.qwen36_35B_A3B.numLayers,
-                  expected.hiddenSize == ArchConfig.qwen36_35B_A3B.hiddenSize {
-            throw ModelError.indexCorrupt(detail: "manifest.quant is required for the production architecture")
+            expected.hiddenSize == ArchConfig.qwen36_35B_A3B.hiddenSize
+        {
+            throw ModelError.indexCorrupt(
+                detail: "manifest.quant is required for the production architecture")
         }
-        for f in requiredFiles {
-            if m.files[f] == nil { throw ModelError.missingFile(name: f) }
+        for f in requiredFiles where m.files[f] == nil {
+            throw ModelError.missingFile(name: f)
         }
         // Validate that all expected layer files are listed in the manifest.
         // Accept both `layer_0.bin` and `layer_00.bin` naming conventions.
@@ -358,8 +382,10 @@ public enum ManifestReader {
         }
     }
 
-    private static func validateQuant(_ quant: ManifestQuant,
-                                      family: ModelFamily) throws {
+    private static func validateQuant(
+        _ quant: ManifestQuant,
+        family: ModelFamily
+    ) throws {
         let allowedRouterBits: Set<Int>
         switch family {
         case .qwen36MTP:
@@ -391,188 +417,210 @@ public enum ManifestReader {
             if slot.weightBits == 6 {
                 // Not `indexCorrupt`: the payload is intact and the user would
                 // otherwise be told to re-download a file that is fine.
-                throw ModelError.unsupportedArchitecture(detail: """
-                    6-bit models are no longer supported (\(name) is 6-bit). \
-                    Its packing is not a power of two, which measured 46.8 GB/s \
-                    against 60 for both 4-bit and 8-bit, and it does not fit \
-                    24 GB. Install the 4-bit or 8-bit build instead.
-                    """)
+                throw ModelError.unsupportedArchitecture(
+                    detail: """
+                        6-bit models are no longer supported (\(name) is 6-bit). \
+                        Its packing is not a power of two, which measured 46.8 GB/s \
+                        against 60 for both 4-bit and 8-bit, and it does not fit \
+                        24 GB. Install the 4-bit or 8-bit build instead.
+                        """)
             }
             guard allowedBits.contains(slot.weightBits),
-                  slot.scheme.lowercased() == "affine",
-                  slot.scaleType.lowercased() == "bf16",
-                  slot.biasType.lowercased() == "bf16",
-                  slot.groupSize == Quantization.groupSize else {
+                slot.scheme.lowercased() == "affine",
+                slot.scaleType.lowercased() == "bf16",
+                slot.biasType.lowercased() == "bf16",
+                slot.groupSize == Quantization.groupSize
+            else {
                 throw ModelError.indexCorrupt(detail: "unsupported quantization for \(name)")
             }
         }
     }
 
-    private static func validateArch(_ a: ManifestArch,
-                                     expected e: ArchConfig) throws {
+    private static func validateArch(
+        _ a: ManifestArch,
+        expected e: ArchConfig
+    ) throws {
         func check<T: Equatable & CustomStringConvertible>(
-            _ field: String, _ actual: T, _ expected: T) throws {
+            _ field: String, _ actual: T, _ expected: T
+        ) throws {
             if actual != expected {
-                throw ModelError.archMismatch(field: field,
-                                              expected: "\(expected)",
-                                              actual: "\(actual)")
+                throw ModelError.archMismatch(
+                    field: field,
+                    expected: "\(expected)",
+                    actual: "\(actual)")
             }
         }
-        try check("hiddenSize",          a.hiddenSize,          e.hiddenSize)
-        try check("ffnIntermediate",     a.ffnIntermediate,     e.intermediateSize)
+        try check("hiddenSize", a.hiddenSize, e.hiddenSize)
+        try check("ffnIntermediate", a.ffnIntermediate, e.intermediateSize)
         try check("moeIntermediateSize", a.moeIntermediateSize, e.moeIntermediateSize)
-        try check("numHeads",            a.numHeads,            e.numHeads)
-        try check("numKVHeads",          a.numKVHeads,          e.numKVHeads)
-        try check("numFullKVHeads",      a.numFullKVHeads,      e.numFullKVHeads)
-        try check("headDim",             a.headDim,             e.headDim)
-        try check("fullHeadDim",         a.fullHeadDim,         e.fullHeadDim)
-        try check("vocabSize",           a.vocabSize,           e.vocabSize)
-        try check("slidingWindow",       a.slidingWindow,       e.slidingWindow)
-        try check("finalLogitSoftcap",   a.finalLogitSoftcap,   e.finalLogitSoftcap)
-        try check("ropeTheta",           a.ropeTheta,           e.ropeTheta)
-        try check("fullRopeTheta",       a.fullRopeTheta,       e.fullRopeTheta)
+        try check("numHeads", a.numHeads, e.numHeads)
+        try check("numKVHeads", a.numKVHeads, e.numKVHeads)
+        try check("numFullKVHeads", a.numFullKVHeads, e.numFullKVHeads)
+        try check("headDim", a.headDim, e.headDim)
+        try check("fullHeadDim", a.fullHeadDim, e.fullHeadDim)
+        try check("vocabSize", a.vocabSize, e.vocabSize)
+        try check("slidingWindow", a.slidingWindow, e.slidingWindow)
+        try check("finalLogitSoftcap", a.finalLogitSoftcap, e.finalLogitSoftcap)
+        try check("ropeTheta", a.ropeTheta, e.ropeTheta)
+        try check("fullRopeTheta", a.fullRopeTheta, e.fullRopeTheta)
         try check("partialRotaryFactor", a.partialRotaryFactor, e.partialRotaryFactor)
-        try check("numLayers",           a.numLayers,           e.numLayers)
-        try check("numExperts",          a.numExperts,          e.numExperts)
-        try check("topKExperts",         a.topKExperts,         e.topKExperts)
-        try check("tieWordEmbeddings",   a.tieWordEmbeddings,   e.tieWordEmbeddings)
-        try check("attentionKEqV",       a.attentionKEqV,       e.attentionKEqV)
-        try check("hiddenActivation",    a.hiddenActivation,    e.hiddenActivation)
+        try check("numLayers", a.numLayers, e.numLayers)
+        try check("numExperts", a.numExperts, e.numExperts)
+        try check("topKExperts", a.topKExperts, e.topKExperts)
+        try check("tieWordEmbeddings", a.tieWordEmbeddings, e.tieWordEmbeddings)
+        try check("attentionKEqV", a.attentionKEqV, e.attentionKEqV)
+        try check("hiddenActivation", a.hiddenActivation, e.hiddenActivation)
         let actualMask = a.fullAttentionLayerMask.map { UInt8($0) }
-        try check("fullAttentionLayerMask",
-                  actualMask.description,
-                  e.fullAttentionLayerMask.description)
+        try check(
+            "fullAttentionLayerMask",
+            actualMask.description,
+            e.fullAttentionLayerMask.description)
 
         // Extension geometry is checked only when the manifest declares it.
         // Absent means an older manifest, which the core fields above already
         // pin; present and disagreeing means the payload is not the
         // architecture this runtime would execute, which must not be silent.
         func checkOptional<T: Equatable & CustomStringConvertible>(
-            _ field: String, _ actual: T?, _ expected: T) throws {
+            _ field: String, _ actual: T?, _ expected: T
+        ) throws {
             guard let actual else { return }
             try check(field, actual, expected)
         }
         try checkOptional("hcCount", a.hcCount, e.hyperConnections.count)
         try checkOptional("hcLowRank", a.hcLowRank, e.hyperConnections.lowRank)
-        try checkOptional("indexerNumHeads", a.indexerNumHeads,
-                          e.sparseIndexer.numHeads)
-        try checkOptional("indexerNumKVHeads", a.indexerNumKVHeads,
-                          e.sparseIndexer.numKVHeads)
-        try checkOptional("indexerHeadDim", a.indexerHeadDim,
-                          e.sparseIndexer.headDim)
-        try checkOptional("indexerBudget", a.indexerBudget,
-                          e.sparseIndexer.budget)
-        try checkOptional("indexerCompressRatio", a.indexerCompressRatio,
-                          e.sparseIndexer.compressRatio)
-        try checkOptional("pleLayerIndices", a.pleLayerIndices?.description,
-                          e.ple.layerIndices.description)
+        try checkOptional(
+            "indexerNumHeads", a.indexerNumHeads,
+            e.sparseIndexer.numHeads)
+        try checkOptional(
+            "indexerNumKVHeads", a.indexerNumKVHeads,
+            e.sparseIndexer.numKVHeads)
+        try checkOptional(
+            "indexerHeadDim", a.indexerHeadDim,
+            e.sparseIndexer.headDim)
+        try checkOptional(
+            "indexerBudget", a.indexerBudget,
+            e.sparseIndexer.budget)
+        try checkOptional(
+            "indexerCompressRatio", a.indexerCompressRatio,
+            e.sparseIndexer.compressRatio)
+        try checkOptional(
+            "pleLayerIndices", a.pleLayerIndices?.description,
+            e.ple.layerIndices.description)
         try checkOptional("pleEmbedDim", a.pleEmbedDim, e.ple.embedDim)
-        try checkOptional("pleConvKernelSize", a.pleConvKernelSize,
-                          e.ple.convKernelSize)
+        try checkOptional(
+            "pleConvKernelSize", a.pleConvKernelSize,
+            e.ple.convKernelSize)
         try checkOptional("pleNgramSize", a.pleNgramSize, e.ple.ngramSize)
-        try checkOptional("pleVocabSizeBase", a.pleVocabSizeBase,
-                          e.ple.vocabSizeBase)
-        try checkOptional("pleHeadsPerNgram", a.pleHeadsPerNgram,
-                          e.ple.headsPerNgram)
-        try checkOptional("pleVocabDivisor", a.pleVocabDivisor,
-                          e.ple.vocabDivisor)
+        try checkOptional(
+            "pleVocabSizeBase", a.pleVocabSizeBase,
+            e.ple.vocabSizeBase)
+        try checkOptional(
+            "pleHeadsPerNgram", a.pleHeadsPerNgram,
+            e.ple.headsPerNgram)
+        try checkOptional(
+            "pleVocabDivisor", a.pleVocabDivisor,
+            e.ple.vocabDivisor)
         try checkOptional("routerNormTopK", a.routerNormTopK, e.routerNormTopK)
         try checkOptional("quantGroupSize", a.quantGroupSize, e.quantGroupSize)
     }
 }
 
-private extension ManifestFileEntry {
-    init(wire: GTurboManifestFileV1) {
+extension ManifestFileEntry {
+    fileprivate init(wire: GTurboManifestFileV1) {
         self.init(size: wire.size, sha256: wire.sha256)
     }
 }
 
-private extension ManifestArch {
-    init(wire: GTurboManifestArchV1) {
-        self.init(hiddenSize: wire.hiddenSize,
-                  ffnIntermediate: wire.ffnIntermediate,
-                  moeIntermediateSize: wire.moeIntermediateSize,
-                  numHeads: wire.numHeads,
-                  numKVHeads: wire.numKVHeads,
-                  numFullKVHeads: wire.numFullKVHeads,
-                  headDim: wire.headDim,
-                  fullHeadDim: wire.fullHeadDim,
-                  vocabSize: wire.vocabSize,
-                  slidingWindow: wire.slidingWindow,
-                  finalLogitSoftcap: wire.finalLogitSoftcap,
-                  ropeTheta: wire.ropeTheta,
-                  fullRopeTheta: wire.fullRopeTheta,
-                  partialRotaryFactor: wire.partialRotaryFactor,
-                  numLayers: wire.numLayers,
-                  numExperts: wire.numExperts,
-                  topKExperts: wire.topKExperts,
-                  tieWordEmbeddings: wire.tieWordEmbeddings,
-                  attentionKEqV: wire.attentionKEqV,
-                  hiddenActivation: wire.hiddenActivation,
-                  fullAttentionLayerMask: wire.fullAttentionLayerMask,
-                  hcCount: wire.hcCount,
-                  hcLowRank: wire.hcLowRank,
-                  indexerNumHeads: wire.indexerNumHeads,
-                  indexerNumKVHeads: wire.indexerNumKVHeads,
-                  indexerHeadDim: wire.indexerHeadDim,
-                  indexerBudget: wire.indexerBudget,
-                  indexerCompressRatio: wire.indexerCompressRatio,
-                  pleLayerIndices: wire.pleLayerIndices,
-                  pleEmbedDim: wire.pleEmbedDim,
-                  pleConvKernelSize: wire.pleConvKernelSize,
-                  pleNgramSize: wire.pleNgramSize,
-                  pleVocabSizeBase: wire.pleVocabSizeBase,
-                  pleHeadsPerNgram: wire.pleHeadsPerNgram,
-                  pleVocabDivisor: wire.pleVocabDivisor,
-                  routerNormTopK: wire.routerNormTopK,
-                  quantGroupSize: wire.quantGroupSize,
-                  attnOutputGate: wire.attnOutputGate,
-                  attentionScale: wire.attentionScale,
-                  embeddingScaledBySqrtHidden: wire.embeddingScaledBySqrtHidden,
-                  routerScaled: wire.routerScaled,
-                  ffnSandwichNorms: wire.ffnSandwichNorms,
-                  sharedExpertGated: wire.sharedExpertGated,
-                  ropeNeoxSubdim: wire.ropeNeoxSubdim,
-                  linearNumKHeads: wire.linearNumKHeads,
-                  linearNumVHeads: wire.linearNumVHeads,
-                  linearKeyHeadDim: wire.linearKeyHeadDim,
-                  linearValueHeadDim: wire.linearValueHeadDim,
-                  linearConvKernelSize: wire.linearConvKernelSize)
+extension ManifestArch {
+    fileprivate init(wire: GTurboManifestArchV1) {
+        self.init(
+            hiddenSize: wire.hiddenSize,
+            ffnIntermediate: wire.ffnIntermediate,
+            moeIntermediateSize: wire.moeIntermediateSize,
+            numHeads: wire.numHeads,
+            numKVHeads: wire.numKVHeads,
+            numFullKVHeads: wire.numFullKVHeads,
+            headDim: wire.headDim,
+            fullHeadDim: wire.fullHeadDim,
+            vocabSize: wire.vocabSize,
+            slidingWindow: wire.slidingWindow,
+            finalLogitSoftcap: wire.finalLogitSoftcap,
+            ropeTheta: wire.ropeTheta,
+            fullRopeTheta: wire.fullRopeTheta,
+            partialRotaryFactor: wire.partialRotaryFactor,
+            numLayers: wire.numLayers,
+            numExperts: wire.numExperts,
+            topKExperts: wire.topKExperts,
+            tieWordEmbeddings: wire.tieWordEmbeddings,
+            attentionKEqV: wire.attentionKEqV,
+            hiddenActivation: wire.hiddenActivation,
+            fullAttentionLayerMask: wire.fullAttentionLayerMask,
+            hcCount: wire.hcCount,
+            hcLowRank: wire.hcLowRank,
+            indexerNumHeads: wire.indexerNumHeads,
+            indexerNumKVHeads: wire.indexerNumKVHeads,
+            indexerHeadDim: wire.indexerHeadDim,
+            indexerBudget: wire.indexerBudget,
+            indexerCompressRatio: wire.indexerCompressRatio,
+            pleLayerIndices: wire.pleLayerIndices,
+            pleEmbedDim: wire.pleEmbedDim,
+            pleConvKernelSize: wire.pleConvKernelSize,
+            pleNgramSize: wire.pleNgramSize,
+            pleVocabSizeBase: wire.pleVocabSizeBase,
+            pleHeadsPerNgram: wire.pleHeadsPerNgram,
+            pleVocabDivisor: wire.pleVocabDivisor,
+            routerNormTopK: wire.routerNormTopK,
+            quantGroupSize: wire.quantGroupSize,
+            attnOutputGate: wire.attnOutputGate,
+            attentionScale: wire.attentionScale,
+            embeddingScaledBySqrtHidden: wire.embeddingScaledBySqrtHidden,
+            routerScaled: wire.routerScaled,
+            ffnSandwichNorms: wire.ffnSandwichNorms,
+            sharedExpertGated: wire.sharedExpertGated,
+            ropeNeoxSubdim: wire.ropeNeoxSubdim,
+            linearNumKHeads: wire.linearNumKHeads,
+            linearNumVHeads: wire.linearNumVHeads,
+            linearKeyHeadDim: wire.linearKeyHeadDim,
+            linearValueHeadDim: wire.linearValueHeadDim,
+            linearConvKernelSize: wire.linearConvKernelSize)
     }
 }
 
-private extension ManifestQuantSlot {
-    init(wire: GTurboManifestQuantSlotV1) {
-        self.init(weightBits: wire.weightBits, scheme: wire.scheme,
-                  scaleType: wire.scaleType, biasType: wire.biasType,
-                  groupSize: wire.groupSize)
+extension ManifestQuantSlot {
+    fileprivate init(wire: GTurboManifestQuantSlotV1) {
+        self.init(
+            weightBits: wire.weightBits, scheme: wire.scheme,
+            scaleType: wire.scaleType, biasType: wire.biasType,
+            groupSize: wire.groupSize)
     }
 }
 
-private extension ManifestQuant {
-    init(wire: GTurboManifestQuantV1) {
-        self.init(embedding: ManifestQuantSlot(wire: wire.embedding),
-                  attention: ManifestQuantSlot(wire: wire.attention),
-                  router: ManifestQuantSlot(wire: wire.router),
-                  sharedExpert: ManifestQuantSlot(wire: wire.sharedExpert),
-                  routedExpert: ManifestQuantSlot(wire: wire.routedExpert))
+extension ManifestQuant {
+    fileprivate init(wire: GTurboManifestQuantV1) {
+        self.init(
+            embedding: ManifestQuantSlot(wire: wire.embedding),
+            attention: ManifestQuantSlot(wire: wire.attention),
+            router: ManifestQuantSlot(wire: wire.router),
+            sharedExpert: ManifestQuantSlot(wire: wire.sharedExpert),
+            routedExpert: ManifestQuantSlot(wire: wire.routedExpert))
     }
 }
 
-private extension Manifest {
-    init(wire: GTurboManifestV1) {
-        self.init(magic: wire.magic,
-                  versionMajor: wire.versionMajor,
-                  versionMinor: wire.versionMinor,
-                  flags: wire.flags,
-                  modelID: wire.modelID,
-                  sourceSnapshotHash: wire.sourceSnapshotHash,
-                  arch: ManifestArch(wire: wire.arch),
-                  quant: wire.quant.map(ManifestQuant.init(wire:)),
-                  quantOverrides: wire.quant?.overrides?.mapValues(\.weightBits) ?? [:],
-                  files: wire.files.mapValues(ManifestFileEntry.init(wire:)),
-                  expertsPerLayer: wire.expertsPerLayer,
-                  numLayers: wire.numLayers,
-                  expertStride: wire.expertStride)
+extension Manifest {
+    fileprivate init(wire: GTurboManifestV1) {
+        self.init(
+            magic: wire.magic,
+            versionMajor: wire.versionMajor,
+            versionMinor: wire.versionMinor,
+            flags: wire.flags,
+            modelID: wire.modelID,
+            sourceSnapshotHash: wire.sourceSnapshotHash,
+            arch: ManifestArch(wire: wire.arch),
+            quant: wire.quant.map(ManifestQuant.init(wire:)),
+            quantOverrides: wire.quant?.overrides?.mapValues(\.weightBits) ?? [:],
+            files: wire.files.mapValues(ManifestFileEntry.init(wire:)),
+            expertsPerLayer: wire.expertsPerLayer,
+            numLayers: wire.numLayers,
+            expertStride: wire.expertStride)
     }
 }

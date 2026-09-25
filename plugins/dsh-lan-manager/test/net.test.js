@@ -145,7 +145,14 @@ test("malformed IPv6 is refused, never repaired into an allowed address", () => 
   // Each of these was previously rewritten by the parser into a *different*,
   // valid address — `fc00::1::2` (two `::`) landed inside the allowed fc00::/7,
   // and a trailing colon produced an empty group that was read as a zero.
-  const malformed = ["1::2::3", "fc00::1::2", "1:2:3:4:5:6:7:", "1:2:3:4:5:6:7:8::", ":::", "fe80:::1"];
+  const malformed = [
+    "1::2::3",
+    "fc00::1::2",
+    "1:2:3:4:5:6:7:",
+    "1:2:3:4:5:6:7:8::",
+    ":::",
+    "fe80:::1",
+  ];
   for (const address of malformed) {
     assert.equal(normalizeIpv6(address), undefined, `${address} must not parse`);
     assert.equal(checkAddress(address).allowed, false, `${address} must be refused`);
@@ -183,7 +190,14 @@ test("a narrowed network list is honoured", () => {
 test("the default list is exactly loopback, RFC1918, link-local and CGNAT", () => {
   assert.deepEqual(
     DEFAULT_IPV4_NETWORKS.map(([net, bits]) => `${net}/${bits}`),
-    ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "100.64.0.0/10"],
+    [
+      "127.0.0.0/8",
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "169.254.0.0/16",
+      "100.64.0.0/10",
+    ],
   );
 });
 
@@ -197,5 +211,9 @@ test("peerAddress reads the socket, never a forwarded header", () => {
     headers: { "x-forwarded-for": "127.0.0.1" },
   };
   assert.equal(peerAddress(spoofed), "203.0.113.9");
-  assert.equal(checkAddress(peerAddress(spoofed)).allowed, false, "spoofed loopback is still denied");
+  assert.equal(
+    checkAddress(peerAddress(spoofed)).allowed,
+    false,
+    "spoofed loopback is still denied",
+  );
 });

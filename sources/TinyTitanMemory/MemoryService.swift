@@ -1,5 +1,5 @@
-import Foundation
 import ContinuityCore
+import Foundation
 
 /// What the serving engine talks to.
 ///
@@ -75,12 +75,14 @@ public actor MemoryService {
         let persists: Bool
     }
 
-    public init(configuration: MemoryConfiguration,
-                durableStore: (any MemoryStore)? = nil,
-                journal: (any SessionJournal)? = nil,
-                sideEngine: (any MemorySideEngine)? = nil,
-                isIdle: (@Sendable () -> Bool)? = nil,
-                log: @escaping @Sendable (MemoryLogEvent) -> Void = { _ in }) {
+    public init(
+        configuration: MemoryConfiguration,
+        durableStore: (any MemoryStore)? = nil,
+        journal: (any SessionJournal)? = nil,
+        sideEngine: (any MemorySideEngine)? = nil,
+        isIdle: (@Sendable () -> Bool)? = nil,
+        log: @escaping @Sendable (MemoryLogEvent) -> Void = { _ in }
+    ) {
         self.configuration = configuration
         self.localStore = InMemoryStore(limits: configuration.limits)
         self.journalFilter = configuration.journalLimits.filter
@@ -109,14 +111,16 @@ public actor MemoryService {
         guard configuration.isEnabled else { return nil }
 
         if let injectedStore {
-            let workspace = Workspace(store: injectedStore, journal: injectedJournal,
-                                      engine: nil, persists: true)
+            let workspace = Workspace(
+                store: injectedStore, journal: injectedJournal,
+                engine: nil, persists: true)
             workspaces[scope] = workspace
             return workspace
         }
 
-        let (engine, persists) = Self.makeEngine(configuration: configuration,
-                                                 scope: scope, log: log)
+        let (engine, persists) = Self.makeEngine(
+            configuration: configuration,
+            scope: scope, log: log)
         do {
             try await engine.start()
         } catch {
@@ -128,11 +132,13 @@ public actor MemoryService {
         if let injectedJournal {
             journal = injectedJournal
         } else if configuration.journalEnabled {
-            journal = ContinuityJournalStore(engine: engine, store: store,
-                                             limits: configuration.journalLimits)
+            journal = ContinuityJournalStore(
+                engine: engine, store: store,
+                limits: configuration.journalLimits)
         }
-        let workspace = Workspace(store: store, journal: journal, engine: engine,
-                                  persists: persists)
+        let workspace = Workspace(
+            store: store, journal: journal, engine: engine,
+            persists: persists)
         workspaces[scope] = workspace
         lastUsed[scope] = Date()
         await enforceResidencyBudget(keeping: scope)
@@ -154,7 +160,8 @@ public actor MemoryService {
     private func enforceResidencyBudget(keeping scope: MemoryScope) async {
         guard let ceiling = configuration.storage.maximumMemoryBytes, ceiling > 0 else { return }
         while workspaces.count > 1, await residentBytes() > ceiling {
-            let candidates = lastUsed
+            let candidates =
+                lastUsed
                 .filter { $0.key != scope && workspaces[$0.key] != nil }
                 .sorted { $0.value < $1.value }
             guard let oldest = candidates.first?.key else { return }
@@ -164,9 +171,11 @@ public actor MemoryService {
             // Reopening replays the file into a fresh engine, so a failure
             // there later is a new one and worth its own line.
             reportedJournalFailures.remove(oldest)
-            log(.degraded(operation: "residency",
-                          detail: "closed workspace \(oldest.workspace) to stay inside "
-                              + "\(ceiling >> 20) MiB"))
+            log(
+                .degraded(
+                    operation: "residency",
+                    detail: "closed workspace \(oldest.workspace) to stay inside "
+                        + "\(ceiling >> 20) MiB"))
         }
     }
 
@@ -220,29 +229,32 @@ public actor MemoryService {
 
     /// Records a completed turn. Content is filtered to substance here, so no
     /// caller can accidentally journal a tool result or a file dump.
-    public func recordTurn(session: MemorySessionContext,
-                           index: Int,
-                           prompt: String,
-                           reply: String,
-                           model: String?,
-                           promptTokens: Int,
-                           completionTokens: Int,
-                           latencyMilliseconds: Int,
-                           stopReason: String?) async {
+    public func recordTurn(
+        session: MemorySessionContext,
+        index: Int,
+        prompt: String,
+        reply: String,
+        model: String?,
+        promptTokens: Int,
+        completionTokens: Int,
+        latencyMilliseconds: Int,
+        stopReason: String?
+    ) async {
         guard let journal = await workspace(for: session.scope)?.journal else { return }
         let filteredPrompt = journalFilter.filter(prompt)
         let filteredReply = journalFilter.filter(reply)
-        let turn = JournalTurn(session: session.session.id,
-                               workspace: session.scope.workspace,
-                               index: index,
-                               prompt: filteredPrompt.kept,
-                               reply: filteredReply.kept,
-                               model: model,
-                               promptTokens: promptTokens,
-                               completionTokens: completionTokens,
-                               latencyMilliseconds: latencyMilliseconds,
-                               stopReason: stopReason,
-                               droppedBytes: filteredPrompt.dropped + filteredReply.dropped)
+        let turn = JournalTurn(
+            session: session.session.id,
+            workspace: session.scope.workspace,
+            index: index,
+            prompt: filteredPrompt.kept,
+            reply: filteredReply.kept,
+            model: model,
+            promptTokens: promptTokens,
+            completionTokens: completionTokens,
+            latencyMilliseconds: latencyMilliseconds,
+            stopReason: stopReason,
+            droppedBytes: filteredPrompt.dropped + filteredReply.dropped)
         await journal.record(turn, in: session.scope)
         // Never fails the turn: the reply has already been given. A journal
         // that refused it stops the workspace reporting itself durable.
@@ -283,7 +295,8 @@ public actor MemoryService {
         let open = Set(workspaces.keys.map { storage.journalURL(for: $0).standardizedFileURL.path })
         let candidates = Self.projectFiles(under: storage.directory).filter {
             !open.contains($0.url.standardizedFileURL.path)
-                && $0.url.deletingPathExtension().lastPathComponent != MemoryConfiguration.sharedWorkspace
+                && $0.url.deletingPathExtension().lastPathComponent
+                    != MemoryConfiguration.sharedWorkspace
         }
         // The cap deletes; it is the only rule that removes facts.
         var doomed: [URL] = []
@@ -312,7 +325,8 @@ public actor MemoryService {
         let cutoff = now.addingTimeInterval(-Double(storage.retentionDays) * 86_400)
         let deleted = Set(doomed.map(\.path))
         var expired: [String] = []
-        for candidate in candidates where candidate.modified < cutoff && !deleted.contains(candidate.url.path) {
+        for candidate in candidates
+        where candidate.modified < cutoff && !deleted.contains(candidate.url.path) {
             if await Self.expireSessionLog(at: candidate.url) {
                 expired.append(candidate.url.lastPathComponent)
             }
@@ -334,8 +348,9 @@ public actor MemoryService {
     /// held: skipping a deletable file costs disk, deleting a live one costs
     /// data.
     static func isLockHeld(at journalURL: URL) -> Bool {
-        let descriptor = open(journalURL.appendingPathExtension("lock").path,
-                              O_RDWR | O_CLOEXEC)
+        let descriptor = open(
+            journalURL.appendingPathExtension("lock").path,
+            O_RDWR | O_CLOEXEC)
         if descriptor < 0 {
             // No lock file at all means no journal has opened this workspace, so
             // there is nothing that could be holding it. Any other errno is not
@@ -354,12 +369,15 @@ public actor MemoryService {
     /// Synchronous on purpose: a directory enumerator cannot be iterated
     /// from an async context.
     private static func projectFiles(under directory: URL) -> [(url: URL, modified: Date)] {
-        guard let walker = FileManager.default.enumerator(
-            at: directory, includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]) else { return [] }
+        guard
+            let walker = FileManager.default.enumerator(
+                at: directory, includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles])
+        else { return [] }
         var files: [(url: URL, modified: Date)] = []
         for case let url as URL in walker where url.pathExtension == "ndjson" {
-            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            let modified =
+                (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                 .contentModificationDate ?? .distantPast
             files.append((url, modified))
         }
@@ -375,7 +393,10 @@ public actor MemoryService {
     private static func expireSessionLog(at url: URL) async -> Bool {
         guard let journal = try? FileJournal(url: url) else { return false }
         let engine = ContinuityEngine(journal: journal)
-        do { try await engine.start() } catch { await engine.shutDown(); return false }
+        do { try await engine.start() } catch {
+            await engine.shutDown()
+            return false
+        }
         for task in await engine.tasks() {
             await engine.pruneSessions(taskID: task.id, keeping: 0)
         }
@@ -419,7 +440,8 @@ public actor MemoryService {
     /// all, and false once the journal has refused a write.
     public func isDurable(in scope: MemoryScope) async -> Bool {
         guard !isDegraded, let workspace = await workspace(for: scope),
-              workspace.persists else { return false }
+            workspace.persists
+        else { return false }
         return !(await journalFailed(in: scope))
     }
 
@@ -431,7 +453,8 @@ public actor MemoryService {
     /// write fail.
     private func journalFailed(in scope: MemoryScope) async -> Bool {
         guard let store = workspaces[scope]?.store as? ContinuityStore,
-              let failure = await store.journalFailure else { return false }
+            let failure = await store.journalFailure
+        else { return false }
         if reportedJournalFailures.insert(scope).inserted {
             log(.degraded(operation: "journal", detail: failure))
         }
@@ -452,11 +475,13 @@ public actor MemoryService {
     /// with local memory when that is allowed, and with none when it is not.
     /// - Parameter tag: what the session is about, when the caller could
     ///   tell. Recorded on the session, shown in the log; not a scope.
-    public func beginSession(id: String,
-                             workspaceOverride: String? = nil,
-                             modelID: String? = nil,
-                             tag: String? = nil,
-                             focus: String? = nil) async -> MemorySessionContext? {
+    public func beginSession(
+        id: String,
+        workspaceOverride: String? = nil,
+        modelID: String? = nil,
+        tag: String? = nil,
+        focus: String? = nil
+    ) async -> MemorySessionContext? {
         guard configuration.isEnabled else { return nil }
         guard let scope = configuration.scope(workspaceOverride: workspaceOverride) else {
             log(.rejectedScope(workspaceOverride ?? configuration.workspace))
@@ -481,27 +506,32 @@ public actor MemoryService {
         // every project's bootstrap. Bounded small: they are preferences,
         // not state, and there should be a handful.
         if let sharedScope = configuration.sharedScope, scope != sharedScope,
-           await workspace(for: sharedScope) != nil {
+            await workspace(for: sharedScope) != nil
+        {
             let shared = await recordedFacts(in: sharedScope, limit: 12)
             if !shared.isEmpty { bootstrap = bootstrap.withShared(shared) }
         }
         let durable = await isDurable(in: scope)
-        log(.sessionStarted(session: session.id, scope: scope,
-                            bootstrapRecords: bootstrap.records.count,
-                            bootstrapBytes: bootstrap.totalBytes))
-        return MemorySessionContext(session: session,
-                                    scope: scope,
-                                    bootstrap: bootstrap,
-                                    isDurable: durable)
+        log(
+            .sessionStarted(
+                session: session.id, scope: scope,
+                bootstrapRecords: bootstrap.records.count,
+                bootstrapBytes: bootstrap.totalBytes))
+        return MemorySessionContext(
+            session: session,
+            scope: scope,
+            bootstrap: bootstrap,
+            isDurable: durable)
     }
 
     /// The system-prompt fragment for a session.
     public func instructions(for context: MemorySessionContext) -> String {
-        MemoryPrompt.instructions(scope: context.scope,
-                                  session: context.session,
-                                  bootstrap: context.bootstrap,
-                                  isDurable: context.isDurable,
-                                  tools: toolDefinitions().map(\.name))
+        MemoryPrompt.instructions(
+            scope: context.scope,
+            session: context.session,
+            bootstrap: context.bootstrap,
+            isDurable: context.isDurable,
+            tools: toolDefinitions().map(\.name))
     }
 
     /// The tool definitions to advertise, or none when tools are off.
@@ -514,22 +544,26 @@ public actor MemoryService {
     ///
     /// The scope comes from the session context, never from the call, so a
     /// model cannot reach another workspace by naming one.
-    public func execute(name: String,
-                        arguments: [String: MemoryToolValue],
-                        in context: MemorySessionContext) async -> MemoryToolResult {
+    public func execute(
+        name: String,
+        arguments: [String: MemoryToolValue],
+        in context: MemorySessionContext
+    ) async -> MemoryToolResult {
         guard configuration.isEnabled else { return .failure("memory is disabled") }
         let store = await activeStore(for: context.scope)
-        let (hint, onSearch) = await retrievalContext(name: name, arguments: arguments,
-                                                      store: store, scope: context.scope)
-        let result = await MemoryTools.execute(name: name,
-                                               arguments: arguments,
-                                               store: store,
-                                               scope: context.scope,
-                                               session: context.session,
-                                               limits: configuration.limits,
-                                               guarding: configuration.guardsUserFacts,
-                                               retrievalHint: hint,
-                                               onSearch: onSearch)
+        let (hint, onSearch) = await retrievalContext(
+            name: name, arguments: arguments,
+            store: store, scope: context.scope)
+        let result = await MemoryTools.execute(
+            name: name,
+            arguments: arguments,
+            store: store,
+            scope: context.scope,
+            session: context.session,
+            limits: configuration.limits,
+            guarding: configuration.guardsUserFacts,
+            retrievalHint: hint,
+            onSearch: onSearch)
         // Checked whatever the outcome: a call whose own write landed can
         // still have had a session event refused.
         let journalLost = await journalFailed(in: context.scope)
@@ -540,20 +574,23 @@ public actor MemoryService {
             // journal does not: the engine still holds every fact, and a
             // local retry would answer "stored" for a write that ends with
             // the process.
-            if !isDegraded, !journalLost, message.contains("unavailable")
-                || message.contains("timed out") {
+            if !isDegraded, !journalLost,
+                message.contains("unavailable")
+                    || message.contains("timed out")
+            {
                 isDegraded = true
                 log(.degraded(operation: name, detail: message))
                 if configuration.degradesToLocalStore {
-                    return await MemoryTools.execute(name: name,
-                                                     arguments: arguments,
-                                                     store: localStore,
-                                                     scope: context.scope,
-                                                     session: context.session,
-                                                     limits: configuration.limits,
-                                                     guarding: configuration.guardsUserFacts,
-                                                     retrievalHint: hint,
-                                                     onSearch: onSearch)
+                    return await MemoryTools.execute(
+                        name: name,
+                        arguments: arguments,
+                        store: localStore,
+                        scope: context.scope,
+                        session: context.session,
+                        limits: configuration.limits,
+                        guarding: configuration.guardsUserFacts,
+                        retrievalHint: hint,
+                        onSearch: onSearch)
                 }
             }
         } else {
@@ -583,20 +620,25 @@ public actor MemoryService {
     /// registration. Both are empty unless this really is a text search and
     /// a side-engine is wired, which is what leaves the deterministic path
     /// byte-for-byte what it was.
-    private func retrievalContext(name: String,
-                                  arguments: [String: MemoryToolValue],
-                                  store: any MemoryStore,
-                                  scope: MemoryScope)
-        async -> (MemoryRetrievalHint, (@Sendable (MemoryQuery) async -> Void)?) {
+    private func retrievalContext(
+        name: String,
+        arguments: [String: MemoryToolValue],
+        store: any MemoryStore,
+        scope: MemoryScope
+    )
+        async -> (MemoryRetrievalHint, (@Sendable (MemoryQuery) async -> Void)?)
+    {
         guard name == "memory_search", let hinter = retrievalHinter,
-              let text = arguments["query"]?.stringValue,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let text = arguments["query"]?.stringValue,
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
             return (.none, nil)
         }
         let hint = await hinter.hint(question: text, in: scope)
         let schedule: @Sendable (MemoryQuery) async -> Void = { query in
             guard let asked = query.text,
-                  !asked.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                !asked.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
                 return
             }
             await hinter.register(question: asked, in: scope, store: store)
@@ -623,8 +665,10 @@ public actor MemoryService {
     }
 
     /// Stores a consolidation the engine produced at session end.
-    public func storeConsolidation(_ records: [MemoryRecord],
-                                   in context: MemorySessionContext) async -> Int {
+    public func storeConsolidation(
+        _ records: [MemoryRecord],
+        in context: MemorySessionContext
+    ) async -> Int {
         let store = await activeStore(for: context.scope)
         var written = 0
         var held = 0
@@ -637,8 +681,10 @@ public actor MemoryService {
         // pays nothing for the check it cannot make.
         let candidates: [MemoryRecord]
         if sideEngine != nil {
-            candidates = (try? await store.search(MemoryQuery(limit: 400),
-                                                  in: context.scope)) ?? []
+            candidates =
+                (try? await store.search(
+                    MemoryQuery(limit: 400),
+                    in: context.scope)) ?? []
         } else {
             candidates = []
         }
@@ -654,7 +700,8 @@ public actor MemoryService {
             let destination: any MemoryStore
             let isShared: Bool
             if record.isGlobal, let sharedScope = configuration.sharedScope,
-               context.scope != sharedScope {
+                context.scope != sharedScope
+            {
                 scope = sharedScope
                 destination = await activeStore(for: sharedScope)
                 isShared = true
@@ -677,8 +724,9 @@ public actor MemoryService {
             var pool = candidates
             if isShared, sideEngine != nil {
                 if sharedCandidates == nil {
-                    sharedCandidates = (try? await destination.search(
-                        MemoryQuery(limit: 400), in: scope)) ?? []
+                    sharedCandidates =
+                        (try? await destination.search(
+                            MemoryQuery(limit: 400), in: scope)) ?? []
                 }
                 pool = sharedCandidates ?? []
             }
@@ -708,16 +756,20 @@ public actor MemoryService {
                     duplicates += 1
                     continue
                 case .conflict(let conflictsWith):
-                    log(.contradictionFound(key: record.key.rawValue,
-                                            conflictsWith: conflictsWith))
+                    log(
+                        .contradictionFound(
+                            key: record.key.rawValue,
+                            conflictsWith: conflictsWith))
                     conflicts += 1
                 case .none:
                     break
                 }
             }
-            switch await write(record, to: destination, scope: scope,
-                               session: context.session.id,
-                               flaggingReversions: !isShared) {
+            switch await write(
+                record, to: destination, scope: scope,
+                session: context.session.id,
+                flaggingReversions: !isShared)
+            {
             case .stored:
                 written += 1
                 if isShared { log(.sharedFactWritten(key: record.key.rawValue)) }
@@ -734,17 +786,20 @@ public actor MemoryService {
                 break
             }
         }
-        logConsolidationSummary(session: context.session.id, written: written,
-                                unchanged: unchanged, duplicates: duplicates,
-                                dropped: dropped, ruleConflicts: ruleConflicts,
-                                conflicts: conflicts)
+        logConsolidationSummary(
+            session: context.session.id, written: written,
+            unchanged: unchanged, duplicates: duplicates,
+            dropped: dropped, ruleConflicts: ruleConflicts,
+            conflicts: conflicts)
         return written
     }
 
     /// One line per counter that fired, then the total.
-    private func logConsolidationSummary(session: String, written: Int, unchanged: Int,
-                                         duplicates: Int, dropped: Int,
-                                         ruleConflicts: Int, conflicts: Int) {
+    private func logConsolidationSummary(
+        session: String, written: Int, unchanged: Int,
+        duplicates: Int, dropped: Int,
+        ruleConflicts: Int, conflicts: Int
+    ) {
         if unchanged > 0 { log(.unchangedSkipped(session: session, count: unchanged)) }
         if duplicates > 0 { log(.nearDuplicatesStopped(session: session, count: duplicates)) }
         if dropped > 0 { log(.notDurablesStopped(session: session, count: dropped)) }
@@ -769,18 +824,22 @@ public actor MemoryService {
     /// `flaggingReversions` is the consolidation heuristic, not the protocol's
     /// rule: it is on for the project's own store and off for the shared
     /// workspace and for every deliberate tool call.
-    private func write(_ record: MemoryRecord,
-                       to store: any MemoryStore,
-                       scope: MemoryScope,
-                       session: String,
-                       flaggingReversions: Bool) async -> WriteOutcome {
+    private func write(
+        _ record: MemoryRecord,
+        to store: any MemoryStore,
+        scope: MemoryScope,
+        session: String,
+        flaggingReversions: Bool
+    ) async -> WriteOutcome {
         var stamped = record
         stamped.sourceSession = session
         do {
             if let continuity = store as? ContinuityStore {
-                switch try await continuity.set(stamped, in: scope,
-                                                guarding: configuration.guardsUserFacts,
-                                                flaggingReversions: flaggingReversions) {
+                switch try await continuity.set(
+                    stamped, in: scope,
+                    guarding: configuration.guardsUserFacts,
+                    flaggingReversions: flaggingReversions)
+                {
                 case .stored: return .stored
                 case .reverted: return .reverted
                 case .heldByGuard: return .held
@@ -789,8 +848,9 @@ public actor MemoryService {
             // Degraded to process-local storage: there is no provenance to
             // enforce precedence with, and the protocol says so rather than
             // pretending.
-            _ = try await store.set(stamped, in: scope,
-                                    guarding: configuration.guardsUserFacts)
+            _ = try await store.set(
+                stamped, in: scope,
+                guarding: configuration.guardsUserFacts)
             return .stored
         } catch {
             log(.toolFailed(tool: "consolidation", detail: "\(error)"))
@@ -822,13 +882,15 @@ public actor MemoryService {
     ///
     /// `isModelDerived` is false for a fact the person asserted, which is not
     /// the engine's to discard or to hold back behind a rule.
-    private func inspect(_ record: MemoryRecord,
-                         current: MemoryRecord?,
-                         rule: String?,
-                         among candidates: [MemoryRecord],
-                         using engine: any MemorySideEngine,
-                         budget: Int,
-                         isModelDerived: Bool) async -> SideEngineVerdict {
+    private func inspect(
+        _ record: MemoryRecord,
+        current: MemoryRecord?,
+        rule: String?,
+        among candidates: [MemoryRecord],
+        using engine: any MemorySideEngine,
+        budget: Int,
+        isModelDerived: Bool
+    ) async -> SideEngineVerdict {
         let fact = MemoryFact(key: record.key.rawValue, value: record.value)
         var asked = 0
         var durable: Bool?
@@ -836,8 +898,9 @@ public actor MemoryService {
             asked += 1
             durable = await engine.isDurable(fact)
             if durable == false {
-                return SideEngineVerdict(durable: durable, supersession: nil,
-                                         duplicate: nil, conflict: nil, asked: asked)
+                return SideEngineVerdict(
+                    durable: durable, supersession: nil,
+                    duplicate: nil, conflict: nil, asked: asked)
             }
         }
         var supersession: MemorySupersession?
@@ -850,17 +913,20 @@ public actor MemoryService {
         var conflict: String?
         for candidate in candidates {
             guard candidate.key != record.key,
-                  candidate.key.category == record.key.category else { continue }
+                candidate.key.category == record.key.category
+            else { continue }
             guard asked < budget else { break }
-            let existing = MemoryFact(key: candidate.key.rawValue,
-                                      value: candidate.value)
+            let existing = MemoryFact(
+                key: candidate.key.rawValue,
+                value: candidate.value)
             asked += 1
             // Stored first: the prompts answer YES in that order and NO
             // reversed, so the order is part of the contract.
             if await engine.duplicates(existing, fact) == true {
-                return SideEngineVerdict(durable: durable, supersession: supersession,
-                                         duplicate: candidate.key.rawValue,
-                                         conflict: nil, asked: asked)
+                return SideEngineVerdict(
+                    durable: durable, supersession: supersession,
+                    duplicate: candidate.key.rawValue,
+                    conflict: nil, asked: asked)
             }
             guard asked < budget else { break }
             asked += 1
@@ -868,8 +934,9 @@ public actor MemoryService {
                 conflict = candidate.key.rawValue
             }
         }
-        return SideEngineVerdict(durable: durable, supersession: supersession,
-                                 duplicate: nil, conflict: conflict, asked: asked)
+        return SideEngineVerdict(
+            durable: durable, supersession: supersession,
+            duplicate: nil, conflict: conflict, asked: asked)
     }
 
     /// What the engine's answers mean for this write.
@@ -883,15 +950,18 @@ public actor MemoryService {
 
     /// Runs the questions and reduces them to one outcome, so the write path
     /// reads as one decision rather than four.
-    private func inspectForWrite(_ record: MemoryRecord,
-                                 current: MemoryRecord?,
-                                 pool: [MemoryRecord],
-                                 using engine: any MemorySideEngine,
-                                 budget: Int) async -> (inspection: Inspection, asked: Int) {
+    private func inspectForWrite(
+        _ record: MemoryRecord,
+        current: MemoryRecord?,
+        pool: [MemoryRecord],
+        using engine: any MemorySideEngine,
+        budget: Int
+    ) async -> (inspection: Inspection, asked: Int) {
         let rule = MemoryRuleLookup.rule(for: record.key, among: pool)
-        let verdict = await inspect(record, current: current, rule: rule, among: pool,
-                                    using: engine, budget: budget,
-                                    isModelDerived: !record.isUserAsserted)
+        let verdict = await inspect(
+            record, current: current, rule: rule, among: pool,
+            using: engine, budget: budget,
+            isModelDerived: !record.isUserAsserted)
         let inspection: Inspection
         if verdict.durable == false {
             inspection = .dropped
@@ -927,10 +997,12 @@ public struct MemorySessionContext: Sendable, Equatable {
     /// prompt tells the model so it does not promise persistence.
     public let isDurable: Bool
 
-    public init(session: MemorySession,
-                scope: MemoryScope,
-                bootstrap: MemoryBootstrap,
-                isDurable: Bool) {
+    public init(
+        session: MemorySession,
+        scope: MemoryScope,
+        bootstrap: MemoryBootstrap,
+        isDurable: Bool
+    ) {
         self.session = session
         self.scope = scope
         self.bootstrap = bootstrap
@@ -941,8 +1013,9 @@ public struct MemorySessionContext: Sendable, Equatable {
 /// Observable memory events. The engine maps these onto its own log; keeping
 /// them as values means this module prints nothing itself and stays testable.
 public enum MemoryLogEvent: Sendable, Equatable {
-    case sessionStarted(session: String, scope: MemoryScope, bootstrapRecords: Int,
-                        bootstrapBytes: Int)
+    case sessionStarted(
+        session: String, scope: MemoryScope, bootstrapRecords: Int,
+        bootstrapBytes: Int)
     case sessionEnded(session: String, scope: MemoryScope)
     case toolSucceeded(tool: String)
     case toolFailed(tool: String, detail: String)

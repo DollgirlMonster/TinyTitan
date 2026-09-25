@@ -16,6 +16,7 @@ Run from this directory, like the other benchmark tests:
 
     cd benchmark && python3 -m unittest test_ane_prefill_ab_matrix -v
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -29,9 +30,14 @@ import ane_prefill_ab_matrix as ab  # noqa: E402
 
 
 def arm(seconds: float, used_ane: bool = True, digest: str = "d") -> dict:
-    return {"prefill_seconds": seconds, "prefill_tokens": 6027,
-            "used_ane": used_ane, "response_sha256": digest,
-            "response_head": "for", "exit": 0}
+    return {
+        "prefill_seconds": seconds,
+        "prefill_tokens": 6027,
+        "used_ane": used_ane,
+        "response_sha256": digest,
+        "response_head": "for",
+        "exit": 0,
+    }
 
 
 def record(off: list[dict], on: list[dict]) -> dict:
@@ -40,8 +46,7 @@ def record(off: list[dict], on: list[dict]) -> dict:
 
 class ParseFooterTests(unittest.TestCase):
     def test_reads_prefill_seconds_and_tokens(self):
-        footer = ("[stop=maxTokens prefill=6027tok/74.25s new=1tok "
-                  "decode=0.00s tok/s=2109.811]")
+        footer = "[stop=maxTokens prefill=6027tok/74.25s new=1tok decode=0.00s tok/s=2109.811]"
         parsed = ab.parse_footer("loading\n" + footer + "\n")
         self.assertEqual(parsed["finish"], "maxTokens")  # the stop reason
         self.assertEqual(parsed["prefill_tokens"], 6027)
@@ -53,8 +58,7 @@ class ParseFooterTests(unittest.TestCase):
 
 class SummaryTests(unittest.TestCase):
     def test_median_prefill_and_speedup(self):
-        summary = ab.summarize(record(
-            [arm(74.0), arm(74.4)], [arm(47.5), arm(47.7)]))
+        summary = ab.summarize(record([arm(74.0), arm(74.4)], [arm(47.5), arm(47.7)]))
         self.assertAlmostEqual(summary["off"]["prefill_seconds_median"], 74.2)
         self.assertAlmostEqual(summary["on"]["prefill_seconds_median"], 47.6)
         self.assertAlmostEqual(summary["speedup"], 74.2 / 47.6, places=3)
@@ -66,8 +70,9 @@ class SummaryTests(unittest.TestCase):
         self.assertNotIn("speedup", summary)
 
     def test_a_mixed_arm_is_not_treated_as_using_the_ane(self):
-        summary = ab.summarize(record(
-            [arm(74.0)], [arm(47.5, used_ane=True), arm(74.0, used_ane=False)]))
+        summary = ab.summarize(
+            record([arm(74.0)], [arm(47.5, used_ane=True), arm(74.0, used_ane=False)])
+        )
         self.assertFalse(summary["on"]["used_ane"])
         self.assertNotIn("speedup", summary)
 
@@ -75,24 +80,27 @@ class SummaryTests(unittest.TestCase):
         # Any model without a usable sidecar — an install that has not been
         # exported yet, a refusal, or a family the exporter does not build for
         # — must still report its GPU number rather than no number at all.
-        summary = ab.summarize({
-            "model": "qwen3.8-flash-next_125B_A6B_4Bit",
-            "arms": {"off": [arm(200.0)], "on": []},
-            "ane_unavailable": "no sidecar"})
+        summary = ab.summarize(
+            {
+                "model": "qwen3.8-flash-next_125B_A6B_4Bit",
+                "arms": {"off": [arm(200.0)], "on": []},
+                "ane_unavailable": "no sidecar",
+            }
+        )
         self.assertAlmostEqual(summary["off"]["prefill_seconds_median"], 200.0)
         self.assertEqual(summary["ane_unavailable"], "no sidecar")
         self.assertNotIn("speedup", summary)
 
     def test_a_failed_measurement_is_reported_not_summarized(self):
-        summary = ab.summarize({"model": "m", "arms": {"off": [], "on": []},
-                                "error": "off warm-up: no sidecar"})
+        summary = ab.summarize(
+            {"model": "m", "arms": {"off": [], "on": []}, "error": "off warm-up: no sidecar"}
+        )
         self.assertIn("no sidecar", summary["error"])
 
     def test_differing_digests_are_kept_visible(self):
         # The ANE is not bit-identical to the GPU by construction; the summary
         # records both digests rather than pretending the arms agree.
-        summary = ab.summarize(record([arm(74.0, digest="gpu")],
-                                      [arm(47.5, digest="ane")]))
+        summary = ab.summarize(record([arm(74.0, digest="gpu")], [arm(47.5, digest="ane")]))
         self.assertEqual(summary["off"]["digests"], ["gpu"])
         self.assertEqual(summary["on"]["digests"], ["ane"])
 
@@ -101,8 +109,7 @@ class RecordTests(unittest.TestCase):
     """A held run must keep the rows it already earned, and resume cleanly."""
 
     def test_a_new_record_carries_what_a_reader_needs(self):
-        record = ab.new_record(repeats=2, characters=23_000, max_new=1,
-                               chunk=1_024)
+        record = ab.new_record(repeats=2, characters=23_000, max_new=1, chunk=1_024)
         self.assertEqual(record["repeats_per_arm"], 2)
         self.assertEqual(record["prompt_characters"], 23_000)
         self.assertEqual(record["max_new_tokens"], 1)
@@ -128,8 +135,12 @@ class RecordTests(unittest.TestCase):
     def test_a_failed_row_is_not_counted_as_done(self):
         # A refusal must stay re-attemptable: treating it as done would keep
         # the failure forever.
-        record = {"results": [{"model": "qwen3.5_2B_4Bit", "off": {}},
-                              {"model": "m", "error": "no sidecar"}]}
+        record = {
+            "results": [
+                {"model": "qwen3.5_2B_4Bit", "off": {}},
+                {"model": "m", "error": "no sidecar"},
+            ]
+        }
         self.assertEqual(ab.stored_models(record), {"qwen3.5_2B_4Bit"})
 
     def test_storing_replaces_a_model_row_rather_than_duplicating_it(self):

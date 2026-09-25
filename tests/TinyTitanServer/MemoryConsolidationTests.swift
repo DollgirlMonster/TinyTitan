@@ -1,8 +1,9 @@
+import ContinuityCore
 import Foundation
 import Testing
 import TinyTitan
 import TinyTitanMemory
-import ContinuityCore
+
 @testable import TinyTitanServerCore
 
 /// The engine writing memory on its own, and the loop answering when its
@@ -15,44 +16,56 @@ import ContinuityCore
         private var seen: [ValidatedChatRequest] = []
         private let lock = NSLock()
         init(_ script: [ServerCompletion]) { self.script = script }
-        func generate(_ request: ValidatedChatRequest,
-                      onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void) async throws
-            -> ServerCompletion {
+        func generate(
+            _ request: ValidatedChatRequest,
+            onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void
+        ) async throws
+            -> ServerCompletion
+        {
             lock.withLock { seen.append(request) }
             let completion = lock.withLock { script.isEmpty ? nil : script.removeFirst() }
             guard let completion else {
-                return ServerCompletion(content: "", toolCalls: [], finishReason: "stop",
-                                        usage: OpenAIUsage(promptTokens: 0, completionTokens: 0,
-                                                           totalTokens: 0))
+                return ServerCompletion(
+                    content: "", toolCalls: [], finishReason: "stop",
+                    usage: OpenAIUsage(
+                        promptTokens: 0, completionTokens: 0,
+                        totalTokens: 0))
             }
             return completion
         }
         var requests: [ValidatedChatRequest] { lock.withLock { seen } }
     }
 
-    private func completion(_ content: String, calls: [ParsedToolCall] = [],
-                            finish: String = "stop") -> ServerCompletion {
-        ServerCompletion(content: content, toolCalls: calls, finishReason: finish,
-                         usage: OpenAIUsage(promptTokens: 1, completionTokens: 1, totalTokens: 2))
+    private func completion(
+        _ content: String, calls: [ParsedToolCall] = [],
+        finish: String = "stop"
+    ) -> ServerCompletion {
+        ServerCompletion(
+            content: content, toolCalls: calls, finishReason: finish,
+            usage: OpenAIUsage(promptTokens: 1, completionTokens: 1, totalTokens: 2))
     }
 
     private func call(_ name: String, _ arguments: [String: String]) -> ParsedToolCall {
-        ParsedToolCall(id: "call-\(name)-\(UUID().uuidString.prefix(4))", name: name,
-                       arguments: .object(arguments.mapValues { .string($0) }),
-                       argumentsJSON: "{}")
+        ParsedToolCall(
+            id: "call-\(name)-\(UUID().uuidString.prefix(4))", name: name,
+            arguments: .object(arguments.mapValues { .string($0) }),
+            argumentsJSON: "{}")
     }
 
     private func request(_ text: String) -> ValidatedChatRequest {
-        ValidatedChatRequest(messages: [GFTokenizer.Message(role: .user, content: text)],
-                             tools: [], stream: false, includeUsage: false,
-                             generationConfig: GenerationConfig(maxNewTokens: 32),
-                             maximumCompletionTokens: 32)
+        ValidatedChatRequest(
+            messages: [GFTokenizer.Message(role: .user, content: text)],
+            tools: [], stream: false, includeUsage: false,
+            generationConfig: GenerationConfig(maxNewTokens: 32),
+            maximumCompletionTokens: 32)
     }
 
-    private func configuration(rounds: Int = 2,
-                               tools: MemoryToolSurface = .full,
-                               consolidation: Bool,
-                               idleSeconds: Double = 0.05) -> MemoryConfiguration {
+    private func configuration(
+        rounds: Int = 2,
+        tools: MemoryToolSurface = .full,
+        consolidation: Bool,
+        idleSeconds: Double = 0.05
+    ) -> MemoryConfiguration {
         var configuration = MemoryConfiguration()
         configuration.isEnabled = true
         configuration.workspace = "repo-a"
@@ -83,10 +96,12 @@ import ContinuityCore
             completion("Chapter 11\nThe tide came in."),
         ])
         let configuration = configuration(rounds: 2, consolidation: false)
-        let service = MemoryService(configuration: configuration,
-                                    durableStore: InMemoryStore())
-        let backend = MemoryBackend(wrapping: inner, service: service,
-                                    configuration: configuration)
+        let service = MemoryService(
+            configuration: configuration,
+            durableStore: InMemoryStore())
+        let backend = MemoryBackend(
+            wrapping: inner, service: service,
+            configuration: configuration)
 
         let result = try await backend.generate(request("write chapter 11"), onEvent: { _ in })
         #expect(result.content.contains("The tide came in."))
@@ -113,10 +128,12 @@ import ContinuityCore
             completion("Here is the answer anyway.", calls: [call("memory_get", ["key": "d"])]),
         ])
         let configuration = configuration(rounds: 2, consolidation: false)
-        let service = MemoryService(configuration: configuration,
-                                    durableStore: InMemoryStore())
-        let backend = MemoryBackend(wrapping: inner, service: service,
-                                    configuration: configuration)
+        let service = MemoryService(
+            configuration: configuration,
+            durableStore: InMemoryStore())
+        let backend = MemoryBackend(
+            wrapping: inner, service: service,
+            configuration: configuration)
         let result = try await backend.generate(request("go"), onEvent: { _ in })
         #expect(result.content == "Here is the answer anyway.")
         #expect(result.toolCalls.isEmpty)
@@ -126,28 +143,30 @@ import ContinuityCore
     // MARK: - Consolidation
 
     private static let extraction = """
-    ```json
-    [
-      {"key": "characters/marcus", "value": "Marcus has grey eyes", "importance": 0.9},
-      {"key": "state/inn", "value": "The inn burned down in chapter 34", "importance": 0.8},
-      {"key": "Bad Key!", "value": "skipped", "importance": 0.1}
-    ]
-    ```
-    """
+        ```json
+        [
+          {"key": "characters/marcus", "value": "Marcus has grey eyes", "importance": 0.9},
+          {"key": "state/inn", "value": "The inn burned down in chapter 34", "importance": 0.8},
+          {"key": "Bad Key!", "value": "skipped", "importance": 0.1}
+        ]
+        ```
+        """
 
     /// After a turn, the idle timer fires and the engine writes facts the
     /// model never chose to write.
     @Test func theIdleTimerDistilsTheSessionIntoMemory() async throws {
         let inner = ScriptedBackend([
-            completion("Chapter 34: the inn burned."),   // the turn
-            completion(Self.extraction),                 // the consolidation
+            completion("Chapter 34: the inn burned."),  // the turn
+            completion(Self.extraction),  // the consolidation
         ])
         let configuration = configuration(tools: .off, consolidation: true)
         let store = InMemoryStore()
-        let service = MemoryService(configuration: configuration, durableStore: store,
-                                    journal: InMemoryJournal())
-        let backend = MemoryBackend(wrapping: inner, service: service,
-                                    configuration: configuration)
+        let service = MemoryService(
+            configuration: configuration, durableStore: store,
+            journal: InMemoryJournal())
+        let backend = MemoryBackend(
+            wrapping: inner, service: service,
+            configuration: configuration)
         _ = try await backend.generate(request("write chapter 34"), onEvent: { _ in })
 
         let scope = try MemoryScope(namespace: "tinytitan", user: "local", workspace: "repo-a")
@@ -174,17 +193,19 @@ import ContinuityCore
     /// never before it, because a person is waiting on that request.
     @Test func aRolloverConsolidatesThePreviousSessionAfterTheTurn() async throws {
         let inner = ScriptedBackend([
-            completion("Chapter 1."),                    // session A, turn
-            completion("Chapter 11."),                   // session B, turn (rollover)
-            completion(Self.extraction),                 // consolidation of A
+            completion("Chapter 1."),  // session A, turn
+            completion("Chapter 11."),  // session B, turn (rollover)
+            completion(Self.extraction),  // consolidation of A
         ])
         // A long idle so only the rollover can trigger it.
         let configuration = configuration(tools: .off, consolidation: true, idleSeconds: 60)
         let store = InMemoryStore()
-        let service = MemoryService(configuration: configuration, durableStore: store,
-                                    journal: InMemoryJournal())
-        let backend = MemoryBackend(wrapping: inner, service: service,
-                                    configuration: configuration)
+        let service = MemoryService(
+            configuration: configuration, durableStore: store,
+            journal: InMemoryJournal())
+        let backend = MemoryBackend(
+            wrapping: inner, service: service,
+            configuration: configuration)
 
         _ = try await backend.generate(request("write chapter 1"), onEvent: { _ in })
         #expect(inner.requests.count == 1, "nothing consolidates while the session is live")
@@ -209,10 +230,12 @@ import ContinuityCore
     @Test func consolidationOffMeansNoExtraGeneration() async throws {
         let inner = ScriptedBackend([completion("done")])
         let configuration = configuration(tools: .off, consolidation: false)
-        let service = MemoryService(configuration: configuration, durableStore: InMemoryStore(),
-                                    journal: InMemoryJournal())
-        let backend = MemoryBackend(wrapping: inner, service: service,
-                                    configuration: configuration)
+        let service = MemoryService(
+            configuration: configuration, durableStore: InMemoryStore(),
+            journal: InMemoryJournal())
+        let backend = MemoryBackend(
+            wrapping: inner, service: service,
+            configuration: configuration)
         _ = try await backend.generate(request("hi"), onEvent: { _ in })
         try await Task.sleep(for: .milliseconds(200))
         #expect(inner.requests.count == 1)
@@ -243,8 +266,10 @@ import ContinuityCore
         let on = MemoryConfiguration.fromEnvironment(["TINYTITAN_MEMORY": "1"])
         #expect(on.sessionConsolidation)
         #expect(on.consolidationIdleSeconds == 30)
-        let off = MemoryConfiguration.fromEnvironment(["TINYTITAN_MEMORY": "1",
-                                                        "TINYTITAN_MEMORY_CONSOLIDATION": "0"])
+        let off = MemoryConfiguration.fromEnvironment([
+            "TINYTITAN_MEMORY": "1",
+            "TINYTITAN_MEMORY_CONSOLIDATION": "0",
+        ])
         #expect(!off.sessionConsolidation)
         let quick = MemoryConfiguration.fromEnvironment(
             ["TINYTITAN_MEMORY": "1", "TINYTITAN_MEMORY_CONSOLIDATION_IDLE_SECONDS": "5"])
@@ -264,29 +289,38 @@ import ContinuityCore
         private(set) var calls = 0
         private let reply: @Sendable (Int) -> String
         init(reply: @escaping @Sendable (Int) -> String) { self.reply = reply }
-        func generate(_ request: ValidatedChatRequest,
-                      onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void) async throws
-            -> ServerCompletion {
+        func generate(
+            _ request: ValidatedChatRequest,
+            onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void
+        ) async throws
+            -> ServerCompletion
+        {
             let index: Int = lock.withLock {
-                active += 1; peak = max(peak, active); calls += 1; return calls
+                active += 1
+                peak = max(peak, active)
+                calls += 1
+                return calls
             }
             // Leave on every path, including a cancelled sleep: a detector
             // that forgets to leave reports an overlap that never happened.
             defer { lock.withLock { active -= 1 } }
             try await Task.sleep(for: .milliseconds(60))
-            return ServerCompletion(content: reply(index), toolCalls: [], finishReason: "stop",
-                                    usage: OpenAIUsage(promptTokens: 1, completionTokens: 1,
-                                                       totalTokens: 2))
+            return ServerCompletion(
+                content: reply(index), toolCalls: [], finishReason: "stop",
+                usage: OpenAIUsage(
+                    promptTokens: 1, completionTokens: 1,
+                    totalTokens: 2))
         }
         var maximumConcurrency: Int { lock.withLock { peak } }
         var callCount: Int { lock.withLock { calls } }
     }
 
     private func request(_ text: String) -> ValidatedChatRequest {
-        ValidatedChatRequest(messages: [GFTokenizer.Message(role: .user, content: text)],
-                             tools: [], stream: false, includeUsage: false,
-                             generationConfig: GenerationConfig(maxNewTokens: 32),
-                             maximumCompletionTokens: 32)
+        ValidatedChatRequest(
+            messages: [GFTokenizer.Message(role: .user, content: text)],
+            tools: [], stream: false, includeUsage: false,
+            generationConfig: GenerationConfig(maxNewTokens: 32),
+            maximumCompletionTokens: 32)
     }
 
     @Test func consolidationNeverOverlapsATurn() async throws {
@@ -302,10 +336,12 @@ import ContinuityCore
         configuration.toolSurface = .off
         configuration.sessionConsolidation = true
         configuration.consolidationIdleSeconds = 0.01
-        let service = MemoryService(configuration: configuration, durableStore: InMemoryStore(),
-                                    journal: InMemoryJournal())
-        let backend = MemoryBackend(wrapping: inner, service: service,
-                                    configuration: configuration)
+        let service = MemoryService(
+            configuration: configuration, durableStore: InMemoryStore(),
+            journal: InMemoryJournal())
+        let backend = MemoryBackend(
+            wrapping: inner, service: service,
+            configuration: configuration)
 
         // Fire turns fast enough that each idle timer lands while the next
         // turn is running.
@@ -328,10 +364,12 @@ import ContinuityCore
         configuration.toolSurface = .off
         configuration.sessionConsolidation = true
         configuration.consolidationIdleSeconds = 0.01
-        let service = MemoryService(configuration: configuration, durableStore: InMemoryStore(),
-                                    journal: InMemoryJournal())
-        let backend = MemoryBackend(wrapping: inner, service: service,
-                                    configuration: configuration)
+        let service = MemoryService(
+            configuration: configuration, durableStore: InMemoryStore(),
+            journal: InMemoryJournal())
+        let backend = MemoryBackend(
+            wrapping: inner, service: service,
+            configuration: configuration)
         _ = try await backend.generate(request("Say OK."), onEvent: { _ in })
         try await Task.sleep(for: .milliseconds(300))
         // One generation: the turn. A "say OK" session buys no second one.
@@ -345,26 +383,26 @@ import ContinuityCore
     @Test func aTruncatedArrayStillYieldsTheCompleteObjects() {
         // The output cap landed inside the seventeenth object.
         let cut = """
-        ```json
-        [
-          {"key": "characters/marcus/eyes", "value": "grey", "importance": 0.9},
-          {"key": "state/inn", "value": "burned down in chapter 34", "importance": 0.8},
-          {"key": "state/tomas", "value": "found alive in the ligh
-        """
+            ```json
+            [
+              {"key": "characters/marcus/eyes", "value": "grey", "importance": 0.9},
+              {"key": "state/inn", "value": "burned down in chapter 34", "importance": 0.8},
+              {"key": "state/tomas", "value": "found alive in the ligh
+            """
         let records = ServerMemory.consolidationRecords(from: cut)
         #expect(records.map(\.key.rawValue) == ["characters/marcus/eyes", "state/inn"])
     }
 
     @Test func placeholdersAreNeverWrittenOverAFact() {
         let output = """
-        [
-          {"key": "characters/halvorsen/eyes", "value": "not specified", "importance": 0.5},
-          {"key": "state/ferry_day", "value": "N/A", "importance": 0.5},
-          {"key": "state/ferry_running", "value": false, "importance": 0.7},
-          {"key": "state/anyone_left", "value": null, "importance": 0.7},
-          {"key": "rules/weather", "value": "it never rains", "importance": 0.9}
-        ]
-        """
+            [
+              {"key": "characters/halvorsen/eyes", "value": "not specified", "importance": 0.5},
+              {"key": "state/ferry_day", "value": "N/A", "importance": 0.5},
+              {"key": "state/ferry_running", "value": false, "importance": 0.7},
+              {"key": "state/anyone_left", "value": null, "importance": 0.7},
+              {"key": "rules/weather", "value": "it never rains", "importance": 0.9}
+            ]
+            """
         let records = ServerMemory.consolidationRecords(from: output)
         #expect(records.map(\.key.rawValue) == ["state/ferry_running", "rules/weather"])
         #expect(records.first?.value == "false")
@@ -375,10 +413,12 @@ import ContinuityCore
             MemoryRecord(key: try MemoryKey(validating: "characters/marcus/eyes"), value: "grey"),
             MemoryRecord(key: try MemoryKey(validating: "state/inn"), value: "standing"),
         ]
-        let turn = JournalTurn(session: "s", workspace: "w", index: 0,
-                               prompt: "write chapter 34", reply: "The inn burned.")
-        let request = ServerMemory.consolidationRequest(turns: [turn], existing: existing,
-                                                        workspace: "w")
+        let turn = JournalTurn(
+            session: "s", workspace: "w", index: 0,
+            prompt: "write chapter 34", reply: "The inn burned.")
+        let request = ServerMemory.consolidationRequest(
+            turns: [turn], existing: existing,
+            workspace: "w")
         let user = request.messages.last?.content ?? ""
         let system = request.messages.first?.content ?? ""
         // The touched namespace by name with its value; the untouched one
@@ -400,7 +440,9 @@ import ContinuityCore
 
     @Test func aBareObjectIsOneFact() {
         let one = ServerMemory.consolidationRecords(
-            from: "{ \"key\": \"continuity/halvorsen_confessed\", \"value\": true, \"importance\": 1 }")
+            from:
+                "{ \"key\": \"continuity/halvorsen_confessed\", \"value\": true, \"importance\": 1 }"
+        )
         #expect(one.map(\.key.rawValue) == ["continuity/halvorsen_confessed"])
         #expect(one.first?.value == "true")
 
@@ -422,9 +464,12 @@ import ContinuityCore
             MemoryRecord(key: try key("continuity/ferry_running"), value: "false"),
         ]
         let (records, merged) = ServerMemory.reconcile(incoming, existing: existing)
-        #expect(records.map(\.key.rawValue)
-                == ["state/inn_status", "characters/rosa/eyes", "state/inn_status",
-                    "continuity/ferry_running"])
+        #expect(
+            records.map(\.key.rawValue)
+                == [
+                    "state/inn_status", "characters/rosa/eyes", "state/inn_status",
+                    "continuity/ferry_running",
+                ])
         // `inn_status` names one thing and is merged; `eyes` names every
         // character and is never merged; an exact match passes through; a
         // genuinely new fact is left alone.
@@ -447,9 +492,12 @@ import ContinuityCore
             MemoryRecord(key: try key("world/location"), value: "Ashgrove, coastal"),
         ]
         let (records, merged) = ServerMemory.reconcile(incoming, existing: existing)
-        #expect(records.map(\.key.rawValue)
-                == ["characters/ines/knows_photo_content", "characters/tomas/location",
-                    "setting/location"])
+        #expect(
+            records.map(\.key.rawValue)
+                == [
+                    "characters/ines/knows_photo_content", "characters/tomas/location",
+                    "setting/location",
+                ])
         #expect(merged.count == 1)
         #expect(merged.first?.from == "world/location")
     }
@@ -466,7 +514,6 @@ import ContinuityCore
     }
 }
 
-
 /// The bootstrap is ranked by the request, the last session's changes come
 /// first, and a reversion is a dispute rather than a silent overwrite.
 @Suite struct MemoryBootstrapQualityTests {
@@ -480,14 +527,22 @@ import ContinuityCore
         let store = ContinuityStore(engine: ContinuityEngine(), limits: limits)
         let scope = try scope()
         // Running state rated highest, the way an extraction rates events.
-        try await store.set(MemoryRecord(key: try key("state/ferry"), value: "stopped running",
-                                         importance: 1.0), in: scope)
-        try await store.set(MemoryRecord(key: try key("state/lighthouse"), value: "dark",
-                                         importance: 1.0), in: scope)
-        try await store.set(MemoryRecord(key: try key("characters/rosa/eyes"), value: "hazel",
-                                         importance: 0.8), in: scope)
-        try await store.set(MemoryRecord(key: try key("characters/marcus/eyes"), value: "grey",
-                                         importance: 0.8), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("state/ferry"), value: "stopped running",
+                importance: 1.0), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("state/lighthouse"), value: "dark",
+                importance: 1.0), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("characters/rosa/eyes"), value: "hazel",
+                importance: 0.8), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("characters/marcus/eyes"), value: "grey",
+                importance: 0.8), in: scope)
 
         // A static ranking would show the two state facts. The request is
         // about Rosa, and characters outrank state in any case.
@@ -503,16 +558,22 @@ import ContinuityCore
         let store = ContinuityStore(engine: ContinuityEngine())
         let scope = try scope()
         _ = try await store.sessionInit(MemorySession(id: "s1"), in: scope)
-        try await store.set(MemoryRecord(key: try key("rules/weather"), value: "never rains",
-                                         sourceSession: "s1"), in: scope)
-        try await store.set(MemoryRecord(key: try key("state/inn"), value: "burned",
-                                         sourceSession: "s1"), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("rules/weather"), value: "never rains",
+                sourceSession: "s1"), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("state/inn"), value: "burned",
+                sourceSession: "s1"), in: scope)
 
-        let next = try await store.sessionInit(MemorySession(id: "s2", focus: "continue"),
-                                               in: scope)
+        let next = try await store.sessionInit(
+            MemorySession(id: "s2", focus: "continue"),
+            in: scope)
         #expect(Set(next.recent.map(\.key.rawValue)) == ["rules/weather", "state/inn"])
-        let text = MemoryPrompt.instructions(scope: scope, session: MemorySession(id: "s2"),
-                                             bootstrap: next)
+        let text = MemoryPrompt.instructions(
+            scope: scope, session: MemorySession(id: "s2"),
+            bootstrap: next)
         #expect(text.contains("Changed in the most recent session:"))
         // Listed once, under "changed", not again under "already known".
         #expect(text.components(separatedBy: "`state/inn`").count == 2)
@@ -525,8 +586,9 @@ import ContinuityCore
         try await store.set(MemoryRecord(key: try key("state/inn"), value: "burned"), in: scope)
         // A later consolidation, written against a stale bootstrap, says
         // "standing" again.
-        let flagged = try await store.set(MemoryRecord(key: try key("state/inn"), value: "Standing."),
-                                          in: scope, flaggingReversions: true)
+        let flagged = try await store.set(
+            MemoryRecord(key: try key("state/inn"), value: "Standing."),
+            in: scope, flaggingReversions: true)
         #expect(flagged)
         let record = try #require(try await store.get(try key("state/inn"), in: scope))
         #expect(record.isDisputed)
@@ -536,8 +598,9 @@ import ContinuityCore
         #expect(text.contains("[disputed"))
 
         // A genuinely new value is not a reversion, and settles the dispute.
-        let again = try await store.set(MemoryRecord(key: try key("state/inn"), value: "rebuilt"),
-                                        in: scope, flaggingReversions: true)
+        let again = try await store.set(
+            MemoryRecord(key: try key("state/inn"), value: "rebuilt"),
+            in: scope, flaggingReversions: true)
         #expect(again == false)
         #expect(try await store.get(try key("state/inn"), in: scope)?.isDisputed == false)
     }
@@ -563,14 +626,18 @@ import ContinuityCore
         private var seen: [ValidatedChatRequest] = []
         private let lock = NSLock()
         init(_ script: [ServerCompletion]) { self.script = script }
-        func generate(_ request: ValidatedChatRequest,
-                      onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void) async throws
-            -> ServerCompletion {
+        func generate(
+            _ request: ValidatedChatRequest,
+            onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void
+        ) async throws
+            -> ServerCompletion
+        {
             lock.withLock { seen.append(request) }
             let completion = lock.withLock { script.isEmpty ? nil : script.removeFirst() }
-            return completion ?? ServerCompletion(
-                content: "[]", toolCalls: [], finishReason: "stop",
-                usage: OpenAIUsage(promptTokens: 0, completionTokens: 0, totalTokens: 0))
+            return completion
+                ?? ServerCompletion(
+                    content: "[]", toolCalls: [], finishReason: "stop",
+                    usage: OpenAIUsage(promptTokens: 0, completionTokens: 0, totalTokens: 0))
         }
         var requests: [ValidatedChatRequest] { lock.withLock { seen } }
     }
@@ -596,9 +663,12 @@ import ContinuityCore
                 && request.messages.first?.content?.hasPrefix("You distil") == true
         }
 
-        func generate(_ request: ValidatedChatRequest,
-                      onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void) async throws
-            -> ServerCompletion {
+        func generate(
+            _ request: ValidatedChatRequest,
+            onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void
+        ) async throws
+            -> ServerCompletion
+        {
             let (holdThisOne, content) = lock.withLock { () -> (Bool, String) in
                 seen.append(request)
                 let text = responder(request)
@@ -609,9 +679,11 @@ import ContinuityCore
             while holdThisOne, !lock.withLock({ released }) {
                 try await Task.sleep(for: .milliseconds(5))
             }
-            return ServerCompletion(content: content, toolCalls: [], finishReason: "stop",
-                                    usage: OpenAIUsage(promptTokens: 1, completionTokens: 1,
-                                                       totalTokens: 2))
+            return ServerCompletion(
+                content: content, toolCalls: [], finishReason: "stop",
+                usage: OpenAIUsage(
+                    promptTokens: 1, completionTokens: 1,
+                    totalTokens: 2))
         }
 
         func release() { lock.withLock { released = true } }
@@ -620,14 +692,16 @@ import ContinuityCore
     }
 
     private func completion(_ content: String) -> ServerCompletion {
-        ServerCompletion(content: content, toolCalls: [], finishReason: "stop",
-                         usage: OpenAIUsage(promptTokens: 1, completionTokens: 1, totalTokens: 2))
+        ServerCompletion(
+            content: content, toolCalls: [], finishReason: "stop",
+            usage: OpenAIUsage(promptTokens: 1, completionTokens: 1, totalTokens: 2))
     }
     private func request(_ text: String) -> ValidatedChatRequest {
-        ValidatedChatRequest(messages: [GFTokenizer.Message(role: .user, content: text)],
-                             tools: [], stream: false, includeUsage: false,
-                             generationConfig: GenerationConfig(maxNewTokens: 32),
-                             maximumCompletionTokens: 32)
+        ValidatedChatRequest(
+            messages: [GFTokenizer.Message(role: .user, content: text)],
+            tools: [], stream: false, includeUsage: false,
+            generationConfig: GenerationConfig(maxNewTokens: 32),
+            maximumCompletionTokens: 32)
     }
     private func key(_ raw: String) throws -> MemoryKey { try MemoryKey(validating: raw) }
     private func configuration() -> MemoryConfiguration {
@@ -658,14 +732,19 @@ import ContinuityCore
     // MARK: 1. the key list
 
     @Test func onlyTouchedNamespacesAreListedInFull() throws {
-        let existing = try (0..<30).map {
-            MemoryRecord(key: try key("decisions/d\($0)"), value: "v")
-        } + [MemoryRecord(key: try key("state/inn_status"), value: "burned"),
-             MemoryRecord(key: try key("characters/rosa/eyes"), value: "hazel")]
-        let turn = JournalTurn(session: "s", workspace: "w", index: 0,
-                               prompt: "write the scene at the inn", reply: "Rosa lit the lamps.")
-        let request = ServerMemory.consolidationRequest(turns: [turn], existing: existing,
-                                                        workspace: "w")
+        let existing =
+            try (0..<30).map {
+                MemoryRecord(key: try key("decisions/d\($0)"), value: "v")
+            } + [
+                MemoryRecord(key: try key("state/inn_status"), value: "burned"),
+                MemoryRecord(key: try key("characters/rosa/eyes"), value: "hazel"),
+            ]
+        let turn = JournalTurn(
+            session: "s", workspace: "w", index: 0,
+            prompt: "write the scene at the inn", reply: "Rosa lit the lamps.")
+        let request = ServerMemory.consolidationRequest(
+            turns: [turn], existing: existing,
+            workspace: "w")
         let user = request.messages.last?.content ?? ""
         // Touched namespaces by name, untouched ones as one line with a count.
         #expect(user.contains("- state/inn_status"))
@@ -694,8 +773,10 @@ import ContinuityCore
         _ = await service.storeConsolidation(
             [MemoryRecord(key: try key("characters/rosa/eyes"), value: "hazel")], in: context)
         let written = await service.storeConsolidation(
-            [MemoryRecord(key: try key("characters/rosa/eyes"), value: "Hazel."),
-             MemoryRecord(key: try key("state/inn"), value: "burned")], in: context)
+            [
+                MemoryRecord(key: try key("characters/rosa/eyes"), value: "Hazel."),
+                MemoryRecord(key: try key("state/inn"), value: "burned"),
+            ], in: context)
         #expect(written == 1)
         let rosa = try #require(try await store.get(try key("characters/rosa/eyes"), in: scope))
         #expect(rosa.value == "hazel")
@@ -705,16 +786,18 @@ import ContinuityCore
 
     @Test func aSecondConsolidationReadsOnlyTheNewTurns() async throws {
         let inner = ScriptedBackend([
-            completion("Chapter one."),          // turn 1
-            completion("[]"),                    // consolidation of turn 1
-            completion("Chapter two."),          // turn 2
-            completion("[]"),                    // consolidation of turn 2
-            completion("Chapter three."),        // turn 3
-            completion("[]"),                    // consolidation of turn 3
+            completion("Chapter one."),  // turn 1
+            completion("[]"),  // consolidation of turn 1
+            completion("Chapter two."),  // turn 2
+            completion("[]"),  // consolidation of turn 2
+            completion("Chapter three."),  // turn 3
+            completion("[]"),  // consolidation of turn 3
         ])
-        let service = MemoryService(configuration: configuration(), durableStore: InMemoryStore(),
-                                    journal: InMemoryJournal())
-        let backend = MemoryBackend(wrapping: inner, service: service, configuration: configuration())
+        let service = MemoryService(
+            configuration: configuration(), durableStore: InMemoryStore(),
+            journal: InMemoryJournal())
+        let backend = MemoryBackend(
+            wrapping: inner, service: service, configuration: configuration())
         // One conversation growing turn by turn: the first user message stays
         // the same, so it is one session with three turns, not three sessions.
         func conversation(_ prompts: [String], _ replies: [String]) -> ValidatedChatRequest {
@@ -725,20 +808,27 @@ import ContinuityCore
                     messages.append(GFTokenizer.Message(role: .assistant, content: replies[index]))
                 }
             }
-            return ValidatedChatRequest(messages: messages, tools: [], stream: false,
-                                        includeUsage: false,
-                                        generationConfig: GenerationConfig(maxNewTokens: 32),
-                                        maximumCompletionTokens: 32)
+            return ValidatedChatRequest(
+                messages: messages, tools: [], stream: false,
+                includeUsage: false,
+                generationConfig: GenerationConfig(maxNewTokens: 32),
+                maximumCompletionTokens: 32)
         }
         _ = try await backend.generate(conversation(["write chapter one"], []), onEvent: { _ in })
         try await waitForConsolidations(inner, atLeast: 1)
-        _ = try await backend.generate(conversation(["write chapter one", "write chapter two"],
-                                                    ["Chapter one."]), onEvent: { _ in })
+        _ = try await backend.generate(
+            conversation(
+                ["write chapter one", "write chapter two"],
+                ["Chapter one."]), onEvent: { _ in })
         try await waitForConsolidations(inner, atLeast: 2)
-        _ = try await backend.generate(conversation(["write chapter one", "write chapter two",
-                                                     "write chapter three"],
-                                                    ["Chapter one.", "Chapter two."]),
-                                       onEvent: { _ in })
+        _ = try await backend.generate(
+            conversation(
+                [
+                    "write chapter one", "write chapter two",
+                    "write chapter three",
+                ],
+                ["Chapter one.", "Chapter two."]),
+            onEvent: { _ in })
         try await waitForConsolidations(inner, atLeast: 3)
 
         let extractions = inner.requests.filter(isExtraction)
@@ -761,11 +851,13 @@ import ContinuityCore
     @Test func anAmendedFactUnderANewPrefixLandsOnTheExistingKey() async throws {
         let inner = ScriptedBackend([
             completion("Drafted the MSA."),
-            completion("[{\"key\": \"msa/governing_law\", \"value\": \"singapore\", "
-                       + "\"importance\": 0.9, \"source\": \"user\"}]"),
+            completion(
+                "[{\"key\": \"msa/governing_law\", \"value\": \"singapore\", "
+                    + "\"importance\": 0.9, \"source\": \"user\"}]"),
             completion("Amended the governing law."),
-            completion("[{\"key\": \"agreement/governing_law\", \"value\": \"england\", "
-                       + "\"importance\": 0.9, \"source\": \"user\"}]"),
+            completion(
+                "[{\"key\": \"agreement/governing_law\", \"value\": \"england\", "
+                    + "\"importance\": 0.9, \"source\": \"user\"}]"),
         ])
         var configuration = configuration()
         // The durable path, not the injected in-memory store: the two differ in
@@ -778,16 +870,19 @@ import ContinuityCore
         let service = MemoryService(configuration: configuration)
         let backend = MemoryBackend(wrapping: inner, service: service, configuration: configuration)
         func turn(_ text: String) -> ValidatedChatRequest {
-            ValidatedChatRequest(messages: [GFTokenizer.Message(role: .user, content: text)],
-                                 tools: [], stream: false, includeUsage: false,
-                                 generationConfig: GenerationConfig(maxNewTokens: 32),
-                                 maximumCompletionTokens: 32)
+            ValidatedChatRequest(
+                messages: [GFTokenizer.Message(role: .user, content: text)],
+                tools: [], stream: false, includeUsage: false,
+                generationConfig: GenerationConfig(maxNewTokens: 32),
+                maximumCompletionTokens: 32)
         }
-        _ = try await backend.generate(turn("draft the master services agreement"),
-                                       onEvent: { _ in })
+        _ = try await backend.generate(
+            turn("draft the master services agreement"),
+            onEvent: { _ in })
         try await waitForConsolidations(inner, atLeast: 1)
-        _ = try await backend.generate(turn("the client proposed an amendment to the agreement"),
-                                       onEvent: { _ in })
+        _ = try await backend.generate(
+            turn("the client proposed an amendment to the agreement"),
+            onEvent: { _ in })
         try await waitForConsolidations(inner, atLeast: 2)
 
         let scope = try #require(configuration.scope())
@@ -830,8 +925,9 @@ import ContinuityCore
         // one's on the rollover, session two's on its own idle timer. Session
         // two names the subject of the fact it amends, so the address the
         // earlier session wrote is one the extraction is shown.
-        _ = try await backend.generate(request("draft the master services agreement"),
-                                       onEvent: { _ in })
+        _ = try await backend.generate(
+            request("draft the master services agreement"),
+            onEvent: { _ in })
         _ = try await backend.generate(
             request("the client proposed an amendment to the governing law of the agreement"),
             onEvent: { _ in })
@@ -866,8 +962,9 @@ import ContinuityCore
         stored.allowsPerRequestWorkspace = true
         let service = MemoryService(configuration: stored)
         let context = try #require(await service.beginSession(id: "s1"))
-        var preference = MemoryRecord(key: try key("preferences/language"),
-                                      value: "answer in British English")
+        var preference = MemoryRecord(
+            key: try key("preferences/language"),
+            value: "answer in British English")
         preference.isGlobal = true
         let written = await service.storeConsolidation(
             [preference, MemoryRecord(key: try key("state/inn"), value: "burned")], in: context)

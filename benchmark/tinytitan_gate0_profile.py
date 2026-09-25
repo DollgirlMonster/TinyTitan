@@ -27,6 +27,7 @@ Usage:
   python3 benchmark/tinytitan_gate0_profile.py --quant 4bit    # one
   python3 benchmark/tinytitan_gate0_profile.py --runs 3
 """
+
 from __future__ import annotations
 
 import argparse
@@ -78,18 +79,19 @@ API_MODEL = None
 
 GENERATION_RE = re.compile(
     r"TinyTitan generation prefill_s=([0-9.]+) decode_s=([0-9.]+) "
-    r"decode_tok_s=([0-9.]+)")
+    r"decode_tok_s=([0-9.]+)"
+)
 RUNNER_RE = re.compile(r"TinyTitan runner (.+)")
 ROLE_RE = re.compile(
     r"TinyTitan kernel role=(\S+) gpu_ms=([0-9.]+) per_token_ms=([0-9.]+) "
-    r"count=(\d+)")
-GAP_RE = re.compile(
-    r"TinyTitan gap (\S+) total_ms=([0-9.]+) per_token_ms=([0-9.]+) count=(\d+)")
+    r"count=(\d+)"
+)
+GAP_RE = re.compile(r"TinyTitan gap (\S+) total_ms=([0-9.]+) per_token_ms=([0-9.]+) count=(\d+)")
 OCCUPANCY_RE = re.compile(
     r"TinyTitan kernel busy_ms=([0-9.]+) span_ms=([0-9.]+) occupancy=([0-9.]+)% "
-    r"busy_share_of_decode=([0-9.]+)% busy_per_token_ms=([0-9.]+)")
-TOTAL_GPU_RE = re.compile(
-    r"TinyTitan kernel total_gpu_ms=([0-9.]+) gpu_share_of_decode=([0-9.]+)%")
+    r"busy_share_of_decode=([0-9.]+)% busy_per_token_ms=([0-9.]+)"
+)
+TOTAL_GPU_RE = re.compile(r"TinyTitan kernel total_gpu_ms=([0-9.]+) gpu_share_of_decode=([0-9.]+)%")
 
 _servers: list[subprocess.Popen] = []
 
@@ -117,11 +119,13 @@ def idle_gpu_utilization() -> int | None:
     try:
         out = subprocess.run(
             ["ioreg", "-r", "-d", "1", "-w", "0", "-c", "AGXAccelerator"],
-            capture_output=True, text=True, timeout=15).stdout
+            capture_output=True,
+            text=True,
+            timeout=15,
+        ).stdout
     except (OSError, subprocess.SubprocessError):
         return None
-    values = [int(m) for m in
-              re.findall(r'"Device Utilization %"=(\d+)', out)]
+    values = [int(m) for m in re.findall(r'"Device Utilization %"=(\d+)', out)]
     return max(values) if values else None
 
 
@@ -129,8 +133,9 @@ def machine_load() -> dict:
     """Whole-machine contention signals a model run is sensitive to."""
     out: dict = {}
     try:
-        ps = subprocess.run(["ps", "-Ao", "%cpu,comm", "-r"],
-                            capture_output=True, text=True, timeout=15).stdout
+        ps = subprocess.run(
+            ["ps", "-Ao", "%cpu,comm", "-r"], capture_output=True, text=True, timeout=15
+        ).stdout
         rows = []
         for line in ps.splitlines()[1:]:
             parts = line.strip().split(None, 1)
@@ -141,20 +146,22 @@ def machine_load() -> dict:
                     pass
         mine = ("TinyTitanServer", "TinyTitanCLI", "python")
         out["busy_processes"] = [
-            (c, n) for c, n in rows[:8]
-            if c >= 25 and not any(m in n for m in mine)]
+            (c, n) for c, n in rows[:8] if c >= 25 and not any(m in n for m in mine)
+        ]
     except (OSError, subprocess.SubprocessError):
         out["busy_processes"] = []
     try:
-        mp = subprocess.run(["memory_pressure", "-Q"],
-                            capture_output=True, text=True, timeout=15).stdout
+        mp = subprocess.run(
+            ["memory_pressure", "-Q"], capture_output=True, text=True, timeout=15
+        ).stdout
         m = re.search(r"free percentage:\s*(\d+)", mp)
         out["free_percent"] = int(m.group(1)) if m else None
     except (OSError, subprocess.SubprocessError):
         out["free_percent"] = None
     try:
-        sw = subprocess.run(["sysctl", "-n", "vm.swapusage"],
-                            capture_output=True, text=True, timeout=15).stdout
+        sw = subprocess.run(
+            ["sysctl", "-n", "vm.swapusage"], capture_output=True, text=True, timeout=15
+        ).stdout
         m = re.search(r"used\s*=\s*([0-9.]+)M", sw)
         out["swap_used_mb"] = float(m.group(1)) if m else None
     except (OSError, subprocess.SubprocessError):
@@ -172,29 +179,32 @@ def preflight(max_gpu_percent: int) -> None:
     the tok/s number explains that on its own, so the guard is here rather
     than in a reviewer's head.
     """
-    pattern = ("TinyTitanServer|TinyTitanCLI|"
-               "TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm")
-    found = subprocess.run(["pgrep", "-fl", pattern],
-                           capture_output=True, text=True)
+    pattern = (
+        "TinyTitanServer|TinyTitanCLI|TinyTitanPackageTests|swiftpm-testing-helper|mlx_lm|mlx-lm"
+    )
+    found = subprocess.run(["pgrep", "-fl", pattern], capture_output=True, text=True)
     mine = str(pathlib.Path(__file__).name)
     lines = [ln for ln in found.stdout.splitlines() if mine not in ln]
     if lines:
         raise SystemExit(
-            "refusing to start: model processes already running:\n  "
-            + "\n  ".join(lines))
+            "refusing to start: model processes already running:\n  " + "\n  ".join(lines)
+        )
 
     used = idle_gpu_utilization()
     if used is None:
-        print("WARNING: could not read GPU utilization; "
-              "confirm the machine is idle before trusting these numbers",
-              flush=True)
+        print(
+            "WARNING: could not read GPU utilization; "
+            "confirm the machine is idle before trusting these numbers",
+            flush=True,
+        )
     elif used > max_gpu_percent:
         raise SystemExit(
             f"refusing to start: GPU is already {used}% busy before TinyTitan "
             f"launches (threshold {max_gpu_percent}%).\n"
             "Quit whatever is using the GPU, or pass --allow-busy-gpu to "
             "measure anyway. Results from a contended GPU are not comparable "
-            "with the published benchmark.")
+            "with the published benchmark."
+        )
 
     # CPU and memory contention are as invalidating as GPU contention and far
     # less visible. A busy machine does not merely add noise here: it pushes
@@ -205,13 +215,13 @@ def preflight(max_gpu_percent: int) -> None:
         load = machine_load()
         problems = []
         if load["busy_processes"]:
-            listing = ", ".join(f"{n.split('/')[-1]} {c:.0f}%"
-                                for c, n in load["busy_processes"])
+            listing = ", ".join(f"{n.split('/')[-1]} {c:.0f}%" for c, n in load["busy_processes"])
             problems.append(f"other processes are busy: {listing}")
         if load["free_percent"] is not None and load["free_percent"] < 55:
             problems.append(
                 f"only {load['free_percent']}% of memory is free; the expert "
-                "cache will not stay resident")
+                "cache will not stay resident"
+            )
         # Swap VOLUME is reported, never refused on. It measures how much has
         # ever been paged out, not whether memory is tight now: an 8-bit run
         # maps a 36.9 GB model and leaves gigabytes of residual swap that
@@ -220,31 +230,33 @@ def preflight(max_gpu_percent: int) -> None:
         # passed. Residency is what actually matters, and `free_percent`
         # above measures it directly.
         if load["swap_used_mb"] is not None:
-            print(f"  note: {load['swap_used_mb']:.0f} MB of swap in use "
-                  f"({load['free_percent']}% memory free)")
+            print(
+                f"  note: {load['swap_used_mb']:.0f} MB of swap in use "
+                f"({load['free_percent']}% memory free)"
+            )
         if problems:
             raise SystemExit(
                 "refusing to start: the machine is not idle.\n  - "
                 + "\n  - ".join(problems)
                 + "\nQuit the busy applications, or pass --allow-busy-gpu to "
-                "measure anyway (results will not be comparable).")
+                "measure anyway (results will not be comparable)."
+            )
 
 
-def launch(quant: str, port: int, log_name: str,
-           sampler_path: str | None = None) -> subprocess.Popen:
+def launch(
+    quant: str, port: int, log_name: str, sampler_path: str | None = None
+) -> subprocess.Popen:
     binary = ROOT / ".build/release/TinyTitanServer"
     if not binary.exists():
         raise SystemExit(f"missing release binary: {binary}")
-    cmd = server_command(binary, port,
-                         model=MODEL_OVERRIDE or QUANTS[quant])
+    cmd = server_command(binary, port, model=MODEL_OVERRIDE or QUANTS[quant])
     env = server_environment()
     env["TINYTITAN_RUNNER_STATS"] = "1"
     env["TINYTITAN_KERNEL_STATS"] = "1"
     if sampler_path:
         env["TINYTITAN_SAMPLER_PATH"] = sampler_path
     log = open(benchmark_log_path(log_name), "w")
-    proc = subprocess.Popen(cmd, env=env, stdout=log,
-                            stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT)
     _servers.append(proc)
     return proc
 
@@ -265,21 +277,28 @@ def wait_ready(port: int, attempts: int = 40) -> bool:
 
 
 def generate(port: int) -> dict | None:
-    payload = json.dumps({
-        "model": API_MODEL or DEFAULT_API_MODEL,
-        "messages": [{"role": "user", "content": PROMPT}],
-        "temperature": TEMPERATURE,
-        "top_p": 0.95,
-        "top_k": TOP_K,
-        "presence_penalty": 0.0,
-        "seed": SEED,
-        "max_completion_tokens": MAX_TOKENS,
-    }, separators=(",", ":")).encode()
+    payload = json.dumps(
+        {
+            "model": API_MODEL or DEFAULT_API_MODEL,
+            "messages": [{"role": "user", "content": PROMPT}],
+            "temperature": TEMPERATURE,
+            "top_p": 0.95,
+            "top_k": TOP_K,
+            "presence_penalty": 0.0,
+            "seed": SEED,
+            "max_completion_tokens": MAX_TOKENS,
+        },
+        separators=(",", ":"),
+    ).encode()
     start = time.time()
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=900)
-        conn.request("POST", "/v1/chat/completions", body=payload,
-                     headers={"Content-Type": "application/json"})
+        conn.request(
+            "POST",
+            "/v1/chat/completions",
+            body=payload,
+            headers={"Content-Type": "application/json"},
+        )
         body = json.loads(conn.getresponse().read().decode())
         conn.close()
     except (OSError, ValueError) as exc:
@@ -312,7 +331,8 @@ def parse_log(path: str) -> list[dict]:
                     "prefill_s": float(gen.group(1)),
                     "decode_s": float(gen.group(2)),
                     "decode_tok_s": float(gen.group(3)),
-                    "roles": {}, "gaps": {},
+                    "roles": {},
+                    "gaps": {},
                 }
                 continue
             if current is None:
@@ -367,7 +387,7 @@ def run_quant(quant: str, runs: int) -> dict:
         label = "warmup" if index == 0 else f"run {index}"
         log_name = f"gate0_{quant}_{index}.log"
         print(f"[{quant}] {label}: starting fresh server", flush=True)
-        proc = launch(quant, port, log_name)
+        launch(quant, port, log_name)
         if not wait_ready(port):
             _terminate_all()
             raise SystemExit(f"[{quant}] server did not become healthy")
@@ -386,9 +406,12 @@ def run_quant(quant: str, runs: int) -> dict:
             raise SystemExit(f"[{quant}] {label}: no footer lines in log")
         record = records[-1]
         record.update(result)
-        print(f"[{quant}] {label}: {record['decode_tok_s']:.3f} tok/s, "
-              f"busy_per_token={record.get('busy_per_token_ms', 0):.3f} ms, "
-              f"occupancy={record.get('occupancy_pct', 0):.1f}%", flush=True)
+        print(
+            f"[{quant}] {label}: {record['decode_tok_s']:.3f} tok/s, "
+            f"busy_per_token={record.get('busy_per_token_ms', 0):.3f} ms, "
+            f"occupancy={record.get('occupancy_pct', 0):.1f}%",
+            flush=True,
+        )
         if index > 0:
             measured.append(record)
     return summarize(quant, measured)
@@ -400,22 +423,39 @@ def _median(rows: list[dict], key: str) -> float | None:
 
 
 def _spread(rows: list[dict], key: str) -> list[float]:
-    return [round(r[key], 4) for r in rows
-            if isinstance(r.get(key), (int, float))]
+    return [round(r[key], 4) for r in rows if isinstance(r.get(key), (int, float))]
 
 
 def summarize(quant: str, rows: list[dict]) -> dict:
     scalar_keys = [
-        "decode_tok_s", "decode_s", "prefill_s",
-        "busy_per_token_ms", "occupancy_pct", "busy_share_of_decode_pct",
+        "decode_tok_s",
+        "decode_s",
+        "prefill_s",
+        "busy_per_token_ms",
+        "occupancy_pct",
+        "busy_share_of_decode_pct",
         "gpu_share_of_decode",
-        "cb1_ms", "io_ms", "cb2_ms", "head_ms", "head_fused_ms",
-        "rdadvise_ms", "wait_ms", "body_ms",
-        "router_readback_ms", "cache_plan_ms", "io_queue_ms",
+        "cb1_ms",
+        "io_ms",
+        "cb2_ms",
+        "head_ms",
+        "head_fused_ms",
+        "rdadvise_ms",
+        "wait_ms",
+        "body_ms",
+        "router_readback_ms",
+        "cache_plan_ms",
+        "io_queue_ms",
         "io_completion_to_fixup_ms",
-        "expert_hit_rate", "expert_read_mib", "io_hidden_pct",
-        "expert_load_p50_ms", "expert_load_p95_ms", "expert_load_p99_ms",
-        "io_host_waits", "io_host_waits_avoided", "hit_fixup_layers",
+        "expert_hit_rate",
+        "expert_read_mib",
+        "io_hidden_pct",
+        "expert_load_p50_ms",
+        "expert_load_p95_ms",
+        "expert_load_p99_ms",
+        "io_host_waits",
+        "io_host_waits_avoided",
+        "hit_fixup_layers",
         "completion_tokens",
     ]
     digests = sorted({r.get("completion_sha256") for r in rows if r.get("completion_sha256")})
@@ -423,8 +463,9 @@ def summarize(quant: str, rows: list[dict]) -> dict:
         "quant": quant,
         "runs": len(rows),
         "median": {k: _median(rows, k) for k in scalar_keys},
-        "spread": {k: _spread(rows, k) for k in
-                   ("decode_tok_s", "busy_per_token_ms", "occupancy_pct")},
+        "spread": {
+            k: _spread(rows, k) for k in ("decode_tok_s", "busy_per_token_ms", "occupancy_pct")
+        },
     }
     roles: dict[str, list[float]] = {}
     for row in rows:
@@ -432,8 +473,7 @@ def summarize(quant: str, rows: list[dict]) -> dict:
             roles.setdefault(name, []).append(data["per_token_ms"])
     summary["roles_per_token_ms"] = {
         name: round(statistics.median(values), 4)
-        for name, values in sorted(roles.items(),
-                                   key=lambda kv: -statistics.median(kv[1]))
+        for name, values in sorted(roles.items(), key=lambda kv: -statistics.median(kv[1]))
     }
     gaps: dict[str, list[float]] = {}
     for row in rows:
@@ -441,8 +481,7 @@ def summarize(quant: str, rows: list[dict]) -> dict:
             gaps.setdefault(name, []).append(data["per_token_ms"])
     summary["gaps_per_token_ms"] = {
         name: round(statistics.median(values), 4)
-        for name, values in sorted(gaps.items(),
-                                   key=lambda kv: -statistics.median(kv[1]))
+        for name, values in sorted(gaps.items(), key=lambda kv: -statistics.median(kv[1]))
     }
     summary["completion_sha256"] = digests
     summary["raw"] = rows
@@ -459,51 +498,64 @@ def report(summaries: list[dict]) -> None:
         token_ms = 1000 / tok_s if tok_s else 0
         busy = m["busy_per_token_ms"] or 0
         print(f"\n## {s['quant']}  ({s['runs']} measured runs)")
-        print(f"  decode            {tok_s:.3f} tok/s  "
-              f"= {token_ms:.2f} ms/token")
+        print(f"  decode            {tok_s:.3f} tok/s  = {token_ms:.2f} ms/token")
         print(f"  spread            {s['spread']['decode_tok_s']}")
-        print(f"  GPU busy/token    {busy:.3f} ms "
-              f"({(busy / token_ms * 100) if token_ms else 0:.1f}% of token)")
-        print(f"  NOT GPU busy      {token_ms - busy:.3f} ms "
-              f"({((token_ms - busy) / token_ms * 100) if token_ms else 0:.1f}%)")
+        print(
+            f"  GPU busy/token    {busy:.3f} ms "
+            f"({(busy / token_ms * 100) if token_ms else 0:.1f}% of token)"
+        )
+        print(
+            f"  NOT GPU busy      {token_ms - busy:.3f} ms "
+            f"({((token_ms - busy) / token_ms * 100) if token_ms else 0:.1f}%)"
+        )
         print(f"  queue occupancy   {m['occupancy_pct']:.1f}%")
-        print(f"  expert hit rate   {(m['expert_hit_rate'] or 0) * 100:.2f}%"
-              f"   I/O hidden {m['io_hidden_pct']:.2f}%")
-        print(f"  host wait/token   {m['wait_ms']:.3f} ms"
-              f"   expert io {m['io_ms']:.3f} ms")
-        print(f"  router readback   {m['router_readback_ms']:.4f} ms"
-              f"   cache plan {m['cache_plan_ms']:.4f} ms")
+        print(
+            f"  expert hit rate   {(m['expert_hit_rate'] or 0) * 100:.2f}%"
+            f"   I/O hidden {m['io_hidden_pct']:.2f}%"
+        )
+        print(f"  host wait/token   {m['wait_ms']:.3f} ms   expert io {m['io_ms']:.3f} ms")
+        print(
+            f"  router readback   {m['router_readback_ms']:.4f} ms"
+            f"   cache plan {m['cache_plan_ms']:.4f} ms"
+        )
         print("  top GPU roles (ms/token):")
         for name, value in list(s["roles_per_token_ms"].items())[:8]:
             print(f"      {name:<28} {value:.4f}")
         print("  top inter-command gaps (ms/token):")
         for name, value in list(s["gaps_per_token_ms"].items())[:6]:
             print(f"      {name:<28} {value:.4f}")
-        verdict = ("BANDWIDTH-BOUND (ceiling ~1.35x; only Track C moves it)"
-                   if busy >= 45 else
-                   "DEPENDENCY-STALLED (ceiling ~1.9-2.1x; Track B is the game)"
-                   if busy <= 35 else
-                   "MIXED — neither branch of the Gate 0 rule fires cleanly")
+        verdict = (
+            "BANDWIDTH-BOUND (ceiling ~1.35x; only Track C moves it)"
+            if busy >= 45
+            else "DEPENDENCY-STALLED (ceiling ~1.9-2.1x; Track B is the game)"
+            if busy <= 35
+            else "MIXED — neither branch of the Gate 0 rule fires cleanly"
+        )
         print(f"  VERDICT: {verdict}")
         digests = s.get("completion_sha256") or []
-        print(f"  output digest    {digests}"
-              f"{'  (RUNS DISAGREE)' if len(digests) > 1 else ''}")
+        print(f"  output digest    {digests}{'  (RUNS DISAGREE)' if len(digests) > 1 else ''}")
 
 
 def main() -> int:
     global TOP_K
     parser = argparse.ArgumentParser()
     parser.add_argument("--quant", choices=sorted(QUANTS), action="append")
-    parser.add_argument("--model-dir", default=None,
-                        help="run the published protocol against this install "
-                             "instead of the Ornith default")
+    parser.add_argument(
+        "--model-dir",
+        default=None,
+        help="run the published protocol against this install instead of the Ornith default",
+    )
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--out", default=None)
-    parser.add_argument("--top-k", type=int, default=TOP_K,
-                        help="probe override; production default is 20")
-    parser.add_argument("--allow-busy-gpu", action="store_true",
-                        help="measure even if another process holds the GPU; "
-                             "results are not comparable with the benchmark")
+    parser.add_argument(
+        "--top-k", type=int, default=TOP_K, help="probe override; production default is 20"
+    )
+    parser.add_argument(
+        "--allow-busy-gpu",
+        action="store_true",
+        help="measure even if another process holds the GPU; "
+        "results are not comparable with the benchmark",
+    )
     args = parser.parse_args()
     TOP_K = args.top_k
     if args.model_dir:

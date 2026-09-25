@@ -27,34 +27,40 @@ struct PrefillChunkScratchLayout: Sendable, Equatable {
     /// buffer widens; every block input and output stays `hiddenSize`.
     let residualStreams: Int
 
-    init(config: ArchConfig,
-                chunkTokens: Int,
-                routedPairMicrobatchRows: Int = 32) {
+    init(
+        config: ArchConfig,
+        chunkTokens: Int,
+        routedPairMicrobatchRows: Int = 32
+    ) {
         self.chunkTokens = max(1, min(chunkTokens, PrefillRuntimeConfig.maxChunkTokens))
         self.hiddenSize = config.hiddenSize
         self.maxQElementsPerToken = config.numHeads * max(config.headDim, config.fullHeadDim)
-        self.maxKVElementsPerToken = max(config.numKVHeads * config.headDim,
-                                         config.numFullKVHeads * config.fullHeadDim)
+        self.maxKVElementsPerToken = max(
+            config.numKVHeads * config.headDim,
+            config.numFullKVHeads * config.fullHeadDim)
         self.sharedIntermediate = config.intermediateSize
         self.routedIntermediate = config.moeIntermediateSize
         self.topK = config.topKExperts
         self.routedPairMicrobatchRows = max(1, min(routedPairMicrobatchRows, 128))
         let qDim = config.numHeads * max(config.headDim, config.fullHeadDim)
         let hasLinear = config.hasLinearAttentionLayers
-        self.qProjElementsPerToken = max(config.attnOutputGate ? 2 * qDim : qDim,
-                                         hasLinear ? config.linearAttention.qkvDim : 0)
+        self.qProjElementsPerToken = max(
+            config.attnOutputGate ? 2 * qDim : qDim,
+            hasLinear ? config.linearAttention.qkvDim : 0)
         self.attnGateElementsPerToken = config.attnOutputGate ? qDim : 0
         self.gdnQKVDim = hasLinear ? config.linearAttention.qkvDim : 0
         self.gdnValueDim = hasLinear ? config.linearAttention.valueDim : 0
         self.gdnVHeads = hasLinear ? config.linearAttention.numVHeads : 0
         self.sharedScalarGateElements = config.sharedExpertGated ? 1 : 0
-        self.residualStreams = config.hyperConnections.enabled
+        self.residualStreams =
+            config.hyperConnections.enabled
             ? config.hyperConnections.count : 1
     }
 
     init(config: ArchConfig, runtime: PrefillRuntimeConfig) {
-        self.init(config: config,
-                  chunkTokens: runtime.chunkTokens)
+        self.init(
+            config: config,
+            chunkTokens: runtime.chunkTokens)
     }
 
     /// The residual itself, which is the one buffer that widens.
@@ -88,7 +94,8 @@ struct PrefillChunkScratchLayout: Sendable, Equatable {
     var routedDownOutputElements: Int { routedPairMicrobatchRows * hiddenSize }
 
     var devicePrivateBytes: Int {
-        let fp16Elements = hiddenElements
+        let fp16Elements =
+            hiddenElements
             + normedElements
             + qElements
             + kStageElements
@@ -159,12 +166,15 @@ struct PrefillChunkScratchBuffers {
     let gdnY: MTLBuffer
     let sharedScalarGate: MTLBuffer
 
-    static func allocate(device: MTLDevice,
-                         layout: PrefillChunkScratchLayout) throws -> PrefillChunkScratchBuffers {
+    static func allocate(
+        device: MTLDevice,
+        layout: PrefillChunkScratchLayout
+    ) throws -> PrefillChunkScratchBuffers {
         func privateBuffer(_ elements: Int, label: String) throws -> MTLBuffer {
-            guard let buffer = device.makeBuffer(
-                length: max(elements, 1) * MemoryLayout<Float16>.stride,
-                options: .storageModePrivate)
+            guard
+                let buffer = device.makeBuffer(
+                    length: max(elements, 1) * MemoryLayout<Float16>.stride,
+                    options: .storageModePrivate)
             else {
                 throw ModelError.residentBufferWrapFailed
             }
@@ -173,8 +183,11 @@ struct PrefillChunkScratchBuffers {
         }
 
         func sharedBuffer(_ bytes: Int, label: String) throws -> MTLBuffer {
-            guard let buffer = device.makeBuffer(length: max(bytes, 1),
-                                                options: .storageModeShared) else {
+            guard
+                let buffer = device.makeBuffer(
+                    length: max(bytes, 1),
+                    options: .storageModeShared)
+            else {
                 throw ModelError.residentBufferWrapFailed
             }
             buffer.label = label
@@ -188,27 +201,36 @@ struct PrefillChunkScratchBuffers {
             q: try privateBuffer(layout.qElements, label: "prefill.q"),
             kStage: try privateBuffer(layout.kStageElements, label: "prefill.kStage"),
             vStage: try privateBuffer(layout.vStageElements, label: "prefill.vStage"),
-            attentionOutput: try privateBuffer(layout.attentionOutputElements, label: "prefill.attnOut"),
+            attentionOutput: try privateBuffer(
+                layout.attentionOutputElements, label: "prefill.attnOut"),
             denseX: try privateBuffer(layout.denseXElements, label: "prefill.denseX"),
             routedX: try privateBuffer(layout.routedXElements, label: "prefill.routedX"),
             routerX: try privateBuffer(layout.routerXElements, label: "prefill.routerX"),
             h1: try privateBuffer(layout.h1Elements, label: "prefill.h1"),
             h2: try privateBuffer(layout.h2Elements, label: "prefill.h2"),
-            routePartials: try privateBuffer(layout.routePartialElements, label: "prefill.routePartials"),
-            routeIDs: try sharedBuffer(layout.routeIDElements * MemoryLayout<UInt32>.stride,
-                                       label: "prefill.routeIDs"),
-            routeWeights: try sharedBuffer(layout.routeWeightElements * MemoryLayout<Float16>.stride,
-                                           label: "prefill.routeWeights"),
-            sharedGateScratch: try privateBuffer(layout.sharedExpertScratchElements,
-                                                 label: "prefill.sharedGateScratch"),
-            sharedUpScratch: try privateBuffer(layout.sharedExpertScratchElements,
-                                               label: "prefill.sharedUpScratch"),
-            sharedActScratch: try privateBuffer(layout.sharedExpertScratchElements,
-                                                label: "prefill.sharedActScratch"),
-            routedGateUpActScratch: try privateBuffer(layout.routedGateUpActElements,
-                                                      label: "prefill.routedGateUpActScratch"),
-            routedDownScratch: try privateBuffer(layout.routedDownOutputElements,
-                                                 label: "prefill.routedDownScratch"),
+            routePartials: try privateBuffer(
+                layout.routePartialElements, label: "prefill.routePartials"),
+            routeIDs: try sharedBuffer(
+                layout.routeIDElements * MemoryLayout<UInt32>.stride,
+                label: "prefill.routeIDs"),
+            routeWeights: try sharedBuffer(
+                layout.routeWeightElements * MemoryLayout<Float16>.stride,
+                label: "prefill.routeWeights"),
+            sharedGateScratch: try privateBuffer(
+                layout.sharedExpertScratchElements,
+                label: "prefill.sharedGateScratch"),
+            sharedUpScratch: try privateBuffer(
+                layout.sharedExpertScratchElements,
+                label: "prefill.sharedUpScratch"),
+            sharedActScratch: try privateBuffer(
+                layout.sharedExpertScratchElements,
+                label: "prefill.sharedActScratch"),
+            routedGateUpActScratch: try privateBuffer(
+                layout.routedGateUpActElements,
+                label: "prefill.routedGateUpActScratch"),
+            routedDownScratch: try privateBuffer(
+                layout.routedDownOutputElements,
+                label: "prefill.routedDownScratch"),
             attnQ: try privateBuffer(layout.attnQElements, label: "prefill.attnQ"),
             attnGate: try privateBuffer(layout.attnGateElements, label: "prefill.attnGate"),
             gdnConvOut: try privateBuffer(layout.gdnConvOutElements, label: "prefill.gdnConvOut"),
@@ -216,7 +238,8 @@ struct PrefillChunkScratchBuffers {
             gdnA: try privateBuffer(layout.gdnAElements, label: "prefill.gdnA"),
             gdnB: try privateBuffer(layout.gdnBElements, label: "prefill.gdnB"),
             gdnY: try privateBuffer(layout.gdnYElements, label: "prefill.gdnY"),
-            sharedScalarGate: try privateBuffer(layout.sharedScalarGateBufferElements,
-                                                label: "prefill.sharedScalarGate"))
+            sharedScalarGate: try privateBuffer(
+                layout.sharedScalarGateBufferElements,
+                label: "prefill.sharedScalarGate"))
     }
 }

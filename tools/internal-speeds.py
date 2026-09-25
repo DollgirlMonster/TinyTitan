@@ -32,6 +32,7 @@ decode rate is not a baseline for the 4B's. Different models are recorded side
 by side — the ANE prefill number only exists for a qwen36 install with a
 sidecar — and are never compared against one another.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,12 +67,14 @@ ANE_PROMPT_CHARACTERS = 32_000
 ANE_PROMPT_SENTENCE = (
     "Swift and C++ differ in memory management, dispatch, compilation and type "
     "safety, and a fair comparison names each axis before it judges either "
-    "language. ")
+    "language. "
+)
 ANE_FALLBACK_MARKER = "ane-prefill fallback"
 
 FOOTER = re.compile(
     r"\[stop=(\S+) prefill=(\d+)tok/([\d.]+)s "
-    r"new=(\d+)tok decode=([\d.]+)s tok/s=([\d.]+)\]")
+    r"new=(\d+)tok decode=([\d.]+)s tok/s=([\d.]+)\]"
+)
 ACHIEVED = re.compile(r"achieved=([\d.]+) GB/s")
 BYTES_PER_LAUNCH = re.compile(r"bytes/launch=(\d+)")
 CPU_ROW = re.compile(r"^\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*$")
@@ -81,8 +84,18 @@ CPU_ROW = re.compile(r"^\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*$")
 # model stops answering the question, and it is recorded next to the text so a
 # human can check the one release where it drops.
 QUALITY_KEYWORDS = (
-    "swift", "c++", "performance", "memory", "compile", "type",
-    "arc", "manual", "safety", "runtime", "speed", "garbage",
+    "swift",
+    "c++",
+    "performance",
+    "memory",
+    "compile",
+    "type",
+    "arc",
+    "manual",
+    "safety",
+    "runtime",
+    "speed",
+    "garbage",
 )
 
 # metric path -> "higher" (a drop is a regression) or "lower" (a rise is one)
@@ -102,10 +115,8 @@ PERF_METRICS = {
 }
 
 
-def run(cmd: list[str], env: dict | None = None,
-        timeout: int = 3600) -> tuple[int, str, str]:
-    proc = subprocess.run(cmd, capture_output=True, text=True,
-                          env=env, timeout=timeout, cwd=ROOT)
+def run(cmd: list[str], env: dict | None = None, timeout: int = 3600) -> tuple[int, str, str]:
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout, cwd=ROOT)
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -135,8 +146,9 @@ def model_total_bytes(model: str) -> int:
         manifest = json.loads((ROOT / model / "manifest.json").read_text())
         files = manifest.get("files")
         if isinstance(files, dict) and files:
-            total = sum(int(entry.get("size", 0)) for entry in files.values()
-                        if isinstance(entry, dict))
+            total = sum(
+                int(entry.get("size", 0)) for entry in files.values() if isinstance(entry, dict)
+            )
             if total > 0:
                 return total
     except (OSError, ValueError, TypeError):
@@ -158,17 +170,23 @@ ANE_EXPORTABLE_FAMILIES = ("qwen36", "qwen3_5_dense", "qwen38flash")
 def missing_ane_reason(model: str, family: str | None) -> str:
     """Why no ANE number was recorded, in terms of what was observed."""
     if family == "qwen38flash":
-        return (f"the ANE prefill path does not pay for a {family} model: "
-                f"measured 0.72x against the GPU at 4,333 tokens, because the "
-                f"GPU already attends to only the indexer's ~2,051 selected keys "
-                f"while the ANE graph is dense over the context and its "
-                f"per-variant Core ML load is 7-14 s. A sidecar is exportable "
-                f"only to re-measure")
+        return (
+            f"the ANE prefill path does not pay for a {family} model: "
+            f"measured 0.72x against the GPU at 4,333 tokens, because the "
+            f"GPU already attends to only the indexer's ~2,051 selected keys "
+            f"while the ANE graph is dense over the context and its "
+            f"per-variant Core ML load is 7-14 s. A sidecar is exportable "
+            f"only to re-measure"
+        )
     if family == "qwen38flash_mtp":
-        return (f"ANE prefill does not serve a {family} model: the one-layer "
-                f"MTP draft is verified rather than prefilled on the ANE")
-    reason = (f"no ANE prefill sidecar at {model}/ane_prefill; export one "
-              f"with tools/export_ane_prefill.py --model {model}")
+        return (
+            f"ANE prefill does not serve a {family} model: the one-layer "
+            f"MTP draft is verified rather than prefilled on the ANE"
+        )
+    reason = (
+        f"no ANE prefill sidecar at {model}/ane_prefill; export one "
+        f"with tools/export_ane_prefill.py --model {model}"
+    )
     if family and family not in ANE_EXPORTABLE_FAMILIES:
         reason += f" — the exporter has no graph for the {family} family"
     return reason
@@ -222,15 +240,18 @@ def measure_cpu_gemv(iterations: int) -> dict:
     for line in out.splitlines():
         match = CPU_ROW.match(line)
         if match:
-            rows.append({"threads": int(match.group(1)),
-                         "ms_per_pass": float(match.group(2)),
-                         "gbps": float(match.group(3)),
-                         "tok_per_second_2b_8bit": float(match.group(4))})
+            rows.append(
+                {
+                    "threads": int(match.group(1)),
+                    "ms_per_pass": float(match.group(2)),
+                    "gbps": float(match.group(3)),
+                    "tok_per_second_2b_8bit": float(match.group(4)),
+                }
+            )
     if not rows:
         return {"error": "cpugemv: no table rows parsed", "output": out[-400:]}
     best = max(rows, key=lambda row: row["gbps"])
-    return {"best_gbps": best["gbps"], "best_threads": best["threads"],
-            "rows": rows}
+    return {"best_gbps": best["gbps"], "best_threads": best["threads"], "rows": rows}
 
 
 def parse_footer(stderr: str) -> dict | None:
@@ -247,14 +268,25 @@ def parse_footer(stderr: str) -> dict | None:
     }
 
 
-def measure_generation(model: str, prompt: str, max_new: int,
-                       ane: bool = False, prefill_chunk: int | None = None) -> dict:
+def measure_generation(
+    model: str, prompt: str, max_new: int, ane: bool = False, prefill_chunk: int | None = None
+) -> dict:
     import os
+
     env = os.environ.copy()
     if ane:
         env["TINYTITAN_PREFILL_ANE"] = "on"
-    command = [str(CLI), "--model", model, "--prompt", prompt,
-               "--max-new", str(max_new), "--temperature", "0"]
+    command = [
+        str(CLI),
+        "--model",
+        model,
+        "--prompt",
+        prompt,
+        "--max-new",
+        str(max_new),
+        "--temperature",
+        "0",
+    ]
     if prefill_chunk is not None:
         command += ["--prefill-chunk", str(prefill_chunk)]
     code, out, err = run(command, env=env, timeout=3600)
@@ -269,24 +301,27 @@ def measure_generation(model: str, prompt: str, max_new: int,
     weights = ROOT / model / "model_weights.bin"
     weight_bytes = weights.stat().st_size if weights.exists() else 0
     prefill_seconds = measured["prefill_seconds"]
-    measured.update({
-        "prefill_tokens_per_second":
-            prefill_tokens / prefill_seconds if prefill_seconds else 0.0,
-        # The first generated token is sampled at the end of prefill, so the
-        # prompt's processing time is the time to first token.
-        "ttft_seconds": prefill_seconds,
-        "total_seconds": prefill_seconds + decode_seconds,
-        "weight_bytes": weight_bytes,
-        # Every token re-reads the weight set, so the bandwidth is the weight
-        # bytes times the tokens decoded, over the decode wall time.
-        "effective_decode_gbps":
-            weight_bytes * measured["decode_tokens"] / decode_seconds / 1e9
-            if decode_seconds else 0.0,
-        "response": text,
-        "response_sha256": hashlib.sha256(text.encode()).hexdigest(),
-        "response_characters": len(text),
-        "response_tokens": measured["decode_tokens"],
-    })
+    measured.update(
+        {
+            "prefill_tokens_per_second": prefill_tokens / prefill_seconds
+            if prefill_seconds
+            else 0.0,
+            # The first generated token is sampled at the end of prefill, so the
+            # prompt's processing time is the time to first token.
+            "ttft_seconds": prefill_seconds,
+            "total_seconds": prefill_seconds + decode_seconds,
+            "weight_bytes": weight_bytes,
+            # Every token re-reads the weight set, so the bandwidth is the weight
+            # bytes times the tokens decoded, over the decode wall time.
+            "effective_decode_gbps": weight_bytes * measured["decode_tokens"] / decode_seconds / 1e9
+            if decode_seconds
+            else 0.0,
+            "response": text,
+            "response_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "response_characters": len(text),
+            "response_tokens": measured["decode_tokens"],
+        }
+    )
     if ane:
         # A prefill chunk sweeps the whole weight set -- 4,096 tokens at top-8
         # touch every routed expert -- so the traffic is the model's declared
@@ -299,8 +334,8 @@ def measure_generation(model: str, prompt: str, max_new: int,
         measured["chunks"] = chunks
         measured["model_total_bytes"] = total_bytes
         measured["effective_prefill_gbps"] = (
-            total_bytes * chunks / prefill_seconds / 1e9
-            if prefill_seconds else 0.0)
+            total_bytes * chunks / prefill_seconds / 1e9 if prefill_seconds else 0.0
+        )
         # A fallback line means the number is the GPU's, under an ANE label.
         # Say so rather than record it as an ANE result.
         measured["used_ane"], fallback = ane_usage(err)
@@ -314,7 +349,7 @@ def quality(measured: dict) -> dict:
     lowered = text.lower()
     present = [word for word in QUALITY_KEYWORDS if word in lowered]
     words = re.findall(r"[a-z0-9+]+", lowered)
-    trigrams = [tuple(words[i:i + 3]) for i in range(max(0, len(words) - 2))]
+    trigrams = [tuple(words[i : i + 3]) for i in range(max(0, len(words) - 2))]
     unique = len(set(trigrams))
     repetition = 1.0 - (unique / len(trigrams)) if trigrams else 0.0
     return {
@@ -329,8 +364,7 @@ def quality(measured: dict) -> dict:
 def environment() -> dict:
     _, swift, _ = run(["swift", "--version"], timeout=60)
     return {
-        "recorded_at": datetime.datetime.now(datetime.timezone.utc)
-            .isoformat(timespec="seconds"),
+        "recorded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "git_commit": git("rev-parse", "--short", "HEAD"),
         "git_describe": git("describe", "--tags", "--always", "--dirty"),
         "macos": platform.mac_ver()[0],
@@ -340,8 +374,7 @@ def environment() -> dict:
     }
 
 
-def measure(model: str, prompt: str, max_new: int,
-            iterations: int) -> dict:
+def measure(model: str, prompt: str, max_new: int, iterations: int) -> dict:
     print(f"measuring kernels ({iterations} iterations each)...", flush=True)
     gpu = {
         "qkv_gemv": measure_kernel("baseline", iterations),
@@ -370,34 +403,36 @@ def measure(model: str, prompt: str, max_new: int,
             # measurement reads as a ~44% regression against a warm one and
             # would block a release that changed nothing. Warm it first and say
             # the run was warmed.
-            print("  the ANE compile cache is cold; warming it first so the "
-                  "number is comparable", file=sys.stderr, flush=True)
-            measure_generation(model, ane_prompt(), 1, ane=True,
-                               prefill_chunk=ANE_PREFILL_CHUNK)
-        ane = measure_generation(model, ane_prompt(), 1, ane=True,
-                                 prefill_chunk=ANE_PREFILL_CHUNK)
+            print(
+                "  the ANE compile cache is cold; warming it first so the number is comparable",
+                file=sys.stderr,
+                flush=True,
+            )
+            measure_generation(model, ane_prompt(), 1, ane=True, prefill_chunk=ANE_PREFILL_CHUNK)
+        ane = measure_generation(model, ane_prompt(), 1, ane=True, prefill_chunk=ANE_PREFILL_CHUNK)
         ane["cache_was_warm"] = warm
         ane["applicable"] = "error" not in ane and ane.get("used_ane", False)
         if "error" not in ane and not ane.get("used_ane", False):
-            ane["reason"] = ("the runtime did not route the chunk to the ANE: "
-                             + ane.get("fallback_reason", ""))
+            ane["reason"] = "the runtime did not route the chunk to the ANE: " + ane.get(
+                "fallback_reason", ""
+            )
     else:
-        ane = {"applicable": False,
-               "reason": missing_ane_reason(model, family)}
+        ane = {"applicable": False, "reason": missing_ane_reason(model, family)}
 
     env = environment()
     try:
         env["physical_memory_bytes"] = int(
-            subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True,
-                           text=True, timeout=30).stdout.strip())
+            subprocess.run(
+                ["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=30
+            ).stdout.strip()
+        )
     except Exception:
         pass
 
     return {
         "schema": 1,
         "environment": env,
-        "model": {"path": model, "family": family, "prompt": prompt,
-                  "max_new_tokens": max_new},
+        "model": {"path": model, "family": family, "prompt": prompt, "max_new_tokens": max_new},
         "gpu": gpu,
         "cpu": cpu,
         "generation": generation,
@@ -434,22 +469,25 @@ def compare(baseline: dict, candidate: dict, threshold: float) -> bool:
         status = "regressed" if regressed else "ok"
         if regressed:
             ok = False
-        print(f"{metric:<44} {before:>12.3f} {after:>12.3f} "
-              f"{delta:>8.1f}%  {status}")
+        print(f"{metric:<44} {before:>12.3f} {after:>12.3f} {delta:>8.1f}%  {status}")
 
     base_quality = baseline.get("quality", {})
     now_quality = candidate.get("quality", {})
     base_cov = base_quality.get("keyword_coverage")
     now_cov = now_quality.get("keyword_coverage")
     if isinstance(base_cov, (int, float)) and isinstance(now_cov, (int, float)):
-        print(f"{'quality.keyword_coverage':<44} {base_cov:>12.3f} "
-              f"{now_cov:>12.3f} {(now_cov - base_cov) * 100:>8.1f}%  "
-              f"{'ok' if now_cov >= base_cov - 0.01 else 'dropped'}")
+        print(
+            f"{'quality.keyword_coverage':<44} {base_cov:>12.3f} "
+            f"{now_cov:>12.3f} {(now_cov - base_cov) * 100:>8.1f}%  "
+            f"{'ok' if now_cov >= base_cov - 0.01 else 'dropped'}"
+        )
         if now_cov < base_cov - 0.01:
             ok = False
     if base_quality.get("response_sha256") != now_quality.get("response_sha256"):
-        print("note: the greedy response changed; review the recorded text "
-              "before treating the numbers as comparable")
+        print(
+            "note: the greedy response changed; review the recorded text "
+            "before treating the numbers as comparable"
+        )
     return ok
 
 
@@ -466,8 +504,7 @@ def default_label(describe: str, model: str) -> str:
     return f"{describe}-{pathlib.Path(model).name}"
 
 
-def newest_baseline(out: pathlib.Path, model: str,
-                    prompt: str) -> str | None:
+def newest_baseline(out: pathlib.Path, model: str, prompt: str) -> str | None:
     """The newest previous record for the same model and prompt.
 
     Records are separate files per model (only a qwen36 install can have an ANE
@@ -510,9 +547,11 @@ def main() -> int:
 
     record = measure(args.model, args.prompt, args.max_new, args.iterations)
     RESULTS.mkdir(parents=True, exist_ok=True)
-    label = (args.label
-             or default_label(record["environment"]["git_describe"], args.model)
-             or "unlabeled")
+    label = (
+        args.label
+        or default_label(record["environment"]["git_describe"], args.model)
+        or "unlabeled"
+    )
     out = RESULTS / f"{label}.json"
     out.write_text(json.dumps(record, indent=2) + "\n")
     print(f"wrote {out.relative_to(ROOT)}")
@@ -521,16 +560,22 @@ def main() -> int:
     if "error" in generation:
         print(f"generation FAILED: {generation['error']}", file=sys.stderr)
         return 1
-    print(f"  prefill {generation['prefill_tokens_per_second']:.1f} tok/s, "
-          f"decode {generation['decode_tokens_per_second']:.1f} tok/s, "
-          f"ttft {generation['ttft_seconds']:.2f}s, "
-          f"effective decode {generation['effective_decode_gbps']:.1f} GB/s")
-    print(f"  gpu qkv {record['gpu']['qkv_gemv_gbps']} GB/s, "
-          f"moe {record['gpu']['routed_moe_gbps']} GB/s, "
-          f"gdn {record['gpu']['gdn_inproj_gbps']} GB/s; "
-          f"cpu best {record['cpu'].get('best_gbps')} GB/s")
-    print(f"  quality coverage {record['quality']['keyword_coverage']:.2f}, "
-          f"trigram repetition {record['quality']['trigram_repetition']:.2f}")
+    print(
+        f"  prefill {generation['prefill_tokens_per_second']:.1f} tok/s, "
+        f"decode {generation['decode_tokens_per_second']:.1f} tok/s, "
+        f"ttft {generation['ttft_seconds']:.2f}s, "
+        f"effective decode {generation['effective_decode_gbps']:.1f} GB/s"
+    )
+    print(
+        f"  gpu qkv {record['gpu']['qkv_gemv_gbps']} GB/s, "
+        f"moe {record['gpu']['routed_moe_gbps']} GB/s, "
+        f"gdn {record['gpu']['gdn_inproj_gbps']} GB/s; "
+        f"cpu best {record['cpu'].get('best_gbps')} GB/s"
+    )
+    print(
+        f"  quality coverage {record['quality']['keyword_coverage']:.2f}, "
+        f"trigram repetition {record['quality']['trigram_repetition']:.2f}"
+    )
 
     baseline_path = args.baseline
     if baseline_path is None:
@@ -539,11 +584,16 @@ def main() -> int:
         # file, and never against a different model's numbers.
         baseline_path = newest_baseline(out, args.model, args.prompt)
         if baseline_path:
-            print(f"comparing against the newest previous record for this "
-                  f"model and prompt: {baseline_path}")
+            print(
+                f"comparing against the newest previous record for this "
+                f"model and prompt: {baseline_path}"
+            )
         else:
-            print(f"no previous record for {args.model} on this prompt; this "
-                  f"is the first, so there is nothing to compare", file=sys.stderr)
+            print(
+                f"no previous record for {args.model} on this prompt; this "
+                f"is the first, so there is nothing to compare",
+                file=sys.stderr,
+            )
     if baseline_path:
         baseline = json.load(open(baseline_path))
         print()

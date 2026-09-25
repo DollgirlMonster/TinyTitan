@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Testing
+
 @testable import TinyTitanRepackCore
 
 @Suite
@@ -30,7 +31,7 @@ struct QwenRepackPlannerTests {
         #expect(arch.partialRotaryFactor == 0.25)
         #expect(arch.finalLogitSoftcap == 0.0)
         #expect(arch.attnOutputGate == true)
-        #expect(arch.attentionScale == 0.125)   // 64^-0.5
+        #expect(arch.attentionScale == 0.125)  // 64^-0.5
         #expect(arch.embeddingScaledBySqrtHidden == false)
         #expect(arch.routerScaled == false)
         #expect(arch.ffnSandwichNorms == false)
@@ -56,7 +57,7 @@ struct QwenRepackPlannerTests {
         #expect(arch.vocabSize == 248_320)
         #expect(arch.numExperts == 256)
         #expect(arch.topKExperts == 8)
-        #expect(arch.attentionScale == 0.0625) // 256^-0.5
+        #expect(arch.attentionScale == 0.0625)  // 256^-0.5
         #expect(arch.linearNumKHeads == 16)
         #expect(arch.linearNumVHeads == 32)
         #expect(arch.linearKeyHeadDim == 128)
@@ -73,16 +74,18 @@ struct QwenRepackPlannerTests {
         let root = temporaryRoot("ornith-prod")
         defer { try? FileManager.default.removeItem(atPath: root) }
         let configPath = (root as NSString).appendingPathComponent("config.json")
-        try writeProductionConfig(to: configPath, mutate: { tc in
-            tc["pad_token_id"] = 248_044
-            tc["router_aux_loss_coef"] = 0.0
-            tc["use_cache"] = false
-            tc["rope_parameters"] = [
-                "rope_theta": 10_000_000.0,
-                "type": "default",
-                "partial_rotary_factor": 0.25,
-            ]
-        })
+        try writeProductionConfig(
+            to: configPath,
+            mutate: { tc in
+                tc["pad_token_id"] = 248_044
+                tc["router_aux_loss_coef"] = 0.0
+                tc["use_cache"] = false
+                tc["rope_parameters"] = [
+                    "rope_theta": 10_000_000.0,
+                    "type": "default",
+                    "partial_rotary_factor": 0.25,
+                ]
+            })
 
         let arch = try ArchInfo.load(configPath: configPath)
         #expect(arch.family == .qwen36)
@@ -97,9 +100,11 @@ struct QwenRepackPlannerTests {
         let root = temporaryRoot("qwen-prod-bad")
         defer { try? FileManager.default.removeItem(atPath: root) }
         let configPath = (root as NSString).appendingPathComponent("config.json")
-        try writeProductionConfig(to: configPath, mutate: { tc in
-            tc["num_attention_heads"] = 8
-        })
+        try writeProductionConfig(
+            to: configPath,
+            mutate: { tc in
+                tc["num_attention_heads"] = 8
+            })
 
         #expect(throws: RepackError.self) {
             _ = try ArchInfo.load(configPath: configPath)
@@ -107,27 +112,39 @@ struct QwenRepackPlannerTests {
     }
 
     @Test func qwenSourceFingerprintIsKnown() {
-        #expect(SourceFingerprint.modelID(forIndexSha256:
-            "0b28df60e33753a14e816d3b31577ae2c93884c58430a4a6de6ae9ea483842ea")
-            == "qwen3.6-35b-a3b-4bit")
+        #expect(
+            SourceFingerprint.modelID(
+                forIndexSha256:
+                    "0b28df60e33753a14e816d3b31577ae2c93884c58430a4a6de6ae9ea483842ea")
+                == "qwen3.6-35b-a3b-4bit")
         // 6-bit was withdrawn, so its fingerprint no longer resolves. Asserting
         // nil keeps the removal honest: a source quietly reappearing would fail
         // here rather than shipping an unsupported quantization.
-        #expect(SourceFingerprint.modelID(forIndexSha256:
-            "eaea194dfb961e6a5215dcc6e4dd42d0df6efe8d8686161f2dd00634e0ef43fb")
-            == nil)
-        #expect(SourceFingerprint.modelID(forIndexSha256:
-            "3db12edeebeb65cab9a6eeb63cd74be4e0c74139a75f672701290b98230501cf")
-            == "qwen3.6-35b-a3b-8bit")
-        #expect(SourceFingerprint.modelID(forIndexSha256:
-            "00e220ddb21ceeb6290a3a1161f97339c553f3d27fc4319900a96edb5cfae74c")
-            == "qwen3.6-35b-a3b-mtp-4bit")
-        #expect(SourceFingerprint.modelID(forIndexSha256:
-            "c118f13c0dcb729e4ca2e3d653ab193067551eb1a6410badb5192eb426104f36")
-            == "ornith-1.5-35b-a3b-4bit")
-        #expect(SourceFingerprint.modelID(forIndexSha256:
-            "83c641a791aa957df7d280eef1b0c8faf7a2ec9b19dd3355fb13abae8ae0ed15")
-            == "ornith-1.5-35b-a3b-8bit")
+        #expect(
+            SourceFingerprint.modelID(
+                forIndexSha256:
+                    "eaea194dfb961e6a5215dcc6e4dd42d0df6efe8d8686161f2dd00634e0ef43fb")
+                == nil)
+        #expect(
+            SourceFingerprint.modelID(
+                forIndexSha256:
+                    "3db12edeebeb65cab9a6eeb63cd74be4e0c74139a75f672701290b98230501cf")
+                == "qwen3.6-35b-a3b-8bit")
+        #expect(
+            SourceFingerprint.modelID(
+                forIndexSha256:
+                    "00e220ddb21ceeb6290a3a1161f97339c553f3d27fc4319900a96edb5cfae74c")
+                == "qwen3.6-35b-a3b-mtp-4bit")
+        #expect(
+            SourceFingerprint.modelID(
+                forIndexSha256:
+                    "c118f13c0dcb729e4ca2e3d653ab193067551eb1a6410badb5192eb426104f36")
+                == "ornith-1.5-35b-a3b-4bit")
+        #expect(
+            SourceFingerprint.modelID(
+                forIndexSha256:
+                    "83c641a791aa957df7d280eef1b0c8faf7a2ec9b19dd3355fb13abae8ae0ed15")
+                == "ornith-1.5-35b-a3b-8bit")
     }
 
     @Test func ornithSourcesArePinnedAndSixBitRemainsUnsupported() {
@@ -135,14 +152,18 @@ struct QwenRepackPlannerTests {
         #expect(SupportedModelSource.named("ornith15") == .ornith15)
         #expect(SupportedModelSource.named("ornith15-8bit") == .ornith15_8bit)
         #expect(SupportedModelSource.named("ornith15-6bit") == nil)
-        #expect(SupportedModelSource.ornith15.repoID
-            == "ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit")
-        #expect(SupportedModelSource.ornith15_8bit.repoID
-            == "ornith-ai/Ornith-1.5-35B-A3B-MLX-8bit")
-        #expect(Set(SupportedModelSource.all.map(\.name)).count
-            == SupportedModelSource.all.count)
-        #expect(Set(SupportedModelSource.all.map(\.modelID)).count
-            == SupportedModelSource.all.count)
+        #expect(
+            SupportedModelSource.ornith15.repoID
+                == "ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit")
+        #expect(
+            SupportedModelSource.ornith15_8bit.repoID
+                == "ornith-ai/Ornith-1.5-35B-A3B-MLX-8bit")
+        #expect(
+            Set(SupportedModelSource.all.map(\.name)).count
+                == SupportedModelSource.all.count)
+        #expect(
+            Set(SupportedModelSource.all.map(\.modelID)).count
+                == SupportedModelSource.all.count)
         // Two sources may share an index digest: Qwen3.8-Flash-Next ships its
         // MTP draft inside the target's own repository, so the pair differ by
         // which namespace they claim rather than by where they come from.
@@ -152,8 +173,9 @@ struct QwenRepackPlannerTests {
             "\($0.sourceIndexSHA256)|\($0.installsDraftHead)"
         }
         #expect(Set(pins).count == SupportedModelSource.all.count)
-        #expect(SupportedModelSource.qwen38flashMTP.repoID
-            == SupportedModelSource.qwen38flash.repoID)
+        #expect(
+            SupportedModelSource.qwen38flashMTP.repoID
+                == SupportedModelSource.qwen38flash.repoID)
         #expect(SupportedModelSource.qwen38flashMTP.installsDraftHead)
         #expect(!SupportedModelSource.qwen38flash.installsDraftHead)
     }
@@ -162,68 +184,94 @@ struct QwenRepackPlannerTests {
         let family = RepackModelFamily.qwen38flashMTP
         // Only `mtp.*` belongs to this install; the target's own namespace is
         // a different install from the same repository.
-        #expect(RepackPlanner.classify("model.language_model.layers.0.mlp.gate.weight",
-                                       numLayers: 1, family: family)
+        #expect(
+            RepackPlanner.classify(
+                "model.language_model.layers.0.mlp.gate.weight",
+                numLayers: 1, family: family)
                 == .excludedSidecar)
-        #expect(RepackPlanner.classify("mtp.fc_hidden.weight",
-                                       numLayers: 1, family: family) == .lmResident)
-        #expect(RepackPlanner.classify("mtp.pre_fc_norm_hidden",
-                                       numLayers: 1, family: family) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "mtp.fc_hidden.weight",
+                numLayers: 1, family: family) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "mtp.pre_fc_norm_hidden",
+                numLayers: 1, family: family) == .lmResident)
         // The draft's own 512 experts are streamed like any other layer's.
-        #expect(RepackPlanner.classify(
-            "mtp.layers.0.mlp.switch_mlp.gate_proj.weight",
-            numLayers: 1, family: family)
-            == .routedExpert(role: "gate", layer: 0))
+        #expect(
+            RepackPlanner.classify(
+                "mtp.layers.0.mlp.switch_mlp.gate_proj.weight",
+                numLayers: 1, family: family)
+                == .routedExpert(role: "gate", layer: 0))
     }
 
     @Test func mtpClassificationKeepsOnlyAdapterAndOneDecoderLayer() {
         let family = RepackModelFamily.qwen36MTP
-        #expect(RepackPlanner.classify("fc.weight", numLayers: 1,
-                                      family: family) == .lmResident)
-        #expect(RepackPlanner.classify("pre_fc_norm_hidden.weight", numLayers: 1,
-                                      family: family) == .lmResident)
-        #expect(RepackPlanner.classify("norm.weight", numLayers: 1,
-                                      family: family) == .lmResident)
-        #expect(RepackPlanner.classify(
-            "layers.0.mlp.switch_mlp.gate_proj.weight",
-            numLayers: 1, family: family)
-            == .routedExpert(role: "gate", layer: 0))
-        #expect(RepackPlanner.classify("embed_tokens.weight", numLayers: 1,
-                                      family: family) == .unknown)
-        #expect(RepackPlanner.classify("lm_head.weight", numLayers: 1,
-                                      family: family) == .unknown)
+        #expect(
+            RepackPlanner.classify(
+                "fc.weight", numLayers: 1,
+                family: family) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "pre_fc_norm_hidden.weight", numLayers: 1,
+                family: family) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "norm.weight", numLayers: 1,
+                family: family) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "layers.0.mlp.switch_mlp.gate_proj.weight",
+                numLayers: 1, family: family)
+                == .routedExpert(role: "gate", layer: 0))
+        #expect(
+            RepackPlanner.classify(
+                "embed_tokens.weight", numLayers: 1,
+                family: family) == .unknown)
+        #expect(
+            RepackPlanner.classify(
+                "lm_head.weight", numLayers: 1,
+                family: family) == .unknown)
     }
 
     @Test func qwenClassificationBucketsNames() {
         let f = RepackModelFamily.qwen36
-        #expect(RepackPlanner.classify(
-            "language_model.model.layers.1.mlp.switch_mlp.gate_proj.weight",
-            numLayers: 4, family: f)
-            == .routedExpert(role: "gate", layer: 1))
-        #expect(RepackPlanner.classify(
-            "language_model.model.layers.2.mlp.switch_mlp.down_proj.weight",
-            numLayers: 4, family: f)
-            == .routedExpert(role: "down", layer: 2))
+        #expect(
+            RepackPlanner.classify(
+                "language_model.model.layers.1.mlp.switch_mlp.gate_proj.weight",
+                numLayers: 4, family: f)
+                == .routedExpert(role: "gate", layer: 1))
+        #expect(
+            RepackPlanner.classify(
+                "language_model.model.layers.2.mlp.switch_mlp.down_proj.weight",
+                numLayers: 4, family: f)
+                == .routedExpert(role: "down", layer: 2))
         // The shared expert and its gate stay resident.
-        #expect(RepackPlanner.classify(
-            "language_model.model.layers.0.mlp.shared_expert.gate_proj.weight",
-            numLayers: 4, family: f) == .lmResident)
-        #expect(RepackPlanner.classify(
-            "language_model.model.layers.0.mlp.shared_expert_gate.weight",
-            numLayers: 4, family: f) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "language_model.model.layers.0.mlp.shared_expert.gate_proj.weight",
+                numLayers: 4, family: f) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "language_model.model.layers.0.mlp.shared_expert_gate.weight",
+                numLayers: 4, family: f) == .lmResident)
         // Untied head and the DeltaNet bundle are resident.
-        #expect(RepackPlanner.classify(
-            "language_model.lm_head.weight", numLayers: 4, family: f) == .lmResident)
-        #expect(RepackPlanner.classify(
-            "language_model.model.layers.0.linear_attn.conv1d.weight",
-            numLayers: 4, family: f) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "language_model.lm_head.weight", numLayers: 4, family: f) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "language_model.model.layers.0.linear_attn.conv1d.weight",
+                numLayers: 4, family: f) == .lmResident)
         // Vision is excluded; unknown prefixes stay unknown.
-        #expect(RepackPlanner.classify(
-            "vision_tower.blocks.0.norm1.weight", numLayers: 4, family: f)
-            == .excludedMultimodal)
-        #expect(RepackPlanner.classify(
-            "model.layers.0.mlp.switch_mlp.gate_proj.weight",
-            numLayers: 4, family: f) == .unknown)
+        #expect(
+            RepackPlanner.classify(
+                "vision_tower.blocks.0.norm1.weight", numLayers: 4, family: f)
+                == .excludedMultimodal)
+        #expect(
+            RepackPlanner.classify(
+                "model.layers.0.mlp.switch_mlp.gate_proj.weight",
+                numLayers: 4, family: f) == .unknown)
     }
 
     @Test func qwenPlanOrdersResidentsAndSlicesExperts() throws {
@@ -287,20 +335,24 @@ struct QwenRepackPlannerTests {
         #expect(Array(layer3.prefix(6)) == expectedLayer3Prefix)
 
         // conv1d/A_log/dt_bias/norm stay unquantized BF16 without companions.
-        for suffix in ["linear_attn.conv1d.weight", "linear_attn.A_log",
-                       "linear_attn.dt_bias", "linear_attn.norm.weight"] {
-            let entry = try #require(plan.resident.entries.first {
-                $0.name == "language_model.model.layers.0." + suffix
-            })
+        for suffix in [
+            "linear_attn.conv1d.weight", "linear_attn.A_log",
+            "linear_attn.dt_bias", "linear_attn.norm.weight",
+        ] {
+            let entry = try #require(
+                plan.resident.entries.first {
+                    $0.name == "language_model.model.layers.0." + suffix
+                })
             #expect(entry.dtype == 1)
             #expect(entry.quantSpec == nil)
             #expect(entry.sourceScales == nil)
             #expect(entry.sourceBiases == nil)
         }
         // The fused qkv projection is a quantized U32 entry with companions.
-        let qkv = try #require(plan.resident.entries.first {
-            $0.name == "language_model.model.layers.0.linear_attn.in_proj_qkv.weight"
-        })
+        let qkv = try #require(
+            plan.resident.entries.first {
+                $0.name == "language_model.model.layers.0.linear_attn.in_proj_qkv.weight"
+            })
         #expect(qkv.dtype == 0)
         #expect(qkv.quantSpec?.bits == 4)
         #expect(qkv.sourceScales != nil)
@@ -313,18 +365,20 @@ struct QwenRepackPlannerTests {
             #expect(lp.subTensors.count == 9)
             #expect(lp.expertStride % 16_384 == 0)
             let order = lp.subTensors.map { "\($0.role).\($0.component)" }
-            #expect(order == [
-                "gate.weights", "gate.scales", "gate.biases",
-                "up.weights", "up.scales", "up.biases",
-                "down.weights", "down.scales", "down.biases",
-            ])
+            #expect(
+                order == [
+                    "gate.weights", "gate.scales", "gate.biases",
+                    "up.weights", "up.scales", "up.biases",
+                    "down.weights", "down.scales", "down.biases",
+                ])
         }
 
         // Vision-tower tensors are dropped, not planned.
-        #expect(plan.excludedMultimodalTensorNames.sorted() == [
-            "vision_tower.blocks.0.norm1.weight",
-            "vision_tower.patch_embed.proj.weight",
-        ])
+        #expect(
+            plan.excludedMultimodalTensorNames.sorted() == [
+                "vision_tower.blocks.0.norm1.weight",
+                "vision_tower.patch_embed.proj.weight",
+            ])
         #expect(!names.contains { $0.hasPrefix("vision_tower.") })
     }
 
@@ -359,8 +413,9 @@ struct QwenRepackPlannerTests {
             bitWidths: GTurboJSON.QuantBitWidths(
                 embedding: 4, attention: 4, router: 8,
                 sharedExpert: 8, routedExpert: 4))
-        let obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-        let archDict = obj["arch"] as! [String: Any]
+        let obj = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let archDict = try #require(obj["arch"] as? [String: Any])
         // Family extension fields are always present for the Qwen families
         // and must round-trip the values `ArchInfo.load` derived.
         #expect(archDict["family"] as? String == "qwen36")
@@ -383,7 +438,8 @@ struct QwenRepackPlannerTests {
 
     private func writeProductionConfig(
         to path: String,
-        mutate: (inout [String: Any]) -> Void) throws {
+        mutate: (inout [String: Any]) -> Void
+    ) throws {
         var layerTypes: [String] = []
         for i in 0..<40 {
             layerTypes.append((i + 1) % 4 == 0 ? "full_attention" : "linear_attention")
@@ -403,7 +459,7 @@ struct QwenRepackPlannerTests {
             "rope_parameters": [
                 "rope_theta": 10_000_000.0,
                 "rope_type": "default",
-                "partial_rotary_factor": 0.25
+                "partial_rotary_factor": 0.25,
             ],
             "linear_num_key_heads": 16,
             "linear_num_value_heads": 32,
@@ -413,14 +469,14 @@ struct QwenRepackPlannerTests {
             "attn_output_gate": true,
             "tie_word_embeddings": false,
             "rms_norm_eps": 1e-6,
-            "hidden_act": "silu"
+            "hidden_act": "silu",
         ]
         mutate(&tc)
         let config: [String: Any] = [
             "architectures": ["Qwen3_5MoeForConditionalGeneration"],
             "model_type": "qwen3_5_moe",
             "quantization": ["bits": 4, "group_size": 64, "mode": "affine"],
-            "text_config": tc
+            "text_config": tc,
         ]
         let data = try JSONSerialization.data(withJSONObject: config, options: [.sortedKeys])
         try data.write(to: URL(fileURLWithPath: path))
@@ -439,22 +495,24 @@ struct QwenRepackPlannerTests {
         let fd = try Posix.openRead(path)
         defer { close(fd) }
         var headerSize: UInt64 = 0
-        try withUnsafeMutableBytes(of: &headerSize) {
+        try withUnsafeMutableBytes(of: &headerSize) { buffer in
+            let base = try #require(buffer.baseAddress)
             try Posix.preadAll(
                 fd: fd,
                 path: path,
-                buf: $0.baseAddress!,
+                buf: base,
                 count: 8,
                 offset: 0)
         }
         headerSize = UInt64(littleEndian: headerSize)
         var headerData = Data(count: Int(headerSize))
-        try headerData.withUnsafeMutableBytes {
+        try headerData.withUnsafeMutableBytes { buffer in
+            let base = try #require(buffer.baseAddress)
             try Posix.preadAll(
                 fd: fd,
                 path: path,
-                buf: $0.baseAddress!,
-                count: $0.count,
+                buf: base,
+                count: buffer.count,
                 offset: 8)
         }
         return try Safetensors.parseHeaderBytes(

@@ -20,6 +20,7 @@ holder, or ask about the value through the key.
 Only an authored set can do this — the book's records have no questions
 attached — so every case is marked as such.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,18 +53,42 @@ BIBLE = tasks.BIBLE
 # are excluded from the totals for the same reason the model was right to
 # refuse them.
 QUESTIONS = [
-    ("Does it ever rain in this town?", "rules/weather",
-     "the answer is in the value, and 'town' points at another fact", True),
-    ("How often does the boat cross the water?", "rules/ferry",
-     "no word in common with the fact", True),
-    ("Who keeps the town's records?", "characters/ines/role",
-     "'town' gives a different fact the higher score", True),
-    ("What colour are Marcus's eyes?", "characters/marcus/eyes",
-     "the control: the token rank should win this one", True),
-    ("What does Marcus do for a living?", "characters/marcus/role",
-     "the label does not hold: the fact is not about his work", False),
-    ("What is Marcus's family?", "characters/marcus/role",
-     "the label does not hold: the fact says whose son he is", False),
+    (
+        "Does it ever rain in this town?",
+        "rules/weather",
+        "the answer is in the value, and 'town' points at another fact",
+        True,
+    ),
+    (
+        "How often does the boat cross the water?",
+        "rules/ferry",
+        "no word in common with the fact",
+        True,
+    ),
+    (
+        "Who keeps the town's records?",
+        "characters/ines/role",
+        "'town' gives a different fact the higher score",
+        True,
+    ),
+    (
+        "What colour are Marcus's eyes?",
+        "characters/marcus/eyes",
+        "the control: the token rank should win this one",
+        True,
+    ),
+    (
+        "What does Marcus do for a living?",
+        "characters/marcus/role",
+        "the label does not hold: the fact is not about his work",
+        False,
+    ),
+    (
+        "What is Marcus's family?",
+        "characters/marcus/role",
+        "the label does not hold: the fact says whose son he is",
+        False,
+    ),
 ]
 
 
@@ -82,8 +107,7 @@ def deterministic_rank(question: str) -> list[str]:
     """
     terms = terms_of(question)
     haystacks = {key: (key + " " + value).lower() for key, value in BIBLE.items()}
-    frequency = {term: sum(1 for text in haystacks.values() if term in text)
-                 for term in terms}
+    frequency = {term: sum(1 for text in haystacks.values() if term in text) for term in terms}
     documents = max(1, len(BIBLE))
     scored = []
     for key, value in BIBLE.items():
@@ -111,7 +135,9 @@ def cases() -> list[dict]:
                 "T7",
                 f"QUESTION: {question}\nFACT: {key} = {value}\nCould this fact answer it?",
                 "YES" if key == target else "NO",
-                f"{target} <- {why}", authored=True)
+                f"{target} <- {why}",
+                authored=True,
+            )
             job["question"] = question
             job["target"] = target
             job["fact"] = key
@@ -145,12 +171,15 @@ def score(path: Path) -> int:
         group = by_question.get(question)
         if not group:
             continue
-        yes = {row["fact"]: (row.get("completion") or "").strip().upper().startswith("YES")
-               for row in group}
+        yes = {
+            row["fact"]: (row.get("completion") or "").strip().upper().startswith("YES")
+            for row in group
+        }
         # T7 first: the facts it says could answer, then the rest, each block in
         # the store's own order.
-        t7_rank = [key for key in BIBLE if yes.get(key)] + \
-                  [key for key in BIBLE if not yes.get(key)]
+        t7_rank = [key for key in BIBLE if yes.get(key)] + [
+            key for key in BIBLE if not yes.get(key)
+        ]
         det_rank = deterministic_rank(question)
         if fair:
             fair_total += 1
@@ -158,13 +187,17 @@ def score(path: Path) -> int:
                 det_hits[k] += recall(det_rank, target, k)
                 t7_hits[k] += recall(t7_rank, target, k)
         mark = "" if fair else "  (label does not hold, not counted)"
-        print(f"{question[:44]:46s} "
-              f"{'hit' if recall(det_rank, target, 1) else '-':6s} "
-              f"{'hit' if recall(det_rank, target, 3) else '-':6s} "
-              f"{'hit' if recall(t7_rank, target, 1) else '-':6s} "
-              f"{'hit' if recall(t7_rank, target, 3) else '-':6s}{mark}")
+        print(
+            f"{question[:44]:46s} "
+            f"{'hit' if recall(det_rank, target, 1) else '-':6s} "
+            f"{'hit' if recall(det_rank, target, 3) else '-':6s} "
+            f"{'hit' if recall(t7_rank, target, 1) else '-':6s} "
+            f"{'hit' if recall(t7_rank, target, 3) else '-':6s}{mark}"
+        )
     print()
-    print(f"token ranking: recall@1 {det_hits[1]}/{fair_total}  recall@3 {det_hits[3]}/{fair_total}")
+    print(
+        f"token ranking: recall@1 {det_hits[1]}/{fair_total}  recall@3 {det_hits[3]}/{fair_total}"
+    )
     print(f"side-engine:   recall@1 {t7_hits[1]}/{fair_total}  recall@3 {t7_hits[3]}/{fair_total}")
     return 0
 
@@ -204,24 +237,30 @@ def baseline() -> int:
             rank = deterministic_rank(question)
             for k in (1, 3):
                 hits[k] += recall(rank, target, k)
-        print(f"{name:13s} n={len(cases):3d}  recall@1 {hits[1]}/{len(cases)}  "
-              f"recall@3 {hits[3]}/{len(cases)}")
-    print("\nmechanical = the question uses the key's own words; paraphrased = it "
-          "does not.")
+        print(
+            f"{name:13s} n={len(cases):3d}  recall@1 {hits[1]}/{len(cases)}  "
+            f"recall@3 {hits[3]}/{len(cases)}"
+        )
+    print("\nmechanical = the question uses the key's own words; paraphrased = it does not.")
     print("\nparaphrased, question by question — is the miss even lexical?")
     reachable = 0
     for question, target in paraphrased:
         rank = deterministic_rank(question)
         lexical = shares_stem(question, target, BIBLE[target])
         reachable += lexical
-        print(f"  {'hit ' if target in rank[:1] else 'MISS'} "
-              f"lexical={'yes' if lexical else 'no ':3s} top3={rank[:3]}")
+        print(
+            f"  {'hit ' if target in rank[:1] else 'MISS'} "
+            f"lexical={'yes' if lexical else 'no ':3s} top3={rank[:3]}"
+        )
         print(f"       {question}  ->  {target}")
-    misses = sum(1 for question, target in paraphrased
-                 if target not in deterministic_rank(question)[:1])
-    print(f"\n{misses} of {len(paraphrased)} missed at rank 1; "
-          f"{reachable} of them share a stem with the fact, so at most those are "
-          "reachable by stemming or a longer term list.")
+    misses = sum(
+        1 for question, target in paraphrased if target not in deterministic_rank(question)[:1]
+    )
+    print(
+        f"\n{misses} of {len(paraphrased)} missed at rank 1; "
+        f"{reachable} of them share a stem with the fact, so at most those are "
+        "reachable by stemming or a longer term list."
+    )
     return 0
 
 
@@ -229,8 +268,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prepare", type=Path)
     ap.add_argument("--score", type=Path)
-    ap.add_argument("--baseline", action="store_true",
-                    help="score the token ranking alone, no model")
+    ap.add_argument(
+        "--baseline", action="store_true", help="score the token ranking alone, no model"
+    )
     args = ap.parse_args()
     if args.prepare:
         return prepare(args.prepare)

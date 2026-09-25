@@ -75,8 +75,10 @@ export function watchModels({
   try {
     watcher = watch(modelsDir, { persistent: false }, schedule);
   } catch (error) {
-    log(`dsh-tinytitan: cannot watch ${modelsDir}: ${describe(error)}; `
-      + "the route will only refresh at boot");
+    log(
+      `dsh-tinytitan: cannot watch ${modelsDir}: ${describe(error)}; ` +
+        "the route will only refresh at boot",
+    );
     return { watching: false, close() {} };
   }
   if (typeof watcher?.unref === "function") watcher.unref();

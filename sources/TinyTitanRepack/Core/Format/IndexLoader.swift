@@ -42,7 +42,8 @@ enum IndexLoader {
     }
 
     static func load(snapshotDir: String) throws -> SourceMetadata {
-        let indexPath  = (snapshotDir as NSString).appendingPathComponent("model.safetensors.index.json")
+        let indexPath = (snapshotDir as NSString).appendingPathComponent(
+            "model.safetensors.index.json")
         let configPath = (snapshotDir as NSString).appendingPathComponent("config.json")
 
         let weightMap: [String: String]
@@ -50,7 +51,8 @@ enum IndexLoader {
             let data = try Posix.readBoundedData(
                 indexPath, maximumBytes: Self.maximumIndexBytes)
             guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let m = root["weight_map"] as? [String: String] else {
+                let m = root["weight_map"] as? [String: String]
+            else {
                 throw RepackError.indexJsonInvalid(path: indexPath, detail: "no weight_map")
             }
             weightMap = m
@@ -73,11 +75,12 @@ enum IndexLoader {
                 throw RepackError.configJsonInvalid(path: configPath, detail: "not a JSON object")
             }
             guard let quant = root["quantization"] as? [String: Any] else {
-                throw RepackError.configJsonInvalid(path: configPath, detail: "no quantization slot")
+                throw RepackError.configJsonInvalid(
+                    path: configPath, detail: "no quantization slot")
             }
-            if let b = quant["bits"] as? Int      { baseBits  = b }
+            if let b = quant["bits"] as? Int { baseBits = b }
             if let g = quant["group_size"] as? Int { baseGroup = g }
-            if let m = quant["mode"] as? String   { baseMode  = m }
+            if let m = quant["mode"] as? String { baseMode = m }
             // The planner derives every packed tensor's logical width as
             // `scalesShape.last * 64`, a literal, and records `baseGroup` here
             // and in the manifest. A source with any other group size therefore
@@ -94,7 +97,7 @@ enum IndexLoader {
             for (k, v) in quant where !(k == "bits" || k == "group_size" || k == "mode") {
                 guard let entry = v as? [String: Any] else { continue }
                 let bits = (entry["bits"] as? Int) ?? baseBits
-                let g    = (entry["group_size"] as? Int) ?? baseGroup
+                let g = (entry["group_size"] as? Int) ?? baseGroup
                 guard g == baseGroup else {
                     throw RepackError.configJsonInvalid(
                         path: configPath,
@@ -116,22 +119,29 @@ enum IndexLoader {
                     path: indexPath,
                     detail: "weight_map entry for \(k) is missing")
             }
-            if !seen.contains(shard) { seen.insert(shard); shards.append(shard) }
+            if !seen.contains(shard) {
+                seen.insert(shard)
+                shards.append(shard)
+            }
         }
 
-        return SourceMetadata(indexPath: indexPath, configPath: configPath,
-                              indexSha256Hex: indexSha,
-                              weightMap: weightMap,
-                              baseBits: baseBits, baseGroupSize: baseGroup,
-                              baseMode: baseMode,
-                              bitsOverrides: overrides,
-                              shardFilenames: shards)
+        return SourceMetadata(
+            indexPath: indexPath, configPath: configPath,
+            indexSha256Hex: indexSha,
+            weightMap: weightMap,
+            baseBits: baseBits, baseGroupSize: baseGroup,
+            baseMode: baseMode,
+            bitsOverrides: overrides,
+            shardFilenames: shards)
     }
 
     /// Resolves the bits/group for one tensor name (with or without `.weight`).
-    static func quantSpec(forTensor name: String,
-                                 meta: SourceMetadata) -> QuantSpec {
-        let stripped = name.hasSuffix(".weight")
+    static func quantSpec(
+        forTensor name: String,
+        meta: SourceMetadata
+    ) -> QuantSpec {
+        let stripped =
+            name.hasSuffix(".weight")
             ? String(name.dropLast(".weight".count))
             : name
         if let o = meta.bitsOverrides[stripped] { return o }

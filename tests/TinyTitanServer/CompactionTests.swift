@@ -47,8 +47,9 @@ private actor CompactionBackend: ServerInferenceBackend, PromptTokenCounting {
         onEvent(.content(note))
         return ServerCompletion(
             content: note, toolCalls: [], finishReason: "stop",
-            usage: OpenAIUsage(promptTokens: 20, completionTokens: 10,
-                               totalTokens: 30, cachedTokens: 0))
+            usage: OpenAIUsage(
+                promptTokens: 20, completionTokens: 10,
+                totalTokens: 30, cachedTokens: 0))
     }
 
     func countPromptTokens(_ request: ValidatedChatRequest) async throws -> Int {
@@ -58,9 +59,11 @@ private actor CompactionBackend: ServerInferenceBackend, PromptTokenCounting {
     }
 }
 
-private func post(_ port: Int, _ path: String,
-                  _ json: String) async throws -> (Data, HTTPURLResponse) {
-    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
+private func post(
+    _ port: Int, _ path: String,
+    _ json: String
+) async throws -> (Data, HTTPURLResponse) {
+    var request = URLRequest(url: try localURL(port: port, path))
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "content-type")
     request.httpBody = Data(json.utf8)
@@ -82,8 +85,10 @@ private func compactionItem(payload: String) throws -> ResponsesAPIRequest.Item 
     try decodeItem(#"{"type":"compaction","id":"cmp_1","encrypted_content":"\#(payload)"}"#)
 }
 
-private func withServer<T>(_ backend: any ServerInferenceBackend,
-                           _ body: (Int) async throws -> T) async throws -> T {
+private func withServer<T>(
+    _ backend: any ServerInferenceBackend,
+    _ body: (Int) async throws -> T
+) async throws -> T {
     let server = TinyTitanHTTPServer(modelID: "test-model", queueLimit: 2, backend: backend)
     let channel = try await server.start(port: 0)
     let port = try #require(channel.localAddress?.port)
@@ -102,8 +107,9 @@ struct CompactionTests {
     // MARK: - the payload and the policy
 
     @Test func theEnvelopeRoundTripsAndForeignPayloadsAreRefused() throws {
-        let envelope = CompactionEnvelope(model: "qwen3.8-flash-next_4-Bit", createdAt: 1_789_000_000,
-                                          mode: .model, summary: "Launch Tuesday; support first.")
+        let envelope = CompactionEnvelope(
+            model: "qwen3.8-flash-next_4-Bit", createdAt: 1_789_000_000,
+            mode: .model, summary: "Launch Tuesday; support first.")
         let payload = try ServerCompaction.encode(envelope)
         #expect(try ServerCompaction.decode(payload) == envelope)
 
@@ -130,16 +136,22 @@ struct CompactionTests {
 
     @Test func theTranscriptNamesRolesAndKeepsToolCalls() {
         let messages = [
-            OpenAIChatMessage(role: "system", content: .text("Be terse."),
-                              toolCalls: nil, toolCallID: nil, name: nil),
-            OpenAIChatMessage(role: "user", content: .text("Read /tmp/a"),
-                              toolCalls: nil, toolCallID: nil, name: nil),
-            OpenAIChatMessage(role: "assistant", content: nil,
-                              toolCalls: [OpenAIToolCall(
-                                  id: "call_1", type: "function",
-                                  function: OpenAIFunctionCall(name: "read",
-                                                               arguments: #"{"path":"/tmp/a"}"#))],
-                              toolCallID: nil, name: nil),
+            OpenAIChatMessage(
+                role: "system", content: .text("Be terse."),
+                toolCalls: nil, toolCallID: nil, name: nil),
+            OpenAIChatMessage(
+                role: "user", content: .text("Read /tmp/a"),
+                toolCalls: nil, toolCallID: nil, name: nil),
+            OpenAIChatMessage(
+                role: "assistant", content: nil,
+                toolCalls: [
+                    OpenAIToolCall(
+                        id: "call_1", type: "function",
+                        function: OpenAIFunctionCall(
+                            name: "read",
+                            arguments: #"{"path":"/tmp/a"}"#))
+                ],
+                toolCallID: nil, name: nil),
         ]
         let transcript = ServerCompaction.transcript(messages)
         #expect(transcript.contains("[system] Be terse."))
@@ -163,16 +175,17 @@ struct CompactionTests {
     @Test func anInstructionEchoIsStrippedLineByLine() {
         let instruction = ServerCompaction.instruction(limit: 4096)
         let note = """
-        - Goal
-        - Open questions
-        Move the launch to Tuesday and tell support first.
-        """
+            - Goal
+            - Open questions
+            Move the launch to Tuesday and tell support first.
+            """
         let stripped = ServerCompaction.strippingInstructionEcho(note, instruction: instruction)
         #expect(stripped == "Move the launch to Tuesday and tell support first.")
 
         // Nothing but the instruction, renumbered: nothing survives.
         let echoOnly = "2. Next step\n6) Open questions"
-        #expect(ServerCompaction.strippingInstructionEcho(echoOnly, instruction: instruction).isEmpty)
+        #expect(
+            ServerCompaction.strippingInstructionEcho(echoOnly, instruction: instruction).isEmpty)
     }
 
     /// A repetition loop is not a compaction: measured on the 2B, the "note" was
@@ -184,15 +197,15 @@ struct CompactionTests {
         #expect(ServerCompaction.isDegenerate(looped))
 
         let real = """
-        # Goal
-        Wire /v1/responses/compact and re-run the suite.
-        # Decisions
-        Option B, because option A quadruples the wired expert cache.
-        # Facts
-        Eight of nine requests answered at width 4; peak concurrency four.
-        # Next step
-        Run the acceptance tests.
-        """
+            # Goal
+            Wire /v1/responses/compact and re-run the suite.
+            # Decisions
+            Option B, because option A quadruples the wired expert cache.
+            # Facts
+            Eight of nine requests answered at width 4; peak concurrency four.
+            # Next step
+            Run the acceptance tests.
+            """
         #expect(!ServerCompaction.isDegenerate(real))
         // Short notes are never judged degenerate: there is not enough there.
         #expect(!ServerCompaction.isDegenerate("# Goal\nLaunch Tuesday."))
@@ -201,16 +214,18 @@ struct CompactionTests {
     // MARK: - the round trip
 
     @Test func aReplayedNoteBecomesStandingContext() throws {
-        let envelope = CompactionEnvelope(model: "m", createdAt: 1, mode: .model,
-                                          summary: "We agreed to launch on Tuesday.")
+        let envelope = CompactionEnvelope(
+            model: "m", createdAt: 1, mode: .model,
+            summary: "We agreed to launch on Tuesday.")
         let item = try compactionItem(payload: try ServerCompaction.encode(envelope))
         let messages = try ResponsesAPIMapper.chatMessages(
             items: [item], instructions: "Answer in one line.")
         let system = try #require(messages.first)
         #expect(system.role == "system")
-        let text = try #require({
-            if case .text(let value)? = system.content { return value } else { return nil }
-        }())
+        let text = try #require(
+            {
+                if case .text(let value)? = system.content { return value } else { return nil }
+            }())
         // Instructions verbatim, then the note, in the one leading block.
         #expect(text.hasPrefix("Answer in one line."))
         #expect(text.contains("Compacted earlier session"))
@@ -233,20 +248,26 @@ struct CompactionTests {
     /// A note that is only the instruction read back is a failed pass: it is
     /// retried without a menu to copy, rather than returned as history.
     @Test func anEchoedInstructionIsRetriedWithAPlainInstruction() async throws {
-        let backend = CompactionBackend(notes: ["- Goal\n- Open questions",
-                                                "Decision: launch Tuesday."])
+        let backend = CompactionBackend(notes: [
+            "- Goal\n- Open questions",
+            "Decision: launch Tuesday.",
+        ])
         try await withServer(backend) { port in
-            let (data, response) = try await post(port, "/v1/responses/compact", """
-            {"model":"test-model","input":[{"type":"message","role":"user","content":"launch Tuesday"}]}
-            """)
+            let (data, response) = try await post(
+                port, "/v1/responses/compact",
+                """
+                {"model":"test-model","input":[{"type":"message","role":"user","content":"launch Tuesday"}]}
+                """)
             #expect(response.statusCode == 200)
             #expect(backend.log.requests.count == 2, "the echo is retried once")
-            #expect(backend.log.requests[1].messages.contains {
-                ($0.content ?? "").contains("Summarise the session below")
-            })
+            #expect(
+                backend.log.requests[1].messages.contains {
+                    ($0.content ?? "").contains("Summarise the session below")
+                })
             let output = try #require(try object(data)["output"] as? [[String: Any]])
             let item = try #require(output.first { $0["type"] as? String == "compaction" })
-            let note = try ServerCompaction.decode(try #require(item["encrypted_content"] as? String))
+            let note = try ServerCompaction.decode(
+                try #require(item["encrypted_content"] as? String))
             #expect(note.summary == "Decision: launch Tuesday.")
             #expect(note.mode == .model)
         }
@@ -256,18 +277,20 @@ struct CompactionTests {
     @Test func theEndpointReturnsTheSpecShape() async throws {
         let backend = CompactionBackend(notes: ["Decision: launch Tuesday, notify support first."])
         try await withServer(backend) { port in
-            let (data, response) = try await post(port, "/v1/responses/compact", """
-            {"model":"test-model","prompt_cache_key":"openresponses-compact-test",
-             "input":[
-               {"type":"message","role":"user","content":"We agreed to launch on Tuesday and notify support first."},
-               {"type":"message","role":"assistant","content":"Understood."}
-             ]}
-            """)
+            let (data, response) = try await post(
+                port, "/v1/responses/compact",
+                """
+                {"model":"test-model","prompt_cache_key":"openresponses-compact-test",
+                 "input":[
+                   {"type":"message","role":"user","content":"We agreed to launch on Tuesday and notify support first."},
+                   {"type":"message","role":"assistant","content":"Understood."}
+                 ]}
+                """)
             #expect(response.statusCode == 200)
             let body = try object(data)
             #expect(body["object"] as? String == "response.compaction")
-            #expect(body["created_at"] as? Int != nil)
-            #expect(body["usage"] as? [String: Any] != nil)
+            #expect(body["created_at"] is Int)
+            #expect(body["usage"] is [String: Any])
             let output = try #require(body["output"] as? [[String: Any]])
             #expect(!output.isEmpty)
             let item = try #require(output.first { $0["type"] as? String == "compaction" })
@@ -281,8 +304,9 @@ struct CompactionTests {
     @Test func aRequestWithoutAModelIsRefusedByParameter() async throws {
         let backend = CompactionBackend(notes: ["unused"])
         try await withServer(backend) { port in
-            let (data, response) = try await post(port, "/v1/responses/compact",
-                                                  #"{"input":[{"type":"message","role":"user","content":"x"}]}"#)
+            let (data, response) = try await post(
+                port, "/v1/responses/compact",
+                #"{"input":[{"type":"message","role":"user","content":"x"}]}"#)
             #expect(response.statusCode == 400)
             let error = try #require(try object(data)["error"] as? [String: Any])
             #expect(error["param"] as? String == "model")
@@ -294,9 +318,11 @@ struct CompactionTests {
     @Test func theSummariserRunsUnthinkingOnTheTranscript() async throws {
         let backend = CompactionBackend(notes: ["note"])
         try await withServer(backend) { port in
-            let (_, response) = try await post(port, "/v1/responses/compact", """
-            {"model":"test-model","input":[{"type":"message","role":"user","content":"hello there"}]}
-            """)
+            let (_, response) = try await post(
+                port, "/v1/responses/compact",
+                """
+                {"model":"test-model","input":[{"type":"message","role":"user","content":"hello there"}]}
+                """)
             #expect(response.statusCode == 200)
             let request = try #require(backend.log.requests.first)
             #expect(request.reasoning?.thinkingMode == .off)
@@ -310,22 +336,34 @@ struct CompactionTests {
     @Test func aCompactedWindowReplaysIntoTheNextRequest() async throws {
         let backend = CompactionBackend(notes: ["Decision: launch Tuesday."])
         try await withServer(backend) { port in
-            let (data, _) = try await post(port, "/v1/responses/compact", """
-            {"model":"test-model","input":[{"type":"message","role":"user","content":"launch Tuesday"}]}
-            """)
+            let (data, _) = try await post(
+                port, "/v1/responses/compact",
+                """
+                {"model":"test-model","input":[{"type":"message","role":"user","content":"launch Tuesday"}]}
+                """)
             let output = try #require(try object(data)["output"] as? [[String: Any]])
             let item = try #require(output.first { $0["type"] as? String == "compaction" })
 
+            let itemJSON = try #require(
+                String(
+                    data: try JSONSerialization.data(withJSONObject: item),
+                    encoding: .utf8))
             let replay = """
-            {"model":"test-model","input":[
-              \(String(data: try JSONSerialization.data(withJSONObject: item), encoding: .utf8)!),
-              {"type":"message","role":"user","content":"What did we decide?"}
-            ]}
-            """
+                {"model":"test-model","input":[
+                  \(itemJSON),
+                  {"type":"message","role":"user","content":"What did we decide?"}
+                ]}
+                """
             let (_, response) = try await post(port, "/v1/responses", replay)
             #expect(response.statusCode == 200)
             let last = try #require(backend.log.requests.last)
-            #expect((last.messages.first?.content ?? "").contains("Decision: launch Tuesday."))
+            // The message is bound first rather than asserted inline: Testing's
+            // macro expansion of `#expect((a ?? "").contains(b))` emits the
+            // `contains` call as a statement and warns that its result is
+            // unused, which -warnings-as-errors would turn into a build
+            // failure. The assertion itself is unchanged.
+            let replayContent = last.messages.first?.content ?? ""
+            #expect(replayContent.contains("Decision: launch Tuesday."))
             #expect(last.messages.contains { ($0.content ?? "").contains("What did we decide?") })
         }
     }
@@ -333,12 +371,15 @@ struct CompactionTests {
     /// An over-budget note is compressed, not truncated: truncation would drop
     /// the end of the session, which is what a continuation needs most.
     @Test func anOverBudgetNoteIsCompressedByASecondPass() async throws {
-        let backend = CompactionBackend(notes: ["first note", "second shorter note"],
-                                        counts: [99_999, 10])
+        let backend = CompactionBackend(
+            notes: ["first note", "second shorter note"],
+            counts: [99_999, 10])
         try await withServer(backend) { port in
-            let (data, response) = try await post(port, "/v1/responses/compact", """
-            {"model":"test-model","input":[{"type":"message","role":"user","content":"a long session"}]}
-            """)
+            let (data, response) = try await post(
+                port, "/v1/responses/compact",
+                """
+                {"model":"test-model","input":[{"type":"message","role":"user","content":"a long session"}]}
+                """)
             #expect(response.statusCode == 200)
             #expect(backend.log.requests.count == 2, "the second pass is the compression")
             let second = backend.log.requests[1]
@@ -347,7 +388,8 @@ struct CompactionTests {
 
             let output = try #require(try object(data)["output"] as? [[String: Any]])
             let item = try #require(output.first { $0["type"] as? String == "compaction" })
-            let note = try ServerCompaction.decode(try #require(item["encrypted_content"] as? String))
+            let note = try ServerCompaction.decode(
+                try #require(item["encrypted_content"] as? String))
             #expect(note.mode == .compressed)
             #expect(note.summary == "second shorter note")
             // The caller is told the whole price of the note, both passes.
@@ -361,10 +403,12 @@ struct CompactionTests {
     @Test func theWindowKeepsInstructionsVerbatim() async throws {
         let backend = CompactionBackend(notes: ["note"])
         try await withServer(backend) { port in
-            let (data, _) = try await post(port, "/v1/responses/compact", """
-            {"model":"test-model","instructions":"Never touch /etc.",
-             "input":[{"type":"message","role":"user","content":"hello"}]}
-            """)
+            let (data, _) = try await post(
+                port, "/v1/responses/compact",
+                """
+                {"model":"test-model","instructions":"Never touch /etc.",
+                 "input":[{"type":"message","role":"user","content":"hello"}]}
+                """)
             let output = try #require(try object(data)["output"] as? [[String: Any]])
             let message = try #require(output.first { $0["type"] as? String == "message" })
             #expect(message["role"] as? String == "developer")

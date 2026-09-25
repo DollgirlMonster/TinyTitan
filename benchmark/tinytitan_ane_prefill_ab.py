@@ -16,6 +16,7 @@ Interpretation notes:
 
   python3 benchmark/tinytitan_ane_prefill_ab.py --quant 4bit --pairs 1
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,8 +31,11 @@ import sys
 
 import tinytitan_gate0_profile as g0
 from tinytitan_profile import (
-    DEFAULT_API_MODEL, ROOT, benchmark_log_path, server_command,
-    server_environment, resolve_api_model,
+    ROOT,
+    benchmark_log_path,
+    server_command,
+    server_environment,
+    resolve_api_model,
 )
 
 PORT = 8098
@@ -67,8 +71,9 @@ def build_prompt() -> str:
     not a detail: the sidecar exposes history functions at 0/4096/8192/12288,
     so a 6.1K-token prompt loads two of them while a 10.1K one loads three,
     and each carries its own ANE arena. Compare only equal lengths."""
-    return ("Summarize the following technical description in 40 words.\n\n"
-            + _PARAGRAPH * PARAGRAPHS)
+    return (
+        "Summarize the following technical description in 40 words.\n\n" + _PARAGRAPH * PARAGRAPHS
+    )
 
 
 def launch(quant: str, ane: bool, log_name: str) -> None:
@@ -77,8 +82,7 @@ def launch(quant: str, ane: bool, log_name: str) -> None:
     env = server_environment()
     env["TINYTITAN_PREFILL_ANE"] = "on" if ane else "off"
     log = open(benchmark_log_path(log_name), "w")
-    proc = subprocess.Popen(cmd, env=env, stdout=log,
-                            stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT)
     g0._servers.append(proc)
 
 
@@ -86,30 +90,37 @@ MAX_TOKENS = 48
 
 
 def generate(prompt: str, max_tokens: int) -> dict | None:
-    payload = json.dumps({
-        "model": resolve_api_model(PORT),
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0,
-        "seed": 41,
-        "max_completion_tokens": max_tokens,
-    }, separators=(",", ":")).encode()
+    payload = json.dumps(
+        {
+            "model": resolve_api_model(PORT),
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+            "seed": 41,
+            "max_completion_tokens": max_tokens,
+        },
+        separators=(",", ":"),
+    ).encode()
     try:
         conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=1800)
-        conn.request("POST", "/v1/chat/completions", body=payload,
-                     headers={"Content-Type": "application/json"})
+        conn.request(
+            "POST",
+            "/v1/chat/completions",
+            body=payload,
+            headers={"Content-Type": "application/json"},
+        )
         body = json.loads(conn.getresponse().read().decode())
         conn.close()
     except (OSError, ValueError) as exc:
         print(f"  ERROR: request failed: {exc}", flush=True)
         return None
-    text = ((body.get("choices") or [{}])[0].get("message") or {}
-            ).get("content") or ""
+    text = ((body.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
     usage = body.get("usage") or {}
-    return {"prompt_tokens": usage.get("prompt_tokens"),
-            "completion_tokens": usage.get("completion_tokens"),
-            "sha256": hashlib.sha256(text.encode()).hexdigest()[:16],
-            "first_line": text.strip().splitlines()[0][:90] if text.strip()
-            else "(empty)"}
+    return {
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "sha256": hashlib.sha256(text.encode()).hexdigest()[:16],
+        "first_line": text.strip().splitlines()[0][:90] if text.strip() else "(empty)",
+    }
 
 
 def one_run(quant: str, ane: bool, prompt: str, tag: str) -> dict:
@@ -128,9 +139,11 @@ def one_run(quant: str, ane: bool, prompt: str, tag: str) -> dict:
         text = handle.read()
     gen = g0.GENERATION_RE.search(text)
     if gen:
-        row.update(prefill_s=float(gen.group(1)),
-                   decode_s=float(gen.group(2)),
-                   decode_tok_s=float(gen.group(3)))
+        row.update(
+            prefill_s=float(gen.group(1)),
+            decode_s=float(gen.group(2)),
+            decode_tok_s=float(gen.group(3)),
+        )
     row["fallback"] = "ane-prefill fallback" in text
     return row
 
@@ -143,13 +156,21 @@ def main() -> int:
     # 48 tokens is enough to prove decode still runs, but far too short to
     # separate a one-time expert-cache re-warm after prefill from a real
     # steady-state rate change: at 8-bit the two differ by 100x in cost.
-    parser.add_argument("--max-tokens", type=int, default=48,
-                        help="generated tokens per run; raise it to measure "
-                             "steady-state decode rather than the transient")
-    parser.add_argument("--paragraphs", type=int, default=119,
-                        help="prompt length in paragraph repetitions "
-                             "(119 = 10,141 tokens; 72 = about 6.1K, the "
-                             "length the v4.5 result was qualified at)")
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=48,
+        help="generated tokens per run; raise it to measure "
+        "steady-state decode rather than the transient",
+    )
+    parser.add_argument(
+        "--paragraphs",
+        type=int,
+        default=119,
+        help="prompt length in paragraph repetitions "
+        "(119 = 10,141 tokens; 72 = about 6.1K, the "
+        "length the v4.5 result was qualified at)",
+    )
     args = parser.parse_args()
     global MAX_TOKENS, PARAGRAPHS
     MAX_TOKENS = args.max_tokens
@@ -163,51 +184,57 @@ def main() -> int:
     rows: list[dict] = []
     try:
         for ane in (False, True):
-            print(f"[{args.quant}] warmup {'ane' if ane else 'gpu'}",
-                  flush=True)
+            print(f"[{args.quant}] warmup {'ane' if ane else 'gpu'}", flush=True)
             one_run(args.quant, ane, prompt, "warmup")
         for block in range(args.pairs):
             for ane in (False, True, True, False):
-                row = one_run(args.quant, ane, prompt,
-                              f"b{block}_{len(rows)}")
+                row = one_run(args.quant, ane, prompt, f"b{block}_{len(rows)}")
                 rows.append(row)
-                print(f"[{args.quant}] {row['arm']:<3} "
-                      f"prefill {row.get('prefill_s', 0):7.2f} s  "
-                      f"decode {row.get('decode_tok_s', 0):6.3f} tok/s  "
-                      f"sha {row['sha256']}"
-                      + ("  [FALLBACK]" if row.get("fallback") else ""),
-                      flush=True)
+                print(
+                    f"[{args.quant}] {row['arm']:<3} "
+                    f"prefill {row.get('prefill_s', 0):7.2f} s  "
+                    f"decode {row.get('decode_tok_s', 0):6.3f} tok/s  "
+                    f"sha {row['sha256']}" + ("  [FALLBACK]" if row.get("fallback") else ""),
+                    flush=True,
+                )
     finally:
         g0._terminate_all()
 
     gpu = [r for r in rows if r["arm"] == "gpu"]
     ane = [r for r in rows if r["arm"] == "ane"]
-    med = lambda sel, k: statistics.median([r[k] for r in sel if k in r])
+
+    def med(sel, k):
+        return statistics.median([r[k] for r in sel if k in r])
+
     gpu_prefill = med(gpu, "prefill_s")
     ane_prefill = med(ane, "prefill_s")
 
     print("\n" + "=" * 70)
-    print(f"ANE PREFILL A/B — {args.quant}, "
-          f"{gpu[0].get('prompt_tokens')} prompt tokens, greedy, cache off")
+    print(
+        f"ANE PREFILL A/B — {args.quant}, "
+        f"{gpu[0].get('prompt_tokens')} prompt tokens, greedy, cache off"
+    )
     print("=" * 70)
-    print(f"  GPU prefill median {gpu_prefill:8.2f} s   "
-          f"runs {[r.get('prefill_s') for r in gpu]}")
-    print(f"  ANE prefill median {ane_prefill:8.2f} s   "
-          f"runs {[r.get('prefill_s') for r in ane]}")
-    print(f"  SPEEDUP: {gpu_prefill / ane_prefill:.2f}x   "
-          f"(gate is >=1.5x: "
-          f"{'PASS' if gpu_prefill / ane_prefill >= 1.5 else 'FAIL'})")
-    print(f"  decode after prefill: GPU {med(gpu, 'decode_tok_s'):.3f} "
-          f"vs ANE {med(ane, 'decode_tok_s'):.3f} tok/s")
+    print(f"  GPU prefill median {gpu_prefill:8.2f} s   runs {[r.get('prefill_s') for r in gpu]}")
+    print(f"  ANE prefill median {ane_prefill:8.2f} s   runs {[r.get('prefill_s') for r in ane]}")
+    print(
+        f"  SPEEDUP: {gpu_prefill / ane_prefill:.2f}x   "
+        f"(gate is >=1.5x: "
+        f"{'PASS' if gpu_prefill / ane_prefill >= 1.5 else 'FAIL'})"
+    )
+    print(
+        f"  decode after prefill: GPU {med(gpu, 'decode_tok_s'):.3f} "
+        f"vs ANE {med(ane, 'decode_tok_s'):.3f} tok/s"
+    )
     for arm_rows, label in ((gpu, "gpu"), (ane, "ane")):
         digests = sorted({r["sha256"] for r in arm_rows})
         stable = len(digests) == 1
-        print(f"  {label} digests {digests} "
-              f"({'stable' if stable else 'UNSTABLE'})")
+        print(f"  {label} digests {digests} ({'stable' if stable else 'UNSTABLE'})")
         print(f"    continuation: {arm_rows[0]['first_line']}")
     if any(r.get("fallback") for r in ane):
-        print("  WARNING: an ANE run logged a GPU fallback — "
-              "the arms did not measure what they claim")
+        print(
+            "  WARNING: an ANE run logged a GPU fallback — the arms did not measure what they claim"
+        )
 
     out = ROOT / f".build/benchmark-results/ane-prefill-ab-{args.quant}.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)

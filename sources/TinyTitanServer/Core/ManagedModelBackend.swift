@@ -63,12 +63,14 @@ public actor ManagedModelBackend: ServerInferenceBackend, ResidencyManaging, Pro
         let continuation: CheckedContinuation<Void, Never>
     }
 
-    public init(plan: ModelSessionPlan,
-                facts: ModelSessionFacts,
-                idleTimeout: Duration?,
-                loader: @escaping Loader = { plan, context in
-                    try await plan.makeSession(reusingContext: context)
-                }) {
+    public init(
+        plan: ModelSessionPlan,
+        facts: ModelSessionFacts,
+        idleTimeout: Duration?,
+        loader: @escaping Loader = { plan, context in
+            try await plan.makeSession(reusingContext: context)
+        }
+    ) {
         self.plan = plan
         self.facts = facts
         self.idleTimeout = idleTimeout
@@ -257,7 +259,7 @@ public actor ManagedModelBackend: ServerInferenceBackend, ResidencyManaging, Pro
             startReaper()
             return
         }
-        session = nil          // sole strong reference — the weights go here
+        session = nil  // sole strong reference — the weights go here
         ServerLog.residency("unloaded")
     }
 

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import TinyTitanFormat
+
 @testable import TinyTitanRepackCore
 
 /// The resident index stores each tensor name's length in a `UInt16`, and the
@@ -9,17 +10,19 @@ import TinyTitanFormat
 /// `precondition` trap inside the binary writer.
 @Suite struct ResidentWriterTests {
     private func plan(name: String) -> ResidentFilePlan {
-        let source = SourceTensor(name: name, shardPath: "shard.safetensors",
-                                  dtype: .bf16, shape: [1], absoluteOffset: 0,
-                                  sizeBytes: 2)
-        let entry = ResidentEntry(name: name, dtype: 1, logicalShape4: [1, 0, 0, 0],
-                                  fileOffset: 0, sizeBytes: 2,
-                                  scaleOffset: 0, scaleSize: 0,
-                                  biasOffset: 0, biasSize: 0,
-                                  quantSpec: nil,
-                                  sourceWeight: source,
-                                  sourceScales: nil,
-                                  sourceBiases: nil)
+        let source = SourceTensor(
+            name: name, shardPath: "shard.safetensors",
+            dtype: .bf16, shape: [1], absoluteOffset: 0,
+            sizeBytes: 2)
+        let entry = ResidentEntry(
+            name: name, dtype: 1, logicalShape4: [1, 0, 0, 0],
+            fileOffset: 0, sizeBytes: 2,
+            scaleOffset: 0, scaleSize: 0,
+            biasOffset: 0, biasSize: 0,
+            quantSpec: nil,
+            sourceWeight: source,
+            sourceScales: nil,
+            sourceBiases: nil)
         let table = Array(name.utf8)
         return ResidentFilePlan(
             path: "/tmp/model_weights.bin",
@@ -31,8 +34,10 @@ import TinyTitanFormat
     }
 
     @Test func aNameWithinTheLimitEncodes() throws {
-        let data = try ResidentWriter.encodeIndex(plan: plan(name: "model.layers.0.mlp.up_proj.weight"))
-        #expect(data.count == 24 + GTurboBinary.indexEntryBytes
+        let data = try ResidentWriter.encodeIndex(
+            plan: plan(name: "model.layers.0.mlp.up_proj.weight"))
+        #expect(
+            data.count == 24 + GTurboBinary.indexEntryBytes
                 + "model.layers.0.mlp.up_proj.weight".utf8.count)
     }
 
@@ -76,15 +81,17 @@ import TinyTitanFormat
         let names = (0..<count).map {
             "model.language_model.layers.\($0 % 40).mlp.experts.\($0).down_proj.weight"
         }
-        let expected = 24 + count * GTurboBinary.indexEntryBytes + names.reduce(0) { $0 + $1.utf8.count }
+        let expected =
+            24 + count * GTurboBinary.indexEntryBytes + names.reduce(0) { $0 + $1.utf8.count }
         let data = try ResidentWriter.encodeIndex(plan: plan(names: names))
         #expect(data.count == expected)
     }
 
     private func plan(names: [String]) -> ResidentFilePlan {
         let sources = names.map {
-            SourceTensor(name: $0, shardPath: "shard.safetensors", dtype: .bf16,
-                         shape: [1], absoluteOffset: 0, sizeBytes: 2)
+            SourceTensor(
+                name: $0, shardPath: "shard.safetensors", dtype: .bf16,
+                shape: [1], absoluteOffset: 0, sizeBytes: 2)
         }
         var table: [UInt8] = []
         var offsets: [UInt32] = []
@@ -92,43 +99,50 @@ import TinyTitanFormat
         for (index, name) in names.enumerated() {
             offsets.append(UInt32(table.count))
             table.append(contentsOf: name.utf8)
-            entries.append(ResidentEntry(name: name, dtype: 1, logicalShape4: [1, 0, 0, 0],
-                                         fileOffset: 0, sizeBytes: 2,
-                                         scaleOffset: 0, scaleSize: 0,
-                                         biasOffset: 0, biasSize: 0,
-                                         quantSpec: nil,
-                                         sourceWeight: sources[index],
-                                         sourceScales: nil,
-                                         sourceBiases: nil))
+            entries.append(
+                ResidentEntry(
+                    name: name, dtype: 1, logicalShape4: [1, 0, 0, 0],
+                    fileOffset: 0, sizeBytes: 2,
+                    scaleOffset: 0, scaleSize: 0,
+                    biasOffset: 0, biasSize: 0,
+                    quantSpec: nil,
+                    sourceWeight: sources[index],
+                    sourceScales: nil,
+                    sourceBiases: nil))
         }
         let natural = 24 + names.count * GTurboBinary.indexEntryBytes + table.count
-        return ResidentFilePlan(path: "/tmp/model_weights.bin",
-                                entries: entries,
-                                stringTable: table,
-                                stringTableOffsets: offsets,
-                                indexSize: UInt64(natural),
-                                residentSize: UInt64(names.count * 2))
+        return ResidentFilePlan(
+            path: "/tmp/model_weights.bin",
+            entries: entries,
+            stringTable: table,
+            stringTableOffsets: offsets,
+            indexSize: UInt64(natural),
+            residentSize: UInt64(names.count * 2))
     }
 
     private func plan(name: String, indexSize: Int? = nil) -> ResidentFilePlan {
-        let source = SourceTensor(name: name, shardPath: "shard.safetensors",
-                                  dtype: .bf16, shape: [1], absoluteOffset: 0,
-                                  sizeBytes: 2)
-        let entry = ResidentEntry(name: name, dtype: 1, logicalShape4: [1, 0, 0, 0],
-                                  fileOffset: 0, sizeBytes: 2,
-                                  scaleOffset: 0, scaleSize: 0,
-                                  biasOffset: 0, biasSize: 0,
-                                  quantSpec: nil,
-                                  sourceWeight: source,
-                                  sourceScales: nil,
-                                  sourceBiases: nil)
+        let source = SourceTensor(
+            name: name, shardPath: "shard.safetensors",
+            dtype: .bf16, shape: [1], absoluteOffset: 0,
+            sizeBytes: 2)
+        let entry = ResidentEntry(
+            name: name, dtype: 1, logicalShape4: [1, 0, 0, 0],
+            fileOffset: 0, sizeBytes: 2,
+            scaleOffset: 0, scaleSize: 0,
+            biasOffset: 0, biasSize: 0,
+            quantSpec: nil,
+            sourceWeight: source,
+            sourceScales: nil,
+            sourceBiases: nil)
         let table = Array(name.utf8)
-        return ResidentFilePlan(path: "/tmp/model_weights.bin",
-                                entries: [entry],
-                                stringTable: table,
-                                stringTableOffsets: [0],
-                                indexSize: UInt64(indexSize
-                                    ?? (24 + GTurboBinary.indexEntryBytes + table.count)),
-                                residentSize: 2)
+        return ResidentFilePlan(
+            path: "/tmp/model_weights.bin",
+            entries: [entry],
+            stringTable: table,
+            stringTableOffsets: [0],
+            indexSize: UInt64(
+                indexSize
+                    ?? (24 + GTurboBinary.indexEntryBytes + table.count)),
+            residentSize: 2)
     }
 }

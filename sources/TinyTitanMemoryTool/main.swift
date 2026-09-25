@@ -1,5 +1,5 @@
-import Foundation
 import ContinuityCore
+import Foundation
 import TinyTitanMemory
 
 /// `tinytitan-memory`: see and correct what the server remembers.
@@ -16,12 +16,12 @@ import TinyTitanMemory
 /// workspace, and refuse it while a server holds it.
 
 let usage = """
-usage: tinytitan-memory [--dir DIR] projects
-       tinytitan-memory [--dir DIR] list <project>
-       tinytitan-memory [--dir DIR] show <project> <key>
-       tinytitan-memory [--dir DIR] delete <project> <key>
-       tinytitan-memory [--dir DIR] forget <project> --yes
-"""
+    usage: tinytitan-memory [--dir DIR] projects
+           tinytitan-memory [--dir DIR] list <project>
+           tinytitan-memory [--dir DIR] show <project> <key>
+           tinytitan-memory [--dir DIR] delete <project> <key>
+           tinytitan-memory [--dir DIR] forget <project> --yes
+    """
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data("tinytitan-memory: \(message)\n".utf8))
@@ -37,7 +37,10 @@ if let index = arguments.firstIndex(of: "--dir") {
 }
 let yes = arguments.contains("--yes")
 arguments.removeAll { $0 == "--yes" }
-guard let command = arguments.first else { print(usage); exit(2) }
+guard let command = arguments.first else {
+    print(usage)
+    exit(2)
+}
 
 func projectName(_ raw: String) -> String {
     raw == "global" ? MemoryConfiguration.sharedWorkspace : raw
@@ -62,7 +65,10 @@ formatter.dateFormat = "yyyy-MM-dd HH:mm"
 switch command {
 case "projects":
     let files = MemoryProjectFile.discover(in: directory)
-    guard !files.isEmpty else { print("no project files under \(directory.path)"); exit(0) }
+    guard !files.isEmpty else {
+        print("no project files under \(directory.path)")
+        exit(0)
+    }
     print("\(directory.path)\n")
     func column(_ text: String, _ width: Int, right: Bool = false) -> String {
         let clipped = text.count > width ? String(text.prefix(width)) : text
@@ -71,13 +77,19 @@ case "projects":
     }
     // No String(format:) with %s: a Swift String is not a C string, and the
     // first version of this crashed after its buffered header line.
-    print(column("project", 40), column("facts", 6, right: true), column("sessions", 9, right: true),
-          column("events", 7, right: true), column("on disk", 9, right: true), " last write")
+    print(
+        column("project", 40), column("facts", 6, right: true), column("sessions", 9, right: true),
+        column("events", 7, right: true), column("on disk", 9, right: true), " last write")
     for file in files {
-        let label = file.workspace == MemoryConfiguration.sharedWorkspace ? "global (this person)" : file.workspace
-        print(column(label, 40), column("\(file.facts.count)", 6, right: true),
-              column("\(file.sessionCount)", 9, right: true), column("\(file.eventCount)", 7, right: true),
-              column("\(file.bytesOnDisk / 1024)K", 9, right: true), " \(formatter.string(from: file.modifiedAt))")
+        let label =
+            file.workspace == MemoryConfiguration.sharedWorkspace
+            ? "global (this person)" : file.workspace
+        print(
+            column(label, 40), column("\(file.facts.count)", 6, right: true),
+            column("\(file.sessionCount)", 9, right: true),
+            column("\(file.eventCount)", 7, right: true),
+            column("\(file.bytesOnDisk / 1024)K", 9, right: true),
+            " \(formatter.string(from: file.modifiedAt))")
     }
 
 case "list":
@@ -97,20 +109,28 @@ case "show":
     guard let fact = file.facts.first(where: { $0.key == arguments[2] }) else {
         fail("no fact '\(arguments[2])' in \(file.workspace)")
     }
-    print("\(fact.key)  [\(fact.status), v\(fact.version), \(formatter.string(from: fact.updatedAt))]\n")
+    print(
+        "\(fact.key)  [\(fact.status), v\(fact.version), \(formatter.string(from: fact.updatedAt))]\n"
+    )
     print(fact.value)
     if !fact.history.isEmpty {
         print("\nearlier:")
-        for entry in fact.history { print("  v\(entry.version): \(summarize(entry.value, limit: 160))") }
+        for entry in fact.history {
+            print("  v\(entry.version): \(summarize(entry.value, limit: 160))")
+        }
     }
 
 case "delete", "forget":
     guard arguments.count >= 2 else { fail("\(command) needs a project") }
     let file = resolve(arguments[1], in: directory)
     if command == "forget" {
-        guard yes else { fail("this deletes every fact and session of \(file.workspace); repeat with --yes") }
+        guard yes else {
+            fail("this deletes every fact and session of \(file.workspace); repeat with --yes")
+        }
         try? FileManager.default.removeItem(at: file.url.appendingPathExtension("lock"))
-        do { try FileManager.default.removeItem(at: file.url) } catch { fail("could not delete: \(error)") }
+        do { try FileManager.default.removeItem(at: file.url) } catch {
+            fail("could not delete: \(error)")
+        }
         print("forgot \(file.workspace)")
         exit(0)
     }
@@ -126,15 +146,18 @@ case "delete", "forget":
         try await engine.start()
         let address = ContinuityStore.address(for: key)
         guard let task = await engine.tasks().first else { fail("no task in this file") }
-        _ = try await engine.archive(taskID: task.id, namespace: address.namespace, key: address.key)
+        _ = try await engine.archive(
+            taskID: task.id, namespace: address.namespace, key: address.key)
         try await engine.compactJournal()
         await engine.shutDown()
     } catch {
         await engine.shutDown()
         fail("\(error)")
     }
-    print("retired \(key.rawValue) in \(file.workspace); it stays in history and is no longer shown")
+    print(
+        "retired \(key.rawValue) in \(file.workspace); it stays in history and is no longer shown")
 
 default:
-    print(usage); exit(2)
+    print(usage)
+    exit(2)
 }

@@ -68,11 +68,12 @@ public indirect enum JSONValue: Codable, Equatable, Sendable {
         case .decimal(let value):
             let text = NSDecimalNumber(decimal: value).stringValue
             guard let double = Double(text),
-                  double.isFinite,
-                  let roundTrip = Decimal(
+                double.isFinite,
+                let roundTrip = Decimal(
                     string: String(double),
                     locale: Locale(identifier: "en_US_POSIX")),
-                  roundTrip == value else {
+                roundTrip == value
+            else {
                 throw ToolCallParserError.malformed
             }
             return double
@@ -93,6 +94,6 @@ public indirect enum JSONValue: Codable, Equatable, Sendable {
     public func encoded(sortedKeys: Bool = true) throws -> String {
         let encoder = JSONEncoder()
         if sortedKeys { encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes] }
-        return String(decoding: try encoder.encode(self), as: UTF8.self)
+        return try encoder.encode(self).lossyUTF8String
     }
 }

@@ -1,12 +1,15 @@
 import Testing
+
 @testable import TinyTitan
 
 @Suite struct RuntimeConfigurationTests {
     @Test func publicContextChoicesReachQwenMaximum() {
-        #expect(RuntimeConfiguration.supportedContextTokens
-            == [4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144])
-        #expect(RuntimeConfiguration.supportedContextTokens.last
-            == RuntimeConfiguration.nativeMaximumContextTokens)
+        #expect(
+            RuntimeConfiguration.supportedContextTokens
+                == [4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144])
+        #expect(
+            RuntimeConfiguration.supportedContextTokens.last
+                == RuntimeConfiguration.nativeMaximumContextTokens)
         #expect(RuntimeConfiguration.supportedYaRNContextTokens == [524_288, 1_048_576])
     }
 
@@ -39,8 +42,9 @@ import Testing
         #expect(throws: RuntimeConfigurationError.self) {
             try native.validate(maxContext: 524_288)
         }
-        let yarn = try RuntimeConfiguration(ropeScalingMode: .yarn,
-                                            yarnContextTokens: 524_288)
+        let yarn = try RuntimeConfiguration(
+            ropeScalingMode: .yarn,
+            yarnContextTokens: 524_288)
         try yarn.validate(maxContext: 524_288)
         #expect(throws: RuntimeConfigurationError.self) {
             try yarn.validate(maxContext: 1_048_576)
@@ -68,39 +72,43 @@ import Testing
 
     @Test func decodeExpertExecutionEnvironmentIsFailClosed() throws {
         #expect(try RuntimeDecodeExpertExecution.environmentValue([:]) == .hitFixup)
-        #expect(try RuntimeDecodeExpertExecution.environmentValue([
-            "TINYTITAN_DECODE_EXPERT_EXECUTION": "barrier",
-        ]) == .barrier)
-        #expect(try RuntimeDecodeExpertExecution.environmentValue([
-            "TINYTITAN_DECODE_EXPERT_EXECUTION": "gpu-residency",
-        ]) == .gpuResidency)
+        #expect(
+            try RuntimeDecodeExpertExecution.environmentValue([
+                "TINYTITAN_DECODE_EXPERT_EXECUTION": "barrier"
+            ]) == .barrier)
+        #expect(
+            try RuntimeDecodeExpertExecution.environmentValue([
+                "TINYTITAN_DECODE_EXPERT_EXECUTION": "gpu-residency"
+            ]) == .gpuResidency)
         #expect(throws: RuntimeConfigurationError.self) {
             try RuntimeDecodeExpertExecution.environmentValue([
-                "TINYTITAN_DECODE_EXPERT_EXECUTION": "typo",
+                "TINYTITAN_DECODE_EXPERT_EXECUTION": "typo"
             ])
         }
     }
 
     @Test func expertIOSynchronizationEnvironmentIsFailClosed() throws {
         #expect(try RuntimeExpertIOSynchronization.environmentValue([:]) == .host)
-        #expect(try RuntimeExpertIOSynchronization.environmentValue([
-            "TINYTITAN_EXPERT_IO_SYNC": "event",
-        ]) == .event)
+        #expect(
+            try RuntimeExpertIOSynchronization.environmentValue([
+                "TINYTITAN_EXPERT_IO_SYNC": "event"
+            ]) == .event)
         #expect(throws: RuntimeConfigurationError.self) {
             try RuntimeExpertIOSynchronization.environmentValue([
-                "TINYTITAN_EXPERT_IO_SYNC": "typo",
+                "TINYTITAN_EXPERT_IO_SYNC": "typo"
             ])
         }
     }
 
     @Test func expertIOSubmissionEnvironmentIsFailClosed() throws {
         #expect(try RuntimeExpertIOSubmission.environmentValue([:]) == .deferred)
-        #expect(try RuntimeExpertIOSubmission.environmentValue([
-            "TINYTITAN_EXPERT_IO_SUBMISSION": "immediate",
-        ]) == .immediate)
+        #expect(
+            try RuntimeExpertIOSubmission.environmentValue([
+                "TINYTITAN_EXPERT_IO_SUBMISSION": "immediate"
+            ]) == .immediate)
         #expect(throws: RuntimeConfigurationError.self) {
             try RuntimeExpertIOSubmission.environmentValue([
-                "TINYTITAN_EXPERT_IO_SUBMISSION": "typo",
+                "TINYTITAN_EXPERT_IO_SUBMISSION": "typo"
             ])
         }
     }

@@ -13,24 +13,33 @@ import Synchronization
 import TinyTitan
 
 extension ServerHTTPHandler {
-    func route(head: HTTPRequestHead,
-                       body: ByteBuffer,
-                       context: ChannelHandlerContext) {
+    func route(
+        head: HTTPRequestHead,
+        body: ByteBuffer,
+        context: ChannelHandlerContext
+    ) {
         // S27: HTTP/1.1 requires a Host header; reject requests without one.
         if head.version == .http1_1, head.headers.first(name: "host") == nil {
-            writeError(context, status: .badRequest,
-                       OpenAIErrorEnvelope(message: "missing Host header",
-                                           code: "missing_host"))
+            writeError(
+                context, status: .badRequest,
+                OpenAIErrorEnvelope(
+                    message: "missing Host header",
+                    code: "missing_host"))
             return
         }
-        let path = head.uri.split(separator: "?", maxSplits: 1,
-                                  omittingEmptySubsequences: false).first.map(String.init) ?? head.uri
+        let path =
+            head.uri.split(
+                separator: "?", maxSplits: 1,
+                omittingEmptySubsequences: false
+            ).first.map(String.init) ?? head.uri
         // A client that sends anthropic-version is speaking the Messages API;
         // the shared paths (/v1/models, 404s) answer in its shape.
-        let anthropic = head.headers.first(name: "anthropic-version") != nil
+        let anthropic =
+            head.headers.first(name: "anthropic-version") != nil
             || path.hasPrefix("/v1/messages")
         let segments = path.split(separator: "/").map(String.init)
-        let jsonBody = head.headers.first(name: "content-type")?
+        let jsonBody =
+            head.headers.first(name: "content-type")?
             .lowercased().hasPrefix("application/json") == true
         // S28: only the two read routes answer HEAD; see `refuseUnsupportedHEAD`.
         if refuseUnsupportedHEAD(head, path: path, context: context) { return }
@@ -45,22 +54,25 @@ extension ServerHTTPHandler {
             // Advertise the base model plus the "<model>-fast" alias, which
             // serves the same weights with the CLI-strip heuristic enabled.
             if anthropic {
-                writeJSON(context, status: .ok,
-                          object: AnthropicBuilder.modelList(ids: [modelID, modelID + "-fast"]),
-                          surface: .anthropic)
+                writeJSON(
+                    context, status: .ok,
+                    object: AnthropicBuilder.modelList(ids: [modelID, modelID + "-fast"]),
+                    surface: .anthropic)
                 return
             }
             let response = OpenAIModelList(
                 object: "list",
                 data: [
-                    .init(id: modelID,
-                          object: "model",
-                          created: nil,
-                          ownedBy: "tinytitan"),
-                    .init(id: modelID + "-fast",
-                          object: "model",
-                          created: nil,
-                          ownedBy: "tinytitan"),
+                    .init(
+                        id: modelID,
+                        object: "model",
+                        created: nil,
+                        ownedBy: "tinytitan"),
+                    .init(
+                        id: modelID + "-fast",
+                        object: "model",
+                        created: nil,
+                        ownedBy: "tinytitan"),
                 ])
             writeCodable(context, status: .ok, response)
         case (.HEAD, "/health"), (.HEAD, "/v1/models"):
@@ -103,8 +115,9 @@ extension ServerHTTPHandler {
                 writeUnsupportedMediaType(context, surface: .anthropic)
                 return
             }
-            handleMessages(body: body, context: context,
-                           workspace: WorkspaceHeader.value(in: head))
+            handleMessages(
+                body: body, context: context,
+                workspace: WorkspaceHeader.value(in: head))
         case (.POST, "/v1/messages/count_tokens"):
             guard jsonBody else {
                 writeUnsupportedMediaType(context, surface: .anthropic)
@@ -114,31 +127,39 @@ extension ServerHTTPHandler {
         case (.POST, "/v1/models/unload"):
             handleUnload(context: context)
         case (_, "/health"), (_, "/v1/models"), (_, "/v1/chat/completions"), (_, "/v1/responses"),
-             (_, "/v1/responses/compact"),
-             (_, "/v1/models/unload"), (_, "/v1/messages"), (_, "/v1/messages/count_tokens"):
-            writeRequestError(context, .invalid(message: "method not allowed", param: nil,
-                                                code: "method_not_allowed"),
-                              status: .methodNotAllowed,
-                              surface: anthropic ? .anthropic : .chat)
+            (_, "/v1/responses/compact"),
+            (_, "/v1/models/unload"), (_, "/v1/messages"), (_, "/v1/messages/count_tokens"):
+            writeRequestError(
+                context,
+                .invalid(
+                    message: "method not allowed", param: nil,
+                    code: "method_not_allowed"),
+                status: .methodNotAllowed,
+                surface: anthropic ? .anthropic : .chat)
         default:
-            routeBySegment(segments: segments, method: head.method,
-                           anthropic: anthropic, context: context)
+            routeBySegment(
+                segments: segments, method: head.method,
+                anthropic: anthropic, context: context)
         }
     }
 
     /// Paths that are not in the table above: a model id, a stored response, or
     /// nothing. Kept out of the switch so the switch stays a table.
-    func routeBySegment(segments: [String], method: HTTPMethod, anthropic: Bool,
-                        context: ChannelHandlerContext) {
+    func routeBySegment(
+        segments: [String], method: HTTPMethod, anthropic: Bool,
+        context: ChannelHandlerContext
+    ) {
         if segments.count == 3, segments[0] == "v1", segments[1] == "models" {
             handleModel(id: segments[2], method: method, anthropic: anthropic, context: context)
         } else if segments.count >= 3, segments[0] == "v1", segments[1] == "responses" {
-            handleStoredResponse(segments: Array(segments.dropFirst(2)),
-                                 method: method, context: context)
+            handleStoredResponse(
+                segments: Array(segments.dropFirst(2)),
+                method: method, context: context)
         } else {
-            writeRequestError(context, .notFound(message: "route not found", param: nil),
-                              status: .notFound,
-                              surface: anthropic ? .anthropic : .chat)
+            writeRequestError(
+                context, .notFound(message: "route not found", param: nil),
+                status: .notFound,
+                surface: anthropic ? .anthropic : .chat)
         }
     }
 
@@ -152,18 +173,22 @@ extension ServerHTTPHandler {
     /// unknown path says 405 where a GET says 404, and both are head-only.
     ///
     /// - Returns: true when the request has been answered and routing should stop.
-    func refuseUnsupportedHEAD(_ head: HTTPRequestHead, path: String,
-                               context: ChannelHandlerContext) -> Bool {
+    func refuseUnsupportedHEAD(
+        _ head: HTTPRequestHead, path: String,
+        context: ChannelHandlerContext
+    ) -> Bool {
         guard head.method == .HEAD, path != "/health", path != "/v1/models" else { return false }
         writeHeadOnly(context, status: .methodNotAllowed)
         return true
     }
 
     func writeUnsupportedMediaType(_ context: ChannelHandlerContext, surface: APISurface) {
-        writeRequestError(context,
-                          .invalid(message: "content-type must be application/json",
-                                   param: nil, code: "unsupported_media_type"),
-                          status: .unsupportedMediaType, surface: surface)
+        writeRequestError(
+            context,
+            .invalid(
+                message: "content-type must be application/json",
+                param: nil, code: "unsupported_media_type"),
+            status: .unsupportedMediaType, surface: surface)
     }
 
     /// The model a request names. Resolved before validation, so omitted
@@ -173,10 +198,11 @@ extension ServerHTTPHandler {
     /// any other name.
     func servedModel(named name: String) throws -> ServedModel {
         guard let router else {
-            return ServedModel(id: modelID, displayName: modelID,
-                               maximumContext: backend.maximumContext,
-                               sampling: backend.samplingDefaults,
-                               reasoningProfile: reasoningProfile)
+            return ServedModel(
+                id: modelID, displayName: modelID,
+                maximumContext: backend.maximumContext,
+                sampling: backend.samplingDefaults,
+                reasoningProfile: reasoningProfile)
         }
         guard let model = router.servedModel(named: name) else {
             throw ServerRequestError.unknownModel
@@ -186,13 +212,16 @@ extension ServerHTTPHandler {
 
     /// Validates against `target` and binds the request to it, so the router
     /// loads the model that was validated and the response names it.
-    func validate(_ request: OpenAIChatRequest,
-                          for target: ServedModel) throws -> ValidatedChatRequest {
+    func validate(
+        _ request: OpenAIChatRequest,
+        for target: ServedModel
+    ) throws -> ValidatedChatRequest {
         let validated = try OpenAIRequestValidator.validate(
             request, modelID: target.id, maxContext: target.maximumContext,
             reasoningProfile: target.reasoningProfile,
-            sampling: target.sampling)
-            .withModel(target.id)
+            sampling: target.sampling
+        )
+        .withModel(target.id)
         // Best-effort reasoning: say what was applied when a client asked for
         // a level this model cannot render. Never an error — see
         // `ReasoningFallback`.
@@ -206,30 +235,40 @@ extension ServerHTTPHandler {
     /// Every catalog model in the shape the client speaks. The "-fast"
     /// aliases are accepted but not listed: doubling a catalog into twice as
     /// many menu entries helps nobody choose between models.
-    func writeModelList(_ models: [ServedModel], anthropic: Bool,
-                                context: ChannelHandlerContext) {
+    func writeModelList(
+        _ models: [ServedModel], anthropic: Bool,
+        context: ChannelHandlerContext
+    ) {
         if anthropic {
-            writeJSON(context, status: .ok,
-                      object: AnthropicBuilder.modelList(
-                          models: models.map { (id: $0.id, displayName: $0.displayName) }),
-                      surface: .anthropic)
+            writeJSON(
+                context, status: .ok,
+                object: AnthropicBuilder.modelList(
+                    models: models.map { (id: $0.id, displayName: $0.displayName) }),
+                surface: .anthropic)
             return
         }
-        writeCodable(context, status: .ok, OpenAIModelList(
-            object: "list",
-            data: models.map {
-                .init(id: $0.id, object: "model", created: nil, ownedBy: "tinytitan")
-            }))
+        writeCodable(
+            context, status: .ok,
+            OpenAIModelList(
+                object: "list",
+                data: models.map {
+                    .init(id: $0.id, object: "model", created: nil, ownedBy: "tinytitan")
+                }))
     }
 
     /// `GET /v1/models/{id}` in either shape.
-    func handleModel(id: String, method: HTTPMethod, anthropic: Bool,
-                             context: ChannelHandlerContext) {
+    func handleModel(
+        id: String, method: HTTPMethod, anthropic: Bool,
+        context: ChannelHandlerContext
+    ) {
         let surface: APISurface = anthropic ? .anthropic : .chat
         guard method == .GET else {
-            writeRequestError(context, .invalid(message: "method not allowed", param: nil,
-                                                code: "method_not_allowed"),
-                              status: .methodNotAllowed, surface: surface)
+            writeRequestError(
+                context,
+                .invalid(
+                    message: "method not allowed", param: nil,
+                    code: "method_not_allowed"),
+                status: .methodNotAllowed, surface: surface)
             return
         }
         let displayName: String
@@ -247,60 +286,76 @@ extension ServerHTTPHandler {
             displayName = id
         }
         if anthropic {
-            writeJSON(context, status: .ok,
-                      object: AnthropicBuilder.modelObject(id: id, displayName: displayName),
-                      surface: .anthropic)
+            writeJSON(
+                context, status: .ok,
+                object: AnthropicBuilder.modelObject(id: id, displayName: displayName),
+                surface: .anthropic)
         } else {
-            writeCodable(context, status: .ok,
-                         OpenAIModelList.Model(id: id, object: "model", created: nil, ownedBy: "tinytitan"))
+            writeCodable(
+                context, status: .ok,
+                OpenAIModelList.Model(id: id, object: "model", created: nil, ownedBy: "tinytitan"))
         }
     }
 
     /// `GET|DELETE /v1/responses/{id}`, `POST /v1/responses/{id}/cancel`,
     /// `GET /v1/responses/{id}/input_items`: the stored side of the
     /// Responses API. Nothing here runs the model.
-    func handleStoredResponse(segments: [String], method: HTTPMethod,
-                                      context: ChannelHandlerContext) {
+    func handleStoredResponse(
+        segments: [String], method: HTTPMethod,
+        context: ChannelHandlerContext
+    ) {
         let id = segments[0]
         let notFound = ServerRequestError.notFound(
             message: "Response with id '\(id)' not found.", param: "id")
         switch (method, segments.count, segments.count > 1 ? segments[1] : "") {
         case (.GET, 1, _):
             guard let entry = responseStore.get(id) else {
-                writeRequestError(context, notFound, status: .notFound, surface: .responses); return
+                writeRequestError(context, notFound, status: .notFound, surface: .responses)
+                return
             }
             writeData(context, status: .ok, data: entry.responseJSON)
         case (.DELETE, 1, _):
             guard responseStore.delete(id) else {
-                writeRequestError(context, notFound, status: .notFound, surface: .responses); return
+                writeRequestError(context, notFound, status: .notFound, surface: .responses)
+                return
             }
-            writeJSON(context, status: .ok, object: ["id": id, "object": "response", "deleted": true])
+            writeJSON(
+                context, status: .ok, object: ["id": id, "object": "response", "deleted": true])
         case (.POST, 2, "cancel"):
             guard responseStore.get(id) != nil else {
-                writeRequestError(context, notFound, status: .notFound, surface: .responses); return
+                writeRequestError(context, notFound, status: .notFound, surface: .responses)
+                return
             }
             // Every response this server produces is foreground and already
             // finished by the time it has an id to cancel.
-            writeRequestError(context, .invalid(
-                message: "Only responses created with background=true can be cancelled.",
-                param: "id", code: "invalid_request"), status: .badRequest, surface: .responses)
+            writeRequestError(
+                context,
+                .invalid(
+                    message: "Only responses created with background=true can be cancelled.",
+                    param: "id", code: "invalid_request"), status: .badRequest, surface: .responses)
         case (.GET, 2, "input_items"):
             guard let entry = responseStore.get(id) else {
-                writeRequestError(context, notFound, status: .notFound, surface: .responses); return
+                writeRequestError(context, notFound, status: .notFound, surface: .responses)
+                return
             }
             do {
-                writeData(context, status: .ok,
-                          data: try ResponsesAPIBuilder.inputItemsList(entry.inputItems))
+                writeData(
+                    context, status: .ok,
+                    data: try ResponsesAPIBuilder.inputItemsList(entry.inputItems))
             } catch {
                 writeData(context, status: .internalServerError, data: Self.minimalErrorData)
             }
         case (_, 1, _), (_, 2, "cancel"), (_, 2, "input_items"):
-            writeRequestError(context, .invalid(message: "method not allowed", param: nil,
-                                                code: "method_not_allowed"),
-                              status: .methodNotAllowed, surface: .responses)
+            writeRequestError(
+                context,
+                .invalid(
+                    message: "method not allowed", param: nil,
+                    code: "method_not_allowed"),
+                status: .methodNotAllowed, surface: .responses)
         default:
-            writeRequestError(context, .notFound(message: "route not found", param: nil),
-                              status: .notFound, surface: .responses)
+            writeRequestError(
+                context, .notFound(message: "route not found", param: nil),
+                status: .notFound, surface: .responses)
         }
     }
 
@@ -319,8 +374,9 @@ extension ServerHTTPHandler {
             } else {
                 released = false
             }
-            self.writeJSON(contextBox.value, status: .ok,
-                           object: ["status": "ok", "unloaded": released])
+            self.writeJSON(
+                contextBox.value, status: .ok,
+                object: ["status": "ok", "unloaded": released])
         }
     }
 

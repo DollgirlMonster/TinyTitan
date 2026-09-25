@@ -47,8 +47,10 @@ struct ServerPromptCache: Sendable {
     private let maximumEntries: Int
     private(set) var entries: [ServerPromptCacheEntry]
 
-    init(maximumEntries: Int = 1,
-         entries: [ServerPromptCacheEntry] = []) {
+    init(
+        maximumEntries: Int = 1,
+        entries: [ServerPromptCacheEntry] = []
+    ) {
         precondition(maximumEntries > 0, "maximumEntries must be positive")
         self.maximumEntries = maximumEntries
         self.entries = Array(entries.suffix(maximumEntries))
@@ -74,12 +76,13 @@ struct ServerPromptCache: Sendable {
         stopStringFiltered: Bool = false
     ) -> ServerPromptCachePublication? {
         guard result.kvPosition == result.kvBackedTokenIDs.count,
-              !result.kvBackedTokenIDs.isEmpty,
-              result.uncommittedBoundaryTokenIDs.count == 1,
-              !stopStringFiltered,
-              result.reason == .endOfTurn
+            !result.kvBackedTokenIDs.isEmpty,
+            result.uncommittedBoundaryTokenIDs.count == 1,
+            !stopStringFiltered,
+            result.reason == .endOfTurn
                 || result.reason == .toolCalls
-                || result.reason == .maxTokens else {
+                || result.reason == .maxTokens
+        else {
             return nil
         }
         let historicalCalls = calls.map {
@@ -127,15 +130,16 @@ struct ServerPromptCache: Sendable {
         var best: (index: Int, effective: [Int32], cached: Int)?
         for (index, entry) in entries.enumerated() {
             guard entry.domain == domain,
-                  entry.tools == request.tools,
-                  entry.kvPosition == entry.kvBackedTokenIDs.count,
-                  entry.kvPosition > 0,
-                  entry.uncommittedBoundaryTokenIDs.count == 1,
-                  let candidate = match(
+                entry.tools == request.tools,
+                entry.kvPosition == entry.kvBackedTokenIDs.count,
+                entry.kvPosition > 0,
+                entry.uncommittedBoundaryTokenIDs.count == 1,
+                let candidate = match(
                     entry: entry,
                     request: request,
                     renderedPromptIDs: renderedPromptIDs,
-                    tokenizer: tokenizer) else { continue }
+                    tokenizer: tokenizer)
+            else { continue }
             if candidate.cached > (best?.cached ?? -1) {
                 best = (index, candidate.effective, candidate.cached)
             }
@@ -156,8 +160,9 @@ struct ServerPromptCache: Sendable {
         tokenizer: GFTokenizer
     ) -> (effective: [Int32], cached: Int)? {
         guard entry.kvPosition == entry.kvBackedTokenIDs.count,
-              entry.kvPosition > 0,
-              entry.uncommittedBoundaryTokenIDs.count == 1 else {
+            entry.kvPosition > 0,
+            entry.uncommittedBoundaryTokenIDs.count == 1
+        else {
             return nil
         }
 
@@ -165,18 +170,20 @@ struct ServerPromptCache: Sendable {
         // replay whose render is exactly the entry's KV-backed prefix also
         // hits; the caller restores the entry state without extending it.
         if renderedPromptIDs.count >= entry.kvPosition,
-           renderedPromptIDs.prefix(entry.kvPosition)
-            .elementsEqual(entry.kvBackedTokenIDs) {
+            renderedPromptIDs.prefix(entry.kvPosition)
+                .elementsEqual(entry.kvBackedTokenIDs)
+        {
             return (renderedPromptIDs, entry.kvPosition)
         }
 
         let inputCount = entry.inputMessages.count
         guard request.messages.count > inputCount + 1,
-              request.messages.prefix(inputCount)
+            request.messages.prefix(inputCount)
                 .elementsEqual(entry.inputMessages),
-              assistantMatches(
+            assistantMatches(
                 request.messages[inputCount],
-                entry.assistantTurn.message) else {
+                entry.assistantTurn.message)
+        else {
             return nil
         }
         let continuation = Array(request.messages.dropFirst(inputCount + 1))
@@ -199,10 +206,11 @@ struct ServerPromptCache: Sendable {
         _ cached: GFTokenizer.Message
     ) -> Bool {
         guard incoming.role == .assistant,
-              cached.role == .assistant,
-              incoming.toolCalls == cached.toolCalls,
-              incoming.toolCallID == cached.toolCallID,
-              incoming.name == cached.name else {
+            cached.role == .assistant,
+            incoming.toolCalls == cached.toolCalls,
+            incoming.toolCallID == cached.toolCallID,
+            incoming.name == cached.name
+        else {
             return false
         }
         if !cached.toolCalls.isEmpty {
@@ -226,19 +234,20 @@ struct ServerPromptCache: Sendable {
         // cannot represent) and must end in a user message so the generation
         // suffix applies.
         guard let last = continuation.last,
-              last.role == .user,
-              continuation.allSatisfy({
-                  $0.role != .tool && $0.toolCallID == nil && $0.toolCalls.isEmpty
-              }),
-              entry.assistantTurn.rawStopReason == .endOfTurn
+            last.role == .user,
+            continuation.allSatisfy({
+                $0.role != .tool && $0.toolCallID == nil && $0.toolCalls.isEmpty
+            }),
+            entry.assistantTurn.rawStopReason == .endOfTurn
                 || entry.assistantTurn.rawStopReason == .maxTokens,
-              let renderedTail = try? tokenizer.applyChatTemplate(continuation)
+            let renderedTail = try? tokenizer.applyChatTemplate(continuation)
         else {
             return nil
         }
         // The bridge begins with the cached turn's closing <|im_end|>, then
         // the rendered tail (which includes the generation suffix).
-        var bridge = [tokenizer.endOfTurnID]
+        var bridge =
+            [tokenizer.endOfTurnID]
             + tokenizer.encode("\n" + renderedTail, addBOS: false)
         if entry.assistantTurn.rawStopReason == .maxTokens {
             // S14: the uncommitted boundary token (the last generated token,
@@ -262,22 +271,25 @@ struct ServerPromptCache: Sendable {
     ) -> (effective: [Int32], cached: Int)? {
         let calls = entry.assistantTurn.message.toolCalls
         guard entry.assistantTurn.rawStopReason == .toolCalls,
-              continuation.count == calls.count,
-              zip(continuation, calls).allSatisfy({ message, call in
-                  message.role == .tool
+            continuation.count == calls.count,
+            zip(continuation, calls).allSatisfy({ message, call in
+                message.role == .tool
                     && message.toolCallID == call.id
                     && (message.name == nil || message.name == call.name)
                     && message.content != nil
                     && message.toolCalls.isEmpty
-              }) else {
+            })
+        else {
             return nil
         }
-        guard let bridge = try? tokenizer.encodeToolResultContinuation(
-            cachedMessages: entry.inputMessages,
-            assistant: entry.assistantTurn.message,
-            incomingMessages: request.messages,
-            tools: request.tools),
-              bridge.first == entry.uncommittedBoundaryTokenIDs.first else {
+        guard
+            let bridge = try? tokenizer.encodeToolResultContinuation(
+                cachedMessages: entry.inputMessages,
+                assistant: entry.assistantTurn.message,
+                incomingMessages: request.messages,
+                tools: request.tools),
+            bridge.first == entry.uncommittedBoundaryTokenIDs.first
+        else {
             return nil
         }
         return (entry.kvBackedTokenIDs + bridge, entry.kvPosition)

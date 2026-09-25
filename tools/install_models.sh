@@ -377,7 +377,7 @@ USAGE
 status() {
   printf '%-20s %-8s %-10s %s\n' MODEL WIDTH STATE SOURCE
   for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
-    IFS='|' read -r name dir width source preset_field sibling_field <<<"$row"
+    IFS='|' read -r name dir width source _ _ <<<"$row"
     if [[ -d "$MODELS/$dir" ]]; then
       state="installed"
     else
@@ -446,8 +446,8 @@ install_one() {
   python="$(tinytitan_resolve_python)" || { tinytitan_no_python_fallback "$want"; return 1; }
   for row in "${CATALOGUE[@]+"${CATALOGUE[@]}"}"; do
     # Six fields on the MoE rows, four elsewhere; the trailing two are only
-    # read by the convert_qwen35moe branch.
-    IFS='|' read -r name dir width source preset_field sibling_field <<<"$row"
+    # read by the convert_qwen35moe branch, not here.
+    IFS='|' read -r name dir width source _ _ <<<"$row"
     [[ "$name" == "$want" ]] || continue
     found=1
     if [[ -d "$MODELS/$dir" ]]; then
@@ -681,7 +681,9 @@ install_one() {
         # written by the repack, so the destination must be empty first and
         # must never be moved afterwards.
         echo "repacking $stage -> models/$dir"
-        rm -rf "$MODELS/$dir"
+        # `${var:?}` because an unset MODELS or dir would make this `rm -rf /`
+        # or `rm -rf <models>`; the staging path is checked before it is used.
+        rm -rf "${MODELS:?}/${dir:?}"
         "$BIN" --input-snapshot "$stage" --model-id "$model_id" \
             --output "$MODELS/$dir" || return 1
         "$BIN" --verify-install --input-gturbo "$MODELS/$dir" || return 1

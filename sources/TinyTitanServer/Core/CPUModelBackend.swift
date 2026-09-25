@@ -79,16 +79,19 @@ public actor CPUModelBackend: ServerInferenceBackend, PromptCacheDescribing {
     /// is on the GPU path: the template renders the thinking switch, so it is
     /// a load-time setting, not a per-request one. A request can still switch
     /// it; that is `resolvedTokenizer(for:)`.
-    public init(snapshotDirectory: URL,
-                maximumContext: Int = CPUModelBackend.contextCeiling,
-                resident: Bool = true,
-                thinkingMode: ModelThinkingMode = .off) async throws {
+    public init(
+        snapshotDirectory: URL,
+        maximumContext: Int = CPUModelBackend.contextCeiling,
+        resident: Bool = true,
+        thinkingMode: ModelThinkingMode = .off
+    ) async throws {
         // A `.gturbo` declares itself with a manifest; a snapshot does not.
         // `manifest.json` is also what the catalog keys on, so the two agree
         // about which shape a directory is.
         let isGTurbo = FileManager.default.fileExists(
             atPath: snapshotDirectory.appendingPathComponent("manifest.json").path)
-        let snapshot = isGTurbo
+        let snapshot =
+            isGTurbo
             ? try AffineSnapshot(gturbo: snapshotDirectory)
             : try AffineSnapshot(directory: snapshotDirectory)
         guard let family = snapshot.family else {
@@ -107,19 +110,24 @@ public actor CPUModelBackend: ServerInferenceBackend, PromptCacheDescribing {
         // came to hand `load(from:)` a directory that has no `tokenizer.json`
         // -- which every `.gturbo` install has, so the switch failed for all
         // of them.
-        guard let folder = GFTokenizer.resolvedTokenizerFolder(
-            forModelDirectory: snapshotDirectory) else {
+        guard
+            let folder = GFTokenizer.resolvedTokenizerFolder(
+                forModelDirectory: snapshotDirectory)
+        else {
             throw CPUBackendError.unsupported(
                 "no tokenizer in \(snapshotDirectory.lastPathComponent)")
         }
         tokenizerFolder = folder
-        tokenizer = try await GFTokenizer.load(from: folder,
-                                              thinkingMode: thinkingMode)
+        tokenizer = try await GFTokenizer.load(
+            from: folder,
+            thinkingMode: thinkingMode)
         self.snapshotDirectory = snapshotDirectory
-        self.loadedReasoning = RequestReasoning(thinkingMode: thinkingMode,
-                                                effort: nil)
-        context = min(maximumContext, snapshot.configuration.maxPositions,
-                      Self.contextCeiling)
+        self.loadedReasoning = RequestReasoning(
+            thinkingMode: thinkingMode,
+            effort: nil)
+        context = min(
+            maximumContext, snapshot.configuration.maxPositions,
+            Self.contextCeiling)
         // The family's own, which is what the catalog advertises for it, so
         // a launcher showing the defaults shows what a request will get.
         defaults = family.samplingDefaults
@@ -163,9 +171,19 @@ public actor CPUModelBackend: ServerInferenceBackend, PromptCacheDescribing {
         let budget = min(request.maximumCompletionTokens, context - prompt.count)
         var configuration = request.generationConfig
         if let node = request.jsonSchema {
-            if jsonTokenTable == nil { jsonTokenTable = JSONTokenTable(tokenizer: tokenizer) }
-            configuration.constraint = JSONConstraint(table: jsonTokenTable!, node: node,
-                                                      vocab: model.configuration.vocabulary)
+            // One local for the table: the force unwrap here used to be the
+            // only thing standing between a nil cache and a crash.
+            let table: JSONTokenTable
+            if let existing = jsonTokenTable {
+                table = existing
+            } else {
+                let made = JSONTokenTable(tokenizer: tokenizer)
+                jsonTokenTable = made
+                table = made
+            }
+            configuration.constraint = JSONConstraint(
+                table: table, node: node,
+                vocab: model.configuration.vocabulary)
         }
         let sampler = CPUSampler(
             temperature: configuration.temperature,
@@ -205,11 +223,19 @@ public actor CPUModelBackend: ServerInferenceBackend, PromptCacheDescribing {
             if let constraint = configuration.constraint, !constraint.observe(Int32(next)) {
                 throw GeneratorError.constrainedDecodeViolation(id: Int32(next))
             }
-            if next == Int(tokenizer.eosID) { reason = "stop"; break }
+            if next == Int(tokenizer.eosID) {
+                reason = "stop"
+                break
+            }
             produced += 1
-            output.publish(try events(for: Int32(next), decoder: decoder,
-                                      detokenizer: &detokenizer))
-            if output.isStopped { reason = "stop"; break }
+            output.publish(
+                try events(
+                    for: Int32(next), decoder: decoder,
+                    detokenizer: &detokenizer))
+            if output.isStopped {
+                reason = "stop"
+                break
+            }
             if produced >= budget { break }
             logits = try model.step(token: next)
         }
@@ -220,11 +246,12 @@ public actor CPUModelBackend: ServerInferenceBackend, PromptCacheDescribing {
             content: output.content,
             toolCalls: [],
             finishReason: reason,
-            usage: OpenAIUsage(promptTokens: prompt.count,
-                               completionTokens: produced,
-                               totalTokens: prompt.count + produced,
-                               cachedTokens: 0,
-                               reasoningTokens: output.reasoningTokens),
+            usage: OpenAIUsage(
+                promptTokens: prompt.count,
+                completionTokens: produced,
+                totalTokens: prompt.count + produced,
+                cachedTokens: 0,
+                reasoningTokens: output.reasoningTokens),
             // Named, as the GPU path names it: a Messages client is told
             // which of its stop sequences ended the turn.
             stopSequence: output.matchedStop,
@@ -243,9 +270,11 @@ public actor CPUModelBackend: ServerInferenceBackend, PromptCacheDescribing {
     /// drops exactly the markers a self-started thought has to be recognized
     /// by. Both engines now detokenize the same way, which is what makes "the
     /// same rule wherever a model runs" true rather than aspirational.
-    private func events(for token: Int32,
-                        decoder: StructuredAssistantDecoder,
-                        detokenizer: inout GFDetokenizer) throws -> [StructuredAssistantEvent] {
+    private func events(
+        for token: Int32,
+        decoder: StructuredAssistantDecoder,
+        detokenizer: inout GFDetokenizer
+    ) throws -> [StructuredAssistantEvent] {
         try decoder.consume(tokenID: token, delta: detokenizer.push(token))
     }
 }
@@ -269,15 +298,18 @@ extension CPUModelBackend: PromptTokenCounting {
         guard let reasoning, !reasoning.matches(loadedReasoning) else {
             return tokenizer
         }
-        return try await GFTokenizer.load(from: tokenizerFolder,
-                                          thinkingMode: reasoning.thinkingMode,
-                                          reasoningEffort: reasoning.effort)
+        return try await GFTokenizer.load(
+            from: tokenizerFolder,
+            thinkingMode: reasoning.thinkingMode,
+            reasoningEffort: reasoning.effort)
     }
 
     /// The count from a tokenizer alone, which is how the router answers for
     /// a CPU model that is not the one loaded.
-    static func promptTokenCount(_ request: ValidatedChatRequest,
-                                 tokenizer: GFTokenizer) throws -> Int {
+    static func promptTokenCount(
+        _ request: ValidatedChatRequest,
+        tokenizer: GFTokenizer
+    ) throws -> Int {
         let rendered = try tokenizer.applyChatTemplate(request.messages)
         return tokenizer.encode(rendered, addBOS: false).count
     }

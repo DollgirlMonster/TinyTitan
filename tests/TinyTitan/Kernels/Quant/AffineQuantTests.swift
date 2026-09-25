@@ -1,7 +1,8 @@
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct AffineQuantTests {
     private static func packed(bits: Int, rows: Int, columns: Int) -> ([UInt8], [[UInt32]]) {
@@ -32,7 +33,8 @@ import TinyTitanValidationSupport
 
     @Test(arguments: [4, 8])
     func gemvDecodesPackedAffine(bits: Int) throws {
-        let rows = 3, columns = 128
+        let rows = 3
+        let columns = 128
         let (packed, values) = Self.packed(bits: bits, rows: rows, columns: columns)
         let one = UInt16(truncatingIfNeeded: Float(1).bitPattern >> 16)
         let scales = [UInt16](repeating: one, count: rows * columns / 64)
@@ -40,15 +42,17 @@ import TinyTitanValidationSupport
         let input = [Float16](repeating: 1, count: columns)
         let ctx = try MetalContext()
         let kernel = try AffineQuantGEMV(context: ctx, weightBits: bits)
-        let w = ctx.device.makeBuffer(bytes: packed, length: packed.count)!
-        let s = ctx.device.makeBuffer(bytes: scales, length: scales.count * 2)!
-        let b = ctx.device.makeBuffer(bytes: biases, length: biases.count * 2)!
-        let x = Fp16Buffer.make(ctx.device, halves: input)!
-        let y = Fp16Buffer.make(ctx.device, count: rows)!
-        let cb = ctx.queue.makeCommandBuffer()!
-        try kernel.encode(commandBuffer: cb, weights: w, scales: s, biases: b,
-                      x: x, y: y, m: UInt32(rows), n: UInt32(columns))
-        cb.commit(); cb.waitUntilCompleted()
+        let w = try #require(ctx.device.makeBuffer(bytes: packed, length: packed.count))
+        let s = try #require(ctx.device.makeBuffer(bytes: scales, length: scales.count * 2))
+        let b = try #require(ctx.device.makeBuffer(bytes: biases, length: biases.count * 2))
+        let x = try #require(Fp16Buffer.make(ctx.device, halves: input))
+        let y = try #require(Fp16Buffer.make(ctx.device, count: rows))
+        let cb = try #require(ctx.queue.makeCommandBuffer())
+        try kernel.encode(
+            commandBuffer: cb, weights: w, scales: s, biases: b,
+            x: x, y: y, m: UInt32(rows), n: UInt32(columns))
+        cb.commit()
+        cb.waitUntilCompleted()
         #expect(cb.status == .completed)
         let actual = Fp16Buffer.read(y, count: rows)
         let expected = values.map { Float($0.reduce(0, +)) }
@@ -57,22 +61,25 @@ import TinyTitanValidationSupport
 
     @Test(arguments: [4, 8])
     func embeddingDecodesPackedAffine(bits: Int) throws {
-        let rows = 3, columns = 128
+        let rows = 3
+        let columns = 128
         let (packed, values) = Self.packed(bits: bits, rows: rows, columns: columns)
         let one = UInt16(truncatingIfNeeded: Float(1).bitPattern >> 16)
         let scales = [UInt16](repeating: one, count: rows * columns / 64)
         let biases = [UInt16](repeating: 0, count: scales.count)
         let ctx = try MetalContext()
         let kernel = try AffineQuantEmbeddingLookup(context: ctx, weightBits: bits)
-        let w = ctx.device.makeBuffer(bytes: packed, length: packed.count)!
-        let s = ctx.device.makeBuffer(bytes: scales, length: scales.count * 2)!
-        let b = ctx.device.makeBuffer(bytes: biases, length: biases.count * 2)!
-        let y = Fp16Buffer.make(ctx.device, count: columns)!
-        let cb = ctx.queue.makeCommandBuffer()!
-        try kernel.encode(commandBuffer: cb, table: w, scales: s, biases: b,
-                      out: y, tokenId: 1, d: UInt32(columns), outScale: 1,
-                      vocab: UInt32(rows))
-        cb.commit(); cb.waitUntilCompleted()
+        let w = try #require(ctx.device.makeBuffer(bytes: packed, length: packed.count))
+        let s = try #require(ctx.device.makeBuffer(bytes: scales, length: scales.count * 2))
+        let b = try #require(ctx.device.makeBuffer(bytes: biases, length: biases.count * 2))
+        let y = try #require(Fp16Buffer.make(ctx.device, count: columns))
+        let cb = try #require(ctx.queue.makeCommandBuffer())
+        try kernel.encode(
+            commandBuffer: cb, table: w, scales: s, biases: b,
+            out: y, tokenId: 1, d: UInt32(columns), outScale: 1,
+            vocab: UInt32(rows))
+        cb.commit()
+        cb.waitUntilCompleted()
         #expect(cb.status == .completed)
         let actual = Fp16Buffer.read(y, count: columns)
         #expect(actual == values[1].map { Float($0) })

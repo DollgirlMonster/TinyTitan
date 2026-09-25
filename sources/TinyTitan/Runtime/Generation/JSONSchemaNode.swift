@@ -105,7 +105,8 @@ public indirect enum JSONSchemaNode: Sendable, Hashable {
             return .any
         }
         guard case .object(let keywords) = value else {
-            throw JSONSchemaCompileError.malformed("a schema must be an object or a boolean", at: path)
+            throw JSONSchemaCompileError.malformed(
+                "a schema must be an object or a boolean", at: path)
         }
         for keyword in keywords.keys.sorted() {
             if refused.contains(keyword) {
@@ -114,7 +115,7 @@ public indirect enum JSONSchemaNode: Sendable, Hashable {
             if annotations.contains(keyword) { continue }
             switch keyword {
             case "type", "properties", "required", "additionalProperties",
-                 "items", "enum", "const":
+                "items", "enum", "const":
                 continue
             default:
                 // An unknown keyword is refused rather than ignored: a schema
@@ -135,7 +136,8 @@ public indirect enum JSONSchemaNode: Sendable, Hashable {
             }
             return try enumerationNode(entries, at: path)
         }
-        let declared: Set<JSONScalarKind>? = keywords["type"] == nil
+        let declared: Set<JSONScalarKind>? =
+            keywords["type"] == nil
             ? nil : try types(keywords["type"], at: path)
         if let properties = keywords["properties"] {
             guard case .object(let entries) = properties else {
@@ -159,7 +161,7 @@ public indirect enum JSONSchemaNode: Sendable, Hashable {
                 for name in required where compiled[name] == nil {
                     throw JSONSchemaCompileError.unsatisfiable(
                         "required property '\(name)' at \(path) is not in properties and "
-                        + "additionalProperties is false, so it can never be generated")
+                            + "additionalProperties is false, so it can never be generated")
                 }
             }
             // `properties` implies an object even when `type` was omitted,
@@ -202,26 +204,29 @@ public indirect enum JSONSchemaNode: Sendable, Hashable {
     /// `enum`/`const` decide the value on their own; a structural keyword
     /// beside them would be silently ignored, which is exactly the failure this
     /// compiler refuses everywhere else.
-    static func refuseStructureBesideLiteral(_ keywords: [String: JSONValue],
-                                             at path: String) throws {
-        for structural in ["properties", "required", "additionalProperties", "items"] {
-            if keywords[structural] != nil {
-                throw JSONSchemaCompileError.unsupported(
-                    keyword: "\(structural) beside enum/const", at: path)
-            }
+    static func refuseStructureBesideLiteral(
+        _ keywords: [String: JSONValue],
+        at path: String
+    ) throws {
+        for structural in ["properties", "required", "additionalProperties", "items"]
+        where keywords[structural] != nil {
+            throw JSONSchemaCompileError.unsupported(
+                keyword: "\(structural) beside enum/const", at: path)
         }
     }
 
     /// A schema that declares `properties` is an object schema, and one that
     /// declares `items` is an array schema; a `type` that says otherwise is a
     /// contradiction, not something to guess about.
-    static func requireContainer(_ declared: Set<JSONScalarKind>?,
-                                 _ kind: JSONScalarKind, at path: String) throws {
+    static func requireContainer(
+        _ declared: Set<JSONScalarKind>?,
+        _ kind: JSONScalarKind, at path: String
+    ) throws {
         guard let declared else { return }
         guard declared == [kind] else {
             throw JSONSchemaCompileError.malformed(
                 "\(kind == .object ? "properties" : "items") needs type \(kind.rawValue), "
-                + "but type is \(declared.map(\.rawValue).sorted().joined(separator: "|"))",
+                    + "but type is \(declared.map(\.rawValue).sorted().joined(separator: "|"))",
                 at: path)
         }
     }
@@ -273,7 +278,8 @@ public indirect enum JSONSchemaNode: Sendable, Hashable {
     }
 
     static func enumerationNode(_ values: [JSONValue], at path: String) throws
-        -> JSONSchemaNode {
+        -> JSONSchemaNode
+    {
         var literals: [String] = []
         for value in values {
             guard let literal = canonicalLiteral(value) else {
@@ -289,7 +295,7 @@ public indirect enum JSONSchemaNode: Sendable, Hashable {
                 if candidate.hasPrefix(literal) {
                     throw JSONSchemaCompileError.unsatisfiable(
                         "enum values \(literal) and \(candidate) at \(path) share a prefix, "
-                        + "which this grammar cannot match unambiguously")
+                            + "which this grammar cannot match unambiguously")
                 }
             }
         }
@@ -305,7 +311,8 @@ public indirect enum JSONSchemaNode: Sendable, Hashable {
             // spell the same string several ways, and a grammar that allowed
             // only one of them would be a surprise.
             guard !text.contains("\""), !text.contains("\\"),
-                  !text.unicodeScalars.contains(where: { $0.value < 0x20 }) else {
+                !text.unicodeScalars.contains(where: { $0.value < 0x20 })
+            else {
                 return nil
             }
             return "\"\(text)\""

@@ -22,7 +22,8 @@ public enum ModelIntegrityPolicy: Sendable, Equatable {
     ///
     /// Without a receipt, fall back to a full SHA-256 of everything.
     public static func resolved(directoryURL: URL) -> ModelIntegrityPolicy {
-        let receiptURL = directoryURL
+        let receiptURL =
+            directoryURL
             .appendingPathComponent(VerifiedInstallReceiptReader.fileName)
         return FileManager.default.fileExists(atPath: receiptURL.path)
             ? .sizeCheckTrustedReceipt
@@ -50,14 +51,16 @@ public struct VerifiedInstallReceipt: Codable, Equatable, Sendable {
     public let toolVersion: String
     public let files: [String: FileEntry]
 
-    public init(schemaVersion: Int = 1,
-                manifestSha256: String,
-                modelDirectoryPath: String,
-                sourceRepoID: String? = nil,
-                sourceRevision: String? = nil,
-                verificationTimestamp: String,
-                toolVersion: String,
-                files: [String: FileEntry]) {
+    public init(
+        schemaVersion: Int = 1,
+        manifestSha256: String,
+        modelDirectoryPath: String,
+        sourceRepoID: String? = nil,
+        sourceRevision: String? = nil,
+        verificationTimestamp: String,
+        toolVersion: String,
+        files: [String: FileEntry]
+    ) {
         self.schemaVersion = schemaVersion
         self.manifestSha256 = manifestSha256
         self.modelDirectoryPath = modelDirectoryPath
@@ -77,8 +80,10 @@ public enum VerifiedInstallReceiptReader {
     /// it. See `ManifestReader.defaultMaxBytes`.
     public static let defaultMaxBytes: UInt64 = ManifestReader.defaultMaxBytes
 
-    public static func load(directoryURL: URL,
-                            maxBytes: UInt64 = defaultMaxBytes) throws -> VerifiedInstallReceipt {
+    public static func load(
+        directoryURL: URL,
+        maxBytes: UInt64 = defaultMaxBytes
+    ) throws -> VerifiedInstallReceipt {
         let url = directoryURL.appendingPathComponent(fileName)
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw ModelError.trustedReceiptInvalid(detail: "\(fileName) is missing")
@@ -100,14 +105,17 @@ public enum VerifiedInstallReceiptReader {
         }
     }
 
-    public static func validate(_ receipt: VerifiedInstallReceipt,
-                                directoryURL: URL,
-                                manifest: Manifest,
-                                manifestSha256: String,
-                                manifestSize: UInt64) throws {
-        try validateManifestBinding(receipt,
-                                    directoryURL: directoryURL,
-                                    manifestSha256: manifestSha256)
+    public static func validate(
+        _ receipt: VerifiedInstallReceipt,
+        directoryURL: URL,
+        manifest: Manifest,
+        manifestSha256: String,
+        manifestSize: UInt64
+    ) throws {
+        try validateManifestBinding(
+            receipt,
+            directoryURL: directoryURL,
+            manifestSha256: manifestSha256)
         var expectedFiles = Set(manifest.files.keys)
         expectedFiles.insert("manifest.json")
         let receiptFiles = Set(receipt.files.keys)
@@ -144,8 +152,10 @@ public enum VerifiedInstallReceiptReader {
     /// manifest? Separated from the path binding because the two failures mean
     /// different things — this one says the payload is not what was attested,
     /// which is unrecoverable without a reinstall.
-    public static func validateManifestIntegrity(_ receipt: VerifiedInstallReceipt,
-                                                 manifestSha256: String) throws {
+    public static func validateManifestIntegrity(
+        _ receipt: VerifiedInstallReceipt,
+        manifestSha256: String
+    ) throws {
         guard receipt.schemaVersion == 1 else {
             throw ModelError.trustedReceiptInvalid(
                 detail: "unsupported schemaVersion \(receipt.schemaVersion)")
@@ -161,14 +171,18 @@ public enum VerifiedInstallReceiptReader {
     /// intact — only the attestation needs re-issuing — so callers that can
     /// offer that should check this separately rather than treating it as
     /// corruption.
-    public static func pathBindingMatches(_ receipt: VerifiedInstallReceipt,
-                                          directoryURL: URL) -> Bool {
+    public static func pathBindingMatches(
+        _ receipt: VerifiedInstallReceipt,
+        directoryURL: URL
+    ) -> Bool {
         receipt.modelDirectoryPath == directoryURL.standardizedFileURL.path
     }
 
-    public static func validateManifestBinding(_ receipt: VerifiedInstallReceipt,
-                                               directoryURL: URL,
-                                               manifestSha256: String) throws {
+    public static func validateManifestBinding(
+        _ receipt: VerifiedInstallReceipt,
+        directoryURL: URL,
+        manifestSha256: String
+    ) throws {
         try validateManifestIntegrity(receipt, manifestSha256: manifestSha256)
 
         // A path mismatch is the expected outcome of moving or renaming an

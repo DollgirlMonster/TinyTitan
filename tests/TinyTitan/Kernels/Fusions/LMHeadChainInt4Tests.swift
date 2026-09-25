@@ -1,17 +1,20 @@
 import Accelerate
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct LMHeadChainInt4Tests {
     private static let rmsEps: Float = 1e-6
 
-    private static func cpuGreedy(hiddenFp16: [Float16],
-                                  normWeightBF16: [UInt16],
-                                  rows: [Quantization.Int4AffineRow],
-                                  d: Int,
-                                  v: Int) -> UInt32 {
+    private static func cpuGreedy(
+        hiddenFp16: [Float16],
+        normWeightBF16: [UInt16],
+        rows: [Quantization.Int4AffineRow],
+        d: Int,
+        v: Int
+    ) throws -> UInt32 {
         let hidden = hiddenFp16.map(Float.init)
         let normWeight = normWeightBF16.map(Quantization.bf16ToFloat)
         let normed = RmsNormRef.apply(x: hidden, weight: normWeight, eps: rmsEps)
@@ -22,12 +25,13 @@ import TinyTitanValidationSupport
         for row in 0..<v {
             let dequantized = Quantization.dequantizeInt4Affine(rows[row], n: d)
             var dot: Float = 0
-            dequantized.withUnsafeBufferPointer { weights in
-                normed.withUnsafeBufferPointer { input in
-                    vDSP_dotpr(weights.baseAddress!, 1,
-                               input.baseAddress!, 1,
-                               &dot,
-                               vDSP_Length(d))
+            try dequantized.withUnsafeBufferPointer { weights in
+                try normed.withUnsafeBufferPointer { input in
+                    vDSP_dotpr(
+                        try #require(weights.baseAddress), 1,
+                        try #require(input.baseAddress), 1,
+                        &dot,
+                        vDSP_Length(d))
                 }
             }
             if dot > bestValue {
@@ -39,7 +43,8 @@ import TinyTitanValidationSupport
     }
 
     private static func packRows(_ rows: [Quantization.Int4AffineRow])
-        -> (packed: [UInt8], scales: [UInt16], biases: [UInt16]) {
+        -> (packed: [UInt8], scales: [UInt16], biases: [UInt16])
+    {
         let packedRowCount = rows[0].packed.count
         let groupCount = rows[0].scales.count
         var packed = [UInt8](repeating: 0, count: rows.count * packedRowCount)
@@ -57,54 +62,59 @@ import TinyTitanValidationSupport
         return (packed, scales, biases)
     }
 
-    private static func gpuGreedy(hiddenFp16: [Float16],
-                                  normBF16: [UInt16],
-                                  rows: [Quantization.Int4AffineRow],
-                                  d: Int,
-                                  v: Int,
-                                  hiddenOffset: Int = 0) throws -> UInt32 {
+    private static func gpuGreedy(
+        hiddenFp16: [Float16],
+        normBF16: [UInt16],
+        rows: [Quantization.Int4AffineRow],
+        d: Int,
+        v: Int,
+        hiddenOffset: Int = 0
+    ) throws -> UInt32 {
         let (packed, scales, biases) = Self.packRows(rows)
         let context = try MetalContext()
         let chain = try LMHeadChainInt4(context: context, maxD: d, maxVocab: v)
 
-        guard let hidden = context.device.makeBuffer(
-                  bytes: hiddenFp16,
-                  length: hiddenFp16.count * MemoryLayout<Float16>.stride,
-                  options: .storageModeShared),
-              let norm = context.device.makeBuffer(
-                  bytes: normBF16,
-                  length: normBF16.count * MemoryLayout<UInt16>.stride,
-                  options: .storageModeShared),
-              let weights = context.device.makeBuffer(
-                  bytes: packed,
-                  length: packed.count,
-                  options: .storageModeShared),
-              let scaleBuffer = context.device.makeBuffer(
-                  bytes: scales,
-                  length: scales.count * MemoryLayout<UInt16>.stride,
-                  options: .storageModeShared),
-              let biasBuffer = context.device.makeBuffer(
-                  bytes: biases,
-                  length: biases.count * MemoryLayout<UInt16>.stride,
-                  options: .storageModeShared),
-              let output = context.device.makeBuffer(
-                  length: MemoryLayout<UInt32>.stride,
-                  options: .storageModeShared),
-              let commandBuffer = context.queue.makeCommandBuffer() else {
+        guard
+            let hidden = context.device.makeBuffer(
+                bytes: hiddenFp16,
+                length: hiddenFp16.count * MemoryLayout<Float16>.stride,
+                options: .storageModeShared),
+            let norm = context.device.makeBuffer(
+                bytes: normBF16,
+                length: normBF16.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared),
+            let weights = context.device.makeBuffer(
+                bytes: packed,
+                length: packed.count,
+                options: .storageModeShared),
+            let scaleBuffer = context.device.makeBuffer(
+                bytes: scales,
+                length: scales.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared),
+            let biasBuffer = context.device.makeBuffer(
+                bytes: biases,
+                length: biases.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared),
+            let output = context.device.makeBuffer(
+                length: MemoryLayout<UInt32>.stride,
+                options: .storageModeShared),
+            let commandBuffer = context.queue.makeCommandBuffer()
+        else {
             Issue.record("buffer allocation failed")
             return 0
         }
 
-        try chain.encodeGreedyDecode(commandBuffer: commandBuffer,
-                                 hidden: hidden,
-                                 hiddenOffset: hiddenOffset,
-                                 normWeight: norm,
-                                 weights: weights,
-                                 scales: scaleBuffer,
-                                 biases: biasBuffer,
-                                 outToken: output,
-                                 d: UInt32(d),
-                                 vocab: UInt32(v))
+        try chain.encodeGreedyDecode(
+            commandBuffer: commandBuffer,
+            hidden: hidden,
+            hiddenOffset: hiddenOffset,
+            normWeight: norm,
+            weights: weights,
+            scales: scaleBuffer,
+            biases: biasBuffer,
+            outToken: output,
+            d: UInt32(d),
+            vocab: UInt32(v))
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         return output.contents().load(as: UInt32.self)
@@ -120,16 +130,18 @@ import TinyTitanValidationSupport
             Quantization.quantizeInt4Affine((0..<d).map { _ in rng.uniform(-1, 1) })
         }
 
-        let reference = Self.cpuGreedy(hiddenFp16: hidden,
-                                       normWeightBF16: norm,
-                                       rows: rows,
-                                       d: d,
-                                       v: v)
-        let result = try Self.gpuGreedy(hiddenFp16: hidden,
-                                        normBF16: norm,
-                                        rows: rows,
-                                        d: d,
-                                        v: v)
+        let reference = try Self.cpuGreedy(
+            hiddenFp16: hidden,
+            normWeightBF16: norm,
+            rows: rows,
+            d: d,
+            v: v)
+        let result = try Self.gpuGreedy(
+            hiddenFp16: hidden,
+            normBF16: norm,
+            rows: rows,
+            d: d,
+            v: v)
         #expect(result == reference)
     }
 
@@ -142,11 +154,12 @@ import TinyTitanValidationSupport
             Quantization.quantizeInt4Affine([Float](repeating: 0.25, count: d))
         }
 
-        let result = try Self.gpuGreedy(hiddenFp16: hidden,
-                                        normBF16: norm,
-                                        rows: rows,
-                                        d: d,
-                                        v: v)
+        let result = try Self.gpuGreedy(
+            hiddenFp16: hidden,
+            normBF16: norm,
+            rows: rows,
+            d: d,
+            v: v)
         #expect(result == 0)
     }
 
@@ -161,16 +174,18 @@ import TinyTitanValidationSupport
             return Quantization.quantizeInt4Affine([Float](repeating: value, count: d))
         }
 
-        let reference = Self.cpuGreedy(hiddenFp16: hidden,
-                                       normWeightBF16: norm,
-                                       rows: rows,
-                                       d: d,
-                                       v: v)
-        let result = try Self.gpuGreedy(hiddenFp16: hidden,
-                                        normBF16: norm,
-                                        rows: rows,
-                                        d: d,
-                                        v: v)
+        let reference = try Self.cpuGreedy(
+            hiddenFp16: hidden,
+            normWeightBF16: norm,
+            rows: rows,
+            d: d,
+            v: v)
+        let result = try Self.gpuGreedy(
+            hiddenFp16: hidden,
+            normBF16: norm,
+            rows: rows,
+            d: d,
+            v: v)
         #expect(result == reference)
     }
 
@@ -184,11 +199,12 @@ import TinyTitanValidationSupport
             return Quantization.quantizeInt4Affine([Float](repeating: value, count: d))
         }
 
-        let result = try Self.gpuGreedy(hiddenFp16: hidden,
-                                        normBF16: norm,
-                                        rows: rows,
-                                        d: d,
-                                        v: v)
+        let result = try Self.gpuGreedy(
+            hiddenFp16: hidden,
+            normBF16: norm,
+            rows: rows,
+            d: d,
+            v: v)
         #expect(result == 17)
     }
 
@@ -201,7 +217,8 @@ import TinyTitanValidationSupport
         var hiddenRows = [Float16](repeating: 0, count: 5 * rowStride)
         for row in 0..<5 {
             for index in 0..<d {
-                let value = row == selectedRow
+                let value =
+                    row == selectedRow
                     ? Float(0.25 + Float(index % 7) * 0.01)
                     : Float(-0.4 - Float(index % 5) * 0.01)
                 hiddenRows[row * rowStride + index] = Float16(value)

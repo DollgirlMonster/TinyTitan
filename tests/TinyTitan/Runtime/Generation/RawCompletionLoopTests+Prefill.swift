@@ -5,7 +5,7 @@ import Testing
 extension RawCompletionLoopTests {
     @Test func prefillProgressCoversEveryPromptToken() async throws {
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let promptIDs = tokenizer.encode("one two three", addBOS: true)
         let (collected, result) = try await runLoop(
             seq: [tokenA],
@@ -22,7 +22,7 @@ extension RawCompletionLoopTests {
     @Test func disabledChunkedPrefillUsesScalarReplay() async throws {
         let context = try MetalContext()
         let tokenizer = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
-        let tokenA = tokenizer.encode("a", addBOS: false).first!
+        let tokenA = try #require(tokenizer.encode("a", addBOS: false).first)
         let promptIDs = tokenizer.encode("one two three", addBOS: true)
         let producer = CountingProducer(
             vocabSize: tokenizer.vocabSize,
@@ -36,7 +36,8 @@ extension RawCompletionLoopTests {
             config: GenerationConfig(maxNewTokens: 4, temperature: 0),
             context: context,
             scratch: scratch,
-            prefillConfig: .off) { _ in }
+            prefillConfig: .off
+        ) { _ in }
 
         #expect(producer.resetCalls == 1)
         #expect(producer.produceCalls > promptIDs.count)

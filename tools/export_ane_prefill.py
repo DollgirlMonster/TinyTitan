@@ -40,6 +40,7 @@ specialization the ANE refuses can still save and then fail at the runtime's
 `MLModel(contentsOf:)` — which would advertise coverage the sidecar cannot
 serve. Qwen 3.8's `h12288` is that case on this machine.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -60,7 +61,7 @@ from coremltools.converters.mil import Builder as mb
 
 try:
     from coremltools.models.compute_plan import MLComputePlan
-except Exception:                                     # noqa: BLE001 — optional
+except Exception:  # noqa: BLE001 — optional
     MLComputePlan = None
 
 # The chunk the sidecar is built around by default. The runtime routes a chunk
@@ -98,6 +99,7 @@ class Geometry:
     exporter used to hard-code the 35B-A3B row (D=2048, 16/2 heads), which is
     why no other family could ever have a sidecar.
     """
+
     family: str
     prefix: str
     hidden: int
@@ -146,7 +148,8 @@ def _attention_prefix(entries: dict[str, dict], layer: int) -> str:
             return name[: -len(suffix)] + ".layers."
     raise SystemExit(
         f"no tensor named *{suffix} in model_weights.bin; this is not a "
-        f"supported .gturbo attention layout")
+        f"supported .gturbo attention layout"
+    )
 
 
 def geometry_for(manifest: dict, entries: dict[str, dict]) -> Geometry:
@@ -163,23 +166,28 @@ def geometry_for(manifest: dict, entries: dict[str, dict]) -> Geometry:
     if family not in SUPPORTED_FAMILIES:
         detail = ""
         if family.endswith("_mtp"):
-            detail = (" — the MTP draft is verified rather than prefilled on "
-                      "the ANE, so it carries no sidecar")
+            detail = (
+                " — the MTP draft is verified rather than prefilled on "
+                "the ANE, so it carries no sidecar"
+            )
         raise SystemExit(
             f"ANE prefill export supports {', '.join(SUPPORTED_FAMILIES)}; "
-            f"this model is {family}{detail}")
+            f"this model is {family}{detail}"
+        )
     # Each guard refuses a model whose attention block differs from the one this
     # graph computes. A refusal is cheap; a graph that silently computes a
     # *different* attention produces fluent nonsense nothing downstream flags.
     if arch.get("attentionKEqV"):
-        raise SystemExit("attentionKEqV models are not supported: the graph "
-                         "computes K and V separately")
+        raise SystemExit(
+            "attentionKEqV models are not supported: the graph computes K and V separately"
+        )
     if arch.get("ropeNeoxSubdim") is False:
-        raise SystemExit("non-NeoX rope is not supported: the graph applies "
-                         "rope in NeoX order")
+        raise SystemExit("non-NeoX rope is not supported: the graph applies rope in NeoX order")
     if arch.get("slidingWindow"):
-        raise SystemExit(f"slidingWindow={arch['slidingWindow']} is not "
-                         f"supported: the graph has no sliding-window mask")
+        raise SystemExit(
+            f"slidingWindow={arch['slidingWindow']} is not "
+            f"supported: the graph has no sliding-window mask"
+        )
     mask = arch["fullAttentionLayerMask"]
     layers = tuple(i for i, v in enumerate(mask) if int(v) == 1)
     if not layers:
@@ -200,6 +208,7 @@ def geometry_for(manifest: dict, entries: dict[str, dict]) -> Geometry:
         layers=layers,
     )
 
+
 # Core ML does not raise when the Neural Engine refuses to compile a model: it
 # logs the failure on the native stderr and then runs the program on the CPU.
 # An export that exits 0 with these in its log writes a sidecar that is 38x
@@ -217,8 +226,7 @@ class ANEExportError(RuntimeError):
     """The Neural Engine refused to compile a variant the exporter built."""
 
 
-def verify_variant_reaches_the_ane(variant: pathlib.Path, history: int,
-                                   layer: int) -> int | None:
+def verify_variant_reaches_the_ane(variant: pathlib.Path, history: int, layer: int) -> int | None:
     """Assert the Neural Engine is assigned this variant's operations.
 
     The compile-marker scan and `verify_variants_load` both ask whether Core ML
@@ -251,18 +259,16 @@ def verify_variant_reaches_the_ane(variant: pathlib.Path, history: int,
                 "warning: this coremltools has no MLComputePlan, so whether the "
                 "Neural Engine is assigned each variant cannot be checked; the "
                 "sidecar is covered by the compile markers and the load check "
-                "only. coremltools >= 8 provides the full check.\n")
+                "only. coremltools >= 8 provides the full check.\n"
+            )
         return None
     compiled = ct.models.utils.compile_model(str(variant))
-    plan = MLComputePlan.load_from_path(
-        compiled, compute_units=ct.ComputeUnit.CPU_AND_NE)
+    plan = MLComputePlan.load_from_path(compiled, compute_units=ct.ComputeUnit.CPU_AND_NE)
     program = plan.model_structure.program
-    function = program.functions.get("main") or next(
-        iter(program.functions.values()))
+    function = program.functions.get("main") or next(iter(program.functions.values()))
     operations = list(function.block.operations)
     if not operations:
-        raise ANEExportError(
-            f"layer {layer}: h{history} has no operations to assign")
+        raise ANEExportError(f"layer {layer}: h{history} has no operations to assign")
     on_ane = 0
     for operation in operations:
         usage = plan.get_compute_device_usage_for_mlprogram_operation(operation)
@@ -274,7 +280,8 @@ def verify_variant_reaches_the_ane(variant: pathlib.Path, history: int,
             f"layer {layer}: h{history} converted, but the Neural Engine is "
             f"assigned none of its {len(operations)} operations, so Core ML "
             f"would run it on the CPU at roughly 38x the GPU prefill cost "
-            f"(issue #7). Re-export with a smaller --max-history")
+            f"(issue #7). Re-export with a smaller --max-history"
+        )
     return on_ane
 
 
@@ -311,23 +318,28 @@ def verify_variants_load(package: pathlib.Path, histories, layer: int) -> None:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             try:
-                ct.models.MLModel(str(package),
-                                  compute_units=ct.ComputeUnit.CPU_AND_NE,
-                                  function_name=f"h{history}")
-            except Exception as exc:                  # noqa: BLE001 — reported
+                ct.models.MLModel(
+                    str(package),
+                    compute_units=ct.ComputeUnit.CPU_AND_NE,
+                    function_name=f"h{history}",
+                )
+            except Exception as exc:  # noqa: BLE001 — reported
                 raise ANEExportError(
                     f"layer {layer}: the converter accepted h{history} but Core "
                     f"ML cannot load it ({exc}). Recording it would advertise "
                     f"coverage the sidecar cannot serve; re-export with a "
-                    f"smaller --max-history") from exc
-        unusable = [str(w.message) for w in caught
-                    if "will not be able to run predict" in str(w.message)]
+                    f"smaller --max-history"
+                ) from exc
+        unusable = [
+            str(w.message) for w in caught if "will not be able to run predict" in str(w.message)
+        ]
         if unusable:
             raise ANEExportError(
                 f"layer {layer}: h{history} loads but Core ML says it cannot "
                 f"run ({unusable[0][:160]}). Recording it would advertise "
                 f"coverage the sidecar cannot serve; re-export with a smaller "
-                f"--max-history")
+                f"--max-history"
+            )
 
 
 @contextlib.contextmanager
@@ -361,7 +373,8 @@ def run_checked(what, call):
     if failed:
         raise ANEExportError(
             f"{what}: the Neural Engine refused to compile this variant "
-            f"({', '.join(failed)}). The sidecar was not written.")
+            f"({', '.join(failed)}). The sidecar was not written."
+        )
     return result
 
 
@@ -374,14 +387,18 @@ def read_index(path: pathlib.Path) -> dict[str, dict]:
     for i in range(entry_count):
         off = 24 + i * 72
         name_off, name_len = struct.unpack_from("<IH", region, off)
-        name = region[name_off:name_off + name_len].decode()
+        name = region[name_off : name_off + name_len].decode()
         file_off, size = struct.unpack_from("<QQ", region, off + 8)
         shape = struct.unpack_from("<4I", region, off + 24)
-        scale_off, scale_size, bias_off, bias_size = struct.unpack_from(
-            "<QQQQ", region, off + 40)
-        entries[name] = dict(dtype=region[off + 6], offset=file_off, size=size,
-                             shape=shape, scale=(scale_off, scale_size),
-                             bias=(bias_off, bias_size))
+        scale_off, scale_size, bias_off, bias_size = struct.unpack_from("<QQQQ", region, off + 40)
+        entries[name] = dict(
+            dtype=region[off + 6],
+            offset=file_off,
+            size=size,
+            shape=shape,
+            scale=(scale_off, scale_size),
+            bias=(bias_off, bias_size),
+        )
     return entries
 
 
@@ -400,18 +417,16 @@ def tensor_weight_bits(manifest: dict, full_name: str, fallback: int) -> int:
     store `k_proj`/`v_proj` at 8 bits, and reading those as nibbles yields
     confident nonsense.
     """
-    stem = (full_name[: -len(".weight")] if full_name.endswith(".weight")
-            else full_name)
+    stem = full_name[: -len(".weight")] if full_name.endswith(".weight") else full_name
     slot = (manifest.get("quant") or {}).get(stem)
     if isinstance(slot, dict) and "weightBits" in slot:
         return int(slot["weightBits"])
     return fallback
 
 
-def load_tensor(handle, entry, weight_bits: int = 4,
-                name: str = "tensor") -> np.ndarray:
+def load_tensor(handle, entry, weight_bits: int = 4, name: str = "tensor") -> np.ndarray:
     rows, cols = entry["shape"][0], entry["shape"][1]
-    if entry["dtype"] == 1:                                   # bf16
+    if entry["dtype"] == 1:  # bf16
         handle.seek(entry["offset"])
         flat = bf16_to_f32(handle.read(entry["size"]))
         return flat.reshape([d for d in entry["shape"] if d] or [flat.size])
@@ -424,7 +439,8 @@ def load_tensor(handle, entry, weight_bits: int = 4,
         raise SystemExit(
             f"{name}: manifest says {weight_bits}-bit but the tensor is "
             f"{entry['size']} bytes for {elements} elements (expected "
-            f"{expected}); refusing to guess its width")
+            f"{expected}); refusing to guess its width"
+        )
     handle.seek(entry["offset"])
     packed = np.frombuffer(handle.read(entry["size"]), dtype=np.uint8)
     if weight_bits == 8:
@@ -443,16 +459,21 @@ def load_tensor(handle, entry, weight_bits: int = 4,
     return q * np.repeat(scales, 64, axis=1) + np.repeat(biases, 64, axis=1)
 
 
-def load_layer_weights(handle, entries, layer: int, geom: Geometry,
-                       manifest: dict) -> dict[str, np.ndarray]:
+def load_layer_weights(
+    handle, entries, layer: int, geom: Geometry, manifest: dict
+) -> dict[str, np.ndarray]:
     prefix = f"{geom.prefix}{layer}.self_attn."
     fallback = int(manifest["quant"]["attention"]["weightBits"])
+
     def get(name):
         full = prefix + name
-        return load_tensor(handle, entries[full],
-                           weight_bits=tensor_weight_bits(manifest, full,
-                                                          fallback),
-                           name=full)
+        return load_tensor(
+            handle,
+            entries[full],
+            weight_bits=tensor_weight_bits(manifest, full, fallback),
+            name=full,
+        )
+
     def norm(*names):
         """A per-head norm, under whichever name this checkpoint uses.
 
@@ -465,8 +486,8 @@ def load_layer_weights(handle, entries, layer: int, geom: Geometry,
         for name in names:
             if prefix + name in entries:
                 return get(name)
-        raise SystemExit(f"{prefix}{names[0]}: the model has none of "
-                         f"{', '.join(names)}")
+        raise SystemExit(f"{prefix}{names[0]}: the model has none of {', '.join(names)}")
+
     return {
         "wq": get("q_proj.weight").astype(np.float16),
         "wk": get("k_proj.weight").astype(np.float16),
@@ -481,13 +502,11 @@ def rope_tables(start: int, geom: Geometry) -> tuple[np.ndarray, np.ndarray]:
     rotary = geom.rotary
     half = rotary // 2
     inv = geom.theta ** (-np.arange(half, dtype=np.float64) * 2 / rotary)
-    pos = np.arange(start, start + geom.chunk,
-                    dtype=np.float64)[:, None] * inv[None, :]
+    pos = np.arange(start, start + geom.chunk, dtype=np.float64)[:, None] * inv[None, :]
     return (np.cos(pos).astype(np.float16), np.sin(pos).astype(np.float16))
 
 
-def build_variant(history: int, weights: dict[str, np.ndarray],
-                  geom: Geometry):
+def build_variant(history: int, weights: dict[str, np.ndarray], geom: Geometry):
     """One (chunk, history) function for this model's geometry. Inputs are
     token-major so the runtime can wrap its staging buffers zero-copy:
       normed  [chunk, hidden]        post-input-norm hidden
@@ -515,8 +534,10 @@ def build_variant(history: int, weights: dict[str, np.ndarray],
     fp16 = ct.converters.mil.mil.types.fp16
     specs = [mb.TensorSpec(shape=(t, D), dtype=fp16)]
     if history > 0:
-        specs += [mb.TensorSpec(shape=(history, KV_DIM), dtype=fp16),
-                  mb.TensorSpec(shape=(history, KV_DIM), dtype=fp16)]
+        specs += [
+            mb.TensorSpec(shape=(history, KV_DIM), dtype=fp16),
+            mb.TensorSpec(shape=(history, KV_DIM), dtype=fp16),
+        ]
     # The causal mask is an input, not a baked or generated constant: MIL
     # const-folds any constant-shaped fill/band_part chain, and a folded
     # [4096, 8192] fp16 mask is 64 MB per function — it tripled the package.
@@ -528,22 +549,30 @@ def build_variant(history: int, weights: dict[str, np.ndarray],
             sq = mb.mul(x=x, y=x)
             mean = mb.reduce_mean(x=sq, axes=[-1], keep_dims=True)
             denom = mb.rsqrt(x=mb.add(x=mean, y=np.float16(EPS)))
-            return mb.mul(x=mb.mul(x=x, y=denom),
-                          y=weights[weight_name].reshape(1, 1, HEAD_DIM))
+            return mb.mul(x=mb.mul(x=x, y=denom), y=weights[weight_name].reshape(1, 1, HEAD_DIM))
 
         def rope(x, heads):
-            r1 = mb.slice_by_index(x=x, begin=[0, 0, 0],
-                                   end=[heads, t, ROTARY // 2],
-                                   begin_mask=[True, True, False],
-                                   end_mask=[True, True, False])
-            r2 = mb.slice_by_index(x=x, begin=[0, 0, ROTARY // 2],
-                                   end=[heads, t, ROTARY],
-                                   begin_mask=[True, True, False],
-                                   end_mask=[True, True, False])
-            rest = mb.slice_by_index(x=x, begin=[0, 0, ROTARY],
-                                     end=[heads, t, HEAD_DIM],
-                                     begin_mask=[True, True, False],
-                                     end_mask=[True, True, True])
+            r1 = mb.slice_by_index(
+                x=x,
+                begin=[0, 0, 0],
+                end=[heads, t, ROTARY // 2],
+                begin_mask=[True, True, False],
+                end_mask=[True, True, False],
+            )
+            r2 = mb.slice_by_index(
+                x=x,
+                begin=[0, 0, ROTARY // 2],
+                end=[heads, t, ROTARY],
+                begin_mask=[True, True, False],
+                end_mask=[True, True, False],
+            )
+            rest = mb.slice_by_index(
+                x=x,
+                begin=[0, 0, ROTARY],
+                end=[heads, t, HEAD_DIM],
+                begin_mask=[True, True, False],
+                end_mask=[True, True, True],
+            )
             cos_b = cos_np.reshape(1, t, ROTARY // 2)
             sin_b = sin_np.reshape(1, t, ROTARY // 2)
             o1 = mb.sub(x=mb.mul(x=r1, y=cos_b), y=mb.mul(x=r2, y=sin_b))
@@ -555,39 +584,43 @@ def build_variant(history: int, weights: dict[str, np.ndarray],
         v = mb.matmul(x=normed, y=weights["wv"].T)
 
         packed_h = mb.reshape(x=packed, shape=[t, N_Q_HEADS, 2 * HEAD_DIM])
-        q = mb.slice_by_index(x=packed_h, begin=[0, 0, 0],
-                              end=[t, N_Q_HEADS, HEAD_DIM],
-                              begin_mask=[True, True, False],
-                              end_mask=[True, True, False])
-        gate = mb.slice_by_index(x=packed_h, begin=[0, 0, HEAD_DIM],
-                                 end=[t, N_Q_HEADS, 2 * HEAD_DIM],
-                                 begin_mask=[True, True, False],
-                                 end_mask=[True, True, True])
+        q = mb.slice_by_index(
+            x=packed_h,
+            begin=[0, 0, 0],
+            end=[t, N_Q_HEADS, HEAD_DIM],
+            begin_mask=[True, True, False],
+            end_mask=[True, True, False],
+        )
+        gate = mb.slice_by_index(
+            x=packed_h,
+            begin=[0, 0, HEAD_DIM],
+            end=[t, N_Q_HEADS, 2 * HEAD_DIM],
+            begin_mask=[True, True, False],
+            end_mask=[True, True, True],
+        )
 
         q = mb.transpose(x=q, perm=[1, 0, 2])
-        k_h = mb.transpose(x=mb.reshape(x=k, shape=[t, N_KV_HEADS, HEAD_DIM]),
-                           perm=[1, 0, 2])
-        v_h = mb.transpose(x=mb.reshape(x=v, shape=[t, N_KV_HEADS, HEAD_DIM]),
-                           perm=[1, 0, 2])
+        k_h = mb.transpose(x=mb.reshape(x=k, shape=[t, N_KV_HEADS, HEAD_DIM]), perm=[1, 0, 2])
+        v_h = mb.transpose(x=mb.reshape(x=v, shape=[t, N_KV_HEADS, HEAD_DIM]), perm=[1, 0, 2])
 
         q = rope(rms_head(q, "q_norm"), N_Q_HEADS)
         k_h = rope(rms_head(k_h, "k_norm"), N_KV_HEADS)
 
         # Cache-layout outputs: token-major [t, 512].
-        k_new = mb.reshape(x=mb.transpose(x=k_h, perm=[1, 0, 2]),
-                           shape=[t, KV_DIM])
-        v_new = mb.reshape(x=mb.transpose(x=v_h, perm=[1, 0, 2]),
-                           shape=[t, KV_DIM])
+        k_new = mb.reshape(x=mb.transpose(x=k_h, perm=[1, 0, 2]), shape=[t, KV_DIM])
+        v_new = mb.reshape(x=mb.transpose(x=v_h, perm=[1, 0, 2]), shape=[t, KV_DIM])
 
         k_cur = mb.reshape(x=k_h, shape=[1, N_KV_HEADS, t, HEAD_DIM])
         v_cur = mb.reshape(x=v_h, shape=[1, N_KV_HEADS, t, HEAD_DIM])
         if history > 0:
             k_hh = mb.reshape(x=k_hist, shape=[history, N_KV_HEADS, HEAD_DIM])
-            k_hh = mb.reshape(x=mb.transpose(x=k_hh, perm=[1, 0, 2]),
-                              shape=[1, N_KV_HEADS, history, HEAD_DIM])
+            k_hh = mb.reshape(
+                x=mb.transpose(x=k_hh, perm=[1, 0, 2]), shape=[1, N_KV_HEADS, history, HEAD_DIM]
+            )
             v_hh = mb.reshape(x=v_hist, shape=[history, N_KV_HEADS, HEAD_DIM])
-            v_hh = mb.reshape(x=mb.transpose(x=v_hh, perm=[1, 0, 2]),
-                              shape=[1, N_KV_HEADS, history, HEAD_DIM])
+            v_hh = mb.reshape(
+                x=mb.transpose(x=v_hh, perm=[1, 0, 2]), shape=[1, N_KV_HEADS, history, HEAD_DIM]
+            )
             k_all = mb.concat(values=[k_hh, k_cur], axis=2)
             v_all = mb.concat(values=[v_hh, v_cur], axis=2)
         else:
@@ -610,30 +643,36 @@ def build_variant(history: int, weights: dict[str, np.ndarray],
         probs = mb.softmax(x=scores, axis=-1)
         attn = mb.matmul(x=probs, y=v_g)
 
-        gated = mb.mul(x=mb.transpose(x=attn, perm=[0, 2, 1, 3]),
-                       y=mb.sigmoid(x=mb.reshape(
-                           x=gate, shape=[1, t, N_Q_HEADS, HEAD_DIM])))
+        gated = mb.mul(
+            x=mb.transpose(x=attn, perm=[0, 2, 1, 3]),
+            y=mb.sigmoid(x=mb.reshape(x=gate, shape=[1, t, N_Q_HEADS, HEAD_DIM])),
+        )
         merged = mb.reshape(x=gated, shape=[t, Q_DIM])
         out = mb.matmul(x=merged, y=weights["wo"].T)
         return out, k_new, v_new
 
     if history > 0:
+
         @mb.program(input_specs=specs, opset_version=ct.target.iOS18)
         def prog(normed, k_hist, v_hist, mask):
             return body(normed, k_hist, v_hist, mask)
     else:
+
         @mb.program(input_specs=specs, opset_version=ct.target.iOS18)
         def prog(normed, mask):
             return body(normed, None, None, mask)
 
-    model = ct.convert(prog, convert_to="mlprogram",
-                       minimum_deployment_target=ct.target.iOS18,
-                       compute_precision=ct.precision.FLOAT16,
-                       compute_units=ct.ComputeUnit.CPU_AND_NE)
+    model = ct.convert(
+        prog,
+        convert_to="mlprogram",
+        minimum_deployment_target=ct.target.iOS18,
+        compute_precision=ct.precision.FLOAT16,
+        compute_units=ct.ComputeUnit.CPU_AND_NE,
+    )
     # Stable I/O names for the Swift runtime.
     spec = model.get_spec()
     rename = {}
-    for out_obj, want in zip(spec.description.output, ("out", "k_new", "v_new")):
+    for out_obj, want in zip(spec.description.output, ("out", "k_new", "v_new"), strict=False):
         rename[out_obj.name] = want
     for old, new in rename.items():
         ct.utils.rename_feature(spec, old, new)
@@ -654,23 +693,32 @@ def sidecar_directory(chunk: int) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True,
-                        help="path to the installed .gturbo directory")
-    parser.add_argument("--max-history", type=int, default=12288,
-                        help="largest KV history variant (a multiple of "
-                             "--chunk); prompts beyond max-history+chunk "
-                             "tokens fall back to the GPU path")
-    parser.add_argument("--chunk", type=int, default=CHUNK,
-                        choices=PREFILL_CHUNK_CHOICES,
-                        help=f"chunk tokens the graph is built for (default "
-                             f"{CHUNK}; {', '.join(map(str, PREFILL_CHUNK_CHOICES))}). "
-                             f"The runtime routes a chunk to the sidecar only "
-                             f"when its configured prefill chunk equals this, "
-                             f"and a chunk below {CHUNK} is what makes the band "
-                             f"under {CHUNK} tokens reachable at all")
-    parser.add_argument("--layers", default=None,
-                        help="comma list of layer indices (default: all full-"
-                             "attention layers)")
+    parser.add_argument("--model", required=True, help="path to the installed .gturbo directory")
+    parser.add_argument(
+        "--max-history",
+        type=int,
+        default=12288,
+        help="largest KV history variant (a multiple of "
+        "--chunk); prompts beyond max-history+chunk "
+        "tokens fall back to the GPU path",
+    )
+    parser.add_argument(
+        "--chunk",
+        type=int,
+        default=CHUNK,
+        choices=PREFILL_CHUNK_CHOICES,
+        help=f"chunk tokens the graph is built for (default "
+        f"{CHUNK}; {', '.join(map(str, PREFILL_CHUNK_CHOICES))}). "
+        f"The runtime routes a chunk to the sidecar only "
+        f"when its configured prefill chunk equals this, "
+        f"and a chunk below {CHUNK} is what makes the band "
+        f"under {CHUNK} tokens reachable at all",
+    )
+    parser.add_argument(
+        "--layers",
+        default=None,
+        help="comma list of layer indices (default: all full-attention layers)",
+    )
     args = parser.parse_args()
 
     model_dir = pathlib.Path(args.model)
@@ -678,8 +726,7 @@ def main() -> int:
     if not weights_bin.exists():
         raise SystemExit(f"not a .gturbo directory: {model_dir}")
     if args.max_history % args.chunk != 0:
-        raise SystemExit(f"--max-history must be a multiple of --chunk "
-                         f"({args.chunk})")
+        raise SystemExit(f"--max-history must be a multiple of --chunk ({args.chunk})")
     histories = list(range(0, args.max_history + 1, args.chunk))
 
     manifest = json.load(open(model_dir / "manifest.json"))
@@ -689,19 +736,21 @@ def main() -> int:
     # prefill chunk equals this. A 4,096 chunk wins on long prompts (fewer
     # boundaries, fewer per-layer model reloads); a smaller one is what makes
     # the band below 4,096 tokens reachable at all.
-    geom = dataclasses.replace(geometry_for(manifest, entries),
-                               chunk=args.chunk)
-    layers = ([int(x) for x in args.layers.split(",")] if args.layers
-              else list(geom.layers))
+    geom = dataclasses.replace(geometry_for(manifest, entries), chunk=args.chunk)
+    layers = [int(x) for x in args.layers.split(",")] if args.layers else list(geom.layers)
     unknown = [L for L in layers if L not in geom.layers]
     if unknown:
         raise SystemExit(
             f"--layers names {unknown}, which are not full-attention layers of "
-            f"this model ({list(geom.layers)})")
-    print(f"{geom.family}: hidden {geom.hidden}, "
-          f"{geom.q_heads}q/{geom.kv_heads}kv x {geom.head_dim}, "
-          f"rope {geom.rotary}, theta {geom.theta:g}, scale {geom.scale:g}, "
-          f"{len(geom.layers)} full-attention layers", flush=True)
+            f"this model ({list(geom.layers)})"
+        )
+    print(
+        f"{geom.family}: hidden {geom.hidden}, "
+        f"{geom.q_heads}q/{geom.kv_heads}kv x {geom.head_dim}, "
+        f"rope {geom.rotary}, theta {geom.theta:g}, scale {geom.scale:g}, "
+        f"{len(geom.layers)} full-attention layers",
+        flush=True,
+    )
     # Attention weights are 4-bit in the 4-bit build and 8-bit in the 8-bit
     # build; both dequantize to the same fp16 graph, so only the unpack
     # differs. The sidecar itself is fp16 either way.
@@ -711,8 +760,11 @@ def main() -> int:
     # runtime cross-checks this flag against its own configuration.
     selection_folded = int(manifest["arch"].get("indexerBudget") or 0) > 0
     if selection_folded:
-        print("sparse indexer: the runtime will fold this model's key "
-              "selection into the mask (selectionFolded=true)", flush=True)
+        print(
+            "sparse indexer: the runtime will fold this model's key "
+            "selection into the mask (selectionFolded=true)",
+            flush=True,
+        )
 
     out_dir = model_dir / sidecar_directory(args.chunk)
     # Build beside the live sidecar and swap only after every layer has
@@ -725,8 +777,7 @@ def main() -> int:
     handle = open(weights_bin, "rb")
     try:
         for layer in layers:
-            weights = load_layer_weights(handle, entries, layer, geom,
-                                         manifest)
+            weights = load_layer_weights(handle, entries, layer, geom, manifest)
             stage = staging / f".stage_layer_{layer}"
             if stage.exists():
                 shutil.rmtree(stage)
@@ -735,31 +786,46 @@ def main() -> int:
             for history in histories:
                 variant = run_checked(
                     f"layer {layer} h{history} convert",
-                    lambda history=history: build_variant(history, weights, geom))
+                    lambda history=history, weights=weights: build_variant(history, weights, geom),
+                )
                 variant_path = stage / f"h{history}.mlpackage"
-                run_checked(f"layer {layer} h{history} save",
-                            lambda: variant.save(str(variant_path)))
+                run_checked(
+                    f"layer {layer} h{history} save",
+                    lambda variant=variant, variant_path=variant_path: variant.save(
+                        str(variant_path)
+                    ),
+                )
                 # Checked here, not after the merge: the variant is the package's
                 # default function only while it stands alone, and that is what
                 # the compute plan reports device assignments for.
                 on_ane = run_checked(
                     f"layer {layer} h{history} reaches the ANE",
-                    lambda: verify_variant_reaches_the_ane(variant_path,
-                                                           history, layer))
+                    lambda variant_path=variant_path, history=history, layer=layer: (
+                        verify_variant_reaches_the_ane(variant_path, history, layer)
+                    ),
+                )
                 if on_ane is not None:
-                    print(f"layer {layer}: h{history} — {on_ane} operations on "
-                          f"the Neural Engine", flush=True)
-                desc.add_function(str(variant_path),
-                                  src_function_name="main",
-                                  target_function_name=f"h{history}")
+                    print(
+                        f"layer {layer}: h{history} — {on_ane} operations on the Neural Engine",
+                        flush=True,
+                    )
+                desc.add_function(
+                    str(variant_path), src_function_name="main", target_function_name=f"h{history}"
+                )
                 print(f"layer {layer}: built h{history}", flush=True)
             desc.default_function_name = "h0"
             final = staging / f"layer_{layer}.mlpackage"
-            run_checked(f"layer {layer} multifunction",
-                        lambda: ct.utils.save_multifunction(desc, str(final)))
+            run_checked(
+                f"layer {layer} multifunction",
+                lambda desc=desc, final=final: ct.utils.save_multifunction(desc, str(final)),
+            )
             # Every recorded history must actually load; see the docstring.
-            run_checked(f"layer {layer} variants load",
-                        lambda: verify_variants_load(final, histories, layer))
+            run_checked(
+                f"layer {layer} variants load",
+                lambda final=final, histories=histories, layer=layer: verify_variants_load(
+                    final, histories, layer
+                ),
+            )
             shutil.rmtree(stage)
             print(f"layer {layer}: wrote {final}", flush=True)
 
@@ -814,7 +880,10 @@ if __name__ == "__main__":
         sys.exit(main())
     except ANEExportError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        print("error: the ANE sidecar was NOT updated; re-run with a smaller "
-              "--max-history (8192 exports cleanly) or on a machine whose ANE "
-              "accepts the model.", file=sys.stderr)
+        print(
+            "error: the ANE sidecar was NOT updated; re-run with a smaller "
+            "--max-history (8192 exports cleanly) or on a machine whose ANE "
+            "accepts the model.",
+            file=sys.stderr,
+        )
         sys.exit(2)

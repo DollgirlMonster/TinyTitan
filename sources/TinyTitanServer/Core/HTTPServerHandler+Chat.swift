@@ -13,9 +13,11 @@ import Synchronization
 import TinyTitan
 
 extension ServerHTTPHandler {
-    func handleCompletion(body: ByteBuffer,
-                                  context: ChannelHandlerContext,
-                                  workspace: String? = nil) {
+    func handleCompletion(
+        body: ByteBuffer,
+        context: ChannelHandlerContext,
+        workspace: String? = nil
+    ) {
         do {
             // One copy out of the ByteBuffer, not two: a [UInt8] hop would
             // duplicate a body of up to `maximumBodyBytes` before decoding.
@@ -23,23 +25,27 @@ extension ServerHTTPHandler {
                 OpenAIChatRequest.self, from: Data(body.readableBytesView))
             let request = try validate(decoded, for: try servedModel(named: decoded.model))
                 .withWorkspace(workspace)
-            let responseID = "chatcmpl-" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
+            let responseID =
+                "chatcmpl-" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
             let created = Int(Date().timeIntervalSince1970)
             let contextBox = SendableContext(context)
             let streamState = StreamState()
             let phaseState = requestPhaseState
             let startStream: @Sendable () -> Void = {
                 guard request.stream,
-                      streamState.start(eventLoop: contextBox.value.eventLoop,
-                                        interval: self.heartbeatInterval,
-                                        ping: {
-                          self.writeHeartbeat(contextBox.value)
-                      }) else { return }
+                    streamState.start(
+                        eventLoop: contextBox.value.eventLoop,
+                        interval: self.heartbeatInterval,
+                        ping: {
+                            self.writeHeartbeat(contextBox.value)
+                        })
+                else { return }
                 let future = self.beginStream(
                     contextBox.value,
-                    self.chunk(id: responseID, created: created,
-                               delta: ["role": "assistant"],
-                               finishReason: nil))
+                    self.chunk(
+                        id: responseID, created: created,
+                        delta: ["role": "assistant"],
+                        finishReason: nil))
                 streamState.setStartFuture(future)
             }
             let onQueued: @Sendable () -> Void = {
@@ -51,13 +57,15 @@ extension ServerHTTPHandler {
                 defer { streamState.stop() }
                 let started = ContinuousClock.now
                 ServerLog.accepted(id: responseID, streaming: request.stream)
-                let outbox: SSEOutbox? = request.stream
+                let outbox: SSEOutbox? =
+                    request.stream
                     ? SSEOutbox(capacity: Self.maximumPendingStreamChunks)
                     : nil
                 let drainer = outbox.map { outbox in
                     Task { [self] in
-                        await self.drainOutbox(contextBox.value, outbox: outbox,
-                                              streamState: streamState)
+                        await self.drainOutbox(
+                            contextBox.value, outbox: outbox,
+                            streamState: streamState)
                     }
                 }
                 do {
@@ -70,51 +78,59 @@ extension ServerHTTPHandler {
                         ServerLog.generating(id: responseID)
                         return try await self.backend.generate(request) { event in
                             guard request.stream, let outbox else { return }
-                            self.enqueueChatEvent(event, id: responseID, created: created,
-                                                  streamState: streamState,
-                                                  outbox: outbox, context: contextBox.value)
+                            self.enqueueChatEvent(
+                                event, id: responseID, created: created,
+                                streamState: streamState,
+                                outbox: outbox, context: contextBox.value)
                         }
                     }
-                    ServerLog.completed(id: responseID,
-                                        duration: started.duration(to: .now),
-                                        completion: completion)
+                    ServerLog.completed(
+                        id: responseID,
+                        duration: started.duration(to: .now),
+                        completion: completion)
                     if request.stream, let outbox {
                         streamState.stop()
-                        self.finishStream(contextBox.value,
-                                          id: responseID,
-                                          created: created,
-                                          completion: completion,
-                                          includeUsage: request.includeUsage,
-                                          outbox: outbox)
+                        self.finishStream(
+                            contextBox.value,
+                            id: responseID,
+                            created: created,
+                            completion: completion,
+                            includeUsage: request.includeUsage,
+                            outbox: outbox)
                     } else {
-                        self.writeCompletion(contextBox.value,
-                                             id: responseID,
-                                             created: created,
-                                             completion: completion)
+                        self.writeCompletion(
+                            contextBox.value,
+                            id: responseID,
+                            created: created,
+                            completion: completion)
                     }
                 } catch {
                     streamState.stop()
-                    self.handleAsyncFailure(error,
-                                            context: contextBox.value,
-                                            id: responseID,
-                                            phase: phaseState.value,
-                                            stream: request.stream,
-                                            outbox: outbox,
-                                            streamState: streamState,
-                                            surface: .chat)
+                    self.handleAsyncFailure(
+                        error,
+                        context: contextBox.value,
+                        id: responseID,
+                        phase: phaseState.value,
+                        stream: request.stream,
+                        outbox: outbox,
+                        streamState: streamState,
+                        surface: .chat)
                 }
                 if let drainer {
                     await Self.awaitDrainer(drainer)
                 }
             }
         } catch let error as ServerRequestError {
-            writeError(context,
-                       status: error == .unknownModel ? .notFound : .badRequest,
-                       error.envelope)
+            writeError(
+                context,
+                status: error == .unknownModel ? .notFound : .badRequest,
+                error.envelope)
         } catch {
-            writeError(context, status: .badRequest,
-                       OpenAIErrorEnvelope(message: "malformed JSON request",
-                                           code: "invalid_json"))
+            writeError(
+                context, status: .badRequest,
+                OpenAIErrorEnvelope(
+                    message: "malformed JSON request",
+                    code: "invalid_json"))
         }
     }
 
@@ -198,15 +214,17 @@ extension ServerHTTPHandler {
         guard let data = try? JSONSerialization.data(withJSONObject: object) else {
             return nil
         }
-        return Self.sseFrame("event: " + name + "\ndata: " + String(decoding: data, as: UTF8.self))
+        return Self.sseFrame("event: " + name + "\ndata: " + data.lossyUTF8String)
     }
 
     /// The frames that end a stream after a failure, in the surface's shape:
     /// chat sends an error object then [DONE]; the Responses API and the
     /// Messages API send a typed `error` event and no terminator.
-    static func failureFrames(_ envelope: OpenAIErrorEnvelope,
-                                      surface: APISurface,
-                                      requestID: String? = nil) -> [Data] {
+    static func failureFrames(
+        _ envelope: OpenAIErrorEnvelope,
+        surface: APISurface,
+        requestID: String? = nil
+    ) -> [Data] {
         switch surface {
         case .chat:
             return errorFrame(envelope).map { [$0, doneFrame()] } ?? [doneFrame()]
@@ -222,7 +240,7 @@ extension ServerHTTPHandler {
                 type: envelope.error.type == "server_error" ? "api_error" : envelope.error.type,
                 message: envelope.error.message, requestID: requestID)
             guard let data = try? JSONEncoder().encode(detail) else { return [] }
-            return [sseFrame("event: error\ndata: " + String(decoding: data, as: UTF8.self))]
+            return [sseFrame("event: error\ndata: " + data.lossyUTF8String)]
         }
     }
 

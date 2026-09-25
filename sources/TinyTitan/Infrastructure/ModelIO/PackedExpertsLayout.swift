@@ -2,11 +2,11 @@ import Foundation
 import TinyTitanFormat
 
 struct SubTensorEntry: Sendable, Equatable {
-    let offset: UInt64    // relative to the expert blob's start
+    let offset: UInt64  // relative to the expert blob's start
     let size: UInt64
-    let dtype: String     // "U32" | "BF16"
+    let dtype: String  // "U32" | "BF16"
     let shape: [UInt32]
-    let bits: Int?        // weight bit width override (4 or 8), if applicable
+    let bits: Int?  // weight bit width override (4 or 8), if applicable
 }
 
 struct ExpertEntry: Sendable {
@@ -23,11 +23,13 @@ struct ExpertEntry: Sendable {
     /// (raw, `_scales`, `_biases`).
     let subTensors: [String: SubTensorEntry]
 
-    init(expert: Int,
-                physicalRank: Int? = nil,
-                offset: UInt64,
-                size: UInt64,
-                subTensors: [String: SubTensorEntry]) {
+    init(
+        expert: Int,
+        physicalRank: Int? = nil,
+        offset: UInt64,
+        size: UInt64,
+        subTensors: [String: SubTensorEntry]
+    ) {
         self.expert = expert
         self.physicalRank = physicalRank ?? expert
         self.offset = offset
@@ -38,7 +40,7 @@ struct ExpertEntry: Sendable {
 
 struct LayerLayout: Sendable {
     let layer: Int
-    let file: String          // basename, e.g. "layer_00.bin"
+    let file: String  // basename, e.g. "layer_00.bin"
     let experts: [ExpertEntry]
 }
 
@@ -61,7 +63,9 @@ struct PackedExpertsLayout: Sendable {
         let layerLayout = layers[layer]
         guard layerLayout.experts.indices.contains(expert) else {
             throw ModelError.indexCorrupt(
-                detail: "layer \(layer) has \(layerLayout.experts.count) experts; expert \(expert) is out of range")
+                detail:
+                    "layer \(layer) has \(layerLayout.experts.count) experts; expert \(expert) is out of range"
+            )
         }
         return layerLayout.experts[expert]
     }
@@ -70,28 +74,36 @@ struct PackedExpertsLayout: Sendable {
 enum PackedExpertsLayoutReader {
     static let defaultMaxBytes: UInt64 = GTurboFormatV1.packedExpertsLayoutMaxBytes
 
-    static func load(directoryURL: URL,
-                            maxBytes: UInt64 = defaultMaxBytes) throws -> PackedExpertsLayout {
+    static func load(
+        directoryURL: URL,
+        maxBytes: UInt64 = defaultMaxBytes
+    ) throws -> PackedExpertsLayout {
         try load(directoryURL: directoryURL, manifest: nil, maxBytes: maxBytes)
     }
 
-    package static func load(directoryURL: URL,
-                             manifest: Manifest,
-                             maxBytes: UInt64 = defaultMaxBytes) throws -> PackedExpertsLayout {
+    package static func load(
+        directoryURL: URL,
+        manifest: Manifest,
+        maxBytes: UInt64 = defaultMaxBytes
+    ) throws -> PackedExpertsLayout {
         try load(directoryURL: directoryURL, manifest: Optional(manifest), maxBytes: maxBytes)
     }
 
-    private static func load(directoryURL: URL,
-                             manifest: Manifest?,
-                             maxBytes: UInt64) throws -> PackedExpertsLayout {
+    private static func load(
+        directoryURL: URL,
+        manifest: Manifest?,
+        maxBytes: UInt64
+    ) throws -> PackedExpertsLayout {
         let directory = try GTurboModelDirectory(rootURL: directoryURL)
         let data = try directory.readMetadata(
             "packed_experts/layout.json", maxBytes: maxBytes)
         return try decode(data: data, manifest: manifest)
     }
 
-    package static func decode(data: Data,
-                               manifest: Manifest?) throws -> PackedExpertsLayout {
+    package static func decode(
+        data: Data,
+        manifest: Manifest?
+    ) throws -> PackedExpertsLayout {
         let wire: GTurboPackedExpertsLayoutV1
         do {
             wire = try GTurboPackedExpertsLayoutCodec.decode(data)
@@ -115,17 +127,19 @@ enum PackedExpertsLayoutReader {
                     offset: expert.offset,
                     size: expert.size,
                     subTensors: expert.tensors.mapValues {
-                        SubTensorEntry(offset: $0.offset, size: $0.size,
-                                       dtype: $0.dtype, shape: $0.shape,
-                                       bits: $0.bits)
+                        SubTensorEntry(
+                            offset: $0.offset, size: $0.size,
+                            dtype: $0.dtype, shape: $0.shape,
+                            bits: $0.bits)
                     })
             }.sorted { $0.expert < $1.expert }
             return LayerLayout(layer: layer.layer, file: layer.file, experts: experts)
         }
-        return PackedExpertsLayout(expertStride: wire.expertStride,
-                                   numLayers: wire.numLayers,
-                                   expertsPerLayer: wire.expertsPerLayer,
-                                   layers: layers)
+        return PackedExpertsLayout(
+            expertStride: wire.expertStride,
+            numLayers: wire.numLayers,
+            expertsPerLayer: wire.expertsPerLayer,
+            layers: layers)
     }
 
 }

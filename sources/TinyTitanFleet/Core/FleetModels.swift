@@ -18,8 +18,10 @@ public struct FleetSelf: Codable, Sendable, Equatable {
     /// The harness the plugin is running inside — what a fleet view wants to show.
     public let dshVersion: String?
 
-    public init(id: String? = nil, name: String? = nil, port: Int? = nil,
-                addresses: [String]? = nil, version: String? = nil, dshVersion: String? = nil) {
+    public init(
+        id: String? = nil, name: String? = nil, port: Int? = nil,
+        addresses: [String]? = nil, version: String? = nil, dshVersion: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.port = port
@@ -38,9 +40,11 @@ public struct FleetWorkspace: Codable, Sendable, Equatable, Identifiable {
     public let hiddenSessionCount: Int?
     public let sessionIds: [String]?
 
-    public init(id: String, path: String, title: String? = nil,
-                sessionCount: Int? = nil, hiddenSessionCount: Int? = nil,
-                sessionIds: [String]? = nil) {
+    public init(
+        id: String, path: String, title: String? = nil,
+        sessionCount: Int? = nil, hiddenSessionCount: Int? = nil,
+        sessionIds: [String]? = nil
+    ) {
         self.id = id
         self.path = path
         self.title = title
@@ -61,8 +65,10 @@ public struct FleetSession: Codable, Sendable, Equatable, Identifiable {
 
     public var id: String { sessionId }
 
-    public init(sessionId: String, workspaceId: String? = nil, workspacePath: String? = nil,
-                workspaceTitle: String? = nil, title: String? = nil, turns: Int? = nil) {
+    public init(
+        sessionId: String, workspaceId: String? = nil, workspacePath: String? = nil,
+        workspaceTitle: String? = nil, title: String? = nil, turns: Int? = nil
+    ) {
         self.sessionId = sessionId
         self.workspaceId = workspaceId
         self.workspacePath = workspacePath
@@ -91,11 +97,13 @@ public struct FleetPeer: Codable, Sendable, Equatable {
     public let workspaces: [FleetWorkspace]?
     public let sessions: [FleetSession]?
 
-    public init(id: String, address: String, port: Int, name: String? = nil,
-                version: String? = nil, source: String? = nil, addresses: [String]? = nil,
-                dshVersion: String? = nil, lastSeen: Double? = nil,
-                workspaceCount: Int? = nil, sessionCount: Int? = nil,
-                workspaces: [FleetWorkspace]? = nil, sessions: [FleetSession]? = nil) {
+    public init(
+        id: String, address: String, port: Int, name: String? = nil,
+        version: String? = nil, source: String? = nil, addresses: [String]? = nil,
+        dshVersion: String? = nil, lastSeen: Double? = nil,
+        workspaceCount: Int? = nil, sessionCount: Int? = nil,
+        workspaces: [FleetWorkspace]? = nil, sessions: [FleetSession]? = nil
+    ) {
         self.id = id
         self.address = address
         self.port = port
@@ -129,9 +137,11 @@ public struct FleetInventory: Codable, Sendable, Equatable {
         case node = "self"
     }
 
-    public init(ok: Bool? = nil, group: String? = nil, node: FleetSelf? = nil,
-                lastDiscovery: Double? = nil, workspaces: [FleetWorkspace]? = nil,
-                sessions: [FleetSession]? = nil, peers: [FleetPeer]? = nil) {
+    public init(
+        ok: Bool? = nil, group: String? = nil, node: FleetSelf? = nil,
+        lastDiscovery: Double? = nil, workspaces: [FleetWorkspace]? = nil,
+        sessions: [FleetSession]? = nil, peers: [FleetPeer]? = nil
+    ) {
         self.ok = ok
         self.group = group
         self.node = node
@@ -157,10 +167,12 @@ public struct FleetNode: Sendable, Equatable, Identifiable {
     public let workspaces: [FleetWorkspace]
     public let sessions: [FleetSession]
 
-    public init(id: String, name: String, host: String, port: Int, isSelf: Bool,
-                source: String = "local", addresses: [String] = [], dshVersion: String? = nil,
-                lastSeen: Double? = nil, workspaces: [FleetWorkspace] = [],
-                sessions: [FleetSession] = []) {
+    public init(
+        id: String, name: String, host: String, port: Int, isSelf: Bool,
+        source: String = "local", addresses: [String] = [], dshVersion: String? = nil,
+        lastSeen: Double? = nil, workspaces: [FleetWorkspace] = [],
+        sessions: [FleetSession] = []
+    ) {
         self.id = id
         self.name = name
         self.host = host

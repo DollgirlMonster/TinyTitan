@@ -53,9 +53,12 @@ enum CLIStrip {
     /// Filter a validated request. Returns the reduced messages (user and
     /// assistant turns only, reminder blocks removed, tool calls cleared),
     /// an empty tool list, and the strip stats for the log report.
-    static func filter(messages: [GFTokenizer.Message],
-                       tools: [GFTokenizer.FunctionDefinition])
-        -> (messages: [GFTokenizer.Message], tools: [GFTokenizer.FunctionDefinition], stats: Stats) {
+    static func filter(
+        messages: [GFTokenizer.Message],
+        tools: [GFTokenizer.FunctionDefinition]
+    )
+        -> (messages: [GFTokenizer.Message], tools: [GFTokenizer.FunctionDefinition], stats: Stats)
+    {
         var stats = Stats()
         stats.toolsDropped = tools.count
         let tags = tags()
@@ -90,7 +93,8 @@ enum CLIStrip {
                 content = nil
             }
             if message.role == .assistant,
-               content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
+                content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+            {
                 // An assistant turn whose only content was tool calls now
                 // renders as an empty turn; drop it instead of emitting a
                 // hollow <|im_start|>assistant block.
@@ -135,12 +139,14 @@ enum CLIStrip {
 
     /// Earliest <tag> block start among the configured tags.
     private static func nextBlockStart(_ text: Substring, tags: [String])
-        -> (tag: String, range: Range<String.Index>)? {
+        -> (tag: String, range: Range<String.Index>)?
+    {
         var best: (tag: String, range: Range<String.Index>)?
         for tag in tags {
             let marker = "<\(tag)>"
             if let range = text.range(of: marker, options: .caseInsensitive),
-               best.map({ range.lowerBound < $0.range.lowerBound }) ?? true {
+                best.map({ range.lowerBound < $0.range.lowerBound }) ?? true
+            {
                 best = (tag, range)
             }
         }

@@ -10,9 +10,11 @@ enum Safetensors {
         let tensors: [SourceTensor]
     }
 
-    static func parseHeaderBytes(path: String,
-                                        fileSize: UInt64,
-                                        headerBytes data: Data) throws -> Header {
+    static func parseHeaderBytes(
+        path: String,
+        fileSize: UInt64,
+        headerBytes data: Data
+    ) throws -> Header {
         let headerSize = UInt64(data.count)
         // The 8-byte size prefix must fit inside the file before we can
         // subtract it (underflows when fileSize < 8).
@@ -21,7 +23,8 @@ enum Safetensors {
         }
         let rawObj = try JSONSerialization.jsonObject(with: data, options: [])
         guard let dict = rawObj as? [String: Any] else {
-            throw RepackError.safetensorsHeaderInvalid(path: path, detail: "header is not a JSON object")
+            throw RepackError.safetensorsHeaderInvalid(
+                path: path, detail: "header is not a JSON object")
         }
 
         let payloadBase = UInt64(8) + headerSize
@@ -30,24 +33,27 @@ enum Safetensors {
         for (name, value) in dict {
             if name == "__metadata__" { continue }
             guard let entry = value as? [String: Any] else {
-                throw RepackError.safetensorsHeaderInvalid(path: path,
-                                                           detail: "entry for \(name) is not a dict")
+                throw RepackError.safetensorsHeaderInvalid(
+                    path: path,
+                    detail: "entry for \(name) is not a dict")
             }
             guard let dtypeStr = entry["dtype"] as? String else {
-                throw RepackError.safetensorsHeaderInvalid(path: path,
-                                                           detail: "entry for \(name) has no dtype")
+                throw RepackError.safetensorsHeaderInvalid(
+                    path: path,
+                    detail: "entry for \(name) has no dtype")
             }
             let dtype: SourceTensor.Dtype
             switch dtypeStr {
-            case "U32":  dtype = .u32
+            case "U32": dtype = .u32
             case "BF16": dtype = .bf16
-            case "F16":  dtype = .fp16
-            case "F32":  dtype = .fp32
+            case "F16": dtype = .fp16
+            case "F32": dtype = .fp32
             default: throw RepackError.safetensorsUnknownDtype(path: path, dtype: dtypeStr)
             }
             guard let shape = entry["shape"] as? [Any] else {
-                throw RepackError.safetensorsHeaderInvalid(path: path,
-                                                           detail: "entry for \(name) has no shape")
+                throw RepackError.safetensorsHeaderInvalid(
+                    path: path,
+                    detail: "entry for \(name) has no shape")
             }
             let shapeU64: [UInt64] = try shape.map { e in
                 if let n = e as? NSNumber { return n.uint64Value }
@@ -59,15 +65,19 @@ enum Safetensors {
                     }
                     return UInt64(n)
                 }
-                throw RepackError.safetensorsHeaderInvalid(path: path,
-                                                           detail: "entry for \(name) has non-integer shape entry")
+                throw RepackError.safetensorsHeaderInvalid(
+                    path: path,
+                    detail: "entry for \(name) has non-integer shape entry")
             }
             guard let offs = entry["data_offsets"] as? [Any], offs.count == 2,
-                  let begin = (offs[0] as? NSNumber)?.uint64Value ?? (offs[0] as? Int).map({ UInt64($0) }),
-                  let end   = (offs[1] as? NSNumber)?.uint64Value ?? (offs[1] as? Int).map({ UInt64($0) })
+                let begin = (offs[0] as? NSNumber)?.uint64Value
+                    ?? (offs[0] as? Int).map({ UInt64($0) }),
+                let end = (offs[1] as? NSNumber)?.uint64Value
+                    ?? (offs[1] as? Int).map({ UInt64($0) })
             else {
-                throw RepackError.safetensorsHeaderInvalid(path: path,
-                                                           detail: "entry for \(name) has bad data_offsets")
+                throw RepackError.safetensorsHeaderInvalid(
+                    path: path,
+                    detail: "entry for \(name) has bad data_offsets")
             }
             // Checked arithmetic: begin/end come from remote-controlled JSON,
             // so every combination is validated instead of relying on wrap
@@ -94,12 +104,15 @@ enum Safetensors {
             }
             let (bytes, bytesOverflow) = elements.multipliedReportingOverflow(by: elemBytes)
             if elementsOverflow || bytesOverflow || bytes != size {
-                throw RepackError.shapeMismatch(name: name,
-                                                detail: "shape product \(elements)*\(elemBytes) != size \(size)")
+                throw RepackError.shapeMismatch(
+                    name: name,
+                    detail: "shape product \(elements)*\(elemBytes) != size \(size)")
             }
-            tensors.append(SourceTensor(name: name, shardPath: path, dtype: dtype,
-                                        shape: shapeU64,
-                                        absoluteOffset: abs, sizeBytes: size))
+            tensors.append(
+                SourceTensor(
+                    name: name, shardPath: path, dtype: dtype,
+                    shape: shapeU64,
+                    absoluteOffset: abs, sizeBytes: size))
         }
         return Header(tensors: tensors)
     }

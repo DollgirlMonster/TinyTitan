@@ -8,11 +8,11 @@ and Codex declare it, so this is the book-versus-git case end to end.
 
     benchmark/memval_run.sh smoke      # memory on, no tools: the engine must do the writing
 """
+
 from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -29,8 +29,11 @@ def consolidation_lines():
     with open(SERVER_LOG, errors="replace") as handle:
         return [line.strip() for line in handle if "consolidated session=" in line]
 
-NOVEL = ("You are a coding assistant.\n\n# Environment\n"
-         " - Primary working directory: /Users/ada/novels/photograph\n")
+
+NOVEL = (
+    "You are a coding assistant.\n\n# Environment\n"
+    " - Primary working directory: /Users/ada/novels/photograph\n"
+)
 CODE = "<environment_context>\n  <cwd>/Users/ada/src/widget</cwd>\n</environment_context>"
 
 
@@ -40,11 +43,17 @@ def model_id():
 
 
 def ask(model, system, user, label):
-    body = json.dumps({"model": model, "temperature": 0, "max_completion_tokens": 400,
-                       "messages": [{"role": "system", "content": system},
-                                    {"role": "user", "content": user}]}).encode()
-    request = urllib.request.Request(f"{BASE}/chat/completions", data=body,
-                                     headers={"Content-Type": "application/json"})
+    body = json.dumps(
+        {
+            "model": model,
+            "temperature": 0,
+            "max_completion_tokens": 400,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        }
+    ).encode()
+    request = urllib.request.Request(
+        f"{BASE}/chat/completions", data=body, headers={"Content-Type": "application/json"}
+    )
     started = time.time()
     try:
         with urllib.request.urlopen(request, timeout=1800) as response:
@@ -55,8 +64,10 @@ def ask(model, system, user, label):
     message = (payload.get("choices") or [{}])[0].get("message", {})
     content = (message.get("content") or "").strip()
     usage = payload.get("usage", {})
-    print(f"[{label}] HTTP {status}, {elapsed:.0f}s, prompt {usage.get('prompt_tokens')} "
-          f"completion {usage.get('completion_tokens')}")
+    print(
+        f"[{label}] HTTP {status}, {elapsed:.0f}s, prompt {usage.get('prompt_tokens')} "
+        f"completion {usage.get('completion_tokens')}"
+    )
     print("   " + content[:300].replace("\n", " "))
     if status != 200:
         print("   ERROR:", json.dumps(payload)[:400])
@@ -68,17 +79,22 @@ def main():
     failures = []
 
     status, reply, usage = ask(
-        model, NOVEL,
+        model,
+        NOVEL,
         "Store this in memory for later sessions: in this novel the town is called "
-        "Ashgrove and it never rains there. Then confirm in one sentence.", "novel-1")
+        "Ashgrove and it never rains there. Then confirm in one sentence.",
+        "novel-1",
+    )
     if status != 200:
         failures.append("novel-1 did not answer")
     # Memory on with no tools: the fragment is ~90 tokens on top of the
     # ~60-token request (measured 149). Under 120, memory is not in the
     # prompt at all.
     if (usage.get("prompt_tokens") or 0) < 120:
-        failures.append(f"novel-1 prompt was {usage.get('prompt_tokens')} tokens: "
-                        "the memory fragment is not in the prompt")
+        failures.append(
+            f"novel-1 prompt was {usage.get('prompt_tokens')} tokens: "
+            "the memory fragment is not in the prompt"
+        )
 
     # The novel session is over. With the runner's short idle, the engine
     # should distil it before the next request; a real person's pause does
@@ -95,15 +111,21 @@ def main():
         failures.append("consolidation ran but wrote no facts")
 
     status, reply, _ = ask(
-        model, CODE,
+        model,
+        CODE,
         "What do you already know about this project from memory? One sentence; "
-        "say 'nothing' if nothing.", "code-1")
+        "say 'nothing' if nothing.",
+        "code-1",
+    )
     if "ashgrove" in reply.lower():
         failures.append("the codebase session saw the novel's fact")
 
     status, reply, _ = ask(
-        model, NOVEL,
-        "What do you already know about this novel from memory? One sentence.", "novel-2")
+        model,
+        NOVEL,
+        "What do you already know about this novel from memory? One sentence.",
+        "novel-2",
+    )
     if "ashgrove" not in reply.lower():
         failures.append("the second novel session did not recall the fact")
 
@@ -121,8 +143,10 @@ def main():
         for failure in failures:
             print("  -", failure)
         raise SystemExit(1)
-    print("\nSMOKE OK: placement by declared directory, fact carried within the "
-          "project and not across it.")
+    print(
+        "\nSMOKE OK: placement by declared directory, fact carried within the "
+        "project and not across it."
+    )
 
 
 if __name__ == "__main__":

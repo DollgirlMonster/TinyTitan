@@ -12,9 +12,9 @@ public enum PrefillError: Error, CustomStringConvertible, Equatable {
     public var description: String {
         switch self {
         case .chunkedUnsupported(let reason),
-             .chunkedRunnerDirty(let reason),
-             .prefillCursorMismatch(let reason),
-             .unsupportedPrefillSeed(let reason):
+            .chunkedRunnerDirty(let reason),
+            .prefillCursorMismatch(let reason),
+            .unsupportedPrefillSeed(let reason):
             return reason
         }
     }
@@ -27,7 +27,8 @@ struct PrefillChunkCommitState: Sendable, Equatable {
 
     var inFlightEndPosition: Int? {
         guard let start = inFlightStartPosition,
-              let count = inFlightTokenCount else { return nil }
+            let count = inFlightTokenCount
+        else { return nil }
         return start + count
     }
 
@@ -60,7 +61,8 @@ struct PrefillChunkCommitState: Sendable, Equatable {
                 range = ""
             }
             throw PrefillError.chunkedRunnerDirty(
-                "\(operation) rejected because a previous chunked prefill wrote KV rows\(range) but did not commit; call reset() before reusing the runner")
+                "\(operation) rejected because a previous chunked prefill wrote KV rows\(range) but did not commit; call reset() before reusing the runner"
+            )
         }
     }
 }
@@ -70,31 +72,25 @@ struct PrefillChunkSpan: Sendable, Equatable {
     let tokenCount: Int
     let startPosition: Int
     let completedCount: Int
-
-    init(tokenOffset: Int,
-                tokenCount: Int,
-                startPosition: Int,
-                completedCount: Int) {
-        self.tokenOffset = tokenOffset
-        self.tokenCount = tokenCount
-        self.startPosition = startPosition
-        self.completedCount = completedCount
-    }
-
 }
 
 enum PrefillChunkPlanner {
-    static func spans(tokenCount: Int,
-                             startPosition: Int,
-                             config: PrefillRuntimeConfig) -> [PrefillChunkSpan] {
-        spans(tokenCount: tokenCount,
-              startPosition: startPosition,
-              chunkTokens: config.chunkTokens)
+    static func spans(
+        tokenCount: Int,
+        startPosition: Int,
+        config: PrefillRuntimeConfig
+    ) -> [PrefillChunkSpan] {
+        spans(
+            tokenCount: tokenCount,
+            startPosition: startPosition,
+            chunkTokens: config.chunkTokens)
     }
 
-    static func spans(tokenCount: Int,
-                             startPosition: Int,
-                             chunkTokens: Int) -> [PrefillChunkSpan] {
+    static func spans(
+        tokenCount: Int,
+        startPosition: Int,
+        chunkTokens: Int
+    ) -> [PrefillChunkSpan] {
         precondition(tokenCount >= 0, "prefill tokenCount must be non-negative")
         precondition(startPosition >= 0, "prefill startPosition must be non-negative")
         let chunk = max(1, min(chunkTokens, PrefillRuntimeConfig.maxChunkTokens))
@@ -106,10 +102,12 @@ enum PrefillChunkPlanner {
         while offset < tokenCount {
             let count = min(chunk, tokenCount - offset)
             let completed = offset + count
-            spans.append(PrefillChunkSpan(tokenOffset: offset,
-                                          tokenCount: count,
-                                          startPosition: startPosition + offset,
-                                          completedCount: completed))
+            spans.append(
+                PrefillChunkSpan(
+                    tokenOffset: offset,
+                    tokenCount: count,
+                    startPosition: startPosition + offset,
+                    completedCount: completed))
             offset = completed
         }
         return spans
@@ -148,27 +146,33 @@ public struct PrefillExecutionDiagnostics: Sendable, Equatable {
     public let chunkCompleteness: PrefillChunkCompleteness
     public let unsupportedReason: String?
 
-    public init(config: PrefillRuntimeConfig,
-                executedMode: PrefillExecutedMode,
-                kvStorageMode: PrefillKVStorageMode? = nil,
-                chunkCompleteness: PrefillChunkCompleteness? = nil,
-                unsupportedReason: String? = nil) {
+    public init(
+        config: PrefillRuntimeConfig,
+        executedMode: PrefillExecutedMode,
+        kvStorageMode: PrefillKVStorageMode? = nil,
+        chunkCompleteness: PrefillChunkCompleteness? = nil,
+        unsupportedReason: String? = nil
+    ) {
         self.requestedMode = config.mode
         self.executedMode = executedMode
         self.kvStorageMode = kvStorageMode
-        self.chunkCompleteness = chunkCompleteness
+        self.chunkCompleteness =
+            chunkCompleteness
             ?? (executedMode == .unsupported ? .unsupported : .complete)
         self.unsupportedReason = unsupportedReason
     }
 
-    public static func unsupported(config: PrefillRuntimeConfig,
-                                   kvStorageMode: PrefillKVStorageMode? = nil,
-                                   reason: String) -> PrefillExecutionDiagnostics {
-        PrefillExecutionDiagnostics(config: config,
-                                    executedMode: .unsupported,
-                                    kvStorageMode: kvStorageMode,
-                                    chunkCompleteness: .unsupported,
-                                    unsupportedReason: reason)
+    public static func unsupported(
+        config: PrefillRuntimeConfig,
+        kvStorageMode: PrefillKVStorageMode? = nil,
+        reason: String
+    ) -> PrefillExecutionDiagnostics {
+        PrefillExecutionDiagnostics(
+            config: config,
+            executedMode: .unsupported,
+            kvStorageMode: kvStorageMode,
+            chunkCompleteness: .unsupported,
+            unsupportedReason: reason)
     }
 }
 
@@ -203,8 +207,9 @@ public struct PrefillRuntimeConfig: Sendable, Equatable {
     }
 
     public static func production(chunkTokens: Int) -> PrefillRuntimeConfig {
-        precondition(RuntimeConfiguration.allowedPrefillChunkTokens.contains(chunkTokens),
-                     "unsupported prefill chunk size")
+        precondition(
+            RuntimeConfiguration.allowedPrefillChunkTokens.contains(chunkTokens),
+            "unsupported prefill chunk size")
         return PrefillRuntimeConfig(mode: .chunked, chunkTokens: chunkTokens)
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanMemory
 
 /// The workspace cap is the only retention rule that *removes facts*, so what it
@@ -14,11 +15,13 @@ import Testing
     }
 
     private func write(_ url: URL, modified: Date) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
         try Data("{}\n".utf8).write(to: url)
-        try FileManager.default.setAttributes([.modificationDate: modified],
-                                              ofItemAtPath: url.path)
+        try FileManager.default.setAttributes(
+            [.modificationDate: modified],
+            ofItemAtPath: url.path)
     }
 
     /// Cap only: retention rewrites survivors through the journal, which is a
@@ -65,14 +68,18 @@ import Testing
         await service.sweepStaleWorkspaces()
 
         let manager = FileManager.default
-        #expect(manager.fileExists(atPath: locked.path),
-                "a workspace another process holds was deleted")
-        #expect(manager.fileExists(atPath: locked.appendingPathExtension("lock").path),
-                "the holder's lock file was deleted with it")
-        #expect(manager.fileExists(atPath: kept.path),
-                "the newest workspace is inside the cap and must survive")
-        #expect(!manager.fileExists(atPath: free.path),
-                "an unlocked workspace past the cap was not deleted")
+        #expect(
+            manager.fileExists(atPath: locked.path),
+            "a workspace another process holds was deleted")
+        #expect(
+            manager.fileExists(atPath: locked.appendingPathExtension("lock").path),
+            "the holder's lock file was deleted with it")
+        #expect(
+            manager.fileExists(atPath: kept.path),
+            "the newest workspace is inside the cap and must survive")
+        #expect(
+            !manager.fileExists(atPath: free.path),
+            "an unlocked workspace past the cap was not deleted")
     }
 
     /// The probe must not amount to disabling the cap: with no lock held, the

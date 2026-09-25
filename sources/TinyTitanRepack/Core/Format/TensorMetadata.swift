@@ -5,13 +5,18 @@ import Foundation
 /// the shard header.
 struct SourceTensor: Sendable, Hashable {
     enum Dtype: UInt8, Sendable, Hashable {
-        case u32  = 0
+        case u32 = 0
         case bf16 = 1
         case fp16 = 2
         case fp32 = 3
 
         var elementBytes: Int {
-            switch self { case .u32: 4; case .bf16: 2; case .fp16: 2; case .fp32: 4 }
+            switch self {
+            case .u32: 4
+            case .bf16: 2
+            case .fp16: 2
+            case .fp32: 4
+            }
         }
     }
 

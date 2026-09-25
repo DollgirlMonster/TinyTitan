@@ -1,4 +1,5 @@
 import Testing
+
 @testable import TinyTitanServerCore
 
 private actor TestGate {
@@ -46,8 +47,18 @@ struct ServerCoordinatorTests {
         let coordinator = ServerCoordinator(queueLimit: 1, width: 2)
         let release = AsyncSemaphore()
 
-        let a = Task { try await coordinator.run { await release.wait(); return 1 } }
-        let b = Task { try await coordinator.run { await release.wait(); return 2 } }
+        let a = Task {
+            try await coordinator.run {
+                await release.wait()
+                return 1
+            }
+        }
+        let b = Task {
+            try await coordinator.run {
+                await release.wait()
+                return 2
+            }
+        }
         try await waitUntil(timeout: .seconds(5)) { await coordinator.runningCount == 2 }
 
         let queued = Task { try await coordinator.run { 3 } }
@@ -67,8 +78,10 @@ struct ServerCoordinatorTests {
 
     /// Bounded poll so a state that never reaches `condition` fails fast
     /// instead of spinning forever.
-    private func waitUntil(timeout: Duration,
-                           _ condition: () async -> Bool) async throws {
+    private func waitUntil(
+        timeout: Duration,
+        _ condition: () async -> Bool
+    ) async throws {
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while await !condition() {
             guard ContinuousClock.now < deadline else {

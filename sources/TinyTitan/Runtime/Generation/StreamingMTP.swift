@@ -28,7 +28,8 @@ public struct StreamingMTPMemoryPlan: Sendable, Equatable {
     /// change under a running decoder.
     public static let expertSlots: Int = {
         guard let raw = ProcessInfo.processInfo.environment["TINYTITAN_MTP_EXPERT_SLOTS"],
-              let value = Int(raw), allowedExpertSlots.contains(value) else {
+            let value = Int(raw), allowedExpertSlots.contains(value)
+        else {
             return defaultExpertSlots
         }
         return value
@@ -46,19 +47,22 @@ public struct StreamingMTPMemoryPlan: Sendable, Equatable {
             + targetRollbackBytes + scratchBytes
     }
 
-    public init(budgetMiB: Int = defaultBudgetMiB,
-                residentTensorBytes: Int,
-                expertStrideBytes: Int,
-                draftKVTokens: Int = defaultDraftKVTokens,
-                kvCachePrecision: KVCachePrecision = .fp16,
-                targetRollbackBytes: Int,
-                scratchBytes: Int) throws {
+    public init(
+        budgetMiB: Int = defaultBudgetMiB,
+        residentTensorBytes: Int,
+        expertStrideBytes: Int,
+        draftKVTokens: Int = defaultDraftKVTokens,
+        kvCachePrecision: KVCachePrecision = .fp16,
+        targetRollbackBytes: Int,
+        scratchBytes: Int
+    ) throws {
         guard Self.allowedBudgetMiB.contains(budgetMiB) else {
             throw StreamingMTPError.invalidMemoryBudgetMiB(budgetMiB)
         }
         guard residentTensorBytes >= 0, expertStrideBytes >= 0,
-              draftKVTokens > 0, targetRollbackBytes >= 0,
-              scratchBytes >= 0 else {
+            draftKVTokens > 0, targetRollbackBytes >= 0,
+            scratchBytes >= 0
+        else {
             throw StreamingMTPError.invalidMemoryComponent
         }
         let budgetBytes = budgetMiB * 1_048_576
@@ -67,17 +71,21 @@ public struct StreamingMTPMemoryPlan: Sendable, Equatable {
         let elementsPerRow = 2 * 256
         let valueBytes = (elementsPerRow * kvCachePrecision.rawValue + 7) / 8
         let alignedValueBytes = (valueBytes + 1) & ~1
-        let groupCount = (elementsPerRow + KVCacheManager.quantizationGroupSize - 1)
+        let groupCount =
+            (elementsPerRow + KVCacheManager.quantizationGroupSize - 1)
             / KVCacheManager.quantizationGroupSize
-        let rowBytes = kvCachePrecision == .fp16
+        let rowBytes =
+            kvCachePrecision == .fp16
             ? elementsPerRow * MemoryLayout<Float16>.stride
             : alignedValueBytes + groupCount * 2 * MemoryLayout<Float16>.stride
         let draftKVBytes = draftKVTokens * 2 * rowBytes
-        let required = residentTensorBytes + streamedExpertCacheBytes
+        let required =
+            residentTensorBytes + streamedExpertCacheBytes
             + draftKVBytes + targetRollbackBytes + scratchBytes
         guard required <= budgetBytes else {
-            throw StreamingMTPError.memoryBudgetExceeded(requiredBytes: required,
-                                                         budgetBytes: budgetBytes)
+            throw StreamingMTPError.memoryBudgetExceeded(
+                requiredBytes: required,
+                budgetBytes: budgetBytes)
         }
         self.budgetBytes = budgetBytes
         self.residentTensorBytes = residentTensorBytes
@@ -174,14 +182,16 @@ public struct MTPStatistics: Sendable, Equatable {
     public private(set) var commitNanos: UInt64 = 0
     public private(set) var rollbackNanos: UInt64 = 0
 
-    mutating func recordPhases(proposal: UInt64,
-                               checkpoint: UInt64,
-                               verify: UInt64,
-                               verifyBackbone: UInt64,
-                               verifyHead: UInt64,
-                               verifyArgmax: UInt64,
-                               commit: UInt64,
-                               rollback: UInt64) {
+    mutating func recordPhases(
+        proposal: UInt64,
+        checkpoint: UInt64,
+        verify: UInt64,
+        verifyBackbone: UInt64,
+        verifyHead: UInt64,
+        verifyArgmax: UInt64,
+        commit: UInt64,
+        rollback: UInt64
+    ) {
         proposalNanos &+= proposal
         checkpointNanos &+= checkpoint
         verifyNanos &+= verify
@@ -196,7 +206,8 @@ public struct MTPStatistics: Sendable, Equatable {
         draftedTokens == 0 ? 0 : Double(acceptedTokens) / Double(draftedTokens)
     }
     public var emittedTokensPerTargetPass: Double {
-        targetBackbonePasses == 0 ? 0
+        targetBackbonePasses == 0
+            ? 0
             : Double(emittedTokens) / Double(targetBackbonePasses)
     }
 
@@ -247,7 +258,8 @@ public enum RuntimeMTPVerifySchedule: String, Codable, Sendable {
 public final class StreamingMTPDecoder: LogitProducer, ContextWindowReporting,
     /// unchecked-invariant: owns two RealForwardRunners and is driven by one
     /// task at a time, inheriting their exclusive-ownership rule.
-    @unchecked Sendable {
+    @unchecked Sendable
+{
     public let target: RealForwardRunner
     let draft: RealForwardRunner
     public let memoryPlan: StreamingMTPMemoryPlan
@@ -257,18 +269,24 @@ public final class StreamingMTPDecoder: LogitProducer, ContextWindowReporting,
     private let targetConfig: ArchConfig
     private var boundaryHidden: Data?
 
-    public init(targetModel: Model,
-                mtpSidecar: Model,
-                context: MetalContext,
-                maxContext: Int,
-                memoryBudgetMiB: Int = StreamingMTPMemoryPlan.defaultBudgetMiB,
-                runtimeConfiguration: RuntimeConfiguration = .production) throws {
-        guard targetModel.config.family == .qwen36
-                || targetModel.config.family == .qwen38flash else {
+    public init(
+        targetModel: Model,
+        mtpSidecar: Model,
+        context: MetalContext,
+        maxContext: Int,
+        memoryBudgetMiB: Int = StreamingMTPMemoryPlan.defaultBudgetMiB,
+        runtimeConfiguration: RuntimeConfiguration = .production
+    ) throws {
+        guard
+            targetModel.config.family == .qwen36
+                || targetModel.config.family == .qwen38flash
+        else {
             throw StreamingMTPError.targetMustBeQwen36
         }
-        guard mtpSidecar.config.family == .qwen36MTP
-                || mtpSidecar.config.family == .qwen38flashMTP else {
+        guard
+            mtpSidecar.config.family == .qwen36MTP
+                || mtpSidecar.config.family == .qwen38flashMTP
+        else {
             throw StreamingMTPError.sidecarMustBeQwen36MTP
         }
         guard runtimeConfiguration.ropeScalingMode == .none else {
@@ -293,13 +311,15 @@ public final class StreamingMTPDecoder: LogitProducer, ContextWindowReporting,
             _ = try mtpSidecar.mtpHiddenNorm()
         }
         let boundDraft = try mtpSidecar.sharingTargetWeights(from: targetModel)
-        let targetRunner = try RealForwardRunner(model: targetModel,
-                                                 context: context,
-                                                 maxContext: maxContext,
-                                                 runtimeConfiguration: runtimeConfiguration,
-                                                 enableSpeculativeGDN: true)
-        let draftContext = min(maxContext,
-                               StreamingMTPMemoryPlan.defaultDraftKVTokens)
+        let targetRunner = try RealForwardRunner(
+            model: targetModel,
+            context: context,
+            maxContext: maxContext,
+            runtimeConfiguration: runtimeConfiguration,
+            enableSpeculativeGDN: true)
+        let draftContext = min(
+            maxContext,
+            StreamingMTPMemoryPlan.defaultDraftKVTokens)
         let draftRuntime = try RuntimeConfiguration(
             expertCacheSlots: StreamingMTPMemoryPlan.expertSlots,
             expertCachePolicy: runtimeConfiguration.expertCachePolicy,
@@ -309,14 +329,17 @@ public final class StreamingMTPDecoder: LogitProducer, ContextWindowReporting,
             prefillAttentionPath: runtimeConfiguration.prefillAttentionPath,
             forceLogitsHead: boundDraft.lmHeadWeightBits != 4,
             kvCachePrecision: runtimeConfiguration.kvCachePrecision)
-        let draftRunner = try RealForwardRunner(model: boundDraft,
-                                                context: context,
-                                                maxContext: draftContext,
-                                                runtimeConfiguration: draftRuntime)
+        let draftRunner = try RealForwardRunner(
+            model: boundDraft,
+            context: context,
+            maxContext: draftContext,
+            runtimeConfiguration: draftRuntime)
         let draftConfig = boundDraft.config
-        let scratch = PrefillChunkScratchLayout(
-            config: draftConfig,
-            chunkTokens: 32).totalPersistentBytes
+        let scratch =
+            PrefillChunkScratchLayout(
+                config: draftConfig,
+                chunkTokens: 32
+            ).totalPersistentBytes
             + 2 * draftConfig.vocabSize * MemoryLayout<Float16>.stride
             + 32 * draftConfig.hiddenSize * 7 * MemoryLayout<Float16>.stride
         self.memoryPlan = try StreamingMTPMemoryPlan(
@@ -359,22 +382,28 @@ public final class StreamingMTPDecoder: LogitProducer, ContextWindowReporting,
     /// Required only for protocol compatibility. Callers should use
     /// `prepare`/`advance`; silently taking the scalar path would make an MTP
     /// session's state ambiguous.
-    public func produce(token: Int32, position: Int,
-                        into logits: MTLBuffer) async throws {
+    public func produce(
+        token: Int32, position: Int,
+        into logits: MTLBuffer
+    ) async throws {
         throw StreamingMTPError.draftNotReady
     }
 
-    func prepare(promptIds: [Int32],
-                 config: GenerationConfig,
-                 prefillConfig: PrefillRuntimeConfig,
-                 logits: MTLBuffer,
-                 onProgress: (Int) -> Void) async throws -> Int32 {
+    func prepare(
+        promptIds: [Int32],
+        config: GenerationConfig,
+        prefillConfig: PrefillRuntimeConfig,
+        logits: MTLBuffer,
+        onProgress: (Int) -> Void
+    ) async throws -> Int32 {
         guard config.isPureGreedy else { throw StreamingMTPError.greedyOnly }
         guard promptIds.count + config.maxNewTokens <= maxContext,
-              promptIds.count + config.maxNewTokens <= draft.maxContext else {
-            throw GeneratorError.contextOverflow(prompt: promptIds.count,
-                                                 maxNew: config.maxNewTokens,
-                                                 maxContext: min(maxContext, draft.maxContext))
+            promptIds.count + config.maxNewTokens <= draft.maxContext
+        else {
+            throw GeneratorError.contextOverflow(
+                prompt: promptIds.count,
+                maxNew: config.maxNewTokens,
+                maxContext: min(maxContext, draft.maxContext))
         }
         reset()
         let result = try await target.prefillChunkedWithMTP(
@@ -420,7 +449,8 @@ public final class StreamingMTPDecoder: LogitProducer, ContextWindowReporting,
         let hiddenAfterBoundary = verification.hiddenRows.subdata(in: 0..<rowBytes)
         let accepted = verification.predictionAfterFirst == draftToken
         if Self.traceEnabled {
-            let line = "[mtp] pos=\(draft.continuationPosition)"
+            let line =
+                "[mtp] pos=\(draft.continuationPosition)"
                 + " boundary=\(boundaryToken) draft=\(draftToken)"
                 + " afterFirst=\(verification.predictionAfterFirst)"
                 + " afterSecond=\(verification.predictionAfterSecond)"
@@ -469,10 +499,11 @@ public final class StreamingMTPDecoder: LogitProducer, ContextWindowReporting,
             verifyArgmax: verification.argmaxNanos,
             commit: 0,
             rollback: clock_gettime_nsec_np(CLOCK_UPTIME_RAW) &- tRollback)
-        return MTPDecodeBatch(tokenIDs: [verification.predictionAfterFirst],
-                              backedPrefixCount: 0,
-                              acceptedDraft: false,
-                              statistics: statistics)
+        return MTPDecodeBatch(
+            tokenIDs: [verification.predictionAfterFirst],
+            backedPrefixCount: 0,
+            acceptedDraft: false,
+            statistics: statistics)
     }
 
     private static func argmax(_ logits: MTLBuffer, count: Int) -> Int32 {

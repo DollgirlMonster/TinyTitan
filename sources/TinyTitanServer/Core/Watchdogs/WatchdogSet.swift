@@ -34,7 +34,6 @@ public struct WatchdogSet: Sendable {
     /// Set when a watchdog that is allowed to act has tripped mid-stream.
     public private(set) var stopMessage: String?
 
-
     public init(configuration: WatchdogConfiguration) {
         self.configuration = configuration
         loop = LoopWatchdog(configuration: configuration)
@@ -56,8 +55,10 @@ public struct WatchdogSet: Sendable {
     /// should end.
     public var wantsStop: Bool { stopMessage != nil }
 
-    public mutating func observe(_ chunk: String,
-                                 at instant: ContinuousClock.Instant = .now) {
+    public mutating func observe(
+        _ chunk: String,
+        at instant: ContinuousClock.Instant = .now
+    ) {
         guard configuration.isEnabled else { return }
         record(LoopWatchdog.kind, loop.observe(chunk, at: instant))
         record(StallWatchdog.kind, stall.observe(chunk, at: instant))
@@ -67,11 +68,14 @@ public struct WatchdogSet: Sendable {
     /// until its token budget is gone, and since thinking left the answer
     /// channel nothing saw it. Stall and stub stay on the answer: a long
     /// thought before a short reply is the model working, not stalling.
-    public mutating func observeReasoning(_ chunk: String,
-                                          at instant: ContinuousClock.Instant = .now) {
+    public mutating func observeReasoning(
+        _ chunk: String,
+        at instant: ContinuousClock.Instant = .now
+    ) {
         guard configuration.isEnabled else { return }
-        record(LoopWatchdog.kind, reasoningLoop.observe(chunk, at: instant),
-               where: "in reasoning")
+        record(
+            LoopWatchdog.kind, reasoningLoop.observe(chunk, at: instant),
+            where: "in reasoning")
     }
 
     public mutating func check(at instant: ContinuousClock.Instant = .now) {
@@ -79,12 +83,16 @@ public struct WatchdogSet: Sendable {
         record(StallWatchdog.kind, stall.check(at: instant))
     }
 
-    public mutating func finish(visibleBytes: Int, requestBytes: Int,
-                                finishReason: String) {
+    public mutating func finish(
+        visibleBytes: Int, requestBytes: Int,
+        finishReason: String
+    ) {
         guard configuration.isEnabled else { return }
-        record(StubWatchdog.kind,
-               stub.finish(visibleBytes: visibleBytes, requestBytes: requestBytes,
-                           finishReason: finishReason))
+        record(
+            StubWatchdog.kind,
+            stub.finish(
+                visibleBytes: visibleBytes, requestBytes: requestBytes,
+                finishReason: finishReason))
     }
 
     /// A ping-pong report from the incoming request (B2), folded in so
@@ -96,8 +104,10 @@ public struct WatchdogSet: Sendable {
         trips.append(Trip(kind: PingPongWatchdog.kind, message: message, acted: false))
     }
 
-    private mutating func record(_ kind: WatchdogKind, _ verdict: WatchdogVerdict,
-                                 where place: String? = nil) {
+    private mutating func record(
+        _ kind: WatchdogKind, _ verdict: WatchdogVerdict,
+        where place: String? = nil
+    ) {
         guard let found = verdict.message else { return }
         let message = place.map { "\($0): \(found)" } ?? found
         let acts = configuration.acts(kind)
@@ -126,9 +136,10 @@ public struct WatchdogSet: Sendable {
         }
         // B4: `length` is the nearest honest reason either protocol offers.
         let reason = stopMessage == nil ? finishReason : "length"
-        return Outcome(content: content + explanation,
-                       finishReason: reason,
-                       note: explanation)
+        return Outcome(
+            content: content + explanation,
+            finishReason: reason,
+            note: explanation)
     }
 
     /// B4: a stopped generation must say so in its content. Neither the

@@ -77,8 +77,10 @@ public protocol MemorySideEngine: Sendable {
     /// value a rule fixes (an eye colour changing is only a conflict if
     /// something says it never may), so a caller with no rule must not pass
     /// `nil` and then act on the answer.
-    func supersedes(_ stored: MemoryFact, _ new: MemoryFact,
-                    rule: String?) async -> MemorySupersession?
+    func supersedes(
+        _ stored: MemoryFact, _ new: MemoryFact,
+        rule: String?
+    ) async -> MemorySupersession?
 
     /// T7: could this stored fact answer this question? True means the fact
     /// contains the answer, or part of it.
@@ -95,7 +97,7 @@ public protocol MemorySideEngine: Sendable {
     func shutdown() async
 }
 
-public extension MemorySideEngine {
+extension MemorySideEngine {
     /// A value with nothing resident to release says nothing.
-    func shutdown() async {}
+    public func shutdown() async {}
 }

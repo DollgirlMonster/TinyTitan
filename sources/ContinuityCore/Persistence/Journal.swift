@@ -32,8 +32,8 @@ public protocol ContinuityJournal: Sendable {
     func truncate() async throws
 }
 
-public extension ContinuityJournal {
-    func append(_ records: [JournalRecord]) async throws {
+extension ContinuityJournal {
+    public func append(_ records: [JournalRecord]) async throws {
         for record in records { try await append(record) }
     }
 }
@@ -115,8 +115,9 @@ public actor FileJournal: ContinuityJournal {
     /// cooperative pool. A barrier is tens of milliseconds of the drive
     /// doing nothing else; on a Mac with a two-thread pool that would be
     /// half of every actor in the process stalled behind a memory write.
-    private static let blockingQueue = DispatchQueue(label: "ContinuityCore.journal",
-                                                     qos: .utility)
+    private static let blockingQueue = DispatchQueue(
+        label: "ContinuityCore.journal",
+        qos: .utility)
 
     /// - Parameters:
     ///   - synchronizesEveryWrite: take the barrier on every append, inline.
@@ -133,10 +134,12 @@ public actor FileJournal: ContinuityJournal {
     /// - Throws: `JournalError.locked` when another process holds this
     ///   journal. Callers should treat that as "run without persistence and
     ///   say so", never as a reason to write anyway.
-    public init(url: URL,
-                synchronizesEveryWrite: Bool = false,
-                idleDelay: Duration = .seconds(2),
-                maximumLatency: Duration = .seconds(30)) throws {
+    public init(
+        url: URL,
+        synchronizesEveryWrite: Bool = false,
+        idleDelay: Duration = .seconds(2),
+        maximumLatency: Duration = .seconds(30)
+    ) throws {
         self.url = url
         self.lockURL = url.appendingPathExtension("lock")
         self.synchronizesEveryWrite = synchronizesEveryWrite
@@ -175,12 +178,14 @@ public actor FileJournal: ContinuityJournal {
         let manager = FileManager.default
         let directory = url.deletingLastPathComponent()
         if !manager.fileExists(atPath: directory.path) {
-            try manager.createDirectory(at: directory, withIntermediateDirectories: true,
-                                        attributes: [.posixPermissions: 0o700])
+            try manager.createDirectory(
+                at: directory, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
         }
         var isDirectory: ObjCBool = false
         if manager.fileExists(atPath: url.path, isDirectory: &isDirectory),
-           isDirectory.boolValue {
+            isDirectory.boolValue
+        {
             throw JournalError.notAFile(url)
         }
     }
@@ -188,8 +193,9 @@ public actor FileJournal: ContinuityJournal {
     private static func acquireLock(at lockURL: URL, journal: URL) throws -> Int32 {
         let descriptor = open(lockURL.path, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
         guard descriptor >= 0 else {
-            throw JournalError.cannotOpen(lockURL,
-                                          underlying: String(cString: strerror(errno)))
+            throw JournalError.cannotOpen(
+                lockURL,
+                underlying: String(cString: strerror(errno)))
         }
         // flock is per open-file-description, so a second FileJournal on the
         // same path inside this process conflicts too. fcntl locks would not,
@@ -268,10 +274,13 @@ public actor FileJournal: ContinuityJournal {
     private func writeFully(_ data: Data) throws {
         guard descriptor >= 0 else { throw JournalError.writeFailed(url, errno: EBADF) }
         try data.withUnsafeBytes { buffer in
+            // An empty write has no base address and nothing to write.
+            guard let base = buffer.baseAddress else { return }
             var offset = 0
             while offset < buffer.count {
-                let written = write(descriptor, buffer.baseAddress!.advanced(by: offset),
-                                    buffer.count - offset)
+                let written = write(
+                    descriptor, base.advanced(by: offset),
+                    buffer.count - offset)
                 if written < 0 {
                     if errno == EINTR { continue }
                     throw JournalError.writeFailed(url, errno: errno)
@@ -413,8 +422,10 @@ public actor FileJournal: ContinuityJournal {
         // the one most likely to be big enough to notice.
         let outcome: Result<Void, JournalError> = await withCheckedContinuation { continuation in
             Self.blockingQueue.async {
-                continuation.resume(returning: Self.writeCheckpoint(payload, to: temporary,
-                                                                    replacing: target))
+                continuation.resume(
+                    returning: Self.writeCheckpoint(
+                        payload, to: temporary,
+                        replacing: target))
             }
         }
         if case .failure(let error) = outcome { throw error }
@@ -441,8 +452,10 @@ public actor FileJournal: ContinuityJournal {
     /// Replace only once the new file is complete on disk, so a crash during
     /// compaction leaves the old journal intact, and sync the directory so
     /// the rename itself is durable rather than only the bytes it points at.
-    private static func writeCheckpoint(_ data: Data, to temporary: URL,
-                                        replacing target: URL) -> Result<Void, JournalError> {
+    private static func writeCheckpoint(
+        _ data: Data, to temporary: URL,
+        replacing target: URL
+    ) -> Result<Void, JournalError> {
         try? FileManager.default.removeItem(at: temporary)
         let handle = open(temporary.path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0o600)
         guard handle >= 0 else {
@@ -510,10 +523,13 @@ public actor FileJournal: ContinuityJournal {
 
     private static func writeFully(_ data: Data, to descriptor: Int32, url: URL) throws {
         try data.withUnsafeBytes { buffer in
+            // An empty write has no base address and nothing to write.
+            guard let base = buffer.baseAddress else { return }
             var offset = 0
             while offset < buffer.count {
-                let written = write(descriptor, buffer.baseAddress!.advanced(by: offset),
-                                    buffer.count - offset)
+                let written = write(
+                    descriptor, base.advanced(by: offset),
+                    buffer.count - offset)
                 if written < 0 {
                     if errno == EINTR { continue }
                     throw JournalError.writeFailed(url, errno: errno)

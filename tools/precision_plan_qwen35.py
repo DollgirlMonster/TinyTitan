@@ -27,6 +27,7 @@ per megabyte, which is the only sensible way to choose.
     python3.13 tools/precision_plan_qwen35.py                 # 8-bit and 4-bit
     python3.13 tools/precision_plan_qwen35.py --rows 128
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,14 +46,12 @@ ROOT = Path(__file__).resolve().parent.parent
 SNAPSHOT = ROOT / ".build/qwen35-2b-affine-8bit"
 REPO = "Qwen/Qwen3.5-2B"
 COMMIT = "15852e8c16360a2fea060d615a32b45270f8a8fc"
-URL = (f"https://huggingface.co/{REPO}/resolve/{COMMIT}"
-       "/model.safetensors-00001-of-00001.safetensors")
+URL = f"https://huggingface.co/{REPO}/resolve/{COMMIT}/model.safetensors-00001-of-00001.safetensors"
 GROUP = 64
 
 # The converter's own quantiser, so this measures what will be shipped
 # rather than a re-implementation that might round differently.
-_spec = importlib.util.spec_from_file_location(
-    "prep", ROOT / "tools/prepare_qwen35.py")
+_spec = importlib.util.spec_from_file_location("prep", ROOT / "tools/prepare_qwen35.py")
 prep = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(prep)
 
@@ -65,8 +64,9 @@ def dequantize(packed, scales, biases, bits: int) -> np.ndarray:
     for lane in range(lanes):
         out[:, lane::lanes] = ((packed >> (bits * lane)) & mask).astype(np.float32)
     grouped = out.reshape(rows, -1, GROUP)
-    return (grouped * scales.astype(np.float32)[..., None]
-            + biases.astype(np.float32)[..., None]).reshape(rows, -1)
+    return (
+        grouped * scales.astype(np.float32)[..., None] + biases.astype(np.float32)[..., None]
+    ).reshape(rows, -1)
 
 
 def roundtrip(value: np.ndarray, bits: int) -> np.ndarray:
@@ -120,25 +120,31 @@ def outlier_ratio(block: np.ndarray) -> float:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--rows", type=int, default=64,
-                    help="rows sampled per tensor (the statistic is per row)")
-    ap.add_argument("--samples", type=int, default=4,
-                    help="random activations averaged per tensor")
+    ap.add_argument(
+        "--rows", type=int, default=64, help="rows sampled per tensor (the statistic is per row)"
+    )
+    ap.add_argument("--samples", type=int, default=4, help="random activations averaged per tensor")
     args = ap.parse_args()
 
     index = json.loads((SNAPSHOT / "model.safetensors.index.json").read_text())
-    stems = sorted({n.removesuffix(".weight") for n in index["weight_map"]
-                    if n.endswith(".weight")
-                    and n.removesuffix(".weight") + ".scales" in index["weight_map"]})
+    stems = sorted(
+        {
+            n.removesuffix(".weight")
+            for n in index["weight_map"]
+            if n.endswith(".weight")
+            and n.removesuffix(".weight") + ".scales" in index["weight_map"]
+        }
+    )
     source = Source()
     rng = np.random.default_rng(0)
 
     per_kind: dict[str, dict[str, list]] = defaultdict(
-        lambda: {"e4": [], "e8": [], "c4": [], "c8": [], "outlier": [], "params": 0,
-                 "count": 0})
+        lambda: {"e4": [], "e8": [], "c4": [], "c8": [], "outlier": [], "params": 0, "count": 0}
+    )
     for stem in stems:
-        checkpoint = ("model.language_model."
-                      + stem.removeprefix("language_model.model.") + ".weight")
+        checkpoint = (
+            "model.language_model." + stem.removeprefix("language_model.model.") + ".weight"
+        )
         block, params = source.rows(checkpoint, args.rows)
         if block is None:
             continue
@@ -151,8 +157,9 @@ def main() -> int:
             for tag, weights in (("4", w4), ("8", w8)):
                 y = weights @ x
                 errors[f"e{tag}"].append(float(np.abs(y - reference).max() / scale))
-                errors[f"c{tag}"].append(float(
-                    reference @ y / (np.linalg.norm(reference) * np.linalg.norm(y) + 1e-30)))
+                errors[f"c{tag}"].append(
+                    float(reference @ y / (np.linalg.norm(reference) * np.linalg.norm(y) + 1e-30))
+                )
         entry = per_kind[kind_of(checkpoint)]
         for key in errors:
             entry[key].append(float(np.mean(errors[key])))
@@ -160,26 +167,41 @@ def main() -> int:
         entry["params"] += params
         entry["count"] += 1
 
-    print(f"Qwen3.5-2B, {args.rows} rows and {args.samples} activations per tensor, "
-          f"against the bf16 source\n")
-    print(f"  {'tensor kind':28s} {'n':>3s} {'MB@4':>6s} {'MB@8':>6s} "
-          f"{'err@4':>7s} {'err@8':>7s} {'cos@4':>8s} {'cos@8':>8s} {'outlier':>8s}")
+    print(
+        f"Qwen3.5-2B, {args.rows} rows and {args.samples} activations per tensor, "
+        f"against the bf16 source\n"
+    )
+    print(
+        f"  {'tensor kind':28s} {'n':>3s} {'MB@4':>6s} {'MB@8':>6s} "
+        f"{'err@4':>7s} {'err@8':>7s} {'cos@4':>8s} {'cos@8':>8s} {'outlier':>8s}"
+    )
     rows = []
     for kind, entry in sorted(per_kind.items()):
         mb4 = entry["params"] * 0.5 / 1e6
         mb8 = entry["params"] * 1.0 / 1e6
-        rows.append((kind, entry["count"], mb4, mb8,
-                     float(np.mean(entry["e4"])), float(np.mean(entry["e8"])),
-                     float(np.mean(entry["c4"])), float(np.mean(entry["c8"])),
-                     float(np.mean(entry["outlier"]))))
+        rows.append(
+            (
+                kind,
+                entry["count"],
+                mb4,
+                mb8,
+                float(np.mean(entry["e4"])),
+                float(np.mean(entry["e8"])),
+                float(np.mean(entry["c4"])),
+                float(np.mean(entry["c8"])),
+                float(np.mean(entry["outlier"])),
+            )
+        )
     for row in sorted(rows, key=lambda r: -r[4]):
-        print(f"  {row[0]:28s} {row[1]:3d} {row[2]:6.0f} {row[3]:6.0f} "
-              f"{row[4]:7.4f} {row[5]:7.4f} {row[6]:8.5f} {row[7]:8.5f} {row[8]:8.2f}")
+        print(
+            f"  {row[0]:28s} {row[1]:3d} {row[2]:6.0f} {row[3]:6.0f} "
+            f"{row[4]:7.4f} {row[5]:7.4f} {row[6]:8.5f} {row[7]:8.5f} {row[8]:8.2f}"
+        )
 
     print("\npromotions ranked by error removed per megabyte added:")
     print(f"  {'promotion':40s} {'+MB':>7s} {'err drop':>9s} {'per MB':>9s}")
     plan = []
-    for kind, count, mb4, mb8, e4, e8, c4, c8, _ in rows:
+    for kind, _count, mb4, mb8, e4, e8, _c4, _c8, _ in rows:
         # 4-bit -> 8-bit costs the same megabytes again; 8-bit -> bf16 costs
         # another two bytes per weight over one.
         plan.append((f"{kind}: 4-bit -> 8-bit", mb8 - mb4, e4 - e8))

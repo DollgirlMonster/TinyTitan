@@ -69,7 +69,8 @@ struct RepackCLITests {
     }
 
     private func run(_ arguments: [String]) throws
-        -> (status: Int32, stdout: String, stderr: String) {
+        -> (status: Int32, stdout: String, stderr: String)
+    {
         let executable = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent(".build/debug/TinyTitanRepack")
         let process = Process()
@@ -85,8 +86,9 @@ struct RepackCLITests {
         let err = stderr.fileHandleForReading.readDataToEndOfFile()
         return (
             process.terminationStatus,
-            String(decoding: out, as: UTF8.self),
-            String(decoding: err, as: UTF8.self))
+            try #require(String(bytes: out, encoding: .utf8)),
+            try #require(String(bytes: err, encoding: .utf8))
+        )
     }
 
     private func temporaryOutput(_ tag: String) -> String {

@@ -68,20 +68,24 @@ def _openai_messages(body: dict[str, Any]) -> list[dict[str, Any]]:
             if block_type == "text":
                 text_parts.append(block.get("text", ""))
             elif block_type == "tool_use":
-                tool_calls.append({
-                    "id": block.get("id", "call_" + uuid.uuid4().hex),
-                    "type": "function",
-                    "function": {
-                        "name": block.get("name", "tool"),
-                        "arguments": json.dumps(block.get("input", {}), separators=(",", ":")),
-                    },
-                })
+                tool_calls.append(
+                    {
+                        "id": block.get("id", "call_" + uuid.uuid4().hex),
+                        "type": "function",
+                        "function": {
+                            "name": block.get("name", "tool"),
+                            "arguments": json.dumps(block.get("input", {}), separators=(",", ":")),
+                        },
+                    }
+                )
             elif block_type == "tool_result":
-                tool_results.append({
-                    "role": "tool",
-                    "tool_call_id": block.get("tool_use_id", ""),
-                    "content": _text_content(block.get("content", "")),
-                })
+                tool_results.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": block.get("tool_use_id", ""),
+                        "content": _text_content(block.get("content", "")),
+                    }
+                )
         if role == "assistant":
             item: dict[str, Any] = {"role": "assistant", "content": "\n".join(text_parts) or None}
             if tool_calls:
@@ -101,14 +105,16 @@ def _openai_tools(body: dict[str, Any]) -> list[dict[str, Any]]:
     for tool in body.get("tools", []):
         if not isinstance(tool, dict) or not tool.get("name"):
             continue
-        tools.append({
-            "type": "function",
-            "function": {
-                "name": tool["name"],
-                "description": tool.get("description", ""),
-                "parameters": tool.get("input_schema", {"type": "object", "properties": {}}),
-            },
-        })
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get("input_schema", {"type": "object", "properties": {}}),
+                },
+            }
+        )
     return tools
 
 
@@ -122,27 +128,37 @@ class AdapterHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._json(200, {"status": "ok"})
         else:
-            self._json(404, {"type": "error", "error": {"type": "not_found_error", "message": "not found"}})
+            self._json(
+                404, {"type": "error", "error": {"type": "not_found_error", "message": "not found"}}
+            )
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
         if self.path.split("?", 1)[0] != "/v1/messages":
-            self._json(404, {"type": "error", "error": {"type": "not_found_error", "message": "not found"}})
+            self._json(
+                404, {"type": "error", "error": {"type": "not_found_error", "message": "not found"}}
+            )
             return
         try:
             length = int(self.headers.get("content-length", "0"))
             body = json.loads(self.rfile.read(length))
             self._serve_messages(body)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            self._json(400, {"type": "error", "error": {"type": "invalid_request_error", "message": str(exc)}})
+            self._json(
+                400,
+                {"type": "error", "error": {"type": "invalid_request_error", "message": str(exc)}},
+            )
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")
-            self._json(exc.code, {"type": "error", "error": {"type": "api_error", "message": detail}})
+            self._json(
+                exc.code, {"type": "error", "error": {"type": "api_error", "message": detail}}
+            )
         except Exception as exc:  # benchmark boundary: preserve exact failure for the report
             self._json(500, {"type": "error", "error": {"type": "api_error", "message": repr(exc)}})
 
     def _serve_messages(self, body: dict[str, Any]) -> None:
         server = self.server
-        assert isinstance(server, AdapterServer)
+        if not isinstance(server, AdapterServer):
+            raise TypeError(f"the adapter's server is {type(server).__name__}, not AdapterServer")
         model = body.get("model") or server.model
         payload: dict[str, Any] = {
             "model": model,
@@ -177,19 +193,22 @@ class AdapterHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         message_id = "msg_" + uuid.uuid4().hex
-        self._event("message_start", {
-            "type": "message_start",
-            "message": {
-                "id": message_id,
-                "type": "message",
-                "role": "assistant",
-                "content": [],
-                "model": model,
-                "stop_reason": None,
-                "stop_sequence": None,
-                "usage": {"input_tokens": 0, "output_tokens": 0},
+        self._event(
+            "message_start",
+            {
+                "type": "message_start",
+                "message": {
+                    "id": message_id,
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [],
+                    "model": model,
+                    "stop_reason": None,
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 0, "output_tokens": 0},
+                },
             },
-        })
+        )
         text_index: int | None = None
         tool_indexes: dict[int, int] = {}
         open_blocks: list[int] = []
@@ -214,14 +233,22 @@ class AdapterHandler(BaseHTTPRequestHandler):
                     text_index = next_index
                     next_index += 1
                     open_blocks.append(text_index)
-                    self._event("content_block_start", {
-                        "type": "content_block_start", "index": text_index,
-                        "content_block": {"type": "text", "text": ""},
-                    })
-                self._event("content_block_delta", {
-                    "type": "content_block_delta", "index": text_index,
-                    "delta": {"type": "text_delta", "text": text},
-                })
+                    self._event(
+                        "content_block_start",
+                        {
+                            "type": "content_block_start",
+                            "index": text_index,
+                            "content_block": {"type": "text", "text": ""},
+                        },
+                    )
+                self._event(
+                    "content_block_delta",
+                    {
+                        "type": "content_block_delta",
+                        "index": text_index,
+                        "delta": {"type": "text_delta", "text": text},
+                    },
+                )
             for call in delta.get("tool_calls") or []:
                 call_slot = int(call.get("index", 0))
                 if call_slot not in tool_indexes:
@@ -230,21 +257,29 @@ class AdapterHandler(BaseHTTPRequestHandler):
                     tool_indexes[call_slot] = block_index
                     open_blocks.append(block_index)
                     function = call.get("function") or {}
-                    self._event("content_block_start", {
-                        "type": "content_block_start", "index": block_index,
-                        "content_block": {
-                            "type": "tool_use",
-                            "id": call.get("id") or "call_" + uuid.uuid4().hex,
-                            "name": function.get("name") or "tool",
-                            "input": {},
+                    self._event(
+                        "content_block_start",
+                        {
+                            "type": "content_block_start",
+                            "index": block_index,
+                            "content_block": {
+                                "type": "tool_use",
+                                "id": call.get("id") or "call_" + uuid.uuid4().hex,
+                                "name": function.get("name") or "tool",
+                                "input": {},
+                            },
                         },
-                    })
+                    )
                 arguments = (call.get("function") or {}).get("arguments")
                 if arguments:
-                    self._event("content_block_delta", {
-                        "type": "content_block_delta", "index": tool_indexes[call_slot],
-                        "delta": {"type": "input_json_delta", "partial_json": arguments},
-                    })
+                    self._event(
+                        "content_block_delta",
+                        {
+                            "type": "content_block_delta",
+                            "index": tool_indexes[call_slot],
+                            "delta": {"type": "input_json_delta", "partial_json": arguments},
+                        },
+                    )
             finish = choice.get("finish_reason")
             if finish == "tool_calls":
                 stop_reason = "tool_use"
@@ -252,15 +287,20 @@ class AdapterHandler(BaseHTTPRequestHandler):
                 stop_reason = "max_tokens"
         for index in open_blocks:
             self._event("content_block_stop", {"type": "content_block_stop", "index": index})
-        self._event("message_delta", {
-            "type": "message_delta",
-            "delta": {"stop_reason": stop_reason, "stop_sequence": None},
-            "usage": {"output_tokens": 0},
-        })
+        self._event(
+            "message_delta",
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+                "usage": {"output_tokens": 0},
+            },
+        )
         self._event("message_stop", {"type": "message_stop"})
 
     def _event(self, name: str, value: dict[str, Any]) -> None:
-        self.wfile.write(f"event: {name}\ndata: {json.dumps(value, separators=(',', ':'))}\n\n".encode())
+        self.wfile.write(
+            f"event: {name}\ndata: {json.dumps(value, separators=(',', ':'))}\n\n".encode()
+        )
         self.wfile.flush()
 
     def _json(self, status: int, value: dict[str, Any]) -> None:
@@ -273,8 +313,9 @@ class AdapterHandler(BaseHTTPRequestHandler):
 
 
 class AdapterServer(ThreadingHTTPServer):
-    def __init__(self, address: tuple[str, int], openai_url: str, model: str,
-                 timeout: int, max_tokens: int) -> None:
+    def __init__(
+        self, address: tuple[str, int], openai_url: str, model: str, timeout: int, max_tokens: int
+    ) -> None:
         super().__init__(address, AdapterHandler)
         self.openai_url = openai_url.rstrip("/")
         self.model = model
@@ -290,8 +331,9 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--max-tokens", type=int, default=2048)
     args = parser.parse_args()
-    server = AdapterServer(("127.0.0.1", args.port), args.openai_url, args.model,
-                           args.timeout, args.max_tokens)
+    server = AdapterServer(
+        ("127.0.0.1", args.port), args.openai_url, args.model, args.timeout, args.max_tokens
+    )
     print(f"Claude adapter ready at http://127.0.0.1:{args.port}", flush=True)
     try:
         server.serve_forever()

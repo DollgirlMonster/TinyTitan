@@ -9,16 +9,24 @@ import PackageDescription
 /// added later cannot quietly opt out. The ones deliberately *not* adopted
 /// (and why, with their measured diagnostic counts) are recorded in
 /// `docs/swift-language-standard.md`.
+///
+/// `-warnings-as-errors` is part of the standard, not a preference: a warning
+/// that only appears in a build log is a check nobody runs, and the release
+/// script's log scan did not cover `swift test` at all. Every target carries
+/// this array (23 of 23 at the time of writing), so the flag cannot be dodged
+/// by a new target either. The tree builds and tests clean with it
+/// (`swift build --build-tests`, `swift test --no-parallel`).
 let tinytitanLanguageStandard: [SwiftSetting] = [
     .enableUpcomingFeature("InferIsolatedConformances"),
     .enableUpcomingFeature("ImmutableWeakCaptures"),
     .enableUpcomingFeature("MemberImportVisibility"),
+    .unsafeFlags(["-warnings-as-errors"]),
 ]
 
 let package = Package(
     name: "TinyTitan",
     platforms: [
-        .macOS(.v26),
+        .macOS(.v26)
     ],
     products: [
         .library(name: "TinyTitan", targets: ["TinyTitan"]),
@@ -40,7 +48,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.0"),
-        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.99.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.100.0"),
     ],
     targets: [
         .target(
@@ -62,10 +70,29 @@ let package = Package(
         // application package and nothing depends on it. Raising Swift to
         // `-O3` was tried and rejected for the same constraint, having measured
         // the same as the release default (0.675 vs 0.680 ms).
+        //
+        // The language standard and the hardening warnings are enforced here,
+        // not merely declared: `-std=c99` comes from `cLanguageStandard` above,
+        // and these settings add the flags `-Wall -Wextra` does not imply plus
+        // `-Werror`, so a new kernel cannot land with a shadowed variable, a
+        // narrowing conversion, a dropped qualifier, a non-literal format or a
+        // missing prototype. All three C files compile clean under the full set
+        // (AUDIT/tool-coverage.md, proof L8), and `-pedantic-errors` rejects the
+        // implicit declarations and GNU extensions C99 does not have.
         .target(
             name: "TinyTitanKernelsC",
             path: "sources/TinyTitanKernelsC",
-            cSettings: [.unsafeFlags(["-O2"])],
+            cSettings: [
+                .unsafeFlags([
+                    "-O2",
+                    "-pedantic-errors",
+                    "-Wall", "-Wextra",
+                    "-Wshadow", "-Wconversion", "-Wsign-conversion", "-Wcast-qual",
+                    "-Wwrite-strings", "-Wformat=2", "-Wstrict-prototypes",
+                    "-Wmissing-prototypes",
+                    "-Werror",
+                ])
+            ],
             swiftSettings: tinytitanLanguageStandard
         ),
         .target(
@@ -77,7 +104,7 @@ let package = Package(
             ],
             path: "sources/TinyTitan",
             resources: [
-                .copy("Metal"),
+                .copy("Metal")
             ],
             swiftSettings: tinytitanLanguageStandard
         ),
@@ -199,11 +226,16 @@ let package = Package(
         ),
         .testTarget(
             name: "TinyTitanTests",
-            dependencies: ["TinyTitan", "TinyTitanValidationSupport", "TinyTitanRepackCore", "TinyTitanCLICore"],
+            dependencies: [
+                "TinyTitan", "TinyTitanValidationSupport", "TinyTitanRepackCore",
+                "TinyTitanCLICore",
+            ],
             path: "tests/TinyTitan",
-            resources: [.copy("Tokenization/Fixtures"),
-                        .copy("Runtime/qwen38_tensor_names.txt"),
-                        .copy("Runtime/ple_golden.json")],
+            resources: [
+                .copy("Tokenization/Fixtures"),
+                .copy("Runtime/qwen38_tensor_names.txt"),
+                .copy("Runtime/ple_golden.json"),
+            ],
             swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(
@@ -243,5 +275,10 @@ let package = Package(
             swiftSettings: tinytitanLanguageStandard
         ),
     ],
-    swiftLanguageModes: [.v6]
+    swiftLanguageModes: [.v6],
+    // The C in this package is written to strict C99; declaring it here makes
+    // the compiler enforce it instead of documenting an intention. Together
+    // with the TinyTitanKernelsC cSettings below this is the C language
+    // standard in force, and AUDIT/tool-coverage.md proves a violation fails.
+    cLanguageStandard: .c99
 )

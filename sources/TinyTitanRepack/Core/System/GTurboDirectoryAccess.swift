@@ -27,8 +27,9 @@ package final class GTurboDirectoryAccess {
 
     package func openFile(_ relativePath: String) throws -> Int32 {
         do {
-            try GTurboPathValidator.validateRelativePath(relativePath,
-                                                         field: "path.\(relativePath)")
+            try GTurboPathValidator.validateRelativePath(
+                relativePath,
+                field: "path.\(relativePath)")
         } catch {
             throw RepackError.configurationInvalid(detail: "unsafe path \(relativePath): \(error)")
         }
@@ -38,8 +39,9 @@ package final class GTurboDirectoryAccess {
             throw RepackError.fileOpenFailed(path: rootPath, errno: errno)
         }
         for component in components.dropLast() {
-            let next = openat(directoryFD, component,
-                              O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            let next = openat(
+                directoryFD, component,
+                O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             let savedErrno = errno
             close(directoryFD)
             guard next >= 0 else {
@@ -52,40 +54,53 @@ package final class GTurboDirectoryAccess {
             }
             directoryFD = next
         }
-        let fd = openat(directoryFD, components.last!,
-                        O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard let lastComponent = components.last else {
+            throw RepackError.configurationInvalid(
+                detail: "\(relativePath) has no last path component to open")
+        }
+        let fd = openat(
+            directoryFD, lastComponent,
+            O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
         let savedErrno = errno
         close(directoryFD)
         guard fd >= 0 else {
             if savedErrno == ENOENT {
-                throw RepackError.fileStatFailed(path: "\(rootPath)/\(relativePath)",
-                                                 errno: savedErrno)
+                throw RepackError.fileStatFailed(
+                    path: "\(rootPath)/\(relativePath)",
+                    errno: savedErrno)
             }
-            throw RepackError.fileOpenFailed(path: "\(rootPath)/\(relativePath)",
-                                             errno: savedErrno)
+            throw RepackError.fileOpenFailed(
+                path: "\(rootPath)/\(relativePath)",
+                errno: savedErrno)
         }
         var st = stat()
         guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else {
             let statErrno = errno
             close(fd)
-            throw RepackError.fileStatFailed(path: "\(rootPath)/\(relativePath)",
-                                             errno: statErrno)
+            throw RepackError.fileStatFailed(
+                path: "\(rootPath)/\(relativePath)",
+                errno: statErrno)
         }
         return fd
     }
 
-    package func readMetadata(_ relativePath: String,
-                              maxBytes: UInt64) throws -> Data {
+    package func readMetadata(
+        _ relativePath: String,
+        maxBytes: UInt64
+    ) throws -> Data {
         let fd = try openFile(relativePath)
         defer { close(fd) }
-        return try readMetadata(fileDescriptor: fd,
-                                relativePath: relativePath,
-                                maxBytes: maxBytes)
+        return try readMetadata(
+            fileDescriptor: fd,
+            relativePath: relativePath,
+            maxBytes: maxBytes)
     }
 
-    package func readMetadata(fileDescriptor fd: Int32,
-                              relativePath: String,
-                              maxBytes: UInt64) throws -> Data {
+    package func readMetadata(
+        fileDescriptor fd: Int32,
+        relativePath: String,
+        maxBytes: UInt64
+    ) throws -> Data {
         let size = try fileSize(fileDescriptor: fd, relativePath: relativePath)
         guard size <= maxBytes, size <= UInt64(Int.max) else {
             throw RepackError.configurationInvalid(
@@ -94,9 +109,10 @@ package final class GTurboDirectoryAccess {
         var data = Data(count: Int(size))
         if !data.isEmpty {
             try data.withUnsafeMutableBytes {
+                guard let base = $0.baseAddress else { return }
                 try Posix.preadAll(
                     fd: fd, path: "\(rootPath)/\(relativePath)",
-                    buf: $0.baseAddress!, count: $0.count, offset: 0)
+                    buf: base, count: $0.count, offset: 0)
             }
         }
         return data
@@ -108,8 +124,10 @@ package final class GTurboDirectoryAccess {
     /// the small JSON documents it serves and useless for the resident index:
     /// the index is the *head* of `model_weights.bin`, and that file is 1.3 to
     /// 200 GB. This reads the head without ever materializing the payload.
-    package func readPrefix(_ relativePath: String,
-                            maxBytes: UInt64) throws -> Data {
+    package func readPrefix(
+        _ relativePath: String,
+        maxBytes: UInt64
+    ) throws -> Data {
         let fd = try openFile(relativePath)
         defer { close(fd) }
         let size = try fileSize(fileDescriptor: fd, relativePath: relativePath)
@@ -121,9 +139,10 @@ package final class GTurboDirectoryAccess {
         var data = Data(count: Int(wanted))
         if !data.isEmpty {
             try data.withUnsafeMutableBytes {
+                guard let base = $0.baseAddress else { return }
                 try Posix.preadAll(
                     fd: fd, path: "\(rootPath)/\(relativePath)",
-                    buf: $0.baseAddress!, count: $0.count, offset: 0)
+                    buf: base, count: $0.count, offset: 0)
             }
         }
         return data
@@ -135,29 +154,35 @@ package final class GTurboDirectoryAccess {
         return try fileSize(fileDescriptor: fd, relativePath: relativePath)
     }
 
-    package func relativeEntries(maxDepth: Int = 16,
-                                 maxEntries: Int = 100_000) throws -> [String] {
+    package func relativeEntries(
+        maxDepth: Int = 16,
+        maxEntries: Int = 100_000
+    ) throws -> [String] {
         guard maxDepth >= 0, maxEntries > 0 else {
             throw RepackError.configurationInvalid(detail: "invalid directory scan bounds")
         }
         var result: [String] = []
-        try collectEntries(directoryFD: rootFD,
-                           prefix: "",
-                           depth: 0,
-                           maxDepth: maxDepth,
-                           maxEntries: maxEntries,
-                           result: &result)
+        try collectEntries(
+            directoryFD: rootFD,
+            prefix: "",
+            depth: 0,
+            maxDepth: maxDepth,
+            maxEntries: maxEntries,
+            result: &result)
         return result.sorted()
     }
 
-    private func collectEntries(directoryFD: Int32,
-                                prefix: String,
-                                depth: Int,
-                                maxDepth: Int,
-                                maxEntries: Int,
-                                result: inout [String]) throws {
-        let scanFD = openat(directoryFD, ".",
-                            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    private func collectEntries(
+        directoryFD: Int32,
+        prefix: String,
+        depth: Int,
+        maxDepth: Int,
+        maxEntries: Int,
+        result: inout [String]
+    ) throws {
+        let scanFD = openat(
+            directoryFD, ".",
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard scanFD >= 0, let directory = fdopendir(scanFD) else {
             if scanFD >= 0 { close(scanFD) }
             throw RepackError.fileOpenFailed(
@@ -182,7 +207,8 @@ package final class GTurboDirectoryAccess {
             let relativePath = prefix.isEmpty ? name : "\(prefix)/\(name)"
             result.append(relativePath)
             guard result.count <= maxEntries else {
-                throw RepackError.configurationInvalid(detail: "artifact directory has too many entries")
+                throw RepackError.configurationInvalid(
+                    detail: "artifact directory has too many entries")
             }
             var info = stat()
             guard fstatat(directoryFD, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
@@ -197,19 +223,21 @@ package final class GTurboDirectoryAccess {
                     throw RepackError.configurationInvalid(
                         detail: "artifact directory nesting exceeds \(maxDepth)")
                 }
-                let childFD = openat(directoryFD, name,
-                                     O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                let childFD = openat(
+                    directoryFD, name,
+                    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
                 guard childFD >= 0 else {
                     throw RepackError.fileOpenFailed(
                         path: "\(rootPath)/\(relativePath)", errno: errno)
                 }
                 do {
-                    try collectEntries(directoryFD: childFD,
-                                       prefix: relativePath,
-                                       depth: depth + 1,
-                                       maxDepth: maxDepth,
-                                       maxEntries: maxEntries,
-                                       result: &result)
+                    try collectEntries(
+                        directoryFD: childFD,
+                        prefix: relativePath,
+                        depth: depth + 1,
+                        maxDepth: maxDepth,
+                        maxEntries: maxEntries,
+                        result: &result)
                     close(childFD)
                 } catch {
                     close(childFD)
@@ -222,14 +250,17 @@ package final class GTurboDirectoryAccess {
     package func hash(_ relativePath: String, noCache: Bool) throws -> String {
         let fd = try openFile(relativePath)
         defer { close(fd) }
-        return try hash(fileDescriptor: fd,
-                        relativePath: relativePath,
-                        noCache: noCache)
+        return try hash(
+            fileDescriptor: fd,
+            relativePath: relativePath,
+            noCache: noCache)
     }
 
-    package func hash(fileDescriptor fd: Int32,
-                      relativePath: String,
-                      noCache: Bool) throws -> String {
+    package func hash(
+        fileDescriptor fd: Int32,
+        relativePath: String,
+        noCache: Bool
+    ) throws -> String {
         return try Sha256Stream.hashFileDescriptor(
             fd, displayPath: "\(rootPath)/\(relativePath)", noCache: noCache)
     }
@@ -243,9 +274,10 @@ package final class GTurboDirectoryAccess {
                 detail: "unsafe output path \(relativePath): \(error)")
         }
         let temporary = ".gturbo-\(UUID().uuidString).tmp"
-        var fd = openat(rootFD, temporary,
-                        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
-                        0o600)
+        var fd = openat(
+            rootFD, temporary,
+            O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+            0o600)
         guard fd >= 0 else {
             throw RepackError.fileOpenFailed(path: "\(rootPath)/\(temporary)", errno: errno)
         }
@@ -272,8 +304,10 @@ package final class GTurboDirectoryAccess {
         }
     }
 
-    package func fileSize(fileDescriptor fd: Int32,
-                          relativePath: String) throws -> UInt64 {
+    package func fileSize(
+        fileDescriptor fd: Int32,
+        relativePath: String
+    ) throws -> UInt64 {
         var st = stat()
         guard fstat(fd, &st) == 0 else {
             throw RepackError.fileStatFailed(path: "\(rootPath)/\(relativePath)", errno: errno)

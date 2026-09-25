@@ -30,15 +30,18 @@ enum ServerLog {
         write("request \(id) generating")
     }
 
-    static func completed(id: String,
-                          duration: Duration,
-                          completion: ServerCompletion) {
+    static func completed(
+        id: String,
+        duration: Duration,
+        completion: ServerCompletion
+    ) {
         let usage = completion.usage
-        write("request \(id) completed in \(format(duration)) "
-            + "prompt=\(usage.promptTokens) "
-            + "cached=\(usage.promptTokensDetails.cachedTokens) "
-            + "completion=\(usage.completionTokens) "
-            + "finish=\(completion.finishReason)")
+        write(
+            "request \(id) completed in \(format(duration)) "
+                + "prompt=\(usage.promptTokens) "
+                + "cached=\(usage.promptTokensDetails.cachedTokens) "
+                + "completion=\(usage.completionTokens) "
+                + "finish=\(completion.finishReason)")
         for trip in completion.watchdogTrips {
             watchdog(id: id, trip: trip)
         }
@@ -48,18 +51,22 @@ enum ServerLog {
         // rather than a short one. Counted, never quoted -- generated text does
         // not belong in a log line.
         if completion.unrequestedReasoning > 0 {
-            write("request \(id) thinking off, but the model wrote "
-                + "\(completion.unrequestedReasoning) characters of reasoning; "
-                + "they are in reasoning_content, not content")
+            write(
+                "request \(id) thinking off, but the model wrote "
+                    + "\(completion.unrequestedReasoning) characters of reasoning; "
+                    + "they are in reasoning_content, not content")
         }
     }
 
-    static func failed(id: String,
-                       phase: String,
-                       status: UInt,
-                       error: Error) {
-        write("request \(id) failed phase=\(phase) status=\(status) "
-            + "error=\(String(reflecting: error))")
+    static func failed(
+        id: String,
+        phase: String,
+        status: UInt,
+        error: Error
+    ) {
+        write(
+            "request \(id) failed phase=\(phase) status=\(status) "
+                + "error=\(String(reflecting: error))")
     }
 
     /// Strip report for one request (TINYTITAN_STRIP_CLI_PROMPT on). The reminder
@@ -67,16 +74,17 @@ enum ServerLog {
     /// bloat template, "reminders=" drops to 0 or "prompt=" jumps back to the
     /// thousands, visible here without a model run.
     static func strip(stats: CLIStrip.Stats, promptTokens: Int) {
-        write("strip v\(CLIStrip.version) "
-            + "system=\(stats.systemDropped) "
-            + "developer=\(stats.developerDropped) "
-            + "toolRole=\(stats.toolRoleDropped) "
-            + "tools=\(stats.toolsDropped) "
-            + "toolCalls=\(stats.toolCallsDropped) "
-            + "reminders=\(stats.reminderCharsRemoved)chars "
-            + "messageFallback=\(stats.emptyMessageFallbacks) "
-            + "requestFallback=\(stats.emptyRequestFallback) "
-            + "prompt=\(promptTokens)")
+        write(
+            "strip v\(CLIStrip.version) "
+                + "system=\(stats.systemDropped) "
+                + "developer=\(stats.developerDropped) "
+                + "toolRole=\(stats.toolRoleDropped) "
+                + "tools=\(stats.toolsDropped) "
+                + "toolCalls=\(stats.toolCallsDropped) "
+                + "reminders=\(stats.reminderCharsRemoved)chars "
+                + "messageFallback=\(stats.emptyMessageFallbacks) "
+                + "requestFallback=\(stats.emptyRequestFallback) "
+                + "prompt=\(promptTokens)")
     }
 
     /// Model residency transitions under --lazy-load / --idle-unload-seconds.
@@ -127,12 +135,14 @@ enum ServerLog {
     /// too short, is in the reply the user already has, and generated text
     /// does not belong in a log line any more than a memory's contents do.
     static func watchdog(id: String, trip: WatchdogSet.Trip) {
-        write("request \(id) watchdog \(trip.kind.rawValue) "
-            + "\(trip.acted ? "stopped" : "observed") \(trip.message)")
+        write(
+            "request \(id) watchdog \(trip.kind.rawValue) "
+                + "\(trip.acted ? "stopped" : "observed") \(trip.message)")
     }
 
     private static func format(_ duration: Duration) -> String {
-        let seconds = Double(duration.components.seconds)
+        let seconds =
+            Double(duration.components.seconds)
             + Double(duration.components.attoseconds) / 1e18
         return String(format: "%.3fs", seconds)
     }

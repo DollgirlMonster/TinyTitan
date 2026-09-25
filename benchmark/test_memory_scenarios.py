@@ -7,6 +7,7 @@ judge failure. These check the shape before anything runs.
 
     cd benchmark && python3 -m unittest test_memory_scenarios -v
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -43,15 +44,21 @@ class ScenarioTests(unittest.TestCase):
 
     def test_every_question_targets_a_fact_and_has_a_distractor(self):
         for name, world in scenarios.SCENARIOS.items():
-            for question, target, distractor in world["questions"]:
+            for _question, target, distractor in world["questions"]:
                 self.assertIn(target, world["facts"], f"{name}: {target}")
                 self.assertIn(distractor, world["facts"], f"{name}: {distractor}")
                 self.assertNotEqual(target, distractor, name)
 
     def test_every_duplicate_conflict_and_update_pair_is_complete(self):
         for name, world in scenarios.SCENARIOS.items():
-            for field in ("duplicate", "not_duplicate", "disagree", "agree",
-                          "rule_conflict", "rule_update"):
+            for field in (
+                "duplicate",
+                "not_duplicate",
+                "disagree",
+                "agree",
+                "rule_conflict",
+                "rule_update",
+            ):
                 self.assertEqual(len(world[field]), 5, f"{name}: {field}")
             self.assertEqual(world["rule_conflict"][4], "CONFLICT", name)
             self.assertEqual(world["rule_update"][4], "UPDATE", name)
@@ -60,8 +67,7 @@ class ScenarioTests(unittest.TestCase):
             # UPDATE carries an *irrelevant* rule, as the harness's cases do:
             # the model must see that the rule governs another attribute.
             self.assertTrue(world["rule_update"][3], name)
-            self.assertNotIn(world["rule_update"][0].split("/")[-1],
-                             world["rule_update"][3], name)
+            self.assertNotIn(world["rule_update"][0].split("/")[-1], world["rule_update"][3], name)
 
     def test_cases_are_one_decision_jobs_with_both_halves(self):
         jobs = scenarios.cases()

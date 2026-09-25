@@ -77,7 +77,7 @@ export function ipv4InNetwork(address, network, prefix) {
   if (bits === 0) return true;
   // >>> keeps the shift unsigned; << 32 is not representable, so guard bits===0.
   const mask = (0xffffffff << (32 - bits)) >>> 0;
-  return ((a & mask) >>> 0) === ((n & mask) >>> 0);
+  return (a & mask) >>> 0 === (n & mask) >>> 0;
 }
 
 /**
@@ -95,7 +95,9 @@ export function ipv4InNetwork(address, network, prefix) {
  * @returns the normalized form, or `undefined` when it is not IPv6.
  */
 export function normalizeIpv6(value) {
-  let text = String(value ?? "").trim().toLowerCase();
+  let text = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (!text) return undefined;
   if (text.startsWith("[") && text.endsWith("]")) text = text.slice(1, -1);
   const zone = text.indexOf("%");
@@ -208,9 +210,15 @@ export function unwrapAddress(address) {
   const v6 = normalizeIpv6(text);
   if (v6 === undefined) return { family: "unknown", address: text };
   const groups = v6.split(":");
-  if (groups.length === 8
-      && groups[0] === "0" && groups[1] === "0" && groups[2] === "0"
-      && groups[3] === "0" && groups[4] === "0" && groups[5] === "ffff") {
+  if (
+    groups.length === 8 &&
+    groups[0] === "0" &&
+    groups[1] === "0" &&
+    groups[2] === "0" &&
+    groups[3] === "0" &&
+    groups[4] === "0" &&
+    groups[5] === "ffff"
+  ) {
     const high = Number.parseInt(groups[6], 16);
     const low = Number.parseInt(groups[7], 16);
     return { family: "ipv4", address: `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}` };
@@ -234,7 +242,12 @@ export function checkAddress(address, options = {}) {
     // `family` is carried on every verdict, including this one: callers switch on
     // it (a hostname needs resolving before it can be judged), and an omitted
     // field here reads as "not unknown" to an `=== "unknown"` test.
-    return { allowed: false, reason: "unparseable-source-address", address: String(address ?? ""), family };
+    return {
+      allowed: false,
+      reason: "unparseable-source-address",
+      address: String(address ?? ""),
+      family,
+    };
   }
 
   // Explicit extra allowances run first, so an operator can open one host without

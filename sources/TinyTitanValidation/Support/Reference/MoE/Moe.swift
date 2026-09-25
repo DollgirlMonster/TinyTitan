@@ -1,5 +1,5 @@
-import Foundation
 import Accelerate
+import Foundation
 import TinyTitan
 
 /// FP32 reference for the fused MoE FFN: top-k routed experts + 1 shared
@@ -32,7 +32,7 @@ public enum MoeRef {
     /// `gateRows` / `upRows` are F-by-D affine INT4. `downRows` is D-by-F.
     public static func runFFN(
         gateRows: [Quantization.Int4AffineRow],
-        upRows:   [Quantization.Int4AffineRow],
+        upRows: [Quantization.Int4AffineRow],
         downRows: [Quantization.Int4AffineRow],
         x: [Float],
         d: Int,
@@ -44,8 +44,8 @@ public enum MoeRef {
         precondition(x.count == d)
 
         let gateOut = DequantInt4GemvRef.apply(weightRows: gateRows, x: x, n: d)
-        let upOut   = DequantInt4GemvRef.apply(weightRows: upRows,   x: x, n: d)
-        let gated   = geluTanh(gateOut)
+        let upOut = DequantInt4GemvRef.apply(weightRows: upRows, x: x, n: d)
+        let gated = geluTanh(gateOut)
         var act = [Float](repeating: 0, count: f)
         vDSP_vmul(gated, 1, upOut, 1, &act, 1, vDSP_Length(f))
         return DequantInt4GemvRef.apply(weightRows: downRows, x: act, n: f)
@@ -59,7 +59,7 @@ public enum MoeRef {
         x: [Float],
         residual: [Float],
         routedGate: [[Quantization.Int4AffineRow]],
-        routedUp:   [[Quantization.Int4AffineRow]],
+        routedUp: [[Quantization.Int4AffineRow]],
         routedDown: [[Quantization.Int4AffineRow]],
         indices: [Int],
         routingWeights: [Float],
@@ -75,7 +75,7 @@ public enum MoeRef {
             let w = routingWeights[slot]
             let out = runFFN(
                 gateRows: routedGate[e],
-                upRows:   routedUp[e],
+                upRows: routedUp[e],
                 downRows: routedDown[e],
                 x: x, d: d, f: f
             )

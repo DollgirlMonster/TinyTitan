@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 /// The resident 2B helper, without a 2B.
@@ -20,8 +21,10 @@ import Testing
         #expect(SideEngineAnswer(firstWordOf: "No.", allowed: [.yes, .no]) == .no)
         #expect(SideEngineAnswer(firstWordOf: "1. YES", allowed: [.yes, .no]) == .yes)
         // A flourish after the decision is still the decision.
-        #expect(SideEngineAnswer(firstWordOf: "YES, the person wrote it",
-                                 allowed: [.yes, .no]) == .yes)
+        #expect(
+            SideEngineAnswer(
+                firstWordOf: "YES, the person wrote it",
+                allowed: [.yes, .no]) == .yes)
         // A word that merely starts with the answer is not the answer.
         #expect(SideEngineAnswer(firstWordOf: "NOTHING", allowed: [.yes, .no]) == nil)
         #expect(SideEngineAnswer(firstWordOf: "YESTERDAY", allowed: [.yes, .no]) == nil)
@@ -32,12 +35,18 @@ import Testing
 
     @Test func anAnswerOutsideTheTasksOwnSetIsNoDecision() {
         // YES is not an answer to T4, and CONFLICT is not an answer to T1.
-        #expect(SideEngineAnswer(firstWordOf: "YES",
-                                 allowed: SideEngineTask.supersession.answers) == nil)
-        #expect(SideEngineAnswer(firstWordOf: "CONFLICT",
-                                 allowed: SideEngineTask.durability.answers) == nil)
-        #expect(SideEngineAnswer(firstWordOf: "UPDATE.",
-                                 allowed: SideEngineTask.supersession.answers) == .update)
+        #expect(
+            SideEngineAnswer(
+                firstWordOf: "YES",
+                allowed: SideEngineTask.supersession.answers) == nil)
+        #expect(
+            SideEngineAnswer(
+                firstWordOf: "CONFLICT",
+                allowed: SideEngineTask.durability.answers) == nil)
+        #expect(
+            SideEngineAnswer(
+                firstWordOf: "UPDATE.",
+                allowed: SideEngineTask.supersession.answers) == .update)
     }
 
     @Test func everyTaskIsOneQuestionWithAClosedSet() {
@@ -49,21 +58,25 @@ import Testing
 
     @Test func aJudgementKnowsWhichTaskItIs() {
         #expect(SideEngineJudgement.durability(key: "k", value: "v").task == .durability)
-        #expect(SideEngineJudgement.retrieval(question: "q", key: "k", value: "v").task
-            == .retrieval)
-        #expect(SideEngineJudgement.supersession(key: "k", earlier: "a", now: "b").task
-            == .supersession)
+        #expect(
+            SideEngineJudgement.retrieval(question: "q", key: "k", value: "v").task
+                == .retrieval)
+        #expect(
+            SideEngineJudgement.supersession(key: "k", earlier: "a", now: "b").task
+                == .supersession)
     }
 
     @Test func aRuleIsOnlyShownWhenTheCallerHasOne() {
-        let without = SideEngineJudgement.supersession(key: "state/inn",
-                                                       earlier: "standing", now: "burned")
+        let without = SideEngineJudgement.supersession(
+            key: "state/inn",
+            earlier: "standing", now: "burned")
         #expect(without.userPrompt.hasPrefix("EARLIER:"))
         #expect(!without.userPrompt.contains("RULE:"))
 
-        let with = SideEngineJudgement.supersession(key: "characters/marcus/eyes",
-                                                    earlier: "grey", now: "hazel",
-                                                    rule: "eye colour is fixed.")
+        let with = SideEngineJudgement.supersession(
+            key: "characters/marcus/eyes",
+            earlier: "grey", now: "hazel",
+            rule: "eye colour is fixed.")
         #expect(with.userPrompt.hasPrefix("RULE: eye colour is fixed.\nEARLIER:"))
     }
 
@@ -72,8 +85,9 @@ import Testing
         #expect(answer.description.contains("T2"))
         #expect(answer.description.contains("Dunno"))
         #expect(answer.description.contains("YES/NO"))
-        #expect(SideEngineError.missingTokenizer("/tmp/x").description
-            == "no tokenizer in /tmp/x")
+        #expect(
+            SideEngineError.missingTokenizer("/tmp/x").description
+                == "no tokenizer in /tmp/x")
         #expect(SideEngineError.shutDown.description == "the side-engine has been shut down")
     }
 
@@ -83,32 +97,52 @@ import Testing
     /// These are the shapes `benchmark/side_engine_tasks.py` asks; the user
     /// side is pinned here because the benchmark builds it with f-strings.
     static let samples: [(judgement: SideEngineJudgement, user: String)] = [
-        (.clauseAttribution(personWrote: "I keep the diary in the drawer.",
-                            address: "diary/location", clause: "in the drawer"),
-         "WHAT THE PERSON WROTE:\nI keep the diary in the drawer.\n\n"
-            + "STATEMENT: diary/location = in the drawer\nDid the person state this?"),
-        (.durability(key: "rules/ferry", value: "runs only on Sundays"),
-         "FACT: rules/ferry = runs only on Sundays\nKeep it?"),
-        (.contradiction(aKey: "characters/marcus/eyes", aValue: "grey",
-                        bKey: "characters/marcus/eyes", bValue: "hazel"),
-         "A: characters/marcus/eyes = grey\nB: characters/marcus/eyes = hazel\n"
-            + "Do A and B disagree?"),
-        (.supersession(key: "characters/marcus/eyes", earlier: "grey", now: "hazel",
-                       rule: "eye colour is fixed and must never change."),
-         "RULE: eye colour is fixed and must never change.\n"
-            + "EARLIER: characters/marcus/eyes = grey\nNOW: characters/marcus/eyes = hazel\n"
-            + "Which is it?"),
-        (.duplication(aKey: "setting/town", aValue: "Ashgrove",
-                      bKey: "setting/place", bValue: "Ashgrove"),
-         "A: setting/town = Ashgrove\nB: setting/place = Ashgrove\nSame fact?"),
-        (.replyCheck(key: "rules/ferry", value: "runs only on Sundays",
-                     reply: "Take the Tuesday ferry."),
-         "KNOWN: rules/ferry = runs only on Sundays\nREPLY: Take the Tuesday ferry.\n"
-            + "Does the reply contradict what is known?"),
-        (.retrieval(question: "When does the ferry run?",
-                    key: "rules/ferry", value: "runs only on Sundays"),
-         "QUESTION: When does the ferry run?\nFACT: rules/ferry = runs only on Sundays\n"
-            + "Could this fact answer it?"),
+        (
+            .clauseAttribution(
+                personWrote: "I keep the diary in the drawer.",
+                address: "diary/location", clause: "in the drawer"),
+            "WHAT THE PERSON WROTE:\nI keep the diary in the drawer.\n\n"
+                + "STATEMENT: diary/location = in the drawer\nDid the person state this?"
+        ),
+        (
+            .durability(key: "rules/ferry", value: "runs only on Sundays"),
+            "FACT: rules/ferry = runs only on Sundays\nKeep it?"
+        ),
+        (
+            .contradiction(
+                aKey: "characters/marcus/eyes", aValue: "grey",
+                bKey: "characters/marcus/eyes", bValue: "hazel"),
+            "A: characters/marcus/eyes = grey\nB: characters/marcus/eyes = hazel\n"
+                + "Do A and B disagree?"
+        ),
+        (
+            .supersession(
+                key: "characters/marcus/eyes", earlier: "grey", now: "hazel",
+                rule: "eye colour is fixed and must never change."),
+            "RULE: eye colour is fixed and must never change.\n"
+                + "EARLIER: characters/marcus/eyes = grey\nNOW: characters/marcus/eyes = hazel\n"
+                + "Which is it?"
+        ),
+        (
+            .duplication(
+                aKey: "setting/town", aValue: "Ashgrove",
+                bKey: "setting/place", bValue: "Ashgrove"),
+            "A: setting/town = Ashgrove\nB: setting/place = Ashgrove\nSame fact?"
+        ),
+        (
+            .replyCheck(
+                key: "rules/ferry", value: "runs only on Sundays",
+                reply: "Take the Tuesday ferry."),
+            "KNOWN: rules/ferry = runs only on Sundays\nREPLY: Take the Tuesday ferry.\n"
+                + "Does the reply contradict what is known?"
+        ),
+        (
+            .retrieval(
+                question: "When does the ferry run?",
+                key: "rules/ferry", value: "runs only on Sundays"),
+            "QUESTION: When does the ferry run?\nFACT: rules/ferry = runs only on Sundays\n"
+                + "Could this fact answer it?"
+        ),
     ]
 
     /// The fixed words of each user template, which the benchmark builds
@@ -128,10 +162,12 @@ import Testing
         #expect(systems.count == SideEngineTask.allCases.count)
         for sample in Self.samples {
             let task = sample.judgement.task.rawValue
-            #expect(sample.judgement.systemPrompt == systems[task],
-                    "\(task)'s system prompt has drifted from benchmark/side_engine_tasks.py")
-            #expect(sample.judgement.userPrompt == sample.user,
-                    "\(task)'s user prompt changed shape")
+            #expect(
+                sample.judgement.systemPrompt == systems[task],
+                "\(task)'s system prompt has drifted from benchmark/side_engine_tasks.py")
+            #expect(
+                sample.judgement.userPrompt == sample.user,
+                "\(task)'s user prompt changed shape")
         }
     }
 
@@ -145,13 +181,14 @@ import Testing
     private func benchmarkScript() throws -> URL {
         // <root>/tests/TinyTitan/CPUEngine/<this file>
         let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // CPUEngine
-            .deletingLastPathComponent()   // TinyTitan
-            .deletingLastPathComponent()   // tests
-            .deletingLastPathComponent()   // <root>
+            .deletingLastPathComponent()  // CPUEngine
+            .deletingLastPathComponent()  // TinyTitan
+            .deletingLastPathComponent()  // tests
+            .deletingLastPathComponent()  // <root>
         let url = root.appendingPathComponent("benchmark/side_engine_tasks.py")
-        try #require(FileManager.default.fileExists(atPath: url.path),
-                     "benchmark/side_engine_tasks.py is the source of these prompts")
+        try #require(
+            FileManager.default.fileExists(atPath: url.path),
+            "benchmark/side_engine_tasks.py is the source of these prompts")
         return url
     }
 
@@ -267,8 +304,9 @@ import Testing
     @Test func everyJudgementStartsFromACleanState() async throws {
         let model = FakeSideEngineModel()
         let engine = SideEngine { model }
-        let judgement = SideEngineJudgement.contradiction(aKey: "a", aValue: "1",
-                                                          bKey: "b", bValue: "2")
+        let judgement = SideEngineJudgement.contradiction(
+            aKey: "a", aValue: "1",
+            bKey: "b", bValue: "2")
         _ = try await engine.judge(judgement)
         _ = try await engine.judge(judgement)
 
@@ -325,7 +363,7 @@ import Testing
         let model = FakeSideEngineModel()
         model.busyThreads = 1
         model.idleThreads = 4
-        let engine = SideEngine(isClientGenerating: { generating.value }) { model }
+        let engine = SideEngine(isClientGenerating: { generating.value }, load: { model })
 
         _ = try await engine.judge(.durability(key: "k", value: "v"))
         #expect(model.contention != nil)
@@ -427,8 +465,10 @@ private final class FakeSideEngineModel: SideEngineModel, @unchecked Sendable {
         }
     }
 
-    func generate(prompt: [Int], maximumTokens: Int,
-                  stopping: Set<Int>) throws -> [Int] {
+    func generate(
+        prompt: [Int], maximumTokens: Int,
+        stopping: Set<Int>
+    ) throws -> [Int] {
         lock.withLock {
             _generations += 1
             _events.append("enter")

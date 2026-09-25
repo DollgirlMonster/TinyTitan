@@ -16,11 +16,13 @@ public struct ContinuityConfiguration: Sendable {
     /// Zero disables automatic compaction.
     public var compactionThreshold: Int
 
-    public init(memoryLimits: MemoryLimits = .default,
-                sessionLogOptions: SessionLogOptions = .init(),
-                defaultBudget: ContextBudget = ContextBudget(),
-                journalsSessionContent: Bool = true,
-                compactionThreshold: Int = 20_000) {
+    public init(
+        memoryLimits: MemoryLimits = .default,
+        sessionLogOptions: SessionLogOptions = .init(),
+        defaultBudget: ContextBudget = ContextBudget(),
+        journalsSessionContent: Bool = true,
+        compactionThreshold: Int = 20_000
+    ) {
         self.memoryLimits = memoryLimits
         self.sessionLogOptions = sessionLogOptions
         self.defaultBudget = defaultBudget
@@ -55,9 +57,11 @@ public actor ContinuityEngine {
     /// the engine is next replayed from it.
     public private(set) var journalFailure: String?
 
-    public init(configuration: ContinuityConfiguration = ContinuityConfiguration(),
-                journal: ContinuityJournal = NullJournal(),
-                assembler: ContextAssembler = DefaultContextAssembler()) {
+    public init(
+        configuration: ContinuityConfiguration = ContinuityConfiguration(),
+        journal: ContinuityJournal = NullJournal(),
+        assembler: ContextAssembler = DefaultContextAssembler()
+    ) {
         self.configuration = configuration
         self.journal = journal
         self.assembler = assembler
@@ -80,9 +84,11 @@ public actor ContinuityEngine {
     // MARK: - Tasks and sessions
 
     @discardableResult
-    public func createTask(title: String,
-                           objective: String = "",
-                           id: UUID = UUID()) async throws -> ContinuityTask {
+    public func createTask(
+        title: String,
+        objective: String = "",
+        id: UUID = UUID()
+    ) async throws -> ContinuityTask {
         let task = await sessionLog.createTask(title: title, objective: objective, id: id)
         try await record(.task(task))
         return task
@@ -97,21 +103,26 @@ public actor ContinuityEngine {
     }
 
     @discardableResult
-    public func updateTask(_ id: UUID,
-                           title: String? = nil,
-                           objective: String? = nil) async throws -> ContinuityTask {
+    public func updateTask(
+        _ id: UUID,
+        title: String? = nil,
+        objective: String? = nil
+    ) async throws -> ContinuityTask {
         let task = try await sessionLog.updateTask(id, title: title, objective: objective)
         try await record(.task(task))
         return task
     }
 
     @discardableResult
-    public func beginSession(taskID: UUID,
-                             model: String? = nil,
-                             externalID: String? = nil,
-                             tag: String? = nil) async throws -> Session {
-        let session = try await sessionLog.beginSession(taskID: taskID, model: model,
-                                                        externalID: externalID, tag: tag)
+    public func beginSession(
+        taskID: UUID,
+        model: String? = nil,
+        externalID: String? = nil,
+        tag: String? = nil
+    ) async throws -> Session {
+        let session = try await sessionLog.beginSession(
+            taskID: taskID, model: model,
+            externalID: externalID, tag: tag)
         try await record(.session(session))
         return session
     }
@@ -153,43 +164,52 @@ public actor ContinuityEngine {
         _ = try await sessionLog.recordUserPrompt(sessionID: sessionID, text: text)
     }
 
-    public func recordAssistantResponse(sessionID: UUID,
-                                        text: String,
-                                        model: String? = nil,
-                                        inputTokens: Int? = nil,
-                                        outputTokens: Int? = nil,
-                                        latencyMilliseconds: Int? = nil,
-                                        finishReason: String? = nil) async throws {
-        let record = ResponseRecord(text: text,
-                                    model: model,
-                                    inputTokens: inputTokens,
-                                    outputTokens: outputTokens,
-                                    latencyMilliseconds: latencyMilliseconds,
-                                    finishReason: finishReason)
+    public func recordAssistantResponse(
+        sessionID: UUID,
+        text: String,
+        model: String? = nil,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        latencyMilliseconds: Int? = nil,
+        finishReason: String? = nil
+    ) async throws {
+        let record = ResponseRecord(
+            text: text,
+            model: model,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            latencyMilliseconds: latencyMilliseconds,
+            finishReason: finishReason)
         _ = try await sessionLog.recordAssistantResponse(sessionID: sessionID, record)
     }
 
     @discardableResult
-    public func beginAssistantResponse(sessionID: UUID,
-                                       model: String? = nil,
-                                       requestID: String? = nil) async throws -> UUID {
-        try await sessionLog.beginAssistantResponse(sessionID: sessionID,
-                                                    model: model,
-                                                    requestID: requestID)
+    public func beginAssistantResponse(
+        sessionID: UUID,
+        model: String? = nil,
+        requestID: String? = nil
+    ) async throws -> UUID {
+        try await sessionLog.beginAssistantResponse(
+            sessionID: sessionID,
+            model: model,
+            requestID: requestID)
     }
 
     public func appendAssistantChunk(responseID: UUID, text: String) async throws {
         try await sessionLog.appendAssistantChunk(responseID: responseID, text: text)
     }
 
-    public func completeAssistantResponse(responseID: UUID,
-                                          inputTokens: Int? = nil,
-                                          outputTokens: Int? = nil,
-                                          finishReason: String? = nil) async throws {
-        _ = try await sessionLog.completeAssistantResponse(responseID: responseID,
-                                                           inputTokens: inputTokens,
-                                                           outputTokens: outputTokens,
-                                                           finishReason: finishReason)
+    public func completeAssistantResponse(
+        responseID: UUID,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        finishReason: String? = nil
+    ) async throws {
+        _ = try await sessionLog.completeAssistantResponse(
+            responseID: responseID,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            finishReason: finishReason)
     }
 
     // MARK: - Memory
@@ -201,58 +221,64 @@ public actor ContinuityEngine {
     /// origin is exactly the kind of state that becomes unarguable in month
     /// three of a long task.
     @discardableResult
-    public func remember(sessionID: UUID,
-                         namespace: String,
-                         key: String,
-                         value: String,
-                         author: ProvenanceAuthor = .model,
-                         eventID: UUID? = nil,
-                         importance: Double? = nil,
-                         confidence: Double? = nil,
-                         tags: [String]? = nil,
-                         dependencies: [String]? = nil,
-                         expectedVersion: Int? = nil) async throws -> MemoryWriteResult {
+    public func remember(
+        sessionID: UUID,
+        namespace: String,
+        key: String,
+        value: String,
+        author: ProvenanceAuthor = .model,
+        eventID: UUID? = nil,
+        importance: Double? = nil,
+        confidence: Double? = nil,
+        tags: [String]? = nil,
+        dependencies: [String]? = nil,
+        expectedVersion: Int? = nil
+    ) async throws -> MemoryWriteResult {
         guard let session = await sessionLog.session(sessionID) else {
             throw ContinuityError.unknownSession(sessionID)
         }
         let provenance = Provenance(sessionID: sessionID, eventID: eventID, author: author)
-        let result = try await memory.write(taskID: session.taskID,
-                                            namespace: namespace,
-                                            key: key,
-                                            value: value,
-                                            provenance: provenance,
-                                            importance: importance,
-                                            confidence: confidence,
-                                            tags: tags,
-                                            dependencies: dependencies,
-                                            expectedVersion: expectedVersion)
+        let result = try await memory.write(
+            taskID: session.taskID,
+            namespace: namespace,
+            key: key,
+            value: value,
+            provenance: provenance,
+            importance: importance,
+            confidence: confidence,
+            tags: tags,
+            dependencies: dependencies,
+            expectedVersion: expectedVersion)
         _ = try? await sessionLog.recordMemoryWrite(sessionID: sessionID, item: result.item)
         return result
     }
 
     /// Write a fact that no session produced, such as a task's opening state.
     @discardableResult
-    public func remember(taskID: UUID,
-                         namespace: String,
-                         key: String,
-                         value: String,
-                         author: ProvenanceAuthor = .engine,
-                         importance: Double? = nil,
-                         confidence: Double? = nil,
-                         tags: [String]? = nil,
-                         dependencies: [String]? = nil) async throws -> MemoryWriteResult {
+    public func remember(
+        taskID: UUID,
+        namespace: String,
+        key: String,
+        value: String,
+        author: ProvenanceAuthor = .engine,
+        importance: Double? = nil,
+        confidence: Double? = nil,
+        tags: [String]? = nil,
+        dependencies: [String]? = nil
+    ) async throws -> MemoryWriteResult {
         guard await sessionLog.task(taskID) != nil else {
             throw ContinuityError.unknownTask(taskID)
         }
-        return try await memory.write(taskID: taskID,
-                                      namespace: namespace,
-                                      key: key,
-                                      value: value,
-                                      provenance: Provenance(author: author),
-                                      importance: importance,
-                                      confidence: confidence,
-                                      tags: tags,
-                                      dependencies: dependencies)
+        return try await memory.write(
+            taskID: taskID,
+            namespace: namespace,
+            key: key,
+            value: value,
+            provenance: Provenance(author: author),
+            importance: importance,
+            confidence: confidence,
+            tags: tags,
+            dependencies: dependencies)
     }
 
     public func recall(taskID: UUID, _ query: MemoryQuery = .active) async -> [MemoryItem] {
@@ -278,14 +304,16 @@ public actor ContinuityEngine {
     /// resolve it and cannot do so if the conflict is hidden.
     @discardableResult
     public func dispute(taskID: UUID, namespace: String, key: String) async throws -> MemoryItem {
-        try await memory.setStatus(taskID: taskID, namespace: namespace, key: key,
-                                   status: .disputed)
+        try await memory.setStatus(
+            taskID: taskID, namespace: namespace, key: key,
+            status: .disputed)
     }
 
     @discardableResult
     public func resolve(taskID: UUID, namespace: String, key: String) async throws -> MemoryItem {
-        try await memory.setStatus(taskID: taskID, namespace: namespace, key: key,
-                                   status: .active)
+        try await memory.setStatus(
+            taskID: taskID, namespace: namespace, key: key,
+            status: .active)
     }
 
     // MARK: - Context
@@ -298,35 +326,42 @@ public actor ContinuityEngine {
     ///
     /// Records a `contextAssembled` event when a session is given, so the log
     /// can later show what the model was looking at when it answered.
-    public func assembleContext(taskID: UUID,
-                                sessionID: UUID? = nil,
-                                focus: String? = nil,
-                                budget: ContextBudget? = nil,
-                                query: MemoryQuery = .active) async throws -> ContextSnapshot {
+    public func assembleContext(
+        taskID: UUID,
+        sessionID: UUID? = nil,
+        focus: String? = nil,
+        budget: ContextBudget? = nil,
+        query: MemoryQuery = .active
+    ) async throws -> ContextSnapshot {
         guard let task = await sessionLog.task(taskID) else {
             throw ContinuityError.unknownTask(taskID)
         }
         let effectiveBudget = budget ?? configuration.defaultBudget
         let candidates = await memory.query(taskID: taskID, query)
-        let all = await memory.query(taskID: taskID,
-                                     MemoryQuery(statuses: [.active, .disputed],
-                                                 order: .address))
+        let all = await memory.query(
+            taskID: taskID,
+            MemoryQuery(
+                statuses: [.active, .disputed],
+                order: .address))
         var index: [String: MemoryItem] = [:]
         for item in all { index[item.address] = item }
-        let turns = effectiveBudget.recentTurnCount > 0
+        let turns =
+            effectiveBudget.recentTurnCount > 0
             ? await sessionLog.turns(taskID: taskID, limit: effectiveBudget.recentTurnCount)
             : []
-        let request = ContextRequest(task: task,
-                                     sessionID: sessionID,
-                                     items: candidates,
-                                     index: index,
-                                     turns: turns,
-                                     budget: effectiveBudget,
-                                     focus: focus)
+        let request = ContextRequest(
+            task: task,
+            sessionID: sessionID,
+            items: candidates,
+            index: index,
+            turns: turns,
+            budget: effectiveBudget,
+            focus: focus)
         let snapshot = try assembler.assemble(request)
         if let sessionID {
-            _ = try? await sessionLog.recordContextAssembled(sessionID: sessionID,
-                                                             snapshot: snapshot)
+            _ = try? await sessionLog.recordContextAssembled(
+                sessionID: sessionID,
+                snapshot: snapshot)
         }
         return snapshot
     }
@@ -391,13 +426,14 @@ public actor ContinuityEngine {
             memoryBytes += await memory.byteCount(taskID: task.id)
             logBytes += await sessionLog.byteCount(taskID: task.id)
         }
-        return ContinuityStatistics(taskCount: tasks.count,
-                                    sessionCount: sessionCount,
-                                    eventCount: eventCount,
-                                    memoryItemCount: itemCount,
-                                    memoryBytes: memoryBytes,
-                                    logBytes: logBytes,
-                                    journaledRecords: journaledRecords)
+        return ContinuityStatistics(
+            taskCount: tasks.count,
+            sessionCount: sessionCount,
+            eventCount: eventCount,
+            memoryItemCount: itemCount,
+            memoryBytes: memoryBytes,
+            logBytes: logBytes,
+            journaledRecords: journaledRecords)
     }
 
     /// Collapse the journal to a single checkpoint of current state.
@@ -467,10 +503,10 @@ public actor ContinuityEngine {
     private static func carriesContent(_ event: SessionEvent) -> Bool {
         switch event.kind {
         case .userPrompt, .assistantResponse, .assistantResponseChunk,
-             .assistantResponseCompleted:
+            .assistantResponseCompleted:
             return true
         case .sessionStarted, .sessionEnded, .assistantResponseStarted,
-             .memoryWritten, .contextAssembled:
+            .memoryWritten, .contextAssembled:
             return false
         }
     }
@@ -478,7 +514,8 @@ public actor ContinuityEngine {
     private func countRecord() async {
         journaledRecords += 1
         guard configuration.compactionThreshold > 0,
-              journaledRecords > configuration.compactionThreshold else { return }
+            journaledRecords > configuration.compactionThreshold
+        else { return }
         try? await compactJournal()
     }
 
@@ -507,8 +544,9 @@ public actor ContinuityEngine {
                 log = logSnapshot
                 store = memorySnapshot
                 tasksByID = Dictionary(uniqueKeysWithValues: logSnapshot.tasks.map { ($0.id, $0) })
-                sessionsByID = Dictionary(uniqueKeysWithValues:
-                                            logSnapshot.sessions.map { ($0.id, $0) })
+                sessionsByID = Dictionary(
+                    uniqueKeysWithValues:
+                        logSnapshot.sessions.map { ($0.id, $0) })
                 itemsByAddress = [:]
                 for item in memorySnapshot.items {
                     itemsByAddress["\(item.taskID)/\(item.address)"] = item

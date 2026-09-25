@@ -16,10 +16,12 @@ struct PrefillRoutedTileSchedulerInput: Sendable, Equatable {
     let pendingAssignedSlots: [Int]
     let avoidingSlotPlanAvailable: Bool
 
-    init(hasPendingTile: Bool,
-         pendingDepth: Int? = nil,
-         pendingAssignedSlots: [Int],
-         avoidingSlotPlanAvailable: Bool) {
+    init(
+        hasPendingTile: Bool,
+        pendingDepth: Int? = nil,
+        pendingAssignedSlots: [Int],
+        avoidingSlotPlanAvailable: Bool
+    ) {
         self.hasPendingTile = hasPendingTile
         self.pendingDepth = max(0, pendingDepth ?? (hasPendingTile ? 1 : 0))
         self.pendingAssignedSlots = pendingAssignedSlots
@@ -49,8 +51,9 @@ struct PrefillRoutedTileSchedulerConfig: Sendable, Equatable {
         guard slotCount > reservedHits, reservedHits >= 0 else { return nil }
         let availablePerTile = (slotCount - reservedHits) / (maxPendingDepth + 1)
         guard availablePerTile > 0 else { return nil }
-        return Self(maxPendingDepth: maxPendingDepth,
-                    tileExperts: min(tileExperts, availablePerTile))
+        return Self(
+            maxPendingDepth: maxPendingDepth,
+            tileExperts: min(tileExperts, availablePerTile))
     }
 }
 

@@ -9,6 +9,7 @@ hand-off between tokens, which is the failure the first harness is blind to.
 Weights come from the install, so quantization is common to both sides and any
 disagreement is in the forward pass.
 """
+
 import json
 from pathlib import Path
 
@@ -44,12 +45,12 @@ def softplus(x):
 
 def grouped_rms_norm(x_flat, gamma):
     x = x_flat.reshape(HC, D)
-    x = x / np.sqrt((x ** 2).mean(axis=-1, keepdims=True) + EPS)
+    x = x / np.sqrt((x**2).mean(axis=-1, keepdims=True) + EPS)
     return x.reshape(-1) * gamma
 
 
 def rms_norm(x, gamma):
-    return x / np.sqrt((x ** 2).mean(axis=-1, keepdims=True) + EPS) * gamma
+    return x / np.sqrt((x**2).mean(axis=-1, keepdims=True) + EPS) * gamma
 
 
 def rope_full(vec, position):
@@ -65,8 +66,7 @@ def rope_full(vec, position):
     return out
 
 
-def ngram_rows(context, multipliers, offsets, vocab_sizes,
-               ngram_size, heads_per_ngram, eos_id):
+def ngram_rows(context, multipliers, offsets, vocab_sizes, ngram_size, heads_per_ngram, eos_id):
     """Row ids for one token. `context[s]` is the token s positions back."""
     ctx = np.empty(ngram_size, dtype=np.int64)
     ctx[0] = context[0]
@@ -77,17 +77,16 @@ def ngram_rows(context, multipliers, offsets, vocab_sizes,
         cut = cut or t < 0 or t == eos_id
         ctx[s] = eos_id if cut else t
     with np.errstate(over="ignore", invalid="ignore"):
-        terms = ctx.astype(np.uint64) * np.asarray(
-            multipliers[:ngram_size], dtype=np.uint64)
+        terms = ctx.astype(np.uint64) * np.asarray(multipliers[:ngram_size], dtype=np.uint64)
         rows = np.empty(heads_per_ngram * (ngram_size - 1), dtype=np.uint64)
         for n in range(2, ngram_size + 1):
             mixed = terms[0]
             for j in range(1, n):
                 mixed = mixed ^ terms[j]
             base = (n - 2) * heads_per_ngram
-            v = np.asarray(vocab_sizes[base:base + heads_per_ngram], dtype=np.uint64)
-            o = np.asarray(offsets[base:base + heads_per_ngram], dtype=np.uint64)
-            rows[base:base + heads_per_ngram] = (mixed % v) + o
+            v = np.asarray(vocab_sizes[base : base + heads_per_ngram], dtype=np.uint64)
+            o = np.asarray(offsets[base : base + heads_per_ngram], dtype=np.uint64)
+            rows[base : base + heads_per_ngram] = (mixed % v) + o
     return rows.astype(np.uint32)
 
 
@@ -98,16 +97,17 @@ class Reference:
         self.w = GTurboWeights(model_dir)
         self.experts = PackedExperts(model_dir)
         self.ple = json.loads((self.dir / "ple_constants.json").read_text())
-        self.table = np.memmap(self.dir / "ngram_table.bin", dtype=np.float16,
-                               mode="r").reshape(-1, self.ple["ple_head_dim"])
+        self.table = np.memmap(self.dir / "ngram_table.bin", dtype=np.float16, mode="r").reshape(
+            -1, self.ple["ple_head_dim"]
+        )
         self.reset()
 
     def reset(self):
         self.position = 0
         self.tokens = []
-        self.gdn_conv = {}     # layer -> [K-1, conv_dim]
-        self.gdn_state = {}    # layer -> [HV, DV, DK]
-        self.kv = {}           # layer -> (keys [n,KV,HD], values)
+        self.gdn_conv = {}  # layer -> [K-1, conv_dim]
+        self.gdn_state = {}  # layer -> [HV, DV, DK]
+        self.kv = {}  # layer -> (keys [n,KV,HD], values)
         self.ple_conv = np.zeros(((PLE_K - 1) * PLE_DILATION, HC_DIM), np.float32)
         self.indexer_raw = {}
 
@@ -120,8 +120,7 @@ class Reference:
 
     def hc_write(self, prefix, wide, block_out):
         xn = grouped_rms_norm(wide, self.w.get(prefix + "hc_norm"))
-        inject = 2.0 * sigmoid(
-            (self.w.get(prefix + "block_inject_weight.weight") @ xn) / HC)
+        inject = 2.0 * sigmoid((self.w.get(prefix + "block_inject_weight.weight") @ xn) / HC)
         return (wide.reshape(HC, D) + block_out[None, :] * inject[:, None]).reshape(-1)
 
     def gdn(self, layer, x):
@@ -136,33 +135,34 @@ class Reference:
         tail = self.gdn_conv.get(layer)
         if tail is None:
             tail = np.zeros((GDN_K - 1, conv_dim), np.float32)
-        window = np.concatenate([tail, qkv[None, :]], axis=0)   # [K, conv_dim]
+        window = np.concatenate([tail, qkv[None, :]], axis=0)  # [K, conv_dim]
         conv_w = g(prefix + "conv1d.weight").reshape(-1, GDN_K)
         conv_out = silu((conv_w * window.T).sum(axis=1))
         self.gdn_conv[layer] = window[1:]
 
         key_dim = HK * DK
         q = conv_out[:key_dim].reshape(HK, DK)
-        k = conv_out[key_dim:2 * key_dim].reshape(HK, DK)
-        v = conv_out[2 * key_dim:].reshape(HV, DV)
+        k = conv_out[key_dim : 2 * key_dim].reshape(HK, DK)
+        v = conv_out[2 * key_dim :].reshape(HV, DV)
 
         def l2(t):
-            return t / np.sqrt((t ** 2).sum(axis=-1, keepdims=True) + EPS)
+            return t / np.sqrt((t**2).sum(axis=-1, keepdims=True) + EPS)
 
         q = np.repeat(l2(q), HV // HK, axis=0)
         k = np.repeat(l2(k), HV // HK, axis=0)
 
         beta = sigmoid(b)
-        decay = np.exp(-np.exp(g(prefix + "A_log").astype(np.float64))
-                       * softplus(a + g(prefix + "dt_bias")))
+        decay = np.exp(
+            -np.exp(g(prefix + "A_log").astype(np.float64)) * softplus(a + g(prefix + "dt_bias"))
+        )
         state = self.gdn_state.get(layer)
         if state is None:
             state = np.zeros((HV, DV, DK), np.float32)
         state = state * decay[:, None, None]
-        kv_mem = (state * k[:, None, :]).sum(axis=-1)           # [HV, DV]
+        kv_mem = (state * k[:, None, :]).sum(axis=-1)  # [HV, DV]
         delta = (v - kv_mem) * beta[:, None]
         state = state + k[:, None, :] * delta[:, :, None]
-        y = (state * q[:, None, :]).sum(axis=-1)                # [HV, DV]
+        y = (state * q[:, None, :]).sum(axis=-1)  # [HV, DV]
         self.gdn_state[layer] = state
 
         y = y / np.sqrt(DV)
@@ -203,33 +203,32 @@ class Reference:
         if n_kv <= width:
             return np.ones(n_kv, dtype=bool)
 
-        raw = np.stack(self.indexer_raw[layer][:n_kv])          # [n_kv, D]
+        raw = np.stack(self.indexer_raw[layer][:n_kv])  # [n_kv, D]
         n_blocks = (n_kv + r - 1) // r
         pooled = np.empty((n_blocks, INDEXER_DIM), np.float32)
         for b in range(n_blocks):
             first = b * r
-            members = raw[first:min(first + r, n_kv)]
+            members = raw[first : min(first + r, n_kv)]
             pooled[b] = members.mean(axis=0)
         pooled = rms_norm(pooled, g(prefix + "k_layernorm"))
         for b in range(n_blocks):
             pooled[b] = rope_full(pooled[b], b * r)
 
-        q = (g(prefix + "index_q_proj.weight") @ x).reshape(
-            INDEXER_HEADS, INDEXER_DIM)
+        q = (g(prefix + "index_q_proj.weight") @ x).reshape(INDEXER_HEADS, INDEXER_DIM)
         q = rms_norm(q, g(prefix + "q_layernorm"))
         q = np.stack([rope_full(q[h], self.position) for h in range(INDEXER_HEADS)])
-        scores = np.maximum(q @ pooled.T, 0.0).sum(axis=0)      # [n_blocks]
+        scores = np.maximum(q @ pooled.T, 0.0).sum(axis=0)  # [n_blocks]
 
         keep = np.zeros(n_kv, dtype=bool)
         complete = (n_kv // r) * r
-        keep[complete:] = True                                  # the tail
+        keep[complete:] = True  # the tail
         remaining = width - (n_kv - complete)
         order = sorted(range(complete // r), key=lambda b: (-scores[b], b))
         for b in order:
             if remaining <= 0:
                 break
             take = min(r, remaining)
-            keep[b * r: b * r + take] = True
+            keep[b * r : b * r + take] = True
             remaining -= take
         return keep
 
@@ -276,27 +275,30 @@ class Reference:
         scores = gates[chosen]
         scores = scores / max(scores.sum(), 6.103515625e-5)
         routed = np.zeros_like(x)
-        for expert, score in zip(chosen, scores):
+        for expert, score in zip(chosen, scores, strict=False):
             e = int(expert)
             gate_p = self.experts.tensor(layer, e, "gate") @ x
             up = self.experts.tensor(layer, e, "up") @ x
-            routed += score * (self.experts.tensor(layer, e, "down")
-                               @ (silu(gate_p) * up))
+            routed += score * (self.experts.tensor(layer, e, "down") @ (silu(gate_p) * up))
         shared = g(prefix + "mlp.shared_expert.down_proj.weight") @ (
             silu(g(prefix + "mlp.shared_expert.gate_proj.weight") @ x)
-            * (g(prefix + "mlp.shared_expert.up_proj.weight") @ x))
-        return routed + sigmoid(
-            g(prefix + "mlp.shared_expert_gate.weight") @ x) * shared
+            * (g(prefix + "mlp.shared_expert.up_proj.weight") @ x)
+        )
+        return routed + sigmoid(g(prefix + "mlp.shared_expert_gate.weight") @ x) * shared
 
     def ple_block(self, layer, wide):
         prefix = f"{P}layers.{layer}.ple."
         g = self.w.get
-        context = self.tokens[::-1][:self.ple["ngram_size"]]
-        rows = ngram_rows(context, self.ple["layer_multipliers"],
-                          self.ple["ngram_heads_offsets"],
-                          self.ple["ngram_heads_vocab_sizes"],
-                          self.ple["ngram_size"], self.ple["heads_per_ngram"],
-                          self.ple["eos_token_id"])
+        context = self.tokens[::-1][: self.ple["ngram_size"]]
+        rows = ngram_rows(
+            context,
+            self.ple["layer_multipliers"],
+            self.ple["ngram_heads_offsets"],
+            self.ple["ngram_heads_vocab_sizes"],
+            self.ple["ngram_size"],
+            self.ple["heads_per_ngram"],
+            self.ple["eos_token_id"],
+        )
         emb = self.table[rows].astype(np.float32).reshape(-1)
 
         key = g(prefix + "key_proj.weight") @ emb
@@ -317,8 +319,7 @@ class Reference:
         conv_w = g(prefix + "conv1d").reshape(-1, PLE_K)
         # Tap k reads (K-1-k)*dilation positions back, i.e. row k*dilation of
         # the padded window.
-        conv = sum(conv_w[:, k] * window[k * PLE_DILATION]
-                   for k in range(PLE_K))
+        conv = sum(conv_w[:, k] * window[k * PLE_DILATION] for k in range(PLE_K))
         self.ple_conv = window[1:]
         return wide + gated + silu(conv)
 
@@ -326,8 +327,7 @@ class Reference:
     def step(self, token):
         """One token through the stack; returns (per-layer entries, logits)."""
         self.tokens.append(int(token))
-        wide = np.tile(
-            self.w.get(P + "embed_tokens.weight")[int(token)].astype(np.float32), HC)
+        wide = np.tile(self.w.get(P + "embed_tokens.weight")[int(token)].astype(np.float32), HC)
         entries = []
         for layer in range(NUM_LAYERS):
             entries.append(wide.copy())
@@ -335,13 +335,14 @@ class Reference:
                 wide = self.ple_block(layer, wide)
             prefix = f"{P}layers.{layer}."
             attn_in = self.hc_read(prefix + "attn_hyper_connection.", wide)
-            block = (self.qsa(layer, attn_in)
-                     if (layer + 1) % FULL_ATTENTION_EVERY == 0
-                     else self.gdn(layer, attn_in))
+            block = (
+                self.qsa(layer, attn_in)
+                if (layer + 1) % FULL_ATTENTION_EVERY == 0
+                else self.gdn(layer, attn_in)
+            )
             wide = self.hc_write(prefix + "attn_hyper_connection.", wide, block)
             mlp_in = self.hc_read(prefix + "mlp_hyper_connection.", wide)
-            wide = self.hc_write(prefix + "mlp_hyper_connection.", wide,
-                                 self.moe(layer, mlp_in))
+            wide = self.hc_write(prefix + "mlp_hyper_connection.", wide, self.moe(layer, mlp_in))
         self.position += 1
         mixed = self.hc_read(P + "hyper_connection_mixer.", wide)
         return entries, wide, self.w.get("lm_head.weight") @ mixed

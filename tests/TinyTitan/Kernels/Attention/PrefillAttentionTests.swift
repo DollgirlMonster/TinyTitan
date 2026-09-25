@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct PrefillAttentionTests {
     private typealias Fixture = PrefillAttentionRef.Inputs
@@ -16,32 +17,36 @@ import TinyTitanValidationSupport
         ]
 
         for (index, c) in cases.enumerated() {
-            let fixture = Self.makeFixture(start: c.start,
-                                           chunk: c.chunk,
-                                           window: c.window,
-                                           seed: 0xA510 + UInt64(index))
+            let fixture = Self.makeFixture(
+                start: c.start,
+                chunk: c.chunk,
+                window: c.window,
+                seed: 0xA510 + UInt64(index))
             try Self.runAndCompare(fixture, label: c.label)
         }
     }
 
     @Test func prefillAttentionRingCapacityMatchesLinearReference() throws {
-        let fixture = Self.makeFixture(start: 20,
-                                       chunk: 4,
-                                       window: 8,
-                                       seed: 0xA611,
-                                       headDim: 32,
-                                       qHeads: 4,
-                                       kvHeads: 2)
+        let fixture = Self.makeFixture(
+            start: 20,
+            chunk: 4,
+            window: 8,
+            seed: 0xA611,
+            headDim: 32,
+            qHeads: 4,
+            kvHeads: 2)
         let ringCapacity = 16
         var kRing = [Float](repeating: 0, count: ringCapacity * fixture.kvStride)
         var vRing = [Float](repeating: 0, count: ringCapacity * fixture.kvStride)
         for p in 0..<fixture.kvValid {
             let dst = (p % ringCapacity) * fixture.kvStride
             let src = p * fixture.kvStride
-            kRing.replaceSubrange(dst..<(dst + fixture.kvStride),
-                                  with: fixture.k[src..<(src + fixture.kvStride)])
-            vRing.replaceSubrange(dst..<(dst + fixture.kvStride),
-                                  with: fixture.v[src..<(src + fixture.kvStride)])
+            kRing.replaceSubrange(
+                dst..<(dst + fixture.kvStride),
+                with: fixture.k[src..<(src + fixture.kvStride)])
+            vRing.replaceSubrange(
+                dst..<(dst + fixture.kvStride),
+                with: fixture.v[src..<(src + fixture.kvStride)])
         }
 
         var ringFixture = fixture
@@ -77,40 +82,50 @@ import TinyTitanValidationSupport
     }
 
     @Test func prefillAttentionProductionDimsBoundedVisibility() throws {
-        let cases: [(label: String, start: Int, chunk: Int, window: Int, headDim: Int, qHeads: Int, kvHeads: Int)] = [
-            ("swa-current-key-at-1023", 1023, 1, 1, 256, 16, 8),
-            ("swa-current-key-at-1024", 1024, 1, 1, 256, 16, 8),
-            ("swa-current-key-at-4095", 4095, 1, 1, 256, 16, 8),
-            ("full-origin", 0, 1, 0, 512, 16, 2),
-            ("full-short-gqa", 3, 1, 0, 512, 16, 2),
-        ]
+        let cases:
+            [(
+                label: String, start: Int, chunk: Int, window: Int, headDim: Int, qHeads: Int,
+                kvHeads: Int
+            )] = [
+                ("swa-current-key-at-1023", 1023, 1, 1, 256, 16, 8),
+                ("swa-current-key-at-1024", 1024, 1, 1, 256, 16, 8),
+                ("swa-current-key-at-4095", 4095, 1, 1, 256, 16, 8),
+                ("full-origin", 0, 1, 0, 512, 16, 2),
+                ("full-short-gqa", 3, 1, 0, 512, 16, 2),
+            ]
 
         for (index, c) in cases.enumerated() {
-            let fixture = Self.makeFixture(start: c.start,
-                                           chunk: c.chunk,
-                                           window: c.window,
-                                           seed: 0xA730 + UInt64(index),
-                                           headDim: c.headDim,
-                                           qHeads: c.qHeads,
-                                           kvHeads: c.kvHeads)
+            let fixture = Self.makeFixture(
+                start: c.start,
+                chunk: c.chunk,
+                window: c.window,
+                seed: 0xA730 + UInt64(index),
+                headDim: c.headDim,
+                qHeads: c.qHeads,
+                kvHeads: c.kvHeads)
             try Self.runAndCompare(fixture, label: c.label)
         }
     }
 
     @Test func prefillAttentionTiledProductionBoundarySmoke() throws {
-        let cases: [(label: String, start: Int, chunk: Int, window: Int, headDim: Int, qHeads: Int, kvHeads: Int)] = [
-            ("swa-production-window-1024", 1023, 4, 1024, 256, 16, 8),
-            ("full-production-gqa", 31, 8, 0, 512, 16, 2),
-        ]
+        let cases:
+            [(
+                label: String, start: Int, chunk: Int, window: Int, headDim: Int, qHeads: Int,
+                kvHeads: Int
+            )] = [
+                ("swa-production-window-1024", 1023, 4, 1024, 256, 16, 8),
+                ("full-production-gqa", 31, 8, 0, 512, 16, 2),
+            ]
 
         for (index, c) in cases.enumerated() {
-            let fixture = Self.makeFixture(start: c.start,
-                                           chunk: c.chunk,
-                                           window: c.window,
-                                           seed: 0xA840 + UInt64(index),
-                                           headDim: c.headDim,
-                                           qHeads: c.qHeads,
-                                           kvHeads: c.kvHeads)
+            let fixture = Self.makeFixture(
+                start: c.start,
+                chunk: c.chunk,
+                window: c.window,
+                seed: 0xA840 + UInt64(index),
+                headDim: c.headDim,
+                qHeads: c.qHeads,
+                kvHeads: c.kvHeads)
             try Self.runAndCompare(fixture, label: c.label)
         }
     }
@@ -127,13 +142,14 @@ import TinyTitanValidationSupport
         // Hosted CI has no Apple10 GPU, so it returns without dispatching this
         // kernel. Run this suite on Apple10 before changing the TensorOps path.
         guard context.device.supportsFamily(.apple10) else { return }
-        let fixture = Self.makeFixture(start: visibleKeys - 1,
-                                       chunk: 1,
-                                       window: 0,
-                                       seed: 0xA870 + UInt64(visibleKeys),
-                                       headDim: 512,
-                                       qHeads: 16,
-                                       kvHeads: 2)
+        let fixture = Self.makeFixture(
+            start: visibleKeys - 1,
+            chunk: 1,
+            window: 0,
+            seed: 0xA870 + UInt64(visibleKeys),
+            headDim: 512,
+            qHeads: 16,
+            kvHeads: 2)
         let candidate = try Self.runKernel(
             fixture,
             path: .fullTensorOps2DValidityV2)
@@ -143,46 +159,54 @@ import TinyTitanValidationSupport
         let reference = PrefillAttentionRef.apply(fixture)
         let maxAbs = RelError.maxAbsDiff(candidate, reference)
         let rel = RelError.compute(actual: candidate, reference: reference)
-        #expect(candidate == repeated,
-                "TensorOps 2D full attention is not byte-stable at \(visibleKeys) keys")
-        #expect(maxAbs <= 2e-2,
-                "TensorOps 2D maxAbs=\(maxAbs) rel=\(rel) keys=\(visibleKeys)")
-        #expect(rel <= 2e-2,
-                "TensorOps 2D rel=\(rel) maxAbs=\(maxAbs) keys=\(visibleKeys)")
+        #expect(
+            candidate == repeated,
+            "TensorOps 2D full attention is not byte-stable at \(visibleKeys) keys")
+        #expect(
+            maxAbs <= 2e-2,
+            "TensorOps 2D maxAbs=\(maxAbs) rel=\(rel) keys=\(visibleKeys)")
+        #expect(
+            rel <= 2e-2,
+            "TensorOps 2D rel=\(rel) maxAbs=\(maxAbs) keys=\(visibleKeys)")
     }
 
     @Test func preferredTensorOpsPathUsesSafeHardwareFallback() throws {
         let context = try MetalContext()
-        let fixture = Self.makeFixture(start: 128,
-                                       chunk: 1,
-                                       window: 0,
-                                       seed: 0xA872,
-                                       headDim: 512,
-                                       qHeads: 16,
-                                       kvHeads: 2)
+        let fixture = Self.makeFixture(
+            start: 128,
+            chunk: 1,
+            window: 0,
+            seed: 0xA872,
+            headDim: 512,
+            qHeads: 16,
+            kvHeads: 2)
         let preferred = try Self.runKernel(
             fixture,
             path: .fullTensorOps2DPreferred)
         let reference = PrefillAttentionRef.apply(fixture)
         let maxAbs = RelError.maxAbsDiff(preferred, reference)
         let rel = RelError.compute(actual: preferred, reference: reference)
-        #expect(maxAbs <= 2e-2,
-                "preferred TensorOps maxAbs=\(maxAbs) rel=\(rel)")
-        #expect(rel <= 2e-2,
-                "preferred TensorOps rel=\(rel) maxAbs=\(maxAbs)")
+        #expect(
+            maxAbs <= 2e-2,
+            "preferred TensorOps maxAbs=\(maxAbs) rel=\(rel)")
+        #expect(
+            rel <= 2e-2,
+            "preferred TensorOps rel=\(rel) maxAbs=\(maxAbs)")
         if !context.device.supportsFamily(.apple10) {
             let baseline = try Self.runKernel(fixture, path: .causalTiled)
             #expect(preferred == baseline)
         }
     }
 
-    private static func makeFixture(start: Int,
-                                    chunk: Int,
-                                    window: Int,
-                                    seed: UInt64,
-                                    headDim: Int = 8,
-                                    qHeads: Int = 4,
-                                    kvHeads: Int = 2) -> Fixture {
+    private static func makeFixture(
+        start: Int,
+        chunk: Int,
+        window: Int,
+        seed: UInt64,
+        headDim: Int = 8,
+        qHeads: Int = 4,
+        kvHeads: Int = 2
+    ) -> Fixture {
         let qStride = qHeads * headDim + 3
         let kvStride = kvHeads * headDim + 5
         let oStride = qHeads * headDim + 7
@@ -208,11 +232,12 @@ import TinyTitanValidationSupport
             }
         }
 
-        return Fixture(q: q, k: k, v: v,
-                       qStride: qStride, kvStride: kvStride, oStride: oStride,
-                       headDim: headDim, qHeads: qHeads, kvHeads: kvHeads,
-                       start: start, chunk: chunk, kvValid: kvValid,
-                       window: window, scale: 1.0)
+        return Fixture(
+            q: q, k: k, v: v,
+            qStride: qStride, kvStride: kvStride, oStride: oStride,
+            headDim: headDim, qHeads: qHeads, kvHeads: kvHeads,
+            start: start, chunk: chunk, kvValid: kvValid,
+            window: window, scale: 1.0)
     }
 
     private static func runAndCompare(_ fixture: Fixture, label: String) throws {
@@ -237,13 +262,18 @@ import TinyTitanValidationSupport
         let oPrefix = 29
         let outCount = oPrefix + fixture.chunk * fixture.oStride
 
-        guard let qBuf = Fp16Buffer.make(ctx.device,
-                                         values: [Float](repeating: 0, count: qPrefix) + fixture.q),
-              let kBuf = Fp16Buffer.make(ctx.device,
-                                         values: [Float](repeating: 0, count: kPrefix) + fixture.k),
-              let vBuf = Fp16Buffer.make(ctx.device,
-                                         values: [Float](repeating: 0, count: vPrefix) + fixture.v),
-              let outBuf = Fp16Buffer.make(ctx.device, count: outCount) else {
+        guard
+            let qBuf = Fp16Buffer.make(
+                ctx.device,
+                values: [Float](repeating: 0, count: qPrefix) + fixture.q),
+            let kBuf = Fp16Buffer.make(
+                ctx.device,
+                values: [Float](repeating: 0, count: kPrefix) + fixture.k),
+            let vBuf = Fp16Buffer.make(
+                ctx.device,
+                values: [Float](repeating: 0, count: vPrefix) + fixture.v),
+            let outBuf = Fp16Buffer.make(ctx.device, count: outCount)
+        else {
             Issue.record("alloc failed")
             return []
         }
@@ -261,19 +291,20 @@ import TinyTitanValidationSupport
             oTokenStrideElements: UInt32(fixture.oStride),
             scale: fixture.scale)
 
-        let cb = ctx.queue.makeCommandBuffer()!
-        try prefill.encodeCausal(commandBuffer: cb,
-                             q: qBuf,
-                             qOffset: qPrefix * MemoryLayout<Float16>.size,
-                             k: kBuf,
-                             kOffset: kPrefix * MemoryLayout<Float16>.size,
-                             v: vBuf,
-                             vOffset: vPrefix * MemoryLayout<Float16>.size,
-                             out: outBuf,
-                             outOffset: oPrefix * MemoryLayout<Float16>.size,
-                             params: params,
-                             kvRingCapacity: kvRingCapacity,
-                             path: path)
+        let cb = try #require(ctx.queue.makeCommandBuffer())
+        try prefill.encodeCausal(
+            commandBuffer: cb,
+            q: qBuf,
+            qOffset: qPrefix * MemoryLayout<Float16>.size,
+            k: kBuf,
+            kOffset: kPrefix * MemoryLayout<Float16>.size,
+            v: vBuf,
+            vOffset: vPrefix * MemoryLayout<Float16>.size,
+            out: outBuf,
+            outOffset: oPrefix * MemoryLayout<Float16>.size,
+            params: params,
+            kvRingCapacity: kvRingCapacity,
+            path: path)
         cb.commit()
         cb.waitUntilCompleted()
 
@@ -289,7 +320,5 @@ import TinyTitanValidationSupport
         }
         return compact
     }
-
-
 
 }

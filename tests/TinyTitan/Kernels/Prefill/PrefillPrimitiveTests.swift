@@ -1,15 +1,18 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct PrefillPrimitiveTests {
     private static let vocab = 16
     private static let d = 128
     private static let groupsPerRow = d / Quantization.groupSize
 
-    private static func buildInt4Table(seed: UInt64) -> (packed: [UInt8], scales: [UInt16], biases: [UInt16]) {
+    private static func buildInt4Table(seed: UInt64) -> (
+        packed: [UInt8], scales: [UInt16], biases: [UInt16]
+    ) {
         var rng = SeedTree(seed).key("prefill-int4-embed-table")
         var packed = [UInt8](repeating: 0, count: vocab * (d / 2))
         var scales = [UInt16](repeating: 0, count: vocab * groupsPerRow)
@@ -52,10 +55,12 @@ import TinyTitanValidationSupport
                 }
             }
         }
-        let scales = [UInt16](repeating: Quantization.bf16Bits(0.125),
-                              count: vocab * groupsPerRow)
-        let biases = [UInt16](repeating: Quantization.bf16Bits(-0.25),
-                              count: vocab * groupsPerRow)
+        let scales = [UInt16](
+            repeating: Quantization.bf16Bits(0.125),
+            count: vocab * groupsPerRow)
+        let biases = [UInt16](
+            repeating: Quantization.bf16Bits(-0.25),
+            count: vocab * groupsPerRow)
         return (packed, scales, biases)
     }
 
@@ -67,45 +72,53 @@ import TinyTitanValidationSupport
         let scalar = try EmbedLookupInt4(context: ctx)
         let block = try PrefillEmbedLookupInt4(context: ctx)
 
-        guard let tableBuf = ctx.device.makeBuffer(bytes: packed, length: packed.count, options: .storageModeShared),
-              let scalesBuf = ctx.device.makeBuffer(bytes: scales,
-                                                    length: scales.count * MemoryLayout<UInt16>.size,
-                                                    options: .storageModeShared),
-              let biasesBuf = ctx.device.makeBuffer(bytes: biases,
-                                                    length: biases.count * MemoryLayout<UInt16>.size,
-                                                    options: .storageModeShared),
-              let tokenBuf = ctx.device.makeBuffer(bytes: tokens,
-                                                   length: tokens.count * MemoryLayout<UInt32>.size,
-                                                   options: .storageModeShared),
-              let scalarOut = Fp16Buffer.make(ctx.device, count: tokens.count * Self.d),
-              let blockOut = Fp16Buffer.make(ctx.device, count: tokens.count * Self.d) else {
+        guard
+            let tableBuf = ctx.device.makeBuffer(
+                bytes: packed, length: packed.count, options: .storageModeShared),
+            let scalesBuf = ctx.device.makeBuffer(
+                bytes: scales,
+                length: scales.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared),
+            let biasesBuf = ctx.device.makeBuffer(
+                bytes: biases,
+                length: biases.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared),
+            let tokenBuf = ctx.device.makeBuffer(
+                bytes: tokens,
+                length: tokens.count * MemoryLayout<UInt32>.size,
+                options: .storageModeShared),
+            let scalarOut = Fp16Buffer.make(ctx.device, count: tokens.count * Self.d),
+            let blockOut = Fp16Buffer.make(ctx.device, count: tokens.count * Self.d)
+        else {
             Issue.record("alloc failed")
             return
         }
 
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for (row, token) in tokens.enumerated() {
-            try scalar.encode(commandBuffer: cb,
-                          table: tableBuf,
-                          scales: scalesBuf,
-                          biases: biasesBuf,
-                          out: scalarOut,
-                          outOffset: row * Self.d * MemoryLayout<Float16>.size,
-                          tokenId: token,
-                          d: UInt32(Self.d),
-                          outScale: outScale,
-                          vocab: UInt32(Self.vocab))
+            try scalar.encode(
+                commandBuffer: cb,
+                table: tableBuf,
+                scales: scalesBuf,
+                biases: biasesBuf,
+                out: scalarOut,
+                outOffset: row * Self.d * MemoryLayout<Float16>.size,
+                tokenId: token,
+                d: UInt32(Self.d),
+                outScale: outScale,
+                vocab: UInt32(Self.vocab))
         }
-        try block.encode(commandBuffer: cb,
-                     table: tableBuf,
-                     scales: scalesBuf,
-                     biases: biasesBuf,
-                     tokens: tokenBuf,
-                     out: blockOut,
-                     t: UInt32(tokens.count),
-                     d: UInt32(Self.d),
-                     outScale: outScale,
-                     vocab: UInt32(Self.vocab))
+        try block.encode(
+            commandBuffer: cb,
+            table: tableBuf,
+            scales: scalesBuf,
+            biases: biasesBuf,
+            tokens: tokenBuf,
+            out: blockOut,
+            t: UInt32(tokens.count),
+            d: UInt32(Self.d),
+            outScale: outScale,
+            vocab: UInt32(Self.vocab))
         cb.commit()
         cb.waitUntilCompleted()
 
@@ -123,49 +136,53 @@ import TinyTitanValidationSupport
         let block = try PrefillEmbedLookupInt4(context: ctx, weightBits: bits)
 
         guard let table = ctx.device.makeBuffer(bytes: packed, length: packed.count),
-              let scaleBuffer = ctx.device.makeBuffer(
+            let scaleBuffer = ctx.device.makeBuffer(
                 bytes: scales,
                 length: scales.count * MemoryLayout<UInt16>.stride),
-              let biasBuffer = ctx.device.makeBuffer(
+            let biasBuffer = ctx.device.makeBuffer(
                 bytes: biases,
                 length: biases.count * MemoryLayout<UInt16>.stride),
-              let tokenBuffer = ctx.device.makeBuffer(
+            let tokenBuffer = ctx.device.makeBuffer(
                 bytes: tokens,
                 length: tokens.count * MemoryLayout<UInt32>.stride),
-              let expected = Fp16Buffer.make(ctx.device, count: tokens.count * Self.d),
-              let actual = Fp16Buffer.make(ctx.device, count: tokens.count * Self.d),
-              let commandBuffer = ctx.queue.makeCommandBuffer() else {
+            let expected = Fp16Buffer.make(ctx.device, count: tokens.count * Self.d),
+            let actual = Fp16Buffer.make(ctx.device, count: tokens.count * Self.d),
+            let commandBuffer = ctx.queue.makeCommandBuffer()
+        else {
             Issue.record("allocation failed")
             return
         }
 
         for (row, token) in tokens.enumerated() {
-            try scalar.encode(commandBuffer: commandBuffer,
-                          table: table,
-                          scales: scaleBuffer,
-                          biases: biasBuffer,
-                          out: expected,
-                          outOffset: row * Self.d * MemoryLayout<Float16>.stride,
-                          tokenId: token,
-                          d: UInt32(Self.d),
-                          outScale: 1,
-                          vocab: UInt32(Self.vocab))
+            try scalar.encode(
+                commandBuffer: commandBuffer,
+                table: table,
+                scales: scaleBuffer,
+                biases: biasBuffer,
+                out: expected,
+                outOffset: row * Self.d * MemoryLayout<Float16>.stride,
+                tokenId: token,
+                d: UInt32(Self.d),
+                outScale: 1,
+                vocab: UInt32(Self.vocab))
         }
-        try block.encode(commandBuffer: commandBuffer,
-                     table: table,
-                     scales: scaleBuffer,
-                     biases: biasBuffer,
-                     tokens: tokenBuffer,
-                     out: actual,
-                     t: UInt32(tokens.count),
-                     d: UInt32(Self.d),
-                     outScale: 1,
-                     vocab: UInt32(Self.vocab))
+        try block.encode(
+            commandBuffer: commandBuffer,
+            table: table,
+            scales: scaleBuffer,
+            biases: biasBuffer,
+            tokens: tokenBuffer,
+            out: actual,
+            t: UInt32(tokens.count),
+            d: UInt32(Self.d),
+            outScale: 1,
+            vocab: UInt32(Self.vocab))
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         if let error = commandBuffer.error { throw error }
 
-        #expect(Fp16Buffer.read(actual, count: tokens.count * Self.d)
+        #expect(
+            Fp16Buffer.read(actual, count: tokens.count * Self.d)
                 == Fp16Buffer.read(expected, count: tokens.count * Self.d))
     }
 
@@ -181,10 +198,12 @@ import TinyTitanValidationSupport
         let scalar = try RMSNorm(context: ctx)
         let block = try PrefillRMSNorm(context: ctx)
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: x),
-              let scalarOut = Fp16Buffer.make(ctx.device, count: rows * dim),
-              let blockOut = Fp16Buffer.make(ctx.device, count: rows * dim),
-              let wBuf = ctx.device.makeBuffer(length: wBits.count * MemoryLayout<UInt16>.size,
-                                               options: .storageModeShared) else {
+            let scalarOut = Fp16Buffer.make(ctx.device, count: rows * dim),
+            let blockOut = Fp16Buffer.make(ctx.device, count: rows * dim),
+            let wBuf = ctx.device.makeBuffer(
+                length: wBits.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared)
+        else {
             Issue.record("alloc failed")
             return
         }
@@ -192,24 +211,26 @@ import TinyTitanValidationSupport
         for i in 0..<wBits.count { wPtr[i] = wBits[i] }
 
         let rowBytes = dim * MemoryLayout<Float16>.size
-        let cb = ctx.queue.makeCommandBuffer()!
+        let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<rows {
-            try scalar.encodeBF16W(commandBuffer: cb,
-                               x: xBuf,
-                               xOffset: row * rowBytes,
-                               weight: wBuf,
-                               out: scalarOut,
-                               outOffset: row * rowBytes,
-                               d: UInt32(dim),
-                               eps: eps)
+            try scalar.encodeBF16W(
+                commandBuffer: cb,
+                x: xBuf,
+                xOffset: row * rowBytes,
+                weight: wBuf,
+                out: scalarOut,
+                outOffset: row * rowBytes,
+                d: UInt32(dim),
+                eps: eps)
         }
-        try block.encodeBF16W(commandBuffer: cb,
-                          x: xBuf,
-                          weight: wBuf,
-                          out: blockOut,
-                          t: UInt32(rows),
-                          d: UInt32(dim),
-                          eps: eps)
+        try block.encodeBF16W(
+            commandBuffer: cb,
+            x: xBuf,
+            weight: wBuf,
+            out: blockOut,
+            t: UInt32(rows),
+            d: UInt32(dim),
+            eps: eps)
         cb.commit()
         cb.waitUntilCompleted()
 

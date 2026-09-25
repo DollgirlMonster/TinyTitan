@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 /// StructuredAssistantDecoder in ChatML mode: `<think>` suppression and
@@ -12,16 +13,20 @@ struct ChatMLDecoderTests {
         self.tok = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
     }
 
-    private func decoder(allowedTools: Set<String> = ["get_weather"]) -> StructuredAssistantDecoder {
-        StructuredAssistantDecoder(tokenizer: tok,
-                                   allowedTools: allowedTools,
-                                   idGenerator: { "call_fixed" })
+    private func decoder(allowedTools: Set<String> = ["get_weather"]) -> StructuredAssistantDecoder
+    {
+        StructuredAssistantDecoder(
+            tokenizer: tok,
+            allowedTools: allowedTools,
+            idGenerator: { "call_fixed" })
     }
 
     /// Feeds text through the streaming detokenizer so each token carries the
     /// same delta the generation loop would produce.
-    private func feed(_ text: String,
-                      into decoder: StructuredAssistantDecoder) throws -> [StructuredAssistantEvent] {
+    private func feed(
+        _ text: String,
+        into decoder: StructuredAssistantDecoder
+    ) throws -> [StructuredAssistantEvent] {
         var events: [StructuredAssistantEvent] = []
         var detok = GFDetokenizer(tokenizer: tok)
         for id in tok.encode(text, addBOS: false) {
@@ -68,11 +73,15 @@ struct ChatMLDecoderTests {
         let events = try feed(
             "<tool_call>\n<function=get_weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
             into: d)
-        #expect(events == [.toolCall(ParsedToolCall(
-            id: "call_fixed",
-            name: "get_weather",
-            arguments: .object(["city": .string("Paris")]),
-            argumentsJSON: #"{"city":"Paris"}"#))])
+        #expect(
+            events == [
+                .toolCall(
+                    ParsedToolCall(
+                        id: "call_fixed",
+                        name: "get_weather",
+                        arguments: .object(["city": .string("Paris")]),
+                        argumentsJSON: #"{"city":"Paris"}"#))
+            ])
         #expect(d.hasToolCalls)
         try d.finish()
     }
@@ -128,9 +137,9 @@ struct ChatMLDecoderTests {
     func byteBarrierBeforeThought() throws {
         let d = decoder()
         let events = try d.consume(
-            tokenID: tok.thinkStartID!, delta: "\u{FFFD}<think>")
+            tokenID: try #require(tok.thinkStartID), delta: "\u{FFFD}<think>")
         #expect(events == [.content("\u{FFFD}")])
-        _ = try d.consume(tokenID: tok.thinkEndID!, delta: "</think>")
+        _ = try d.consume(tokenID: try #require(tok.thinkEndID), delta: "</think>")
         try d.finish()
     }
 
@@ -138,7 +147,7 @@ struct ChatMLDecoderTests {
     func tailRespectsChannel() throws {
         let d = decoder()
         #expect(try d.consumeTail("visible") == [.content("visible")])
-        _ = try d.consume(tokenID: tok.thinkStartID!, delta: "<think>")
+        _ = try d.consume(tokenID: try #require(tok.thinkStartID), delta: "<think>")
         #expect(try d.consumeTail("unfinished thought") == [.reasoning("unfinished thought")])
         try d.finish()
     }
@@ -149,8 +158,9 @@ struct ChatMLDecoderTests {
     /// channel would stream the whole thought as the answer.
     @Test("A prompt that left the thought open starts in the thought channel")
     func startsInsideAnOpenThought() throws {
-        let d = StructuredAssistantDecoder(tokenizer: tok, allowedTools: [],
-                                           startsInThought: true, parsesToolCalls: false)
+        let d = StructuredAssistantDecoder(
+            tokenizer: tok, allowedTools: [],
+            startsInThought: true, parsesToolCalls: false)
         let events = try feed("weighing it up\n</think>\n\nthe answer", into: d)
         #expect(reasoningText(events) == "weighing it up\n")
         #expect(visibleText(events) == "the answer")
@@ -161,18 +171,22 @@ struct ChatMLDecoderTests {
 
     @Test("Tool calls still parse after a thought")
     func toolCallAfterThought() throws {
-        let d = StructuredAssistantDecoder(tokenizer: tok, allowedTools: ["get_weather"],
-                                           startsInThought: true, idGenerator: { "call_fixed" })
+        let d = StructuredAssistantDecoder(
+            tokenizer: tok, allowedTools: ["get_weather"],
+            startsInThought: true, idGenerator: { "call_fixed" })
         let events = try feed(
             "the user wants weather\n</think>\n\n<tool_call>\n<function=get_weather>\n"
                 + "<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
             into: d)
         #expect(reasoningText(events) == "the user wants weather\n")
         #expect(visibleText(events).isEmpty)
-        #expect(events.last == .toolCall(ParsedToolCall(
-            id: "call_fixed", name: "get_weather",
-            arguments: .object(["city": .string("Paris")]),
-            argumentsJSON: #"{"city":"Paris"}"#)))
+        #expect(
+            events.last
+                == .toolCall(
+                    ParsedToolCall(
+                        id: "call_fixed", name: "get_weather",
+                        arguments: .object(["city": .string("Paris")]),
+                        argumentsJSON: #"{"city":"Paris"}"#)))
         try d.finish()
     }
 
@@ -180,8 +194,9 @@ struct ChatMLDecoderTests {
     /// the model writes anyway is text -- as it is when no decoder runs.
     @Test("A thought splitter without tools leaves tool markup as text")
     func thoughtSplitterLeavesToolMarkupAlone() throws {
-        let d = StructuredAssistantDecoder(tokenizer: tok, allowedTools: [],
-                                           parsesToolCalls: false)
+        let d = StructuredAssistantDecoder(
+            tokenizer: tok, allowedTools: [],
+            parsesToolCalls: false)
         let events = try feed("<tool_call>\nx\n</tool_call>", into: d)
         #expect(visibleText(events) == "<tool_call>\nx\n</tool_call>")
         try d.finish()
@@ -203,16 +218,21 @@ struct ChatMLDecoderTests {
     /// for the plain and the tool-template renders.
     @Test("The rendered prompt leaves a thought open exactly when thinking is on")
     func renderedPromptOpensThoughtOnlyWithThinking() async throws {
-        let thinking = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder(),
-                                                  thinkingMode: .on)
+        let thinking = try await GFTokenizer.load(
+            from: ChatMLTemplateTests.fixtureFolder(),
+            thinkingMode: .on)
         let messages = [GFTokenizer.Message(role: .user, content: "Hi <think>")]
         let rendered = try thinking.applyChatTemplate(messages)
         #expect(rendered.hasSuffix("<|im_start|>assistant\n<think>\n"))
         for (tokenizer, open) in [(thinking, true), (tok, false)] {
             let plain = tokenizer.encode(try tokenizer.applyChatTemplate(messages), addBOS: false)
             let tooled = try tokenizer.encodeToolChat(messages: messages, tools: [])
-            #expect(StructuredAssistantDecoder.promptLeavesThoughtOpen(plain, tokenizer: tokenizer) == open)
-            #expect(StructuredAssistantDecoder.promptLeavesThoughtOpen(tooled, tokenizer: tokenizer) == open)
+            #expect(
+                StructuredAssistantDecoder.promptLeavesThoughtOpen(plain, tokenizer: tokenizer)
+                    == open)
+            #expect(
+                StructuredAssistantDecoder.promptLeavesThoughtOpen(tooled, tokenizer: tokenizer)
+                    == open)
         }
     }
 
@@ -230,8 +250,9 @@ struct ChatMLDecoderTests {
     func thinkingOffSplitsASelfStartedThought() async throws {
         let messages = [GFTokenizer.Message(role: .user, content: "Hi")]
         let offPrompt = tok.encode(try tok.applyChatTemplate(messages), addBOS: false)
-        let watcher = try #require(StructuredAssistantDecoder.forGeneration(
-            tokenizer: tok, promptIDs: offPrompt, allowedTools: nil))
+        let watcher = try #require(
+            StructuredAssistantDecoder.forGeneration(
+                tokenizer: tok, promptIDs: offPrompt, allowedTools: nil))
 
         // The prompt closed the block; the model opens one anyway.
         let events = try feed("<think>\nmulling it over\n</think>\n\nParis", into: watcher)
@@ -270,7 +291,9 @@ struct ChatMLDecoderTests {
     func malformedBoundaryFails() {
         let d = decoder()
         #expect(throws: ToolCallParserError.malformed) {
-            _ = try d.consume(tokenID: tok.thinkStartID!, delta: "missing marker")
+            _ = try d.consume(
+                tokenID: try #require(tok.thinkStartID),
+                delta: "missing marker")
         }
     }
 }

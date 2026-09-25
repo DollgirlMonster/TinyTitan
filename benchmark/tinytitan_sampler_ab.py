@@ -14,6 +14,7 @@ effects being tested and a sequential sweep warms the page cache as it goes.
 
   python3 benchmark/tinytitan_sampler_ab.py --quant 4bit --pairs 2
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,7 +31,7 @@ from tinytitan_profile import ROOT
 def one_run(quant: str, arm: str, tag: str) -> dict:
     port = g0.PORTS[quant]
     log_name = f"samplerab_{quant}_{arm}_{tag}.log"
-    proc = g0.launch(quant, port, log_name, sampler_path=arm)
+    g0.launch(quant, port, log_name, sampler_path=arm)
     if not g0.wait_ready(port):
         g0._terminate_all()
         raise SystemExit(f"[{quant}/{arm}] server did not become healthy")
@@ -51,8 +52,9 @@ def one_run(quant: str, arm: str, tag: str) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--quant", choices=sorted(g0.QUANTS), default="4bit")
-    parser.add_argument("--pairs", type=int, default=2,
-                        help="A/B/B/A blocks; each block is 4 measured runs")
+    parser.add_argument(
+        "--pairs", type=int, default=2, help="A/B/B/A blocks; each block is 4 measured runs"
+    )
     parser.add_argument("--allow-busy-gpu", action="store_true")
     args = parser.parse_args()
 
@@ -71,11 +73,14 @@ def main() -> int:
             for arm in ("generic", "tiled", "tiled", "generic"):
                 row = one_run(args.quant, arm, f"b{block}_{len(rows)}")
                 rows.append(row)
-                print(f"[{args.quant}] {arm:<7} "
-                      f"{row['decode_tok_s']:.3f} tok/s  "
-                      f"busy/token {row.get('busy_per_token_ms', 0):.2f} ms  "
-                      f"sample_gap {row['gaps'].get('head_logits->embed', {}).get('per_token_ms', 0):.2f} ms  "
-                      f"sha {row['completion_sha256']}", flush=True)
+                print(
+                    f"[{args.quant}] {arm:<7} "
+                    f"{row['decode_tok_s']:.3f} tok/s  "
+                    f"busy/token {row.get('busy_per_token_ms', 0):.2f} ms  "
+                    f"sample_gap {row['gaps'].get('head_logits->embed', {}).get('per_token_ms', 0):.2f} ms  "
+                    f"sha {row['completion_sha256']}",
+                    flush=True,
+                )
     finally:
         g0._terminate_all()
 
@@ -84,8 +89,7 @@ def main() -> int:
         sel = [r for r in rows if r["arm"] == arm]
         rates = [r["decode_tok_s"] for r in sel]
         busy = [r.get("busy_per_token_ms", 0) for r in sel]
-        gaps = [r["gaps"].get("head_logits->embed", {}).get("per_token_ms", 0)
-                for r in sel]
+        gaps = [r["gaps"].get("head_logits->embed", {}).get("per_token_ms", 0) for r in sel]
         out["arms"][arm] = {
             "runs": len(sel),
             "median_tok_s": round(statistics.median(rates), 4),
@@ -105,19 +109,23 @@ def main() -> int:
     print("=" * 68)
     for arm in ("generic", "tiled"):
         d = out["arms"][arm]
-        print(f"  {arm:<8} median {d['median_tok_s']:7.3f} tok/s   "
-              f"runs {d['rates']}")
-        print(f"           busy/token {d['median_busy_per_token_ms']:.2f} ms   "
-              f"sampler gap {d['median_sample_gap_ms']:.2f} ms")
-    print(f"\n  DELTA: {delta:+.2f}%   "
-          f"(gate is +10%: {'PASS' if delta >= 10 else 'FAIL'})")
-    print(f"  Output identical across every run of both arms: "
-          f"{'YES' if out['output_identical'] else 'NO'}")
+        print(f"  {arm:<8} median {d['median_tok_s']:7.3f} tok/s   runs {d['rates']}")
+        print(
+            f"           busy/token {d['median_busy_per_token_ms']:.2f} ms   "
+            f"sampler gap {d['median_sample_gap_ms']:.2f} ms"
+        )
+    print(f"\n  DELTA: {delta:+.2f}%   (gate is +10%: {'PASS' if delta >= 10 else 'FAIL'})")
+    print(
+        f"  Output identical across every run of both arms: "
+        f"{'YES' if out['output_identical'] else 'NO'}"
+    )
     if not out["output_identical"]:
         print(f"    generic digests {a['digests']}")
         print(f"    tiled   digests {b['digests']}")
-        print("    A sampling change that moves the token stream is a numerics "
-              "change and must be re-baselined deliberately, not accepted here.")
+        print(
+            "    A sampling change that moves the token stream is a numerics "
+            "change and must be re-baselined deliberately, not accepted here."
+        )
 
     path = ROOT / f".build/benchmark-results/sampler-ab-{args.quant}.json"
     os.makedirs(os.path.dirname(path), exist_ok=True)

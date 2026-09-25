@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 /// ChatML (Qwen) dialect coverage against a synthetic tokenizer fixture: a
@@ -14,10 +15,11 @@ struct ChatMLTemplateTests {
     }
 
     static func fixtureFolder() throws -> URL {
-        try #require(Bundle.module.url(
-            forResource: "ChatMLTokenizer",
-            withExtension: nil,
-            subdirectory: "Fixtures"))
+        try #require(
+            Bundle.module.url(
+                forResource: "ChatMLTokenizer",
+                withExtension: nil,
+                subdirectory: "Fixtures"))
     }
 
     private typealias Message = GFTokenizer.Message
@@ -55,8 +57,9 @@ struct ChatMLTemplateTests {
     @Test("Single user turn renders the exact ChatML string")
     func singleUserTurn() throws {
         let p = try tok.applyChatTemplate([Message(role: .user, content: "Hi")])
-        #expect(p == "<|im_start|>user\nHi<|im_end|>\n"
-            + "<|im_start|>assistant\n<think>\n\n</think>\n\n")
+        #expect(
+            p == "<|im_start|>user\nHi<|im_end|>\n"
+                + "<|im_start|>assistant\n<think>\n\n</think>\n\n")
     }
 
     @Test("Thinking mode leaves the generation think block open")
@@ -64,7 +67,7 @@ struct ChatMLTemplateTests {
         let thinking = try await GFTokenizer.load(
             from: Self.fixtureFolder(), thinkingMode: .on)
         let prompt = try thinking.applyChatTemplate([
-            Message(role: .user, content: "Hi"),
+            Message(role: .user, content: "Hi")
         ])
         #expect(thinking.thinkingMode == .on)
         #expect(prompt.hasSuffix("<|im_start|>assistant\n<think>\n"))
@@ -74,10 +77,12 @@ struct ChatMLTemplateTests {
     @Test("Environment compatibility resolves only the documented binary modes")
     func thinkingModeEnvironmentCompatibility() {
         #expect(ModelThinkingMode.resolved(environment: [:]) == .off)
-        #expect(ModelThinkingMode.resolved(
-            environment: ["TINYTITAN_THINKING_MODE": "on"]) == .on)
-        #expect(ModelThinkingMode.resolved(
-            environment: ["TINYTITAN_THINKING_MODE": "medium"]) == .off)
+        #expect(
+            ModelThinkingMode.resolved(
+                environment: ["TINYTITAN_THINKING_MODE": "on"]) == .on)
+        #expect(
+            ModelThinkingMode.resolved(
+                environment: ["TINYTITAN_THINKING_MODE": "medium"]) == .off)
     }
 
     @Test("Multi-turn renders roles verbatim with assistant unrenamed")
@@ -88,11 +93,12 @@ struct ChatMLTemplateTests {
             Message(role: .assistant, content: "B"),
             Message(role: .user, content: "C"),
         ])
-        #expect(p == "<|im_start|>system\nBe terse.<|im_end|>\n"
-            + "<|im_start|>user\nA<|im_end|>\n"
-            + "<|im_start|>assistant\nB<|im_end|>\n"
-            + "<|im_start|>user\nC<|im_end|>\n"
-            + "<|im_start|>assistant\n<think>\n\n</think>\n\n")
+        #expect(
+            p == "<|im_start|>system\nBe terse.<|im_end|>\n"
+                + "<|im_start|>user\nA<|im_end|>\n"
+                + "<|im_start|>assistant\nB<|im_end|>\n"
+                + "<|im_start|>user\nC<|im_end|>\n"
+                + "<|im_start|>assistant\n<think>\n\n</think>\n\n")
     }
 
     @Test("Message content is trimmed before rendering")
@@ -117,8 +123,9 @@ struct ChatMLTemplateTests {
             Message(role: .user, content: "Hi"),
         ])
         #expect(asDeveloper == asSystem)
-        #expect(asDeveloper.hasPrefix("<|im_start|>system\nBe terse.<|im_end|>\n"),
-                "the developer turn did not render as system: \(asDeveloper)")
+        #expect(
+            asDeveloper.hasPrefix("<|im_start|>system\nBe terse.<|im_end|>\n"),
+            "the developer turn did not render as system: \(asDeveloper)")
     }
 
     @Test("The Jinja tool path renders a developer message as system too")
@@ -136,8 +143,9 @@ struct ChatMLTemplateTests {
             tools: [])
         #expect(asDeveloper == asSystem)
         let text = tok.decode(asDeveloper, skipSpecialTokens: false)
-        #expect(text.hasPrefix("<|im_start|>system\nBe helpful."),
-                "the developer turn did not render as system: \(text)")
+        #expect(
+            text.hasPrefix("<|im_start|>system\nBe helpful."),
+            "the developer turn did not render as system: \(text)")
     }
 
     @Test("System message after a user turn is rejected")
@@ -154,7 +162,9 @@ struct ChatMLTemplateTests {
     func encodesToSpecialIDs() throws {
         let p = try tok.applyChatTemplate([Message(role: .user, content: "Hi")])
         let ids = tok.encode(p, addBOS: false)
-        #expect(ids.first == 248045, "expected <|im_start|> first, got \(String(describing: ids.first))")
+        #expect(
+            ids.first == 248045, "expected <|im_start|> first, got \(String(describing: ids.first))"
+        )
         #expect(ids.contains(tok.endOfTurnID))
         #expect(ids.contains(tok.thinkStartID ?? -1))
         #expect(ids.contains(tok.thinkEndID ?? -1))
@@ -166,8 +176,9 @@ struct ChatMLTemplateTests {
         let ids = tok.encodeTextContinuation(userContent: " Next \n")
         #expect(ids.first == tok.endOfTurnID)
         let text = tok.decode(ids, skipSpecialTokens: false)
-        #expect(text == "<|im_end|>\n<|im_start|>user\nNext<|im_end|>\n"
-            + "<|im_start|>assistant\n<think>\n\n</think>\n\n")
+        #expect(
+            text == "<|im_end|>\n<|im_start|>user\nNext<|im_end|>\n"
+                + "<|im_start|>assistant\n<think>\n\n</think>\n\n")
     }
 
     @Test("Tool-result KV continuation is unsupported for chatml")
@@ -175,9 +186,11 @@ struct ChatMLTemplateTests {
         #expect(throws: GFTokenizerError.self) {
             _ = try tok.encodeToolResultContinuation(
                 cachedMessages: [Message(role: .user, content: "Hi")],
-                assistant: Message(role: .assistant, content: nil, toolCalls: [
-                    .init(id: "call_1", name: "lookup", arguments: .object([:])),
-                ]),
+                assistant: Message(
+                    role: .assistant, content: nil,
+                    toolCalls: [
+                        .init(id: "call_1", name: "lookup", arguments: .object([:]))
+                    ]),
                 incomingMessages: [Message(role: .user, content: "Hi")],
                 tools: [])
         }
@@ -191,14 +204,15 @@ struct ChatMLTemplateTests {
                 Message(role: .user, content: "Weather in Paris?"),
             ],
             tools: [
-                .init(name: "get_weather",
-                      description: "Look up weather",
-                      parameters: .object([
+                .init(
+                    name: "get_weather",
+                    description: "Look up weather",
+                    parameters: .object([
                         "type": .string("object"),
                         "properties": .object([
-                            "city": .object(["type": .string("string")]),
+                            "city": .object(["type": .string("string")])
                         ]),
-                      ])),
+                    ]))
             ])
         let text = tok.decode(ids, skipSpecialTokens: false)
         #expect(text.hasPrefix("<|im_start|>system\n# Tools"))
@@ -206,8 +220,9 @@ struct ChatMLTemplateTests {
         #expect(text.contains("Be helpful."))
         #expect(text.contains("<|im_start|>user\nWeather in Paris?<|im_end|>\n"))
         let suffix = String(text.suffix(80))
-        #expect(text.hasSuffix("<|im_start|>assistant\n<think>\n\n</think>\n\n"),
-                "expected enable_thinking=false generation prompt, got suffix: \(suffix)")
+        #expect(
+            text.hasSuffix("<|im_start|>assistant\n<think>\n\n</think>\n\n"),
+            "expected enable_thinking=false generation prompt, got suffix: \(suffix)")
     }
 
     /// A historical assistant turn renders its answer, not its reasoning.
@@ -220,8 +235,9 @@ struct ChatMLTemplateTests {
     /// trained on.
     @Test("Historical assistant reasoning is stripped, the continued turn keeps it")
     func assistantReasoningHandling() throws {
-        let answer = Message(role: .assistant,
-                             content: "<think>\nlet me think\n</think>\n\nthe answer")
+        let answer = Message(
+            role: .assistant,
+            content: "<think>\nlet me think\n</think>\n\nthe answer")
 
         // History: the assistant turn sits before the last user query.
         let history = try tok.applyChatTemplate([
@@ -229,10 +245,12 @@ struct ChatMLTemplateTests {
             answer,
             Message(role: .user, content: "second"),
         ])
-        #expect(!history.contains("let me think"),
-                "a historical turn kept its reasoning: \(history)")
-        #expect(history.contains("<|im_start|>assistant\nthe answer<|im_end|>"),
-                "the answer is not rendered on its own: \(history)")
+        #expect(
+            !history.contains("let me think"),
+            "a historical turn kept its reasoning: \(history)")
+        #expect(
+            history.contains("<|im_start|>assistant\nthe answer<|im_end|>"),
+            "the answer is not rendered on its own: \(history)")
 
         // Continuation: the assistant turn is after the last user query, which is
         // the one case the template keeps the reasoning for.
@@ -240,8 +258,9 @@ struct ChatMLTemplateTests {
             Message(role: .user, content: "first"),
             answer,
         ])
-        #expect(continued.contains("<think>\nlet me think\n</think>\n\nthe answer"),
-                "the continued turn should keep its reasoning: \(continued)")
+        #expect(
+            continued.contains("<think>\nlet me think\n</think>\n\nthe answer"),
+            "the continued turn should keep its reasoning: \(continued)")
     }
 
     @Test("Tool chat uses the same explicit thinking mode as text chat")
@@ -251,8 +270,9 @@ struct ChatMLTemplateTests {
         let ids = try thinking.encodeToolChat(
             messages: [Message(role: .user, content: "Weather?")],
             tools: [
-                .init(name: "weather", description: "Look up weather",
-                      parameters: .object(["type": .string("object")])),
+                .init(
+                    name: "weather", description: "Look up weather",
+                    parameters: .object(["type": .string("object")]))
             ])
         let text = thinking.decode(ids, skipSpecialTokens: false)
         #expect(text.hasSuffix("<|im_start|>assistant\n<think>\n"))

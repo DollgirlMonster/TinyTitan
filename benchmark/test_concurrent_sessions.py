@@ -43,6 +43,7 @@ separation verdict. `TOKEN_SCALE`,
 `TEMPERATURE`, `TOP_P`/`TOP_K` and `SERVER_ARGS` exist for thinking runs, which
 need their family's own sampling and a budget big enough for the reasoning block.
 """
+
 from __future__ import annotations
 
 import http.client
@@ -95,39 +96,73 @@ def served_model() -> str:
 
 def chat(messages: list[dict], max_tokens: int, temperature: float | None = None) -> dict:
     max_tokens = max(8, int(max_tokens * TOKEN_SCALE))
-    payload = {"model": MODEL,
-               "temperature": TEMPERATURE if temperature is None else temperature,
-               "max_completion_tokens": max_tokens, "messages": messages}
+    payload = {
+        "model": MODEL,
+        "temperature": TEMPERATURE if temperature is None else temperature,
+        "max_completion_tokens": max_tokens,
+        "messages": messages,
+    }
     if TOP_P > 0:
         payload["top_p"] = TOP_P
     if TOP_K > 0:
         payload["top_k"] = TOP_K
-    request = urllib.request.Request(BASE + "/v1/chat/completions",
-                                     data=json.dumps(payload).encode(), method="POST")
+    request = urllib.request.Request(
+        BASE + "/v1/chat/completions", data=json.dumps(payload).encode(), method="POST"
+    )
     request.add_header("content-type", "application/json")
     started = time.monotonic()
     try:
         with urllib.request.urlopen(request, timeout=900) as response:
             body = json.loads(response.read())
             choice = body["choices"][0]
-            return {"status": response.status,
-                    "text": choice["message"].get("content") or "",
-                    "finish": choice.get("finish_reason"), "usage": body.get("usage"),
-                    "elapsed": time.monotonic() - started, "error": None}
-    except urllib.error.HTTPError as error:
-        return {"status": error.code, "text": "", "finish": None, "usage": None,
+            return {
+                "status": response.status,
+                "text": choice["message"].get("content") or "",
+                "finish": choice.get("finish_reason"),
+                "usage": body.get("usage"),
                 "elapsed": time.monotonic() - started,
-                "error": error.read().decode("utf-8", "replace")}
+                "error": None,
+            }
+    except urllib.error.HTTPError as error:
+        return {
+            "status": error.code,
+            "text": "",
+            "finish": None,
+            "usage": None,
+            "elapsed": time.monotonic() - started,
+            "error": error.read().decode("utf-8", "replace"),
+        }
 
 
 # ---------------------------------------------------------------- markers
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-RARE_WORDS = ["obsidian", "quokka", "abacus", "velvet", "lantern", "meridian",
-              "cobalt", "thistle", "zephyr", "garnet", "walrus", "juniper"]
-CAPITALS = {"France": "Paris", "Japan": "Tokyo", "Kenya": "Nairobi", "Peru": "Lima",
-            "Norway": "Oslo", "Thailand": "Bangkok", "Chile": "Santiago",
-            "Portugal": "Lisbon", "Canada": "Ottawa", "Egypt": "Cairo"}
+RARE_WORDS = [
+    "obsidian",
+    "quokka",
+    "abacus",
+    "velvet",
+    "lantern",
+    "meridian",
+    "cobalt",
+    "thistle",
+    "zephyr",
+    "garnet",
+    "walrus",
+    "juniper",
+]
+CAPITALS = {
+    "France": "Paris",
+    "Japan": "Tokyo",
+    "Kenya": "Nairobi",
+    "Peru": "Lima",
+    "Norway": "Oslo",
+    "Thailand": "Bangkok",
+    "Chile": "Santiago",
+    "Portugal": "Lisbon",
+    "Canada": "Ottawa",
+    "Egypt": "Cairo",
+}
 
 LEDGER: list[dict] = []
 
@@ -148,12 +183,16 @@ def foreign_hits(text: str, own: list[str]) -> list[str]:
     """Ledger markers that appear in this answer but belong to another session."""
     normalized = normalize(text)
     own_normalized = {normalize(m) for m in own}
-    return [entry["label"] for entry in LEDGER
-            if normalize(entry["marker"]) not in own_normalized
-            and normalize(entry["marker"]) in normalized]
+    return [
+        entry["label"]
+        for entry in LEDGER
+        if normalize(entry["marker"]) not in own_normalized
+        and normalize(entry["marker"]) in normalized
+    ]
 
 
 # ---------------------------------------------------------------- rounds
+
 
 def round_echo_math(wave: int) -> list[dict]:
     users = []
@@ -161,16 +200,26 @@ def round_echo_math(wave: int) -> list[dict]:
         marker, left, right = new_code(), random.randint(120, 980), random.randint(120, 980)
         label = f"r1 wave{wave} user{index + 1}"
         issue(label, marker)
-        users.append({
-            "label": label, "own": [marker], "kind": "echo+math",
-            "expect": f"code {marker} + {left}+{right}={left + right}", "sum": left + right,
-            "operands": [str(left), str(right)],
-            "messages": [{"role": "user", "content":
-                          "Follow these instructions exactly.\n"
-                          f"Line 1: write the code {marker} exactly as written.\n"
-                          f"Line 2: write only the result of {left} + {right}.\n"
-                          "Write nothing else."}],
-            "max_tokens": 96})
+        users.append(
+            {
+                "label": label,
+                "own": [marker],
+                "kind": "echo+math",
+                "expect": f"code {marker} + {left}+{right}={left + right}",
+                "sum": left + right,
+                "operands": [str(left), str(right)],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Follow these instructions exactly.\n"
+                        f"Line 1: write the code {marker} exactly as written.\n"
+                        f"Line 2: write only the result of {left} + {right}.\n"
+                        "Write nothing else.",
+                    }
+                ],
+                "max_tokens": 96,
+            }
+        )
     return users
 
 
@@ -181,13 +230,23 @@ def round_marker_capital(wave: int) -> list[dict]:
         country = random.choice(list(CAPITALS))
         label = f"r2 wave{wave} user{index + 1}"
         issue(label, marker)
-        users.append({
-            "label": label, "own": [marker], "kind": "marker+capital",
-            "expect": f"phrase {marker} + capital of {country}", "capital": CAPITALS[country],
-            "messages": [{"role": "user", "content":
-                          f"Write one short sentence that contains the exact phrase {marker}.\n"
-                          f"Then, on a new line, write the capital city of {country}."}],
-            "max_tokens": 96})
+        users.append(
+            {
+                "label": label,
+                "own": [marker],
+                "kind": "marker+capital",
+                "expect": f"phrase {marker} + capital of {country}",
+                "capital": CAPITALS[country],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Write one short sentence that contains the exact phrase {marker}.\n"
+                        f"Then, on a new line, write the capital city of {country}.",
+                    }
+                ],
+                "max_tokens": 96,
+            }
+        )
     return users
 
 
@@ -197,13 +256,21 @@ def round_recall(wave: int) -> list[dict]:
         marker = new_code()
         label = f"r3 wave{wave} user{index + 1}"
         issue(label, marker)
-        users.append({"label": label, "own": [marker], "kind": "recall",
-                      "code": marker, "expect": f"return {marker}"})
+        users.append(
+            {
+                "label": label,
+                "own": [marker],
+                "kind": "recall",
+                "code": marker,
+                "expect": f"return {marker}",
+            }
+        )
     return users
 
 
 def fire(users: list[dict]) -> list[dict]:
     """Submit together, with a small random stagger so slot order varies."""
+
     def one(index: int) -> tuple[int, dict]:
         time.sleep(random.uniform(0.0, 0.15))
         return index, chat(users[index]["messages"], users[index].get("max_tokens", 96))
@@ -217,13 +284,20 @@ def fire(users: list[dict]) -> list[dict]:
 
 # ---------------------------------------------------------------- reporting
 
-TOTALS = {"responses": 0, "own_missed": 0, "foreign": 0, "http_error": 0,
-          "task_wrong": 0, "cache_on": 0, "attribution_unproven": 0}
+TOTALS = {
+    "responses": 0,
+    "own_missed": 0,
+    "foreign": 0,
+    "http_error": 0,
+    "task_wrong": 0,
+    "cache_on": 0,
+    "attribution_unproven": 0,
+}
 
 
 def report(users: list[dict], results: list[dict], phase: str) -> None:
     print(f"\n--- {phase} ---")
-    for user, result in zip(users, results):
+    for user, result in zip(users, results, strict=False):
         TOTALS["responses"] += 1
         # A "recall" row is the turn-1 acknowledgement: it is not supposed to
         # echo the code, so only the foreign-marker check applies to it.
@@ -255,8 +329,7 @@ def report(users: list[dict], results: list[dict], phase: str) -> None:
             routed = own or found or operands
             if not routed:
                 TOTALS["attribution_unproven"] += 1
-            task += (f", own material "
-                     f"{'seen' if operands else ('sum only' if found else 'MISSING')}")
+            task += f", own material {'seen' if operands else ('sum only' if found else 'MISSING')}"
         elif user["kind"] == "marker+capital":
             found = user["capital"].lower() in result["text"].lower()
             task = "capital ok" if found else "CAPITAL WRONG"
@@ -273,15 +346,19 @@ def report(users: list[dict], results: list[dict], phase: str) -> None:
         if cached:
             TOTALS["cache_on"] += 1
         flag = "LEAK" if foreign else ("own-marker MISSING" if own_hit else "clean")
-        print(f"  {user['label']:16} HTTP {result['status']} "
-              f"{result['elapsed']:5.2f}s tok={usage.get('completion_tokens')} "
-              f"prompt={usage.get('prompt_tokens')} cached={cached} "
-              f"finish={result['finish']} "
-              f"| own={'yes' if own else 'NO'} foreign={foreign or 'none'} "
-              f"| {task} | {flag}")
+        print(
+            f"  {user['label']:16} HTTP {result['status']} "
+            f"{result['elapsed']:5.2f}s tok={usage.get('completion_tokens')} "
+            f"prompt={usage.get('prompt_tokens')} cached={cached} "
+            f"finish={result['finish']} "
+            f"| own={'yes' if own else 'NO'} foreign={foreign or 'none'} "
+            f"| {task} | {flag}"
+        )
         print(f"      expect: {user['expect']}")
-        print(f"      got   : {' '.join(result['text'].split())[:200]}"
-              + (f"   [error: {result['error'][:120]}]" if result["error"] else ""))
+        print(
+            f"      got   : {' '.join(result['text'].split())[:200]}"
+            + (f"   [error: {result['error'][:120]}]" if result["error"] else "")
+        )
 
 
 def run_round(title: str, maker) -> None:
@@ -290,35 +367,62 @@ def run_round(title: str, maker) -> None:
         started = time.monotonic()
         results = fire(users)
         spread = max(r["elapsed"] for r in results) - min(r["elapsed"] for r in results)
-        print(f"\n===== {title} / wave {wave} "
-              f"(4 concurrent, wall {time.monotonic() - started:.2f}s, "
-              f"completion spread {spread:.2f}s) =====")
+        print(
+            f"\n===== {title} / wave {wave} "
+            f"(4 concurrent, wall {time.monotonic() - started:.2f}s, "
+            f"completion spread {spread:.2f}s) ====="
+        )
         report(users, results, f"{title} wave{wave}")
 
 
 def run_recall_round() -> None:
     for wave in (1, 2):
         users = round_recall(wave)
-        first = fire([{"label": u["label"], "own": u["own"], "kind": "recall-setup",
-                       "expect": f"ack {u['code']}", "max_tokens": 8,
-                       "messages": [{"role": "user", "content":
-                                     f"Remember this code: {u['code']}. "
-                                     "Reply with just: OK"}]} for u in users])
+        first = fire(
+            [
+                {
+                    "label": u["label"],
+                    "own": u["own"],
+                    "kind": "recall-setup",
+                    "expect": f"ack {u['code']}",
+                    "max_tokens": 8,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": f"Remember this code: {u['code']}. Reply with just: OK",
+                        }
+                    ],
+                }
+                for u in users
+            ]
+        )
         print(f"\n===== recall / wave {wave} — turn 1 (set the code) =====")
         report(users, first, f"recall wave{wave} turn1")
 
         turn2 = []
-        for user, ack in zip(users, first):
-            turn2.append({
-                "label": user["label"], "own": user["own"], "kind": "recall-answer",
-                "expect": user["expect"], "code": user["code"], "max_tokens": 16,
-                "messages": [
-                    {"role": "user", "content":
-                     f"Remember this code: {user['code']}. Reply with just: OK"},
-                    {"role": "assistant", "content": ack["text"] or "OK"},
-                    {"role": "user", "content":
-                     "What code did I ask you to remember? Reply with only the code, "
-                     "nothing else."}]})
+        for user, ack in zip(users, first, strict=False):
+            turn2.append(
+                {
+                    "label": user["label"],
+                    "own": user["own"],
+                    "kind": "recall-answer",
+                    "expect": user["expect"],
+                    "code": user["code"],
+                    "max_tokens": 16,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": f"Remember this code: {user['code']}. Reply with just: OK",
+                        },
+                        {"role": "assistant", "content": ack["text"] or "OK"},
+                        {
+                            "role": "user",
+                            "content": "What code did I ask you to remember? Reply with only the code, "
+                            "nothing else.",
+                        },
+                    ],
+                }
+            )
         results = fire(turn2)
         print(f"\n===== recall / wave {wave} — turn 2 (return the code) =====")
         report(turn2, results, f"recall wave{wave} turn2")
@@ -332,20 +436,32 @@ def run_determinism_control() -> None:
     marker = new_code()
     issue("control determinism", marker)
     prompt = f"Reply with exactly this code and nothing else: {marker}"
-    users = [{"label": f"det u{i + 1}", "own": [marker], "kind": "determinism",
-              "expect": f"echo {marker}", "max_tokens": 24,
-              "messages": [{"role": "user", "content": prompt}]} for i in range(4)]
+    users = [
+        {
+            "label": f"det u{i + 1}",
+            "own": [marker],
+            "kind": "determinism",
+            "expect": f"echo {marker}",
+            "max_tokens": 24,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        for i in range(4)
+    ]
     results = fire(users)
     print("\n===== control 1: determinism (4 identical greedy requests) =====")
     report(users, results, "control determinism")
     distinct = {normalize(r["text"]) for r in results}
     TOTALS["det_distinct"] = len(distinct)
     if TEMPERATURE == 0:
-        print(f"  distinct answers: {len(distinct)} "
-              f"({'deterministic' if len(distinct) == 1 else 'VARIATION at temperature 0'})")
+        print(
+            f"  distinct answers: {len(distinct)} "
+            f"({'deterministic' if len(distinct) == 1 else 'VARIATION at temperature 0'})"
+        )
     else:
-        print(f"  distinct answers: {len(distinct)} (sampling at temperature "
-              f"{TEMPERATURE}; variation is expected, determinism is not a control here)")
+        print(
+            f"  distinct answers: {len(distinct)} (sampling at temperature "
+            f"{TEMPERATURE}; variation is expected, determinism is not a control here)"
+        )
 
 
 def run_canary_control() -> None:
@@ -357,12 +473,22 @@ def run_canary_control() -> None:
     victim = LEDGER[0]
     marker = new_code()
     issue("control canary", marker)
-    users = [{"label": "canary", "own": [marker], "kind": "canary",
-              "expect": f"must reveal {victim['label']} ({victim['marker']})",
-              "max_tokens": 40,
-              "messages": [{"role": "user", "content":
-                            "Reply with exactly these two codes separated by a comma, "
-                            f"and nothing else: {victim['marker']}, {marker}"}]}]
+    users = [
+        {
+            "label": "canary",
+            "own": [marker],
+            "kind": "canary",
+            "expect": f"must reveal {victim['label']} ({victim['marker']})",
+            "max_tokens": 40,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Reply with exactly these two codes separated by a comma, "
+                    f"and nothing else: {victim['marker']}, {marker}",
+                }
+            ],
+        }
+    ]
     results = fire(users)
     print("\n===== control 2: canary (the detector must fire) =====")
     report(users, results, "control canary")
@@ -373,15 +499,29 @@ def run_canary_control() -> None:
 
 def abandon(messages: list[dict], max_tokens: int, after: float) -> dict:
     """Send a request, then close the connection mid-generation."""
-    payload = {"model": MODEL, "temperature": 0.0, "max_completion_tokens": max_tokens,
-               "messages": messages}
+    payload = {
+        "model": MODEL,
+        "temperature": 0.0,
+        "max_completion_tokens": max_tokens,
+        "messages": messages,
+    }
     connection = http.client.HTTPConnection("127.0.0.1", PORT, timeout=60)
-    connection.request("POST", "/v1/chat/completions", body=json.dumps(payload),
-                       headers={"content-type": "application/json"})
+    connection.request(
+        "POST",
+        "/v1/chat/completions",
+        body=json.dumps(payload),
+        headers={"content-type": "application/json"},
+    )
     time.sleep(after)
     connection.close()
-    return {"status": "abandoned", "text": "", "elapsed": after, "usage": None,
-            "finish": None, "error": None}
+    return {
+        "status": "abandoned",
+        "text": "",
+        "elapsed": after,
+        "usage": None,
+        "finish": None,
+        "error": None,
+    }
 
 
 def run_cancellation_control() -> None:
@@ -395,28 +535,42 @@ def run_cancellation_control() -> None:
     with ThreadPoolExecutor(max_workers=4) as pool:
         dropped = pool.submit(abandon, victim["messages"], victim.get("max_tokens", 96), 1.0)
         time.sleep(0.4)
-        results = list(pool.map(lambda u: chat(u["messages"], u.get("max_tokens", 96)),
-                                survivors))
+        results = list(pool.map(lambda u: chat(u["messages"], u.get("max_tokens", 96)), survivors))
         dropped.result()
     print("\n===== control 3: cancellation (one client vanishes mid-generation) =====")
     report(survivors, results, "control cancellation survivors")
-    intact = all(not foreign_hits(r["text"], u["own"])
-                 and normalize(u["own"][0]) in normalize(r["text"])
-                 for u, r in zip(survivors, results))
+    intact = all(
+        not foreign_hits(r["text"], u["own"]) and normalize(u["own"][0]) in normalize(r["text"])
+        for u, r in zip(survivors, results, strict=False)
+    )
     follow = chat([{"role": "user", "content": "Reply with exactly: ALIVE"}], 8)
     alive = "ALIVE" in follow["text"].upper()
     TOTALS["cancel_survivors_intact"] = int(intact)
     TOTALS["post_cancel_alive"] = int(alive)
-    print(f"  abandoned {victim['label']}; survivors intact: {intact}; "
-          f"server answers afterwards: {alive}")
+    print(
+        f"  abandoned {victim['label']}; survivors intact: {intact}; "
+        f"server answers afterwards: {alive}"
+    )
 
 
 def start_server(model_dir: pathlib.Path, port: int, context: int, concurrency: int):
     process = subprocess.Popen(
-        [str(BINARY), "--model", str(model_dir), "--port", str(port),
-         "--max-context", str(context), "--max-concurrent-sequences", str(concurrency),
-         *SERVER_ARGS],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        [
+            str(BINARY),
+            "--model",
+            str(model_dir),
+            "--port",
+            str(port),
+            "--max-context",
+            str(context),
+            "--max-concurrent-sequences",
+            str(concurrency),
+            *SERVER_ARGS,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
     deadline = time.monotonic() + 900
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -439,8 +593,9 @@ def stop_server(process) -> str:
         return process.communicate()[0] or ""
 
 
-def run_one_model(label: str, model_dir: pathlib.Path, port: int,
-                  context: int, concurrency: int) -> bool:
+def run_one_model(
+    label: str, model_dir: pathlib.Path, port: int, context: int, concurrency: int
+) -> bool:
     """One model, all three rounds and all three controls. True when separated."""
     global BASE, PORT, MODEL
     print(f"\n################ {label} ({model_dir}) ################")
@@ -465,25 +620,32 @@ def run_one_model(label: str, model_dir: pathlib.Path, port: int,
             print(f"  {key:18} {value}")
         leaked = TOTALS["foreign"] > 0
         canary_ok = TOTALS.get("canary_detected", 0) == 1
-        cancel_ok = (TOTALS.get("cancel_survivors_intact", 0) == 1
-                     and TOTALS.get("post_cancel_alive", 0) == 1)
+        cancel_ok = (
+            TOTALS.get("cancel_survivors_intact", 0) == 1
+            and TOTALS.get("post_cancel_alive", 0) == 1
+        )
         unproven = TOTALS.get("attribution_unproven", 0)
         # Separation is gated on the safety properties only: a leak (with the
         # canary proving the detector fires), the HTTP boundary, and the other
         # slots surviving a cancelled neighbour. Answer quality is the model's,
         # reported beside it -- an incoherent answer is not a mixed session.
-        separation_bad = (leaked or TOTALS["http_error"] > 0
-                          or not canary_ok or not cancel_ok)
+        separation_bad = leaked or TOTALS["http_error"] > 0 or not canary_ok or not cancel_ok
         print(f"  markers issued     {len(LEDGER)}")
-        print(f"  controls: canary={'caught' if canary_ok else 'BLIND'} "
-              f"cancel={'intact' if cancel_ok else 'BROKEN'} "
-              f"identical_greedy_answers={TOTALS.get('det_distinct')}")
-        print(f"VERDICT {MODEL} separation={'FAIL' if separation_bad else 'PASS'} "
-              f"(leaks={TOTALS['foreign']}, http_error={TOTALS['http_error']}, "
-              f"canary={'caught' if canary_ok else 'BLIND'})")
-        print(f"  not separation: own_missed={TOTALS['own_missed']} "
-              f"task_wrong={TOTALS['task_wrong']} attribution_unproven={unproven} "
-              f"cached_tokens_nonzero={TOTALS['cache_on']}")
+        print(
+            f"  controls: canary={'caught' if canary_ok else 'BLIND'} "
+            f"cancel={'intact' if cancel_ok else 'BROKEN'} "
+            f"identical_greedy_answers={TOTALS.get('det_distinct')}"
+        )
+        print(
+            f"VERDICT {MODEL} separation={'FAIL' if separation_bad else 'PASS'} "
+            f"(leaks={TOTALS['foreign']}, http_error={TOTALS['http_error']}, "
+            f"canary={'caught' if canary_ok else 'BLIND'})"
+        )
+        print(
+            f"  not separation: own_missed={TOTALS['own_missed']} "
+            f"task_wrong={TOTALS['task_wrong']} attribution_unproven={unproven} "
+            f"cached_tokens_nonzero={TOTALS['cache_on']}"
+        )
         return not separation_bad
     finally:
         log = stop_server(process)
@@ -545,7 +707,8 @@ def main() -> int:
     results = {}
     for index, model in enumerate(present):
         results[model] = run_one_model(
-            pathlib.Path(model).name, ROOT / model, port + index, context, concurrency)
+            pathlib.Path(model).name, ROOT / model, port + index, context, concurrency
+        )
 
     print("\n================ overall ================")
     for model, ok in results.items():

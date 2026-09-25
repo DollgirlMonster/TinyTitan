@@ -1,13 +1,15 @@
-import Testing
 import Foundation
 import Metal
+import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanRepackCore
 
 @Suite struct ModelLoaderTests {
     static func dummySource(_ name: String) -> SourceTensor {
-        SourceTensor(name: name, shardPath: "/dev/null", dtype: .u32,
-                     shape: [1024, 64], absoluteOffset: 0, sizeBytes: 0)
+        SourceTensor(
+            name: name, shardPath: "/dev/null", dtype: .u32,
+            shape: [1024, 64], absoluteOffset: 0, sizeBytes: 0)
     }
 
     /// Build a minimal valid `model.gturbo/` directory in a temp dir and
@@ -44,12 +46,13 @@ import Metal
             let auxBytes = UInt64(rows * groups * MemoryLayout<UInt16>.stride)
             // int4 packs 2 values per byte
             let packedWeightBytes = UInt64(rows * cols / 2)
-            return ResidentSpec(name: name,
-                                dtype: 0,
-                                shape: [UInt32(rows), UInt32(cols), 0, 0],
-                                weightBytes: packedWeightBytes,
-                                scaleBytes: auxBytes,
-                                biasBytes: auxBytes)
+            return ResidentSpec(
+                name: name,
+                dtype: 0,
+                shape: [UInt32(rows), UInt32(cols), 0, 0],
+                weightBytes: packedWeightBytes,
+                scaleBytes: auxBytes,
+                biasBytes: auxBytes)
         }
 
         func int8AffineSpec(_ name: String, rows: Int, cols: Int) -> ResidentSpec {
@@ -58,12 +61,13 @@ import Metal
             // int8 affine still has scale/bias aux metadata
             let groups = (cols + Quantization.groupSize - 1) / Quantization.groupSize
             let auxBytes = UInt64(rows * groups * MemoryLayout<UInt16>.stride)
-            return ResidentSpec(name: name,
-                                dtype: 0,
-                                shape: [UInt32(rows), UInt32(cols), 0, 0],
-                                weightBytes: weightBytes,
-                                scaleBytes: auxBytes,
-                                biasBytes: auxBytes)
+            return ResidentSpec(
+                name: name,
+                dtype: 0,
+                shape: [UInt32(rows), UInt32(cols), 0, 0],
+                weightBytes: weightBytes,
+                scaleBytes: auxBytes,
+                biasBytes: auxBytes)
         }
 
         func appendU16(_ values: [UInt16], to bytes: inout [UInt8]) {
@@ -103,7 +107,8 @@ import Metal
             var tensors: [String: [String: Any]] = [:]
 
             func addProjection(prefix: String, rows: Int, cols: Int, role: Int) {
-                let projectionRows = toyExpertRows(rows: rows, cols: cols, expert: expert, role: role)
+                let projectionRows = toyExpertRows(
+                    rows: rows, cols: cols, expert: expert, role: role)
                 let packedOffset = bytes.count
                 appendProjection(rows: projectionRows, to: &bytes, component: "packed")
                 tensors[prefix] = [
@@ -133,157 +138,187 @@ import Metal
 
         var specs: [ResidentSpec] = [
             // Embedding is int4 affine: weight data is packed 2 values per byte.
-            ResidentSpec(name: "language_model.model.embed_tokens.weight",
-                         dtype: 0,
-                         shape: [UInt32(toy.vocabSize), UInt32(toy.hiddenSize), 0, 0],
-                         weightBytes: embedSize / 2,
-                         scaleBytes: UInt64(toy.vocabSize * (d / Quantization.groupSize) * MemoryLayout<UInt16>.stride),
-                         biasBytes: UInt64(toy.vocabSize * (d / Quantization.groupSize) * MemoryLayout<UInt16>.stride)),
+            ResidentSpec(
+                name: "language_model.model.embed_tokens.weight",
+                dtype: 0,
+                shape: [UInt32(toy.vocabSize), UInt32(toy.hiddenSize), 0, 0],
+                weightBytes: embedSize / 2,
+                scaleBytes: UInt64(
+                    toy.vocabSize * (d / Quantization.groupSize) * MemoryLayout<UInt16>.stride),
+                biasBytes: UInt64(
+                    toy.vocabSize * (d / Quantization.groupSize) * MemoryLayout<UInt16>.stride)),
             // Qwen carries a separate untied lm_head.
-            ResidentSpec(name: "language_model.lm_head.weight",
-                         dtype: 0,
-                         shape: [UInt32(toy.vocabSize), UInt32(toy.hiddenSize), 0, 0],
-                         weightBytes: embedSize / 2,
-                         scaleBytes: UInt64(toy.vocabSize * (d / Quantization.groupSize) * MemoryLayout<UInt16>.stride),
-                         biasBytes: UInt64(toy.vocabSize * (d / Quantization.groupSize) * MemoryLayout<UInt16>.stride)),
-            ResidentSpec(name: "language_model.model.norm.weight",
-                         dtype: 1,
-                         shape: [UInt32(toy.hiddenSize), 0, 0, 0],
-                         weightBytes: bf16DBytes,
-                         scaleBytes: 0,
-                         biasBytes: 0),
+            ResidentSpec(
+                name: "language_model.lm_head.weight",
+                dtype: 0,
+                shape: [UInt32(toy.vocabSize), UInt32(toy.hiddenSize), 0, 0],
+                weightBytes: embedSize / 2,
+                scaleBytes: UInt64(
+                    toy.vocabSize * (d / Quantization.groupSize) * MemoryLayout<UInt16>.stride),
+                biasBytes: UInt64(
+                    toy.vocabSize * (d / Quantization.groupSize) * MemoryLayout<UInt16>.stride)),
+            ResidentSpec(
+                name: "language_model.model.norm.weight",
+                dtype: 1,
+                shape: [UInt32(toy.hiddenSize), 0, 0, 0],
+                weightBytes: bf16DBytes,
+                scaleBytes: 0,
+                biasBytes: 0),
         ]
         for L in 0..<toy.numLayers {
             let prefix = "language_model.model.layers.\(L)"
-            specs.append(ResidentSpec(
-                name: "\(prefix).input_layernorm.weight",
-                dtype: 1,
-                shape: [UInt32(toy.hiddenSize), 0, 0, 0],
-                weightBytes: bf16DBytes,
-                scaleBytes: 0,
-                biasBytes: 0))
-            specs.append(ResidentSpec(
-                name: "\(prefix).post_attention_layernorm.weight",
-                dtype: 1,
-                shape: [UInt32(toy.hiddenSize), 0, 0, 0],
-                weightBytes: bf16DBytes,
-                scaleBytes: 0,
-                biasBytes: 0))
+            specs.append(
+                ResidentSpec(
+                    name: "\(prefix).input_layernorm.weight",
+                    dtype: 1,
+                    shape: [UInt32(toy.hiddenSize), 0, 0, 0],
+                    weightBytes: bf16DBytes,
+                    scaleBytes: 0,
+                    biasBytes: 0))
+            specs.append(
+                ResidentSpec(
+                    name: "\(prefix).post_attention_layernorm.weight",
+                    dtype: 1,
+                    shape: [UInt32(toy.hiddenSize), 0, 0, 0],
+                    weightBytes: bf16DBytes,
+                    scaleBytes: 0,
+                    biasBytes: 0))
             // Router (8-bit, matching quant.router) + the sigmoid-gated shared
             // expert gate (also at the router width, 8-bit on the target).
-            specs.append(int8AffineSpec(
-                "\(prefix).mlp.gate.weight",
-                rows: toy.numExperts,
-                cols: d))
-            specs.append(int8AffineSpec(
-                "\(prefix).mlp.shared_expert_gate.weight",
-                rows: 1,
-                cols: d))
-            specs.append(int4AffineSpec(
-                "\(prefix).mlp.shared_expert.gate_proj.weight",
-                rows: toy.intermediateSize,
-                cols: d))
-            specs.append(int4AffineSpec(
-                "\(prefix).mlp.shared_expert.up_proj.weight",
-                rows: toy.intermediateSize,
-                cols: d))
-            specs.append(int4AffineSpec(
-                "\(prefix).mlp.shared_expert.down_proj.weight",
-                rows: d,
-                cols: toy.intermediateSize))
+            specs.append(
+                int8AffineSpec(
+                    "\(prefix).mlp.gate.weight",
+                    rows: toy.numExperts,
+                    cols: d))
+            specs.append(
+                int8AffineSpec(
+                    "\(prefix).mlp.shared_expert_gate.weight",
+                    rows: 1,
+                    cols: d))
+            specs.append(
+                int4AffineSpec(
+                    "\(prefix).mlp.shared_expert.gate_proj.weight",
+                    rows: toy.intermediateSize,
+                    cols: d))
+            specs.append(
+                int4AffineSpec(
+                    "\(prefix).mlp.shared_expert.up_proj.weight",
+                    rows: toy.intermediateSize,
+                    cols: d))
+            specs.append(
+                int4AffineSpec(
+                    "\(prefix).mlp.shared_expert.down_proj.weight",
+                    rows: d,
+                    cols: toy.intermediateSize))
             if toy.layerIsLinear(L) {
                 // Gated-DeltaNet layers carry only the linear_attn bundle.
                 let la = toy.linearAttention
-                specs.append(int4AffineSpec(
-                    "\(prefix).linear_attn.in_proj_qkv.weight",
-                    rows: la.qkvDim,
-                    cols: d))
-                specs.append(int4AffineSpec(
-                    "\(prefix).linear_attn.in_proj_z.weight",
-                    rows: la.valueDim,
-                    cols: d))
-                specs.append(int4AffineSpec(
-                    "\(prefix).linear_attn.in_proj_a.weight",
-                    rows: la.numVHeads,
-                    cols: d))
-                specs.append(int4AffineSpec(
-                    "\(prefix).linear_attn.in_proj_b.weight",
-                    rows: la.numVHeads,
-                    cols: d))
-                specs.append(int4AffineSpec(
-                    "\(prefix).linear_attn.out_proj.weight",
-                    rows: d,
-                    cols: la.valueDim))
-                specs.append(ResidentSpec(
-                    name: "\(prefix).linear_attn.conv1d.weight",
-                    dtype: 1,
-                    shape: [UInt32(la.qkvDim), UInt32(la.convKernelSize), 1, 0],
-                    weightBytes: UInt64(la.qkvDim * la.convKernelSize * MemoryLayout<UInt16>.stride),
-                    scaleBytes: 0,
-                    biasBytes: 0))
-                specs.append(ResidentSpec(
-                    name: "\(prefix).linear_attn.A_log",
-                    dtype: 1,
-                    shape: [UInt32(la.numVHeads), 0, 0, 0],
-                    weightBytes: UInt64(la.numVHeads * MemoryLayout<UInt16>.stride),
-                    scaleBytes: 0,
-                    biasBytes: 0))
-                specs.append(ResidentSpec(
-                    name: "\(prefix).linear_attn.dt_bias",
-                    dtype: 1,
-                    shape: [UInt32(la.numVHeads), 0, 0, 0],
-                    weightBytes: UInt64(la.numVHeads * MemoryLayout<UInt16>.stride),
-                    scaleBytes: 0,
-                    biasBytes: 0))
-                specs.append(ResidentSpec(
-                    name: "\(prefix).linear_attn.norm.weight",
-                    dtype: 1,
-                    shape: [UInt32(la.valueHeadDim), 0, 0, 0],
-                    weightBytes: UInt64(la.valueHeadDim * MemoryLayout<UInt16>.stride),
-                    scaleBytes: 0,
-                    biasBytes: 0))
+                specs.append(
+                    int4AffineSpec(
+                        "\(prefix).linear_attn.in_proj_qkv.weight",
+                        rows: la.qkvDim,
+                        cols: d))
+                specs.append(
+                    int4AffineSpec(
+                        "\(prefix).linear_attn.in_proj_z.weight",
+                        rows: la.valueDim,
+                        cols: d))
+                specs.append(
+                    int4AffineSpec(
+                        "\(prefix).linear_attn.in_proj_a.weight",
+                        rows: la.numVHeads,
+                        cols: d))
+                specs.append(
+                    int4AffineSpec(
+                        "\(prefix).linear_attn.in_proj_b.weight",
+                        rows: la.numVHeads,
+                        cols: d))
+                specs.append(
+                    int4AffineSpec(
+                        "\(prefix).linear_attn.out_proj.weight",
+                        rows: d,
+                        cols: la.valueDim))
+                specs.append(
+                    ResidentSpec(
+                        name: "\(prefix).linear_attn.conv1d.weight",
+                        dtype: 1,
+                        shape: [UInt32(la.qkvDim), UInt32(la.convKernelSize), 1, 0],
+                        weightBytes: UInt64(
+                            la.qkvDim * la.convKernelSize * MemoryLayout<UInt16>.stride),
+                        scaleBytes: 0,
+                        biasBytes: 0))
+                specs.append(
+                    ResidentSpec(
+                        name: "\(prefix).linear_attn.A_log",
+                        dtype: 1,
+                        shape: [UInt32(la.numVHeads), 0, 0, 0],
+                        weightBytes: UInt64(la.numVHeads * MemoryLayout<UInt16>.stride),
+                        scaleBytes: 0,
+                        biasBytes: 0))
+                specs.append(
+                    ResidentSpec(
+                        name: "\(prefix).linear_attn.dt_bias",
+                        dtype: 1,
+                        shape: [UInt32(la.numVHeads), 0, 0, 0],
+                        weightBytes: UInt64(la.numVHeads * MemoryLayout<UInt16>.stride),
+                        scaleBytes: 0,
+                        biasBytes: 0))
+                specs.append(
+                    ResidentSpec(
+                        name: "\(prefix).linear_attn.norm.weight",
+                        dtype: 1,
+                        shape: [UInt32(la.valueHeadDim), 0, 0, 0],
+                        weightBytes: UInt64(la.valueHeadDim * MemoryLayout<UInt16>.stride),
+                        scaleBytes: 0,
+                        biasBytes: 0))
             } else {
                 // Full-attention layer: gate-packed q_proj (2x rows) and
                 // per-head q/k norms.
                 let queryDim = 2 * toy.numHeads * toy.fullHeadDim
                 let kvDim = toy.numFullKVHeads * toy.fullHeadDim
-                specs.append(ResidentSpec(
-                    name: "\(prefix).self_attn.q_norm.weight",
-                    dtype: 1,
-                    shape: [UInt32(toy.fullHeadDim), 0, 0, 0],
-                    weightBytes: UInt64(toy.fullHeadDim * MemoryLayout<UInt16>.stride),
-                    scaleBytes: 0,
-                    biasBytes: 0))
-                specs.append(ResidentSpec(
-                    name: "\(prefix).self_attn.k_norm.weight",
-                    dtype: 1,
-                    shape: [UInt32(toy.fullHeadDim), 0, 0, 0],
-                    weightBytes: UInt64(toy.fullHeadDim * MemoryLayout<UInt16>.stride),
-                    scaleBytes: 0,
-                    biasBytes: 0))
-                specs.append(int4AffineSpec(
-                    "\(prefix).self_attn.q_proj.weight",
-                    rows: queryDim,
-                    cols: d))
-                specs.append(int4AffineSpec(
-                    "\(prefix).self_attn.k_proj.weight",
-                    rows: kvDim,
-                    cols: d))
-                specs.append(int4AffineSpec(
-                    "\(prefix).self_attn.v_proj.weight",
-                    rows: kvDim,
-                    cols: d))
-                specs.append(int4AffineSpec(
-                    "\(prefix).self_attn.o_proj.weight",
-                    rows: d,
-                    cols: toy.numHeads * toy.fullHeadDim))
+                specs.append(
+                    ResidentSpec(
+                        name: "\(prefix).self_attn.q_norm.weight",
+                        dtype: 1,
+                        shape: [UInt32(toy.fullHeadDim), 0, 0, 0],
+                        weightBytes: UInt64(toy.fullHeadDim * MemoryLayout<UInt16>.stride),
+                        scaleBytes: 0,
+                        biasBytes: 0))
+                specs.append(
+                    ResidentSpec(
+                        name: "\(prefix).self_attn.k_norm.weight",
+                        dtype: 1,
+                        shape: [UInt32(toy.fullHeadDim), 0, 0, 0],
+                        weightBytes: UInt64(toy.fullHeadDim * MemoryLayout<UInt16>.stride),
+                        scaleBytes: 0,
+                        biasBytes: 0))
+                specs.append(
+                    int4AffineSpec(
+                        "\(prefix).self_attn.q_proj.weight",
+                        rows: queryDim,
+                        cols: d))
+                specs.append(
+                    int4AffineSpec(
+                        "\(prefix).self_attn.k_proj.weight",
+                        rows: kvDim,
+                        cols: d))
+                specs.append(
+                    int4AffineSpec(
+                        "\(prefix).self_attn.v_proj.weight",
+                        rows: kvDim,
+                        cols: d))
+                specs.append(
+                    int4AffineSpec(
+                        "\(prefix).self_attn.o_proj.weight",
+                        rows: d,
+                        cols: toy.numHeads * toy.fullHeadDim))
             }
         }
 
         let names = specs.map(\.name)
-        let stringTable = names.joined().data(using: .utf8)!
+        let stringTable = Data(names.joined().utf8)
         let headerBytes = GTurboBinary.indexHeaderBytes
-        let entryBytes  = GTurboBinary.indexEntryBytes
+        let entryBytes = GTurboBinary.indexEntryBytes
         let entriesBase = headerBytes
         let stringTableBase = entriesBase + names.count * entryBytes
         var nameAbsOffsets: [UInt32] = []
@@ -295,7 +330,8 @@ import Metal
         let indexBytes = UInt64(stringTableBase + stringTable.count)
         // Pad the index to 16 KB alignment (GTurbo v1 format requirement).
         let alignmentBytes: UInt64 = 16_384
-        let alignedIndexBytes = ((indexBytes + alignmentBytes - 1) / alignmentBytes)
+        let alignedIndexBytes =
+            ((indexBytes + alignmentBytes - 1) / alignmentBytes)
             * alignmentBytes
 
         var entries: [ResidentEntry] = []
@@ -305,46 +341,54 @@ import Metal
             let weightOffset = payloadCursor
             let scaleOffset = spec.scaleBytes > 0 ? weightOffset + spec.weightBytes : 0
             let biasOffset = spec.biasBytes > 0 ? scaleOffset + spec.scaleBytes : 0
-            entries.append(ResidentEntry(
-                name: spec.name,
-                dtype: spec.dtype,
-                logicalShape4: spec.shape,
-                fileOffset: weightOffset,
-                sizeBytes: spec.weightBytes,
-                scaleOffset: scaleOffset,
-                scaleSize: spec.scaleBytes,
-                biasOffset: biasOffset,
-                biasSize: spec.biasBytes,
-                quantSpec: nil,
-                sourceWeight: Self.dummySource(spec.name),
-                sourceScales: nil,
-                sourceBiases: nil))
+            entries.append(
+                ResidentEntry(
+                    name: spec.name,
+                    dtype: spec.dtype,
+                    logicalShape4: spec.shape,
+                    fileOffset: weightOffset,
+                    sizeBytes: spec.weightBytes,
+                    scaleOffset: scaleOffset,
+                    scaleSize: spec.scaleBytes,
+                    biasOffset: biasOffset,
+                    biasSize: spec.biasBytes,
+                    quantSpec: nil,
+                    sourceWeight: Self.dummySource(spec.name),
+                    sourceScales: nil,
+                    sourceBiases: nil))
             payloadCursor += spec.weightBytes + spec.scaleBytes + spec.biasBytes
         }
         let residentSize = payloadCursor - alignedIndexBytes
 
         let totalBytes = Int(alignedIndexBytes + residentSize)
         var fileBuf = [UInt8](repeating: 0, count: totalBytes)
-        fileBuf.withUnsafeMutableBytes { raw in
-            let base = raw.baseAddress!
-            GTurboBinary.writeIndexHeader(into: base,
-                                          indexSize: alignedIndexBytes,
-                                          residentSize: residentSize,
-                                          entryCount: UInt64(entries.count))
+        try fileBuf.withUnsafeMutableBytes { raw in
+            let base = try #require(raw.baseAddress)
+            GTurboBinary.writeIndexHeader(
+                into: base,
+                indexSize: alignedIndexBytes,
+                residentSize: residentSize,
+                entryCount: UInt64(entries.count))
             for (i, e) in entries.enumerated() {
                 let dst = base.advanced(by: entriesBase + i * entryBytes)
-                GTurboBinary.writeIndexEntry(into: dst, entry: e,
-                                             nameOffset: nameAbsOffsets[i])
+                GTurboBinary.writeIndexEntry(
+                    into: dst, entry: e,
+                    nameOffset: nameAbsOffsets[i])
             }
-            _ = stringTable.withUnsafeBytes { sb in
-                memcpy(base.advanced(by: stringTableBase), sb.baseAddress!, stringTable.count)
+            stringTable.withUnsafeBytes { sb in
+                // An empty table has nothing to copy; the source pointer is only
+                // meaningful when there is a byte to read.
+                if let source = sb.baseAddress {
+                    memcpy(base.advanced(by: stringTableBase), source, stringTable.count)
+                }
             }
             // Recognizable resident payload pattern in the final-norm region
             // only; other payload bytes stay zero except quantized scale
             // regions.
-            let normEntry = entries.first {
-                $0.name == "language_model.model.norm.weight"
-            }!
+            let normEntry = try #require(
+                entries.first {
+                    $0.name == "language_model.model.norm.weight"
+                })
             let normStart = Int(normEntry.fileOffset)
             for i in 0..<Int(normEntry.sizeBytes) {
                 base.advanced(by: normStart + i)
@@ -360,7 +404,8 @@ import Metal
                     }
                 }
             }
-            for entry in entries where entry.dtype == 1 && entry.name != "language_model.model.norm.weight" {
+            for entry in entries
+            where entry.dtype == 1 && entry.name != "language_model.model.norm.weight" {
                 let dst = base.advanced(by: Int(entry.fileOffset))
                     .assumingMemoryBound(to: UInt16.self)
                 for i in 0..<(Int(entry.sizeBytes) / MemoryLayout<UInt16>.stride) {
@@ -381,8 +426,9 @@ import Metal
             for E in 0..<toy.numExperts {
                 let blob = toyExpertBlob(expert: E).bytes
                 let baseB = E * Int(expertStride)
-                precondition(blob.count <= Int(expertStride),
-                             "toy expert blob exceeds stride")
+                precondition(
+                    blob.count <= Int(expertStride),
+                    "toy expert blob exceeds stride")
                 for (i, byte) in blob.enumerated() {
                     payload[baseB + i] = byte
                 }
@@ -412,7 +458,7 @@ import Metal
                 experts.append([
                     "expert": E,
                     "offset": UInt64(E) * expertStride,
-                    "size":   expertStride,
+                    "size": expertStride,
                     "tensors": blob.tensors,
                 ])
             }
@@ -490,7 +536,8 @@ import Metal
             "numLayers": toy.numLayers,
             "expertStride": expertStride,
         ]
-        let manifestData = try JSONSerialization.data(withJSONObject: manifestRoot,
+        let manifestData = try JSONSerialization.data(
+            withJSONObject: manifestRoot,
             options: [.sortedKeys, .withoutEscapingSlashes])
         try manifestData.write(to: dir.appendingPathComponent("manifest.json"))
         return dir
@@ -500,8 +547,9 @@ import Metal
         let manifest = try ManifestReader.load(directoryURL: dir, expecting: .qwenToy())
         let manifestURL = dir.appendingPathComponent("manifest.json")
         let manifestSha = try Sha256Verifier.hashFile(at: manifestURL)
-        let manifestSize = try FileManager.default
-            .attributesOfItem(atPath: manifestURL.path)[.size] as! NSNumber
+        let manifestSize = try #require(
+            try FileManager.default
+                .attributesOfItem(atPath: manifestURL.path)[.size] as? NSNumber)
         var receiptFiles = manifest.files.mapValues {
             VerifiedInstallReceipt.FileEntry(size: $0.size, sha256: $0.sha256)
         }
@@ -522,14 +570,18 @@ import Metal
         try data.write(to: dir.appendingPathComponent(VerifiedInstallReceiptReader.fileName))
     }
 
-    static func mutateReceipt(directoryURL dir: URL,
-                                      transform: (inout [String: Any]) throws -> Void) throws {
+    static func mutateReceipt(
+        directoryURL dir: URL,
+        transform: (inout [String: Any]) throws -> Void
+    ) throws {
         let receiptURL = dir.appendingPathComponent(VerifiedInstallReceiptReader.fileName)
-        var root = try JSONSerialization.jsonObject(
-            with: Data(contentsOf: receiptURL)) as! [String: Any]
+        var root = try #require(
+            try JSONSerialization.jsonObject(
+                with: Data(contentsOf: receiptURL)) as? [String: Any])
         try transform(&root)
-        let data = try JSONSerialization.data(withJSONObject: root,
-                                              options: [.sortedKeys, .withoutEscapingSlashes])
+        let data = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.sortedKeys, .withoutEscapingSlashes])
         try data.write(to: receiptURL)
     }
 

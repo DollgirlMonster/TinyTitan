@@ -1,5 +1,5 @@
-import Foundation
 import ContinuityCore
+import Foundation
 
 /// The durable memory store, backed by the in-process continuity engine.
 ///
@@ -37,10 +37,13 @@ public actor ContinuityStore: MemoryStore {
     public func get(_ key: MemoryKey, in scope: MemoryScope) async throws -> MemoryRecord? {
         let taskID = try await task(for: scope)
         let address = Self.address(for: key)
-        guard let item = await engine.recall(taskID: taskID,
-                                             namespace: address.namespace,
-                                             key: address.key),
-              item.status.isEligibleForContext else { return nil }
+        guard
+            let item = await engine.recall(
+                taskID: taskID,
+                namespace: address.namespace,
+                key: address.key),
+            item.status.isEligibleForContext
+        else { return nil }
         await loadLabels(taskID: taskID)
         return try record(from: item)
     }
@@ -57,23 +60,25 @@ public actor ContinuityStore: MemoryStore {
         let sessionID = normalized.sourceSession.flatMap { sessionIDs[$0] }
         do {
             if let sessionID {
-                try await engine.remember(sessionID: sessionID,
-                                          namespace: address.namespace,
-                                          key: address.key,
-                                          value: normalized.value,
-                                          author: Self.author(of: normalized),
-                                          importance: normalized.importance,
-                                          confidence: normalized.confidence,
-                                          tags: normalized.tags)
+                try await engine.remember(
+                    sessionID: sessionID,
+                    namespace: address.namespace,
+                    key: address.key,
+                    value: normalized.value,
+                    author: Self.author(of: normalized),
+                    importance: normalized.importance,
+                    confidence: normalized.confidence,
+                    tags: normalized.tags)
             } else {
-                try await engine.remember(taskID: taskID,
-                                          namespace: address.namespace,
-                                          key: address.key,
-                                          value: normalized.value,
-                                          author: Self.author(of: normalized),
-                                          importance: normalized.importance,
-                                          confidence: normalized.confidence,
-                                          tags: normalized.tags)
+                try await engine.remember(
+                    taskID: taskID,
+                    namespace: address.namespace,
+                    key: address.key,
+                    value: normalized.value,
+                    author: Self.author(of: normalized),
+                    importance: normalized.importance,
+                    confidence: normalized.confidence,
+                    tags: normalized.tags)
             }
         } catch let error as ContinuityError {
             throw Self.translate(error)
@@ -84,16 +89,20 @@ public actor ContinuityStore: MemoryStore {
     public func delete(_ key: MemoryKey, in scope: MemoryScope) async throws -> Bool {
         let taskID = try await task(for: scope)
         let address = Self.address(for: key)
-        guard let existing = await engine.recall(taskID: taskID,
-                                                 namespace: address.namespace,
-                                                 key: address.key),
-              existing.status.isEligibleForContext else { return false }
+        guard
+            let existing = await engine.recall(
+                taskID: taskID,
+                namespace: address.namespace,
+                key: address.key),
+            existing.status.isEligibleForContext
+        else { return false }
         // Archived, not destroyed. A model that deletes a fact in one session
         // and contradicts itself in the next leaves a chain that explains it.
         do {
-            try await engine.archive(taskID: taskID,
-                                     namespace: address.namespace,
-                                     key: address.key)
+            try await engine.archive(
+                taskID: taskID,
+                namespace: address.namespace,
+                key: address.key)
         } catch ContinuityError.notPersisted(let detail) {
             // Retired in RAM only. Answering "deleted" would bring the fact
             // back after a restart with the model believing it gone.
@@ -106,7 +115,8 @@ public actor ContinuityStore: MemoryStore {
         try await get(key, in: scope) != nil
     }
 
-    public func list(prefix: String, limit: Int, in scope: MemoryScope) async throws -> [MemoryKey] {
+    public func list(prefix: String, limit: Int, in scope: MemoryScope) async throws -> [MemoryKey]
+    {
         let taskID = try await task(for: scope)
         let bound = max(0, min(limit, limits.maximumListResults))
         // The prefix is pushed into the engine as a namespace filter, so a
@@ -114,11 +124,13 @@ public actor ContinuityStore: MemoryStore {
         // last segment cannot be pushed down, because it is a key prefix
         // rather than a namespace, and that residue is filtered here.
         let plan = Self.pushDown(prefix: prefix)
-        var query = ContinuityCore.MemoryQuery(namespacePrefix: plan.namespace,
-                                               order: .recency)
+        var query = ContinuityCore.MemoryQuery(
+            namespacePrefix: plan.namespace,
+            order: .recency)
         if plan.isExact { query.limit = bound }
         let items = await engine.recall(taskID: taskID, query)
-        return items
+        return
+            items
             .filter { plan.matches(Self.keyText(for: $0)) }
             .prefix(bound)
             .compactMap { try? MemoryKey(validating: Self.keyText(for: $0)) }
@@ -130,12 +142,13 @@ public actor ContinuityStore: MemoryStore {
         // is the memory layer's own policy, shared with the reference store so
         // the two cannot drift.
         let plan = Self.pushDown(prefix: query.prefix ?? "")
-        let engineQuery = ContinuityCore.MemoryQuery(namespacePrefix: plan.namespace,
-                                                     text: query.text,
-                                                     tags: query.tags,
-                                                     minimumImportance: query.minimumImportance,
-                                                     limit: maximumScan,
-                                                     order: .recency)
+        let engineQuery = ContinuityCore.MemoryQuery(
+            namespacePrefix: plan.namespace,
+            text: query.text,
+            tags: query.tags,
+            minimumImportance: query.minimumImportance,
+            limit: maximumScan,
+            order: .recency)
         let items = await engine.recall(taskID: taskID, engineQuery)
             .filter { plan.matches(Self.keyText(for: $0)) }
         await loadLabels(taskID: taskID)
@@ -155,7 +168,8 @@ public actor ContinuityStore: MemoryStore {
 
     @discardableResult
     public func append(_ text: String, to key: MemoryKey, in scope: MemoryScope) async throws
-        -> MemoryRecord {
+        -> MemoryRecord
+    {
         let existing = try await get(key, in: scope)
         let combined = existing.map { $0.value.isEmpty ? text : $0.value + "\n" + text } ?? text
         try limits.validate(value: combined)
@@ -167,7 +181,8 @@ public actor ContinuityStore: MemoryStore {
     }
 
     public func sessionInit(_ session: MemorySession, in scope: MemoryScope) async throws
-        -> MemoryBootstrap {
+        -> MemoryBootstrap
+    {
         let taskID = try await task(for: scope)
         // Session identity is derived from the conversation, so the same id
         // can arrive again after a restart or when a client replays a
@@ -176,10 +191,11 @@ public actor ContinuityStore: MemoryStore {
         if let existing = await engine.session(externalID: session.id, taskID: taskID) {
             sessionIDs[session.id] = existing.id
         } else {
-            let continuity = try await engine.beginSession(taskID: taskID,
-                                                           model: session.modelID,
-                                                           externalID: session.id,
-                                                           tag: session.tag)
+            let continuity = try await engine.beginSession(
+                taskID: taskID,
+                model: session.modelID,
+                externalID: session.id,
+                tag: session.tag)
             sessionIDs[session.id] = continuity.id
         }
         // Ranked by what is being asked, not by a static importance. A flat
@@ -192,9 +208,10 @@ public actor ContinuityStore: MemoryStore {
         let candidates = max(limits.bootstrapRecords * 8, 200)
         let items = await engine.recall(
             taskID: taskID,
-            ContinuityCore.MemoryQuery(statuses: [.active, .disputed],
-                                       limit: candidates,
-                                       order: .relevance))
+            ContinuityCore.MemoryQuery(
+                statuses: [.active, .disputed],
+                limit: candidates,
+                order: .relevance))
         await loadLabels(taskID: taskID)
         guard let task = await engine.task(taskID) else { return .empty }
         var index: [String: ContinuityCore.MemoryItem] = [:]
@@ -203,9 +220,10 @@ public actor ContinuityStore: MemoryStore {
             task: task,
             items: items,
             index: index,
-            budget: ContextBudget(maxTokens: max(64, limits.bootstrapBytes / 4),
-                                  priorityNamespaces: Self.bootstrapPriority,
-                                  recentTurnCount: 0),
+            budget: ContextBudget(
+                maxTokens: max(64, limits.bootstrapBytes / 4),
+                priorityNamespaces: Self.bootstrapPriority,
+                recentTurnCount: 0),
             focus: session.focus)
         let ordered: [ContinuityCore.MemoryItem]
         if let snapshot = try? DefaultContextAssembler().assemble(request) {
@@ -215,9 +233,11 @@ public actor ContinuityStore: MemoryStore {
             ordered = items
         }
         let records = ordered.compactMap { try? record(from: $0) }
-        return MemoryBootstrap.build(ordered: records, limits: limits,
-                                     recent: recentlyChanged(among: items,
-                                                             excluding: sessionIDs[session.id]))
+        return MemoryBootstrap.build(
+            ordered: records, limits: limits,
+            recent: recentlyChanged(
+                among: items,
+                excluding: sessionIDs[session.id]))
     }
 
     /// The namespaces a session cannot do without, first. Rules and
@@ -233,9 +253,12 @@ public actor ContinuityStore: MemoryStore {
     ]
 
     /// What the most recent other session wrote, newest first, bounded.
-    private func recentlyChanged(among items: [ContinuityCore.MemoryItem],
-                                 excluding current: UUID?) -> [MemoryRecord] {
-        let newest = items
+    private func recentlyChanged(
+        among items: [ContinuityCore.MemoryItem],
+        excluding current: UUID?
+    ) -> [MemoryRecord] {
+        let newest =
+            items
             .filter { $0.provenance?.sessionID != nil && $0.provenance?.sessionID != current }
             .sorted { $0.updatedAt > $1.updatedAt }
         guard let last = newest.first?.provenance?.sessionID else { return [] }
@@ -276,8 +299,10 @@ public actor ContinuityStore: MemoryStore {
     /// it already had is almost always a re-derivation. A deliberate tool
     /// call is not the same act, and flagging it would put a dispute marker
     /// in front of the next session for a write the model meant to make.
-    public func set(_ record: MemoryRecord, in scope: MemoryScope,
-                    guarding: Bool) async throws -> GuardedWrite {
+    public func set(
+        _ record: MemoryRecord, in scope: MemoryScope,
+        guarding: Bool
+    ) async throws -> GuardedWrite {
         try await set(record, in: scope, guarding: guarding, flaggingReversions: false)
     }
 
@@ -285,66 +310,86 @@ public actor ContinuityStore: MemoryStore {
     /// established is the same failure as overwriting it, and the same
     /// answer: the fact stays, the disagreement is recorded, and the next
     /// session sees both.
-    public func delete(_ key: MemoryKey, in scope: MemoryScope,
-                       guarding: Bool) async throws -> GuardedDelete {
+    public func delete(
+        _ key: MemoryKey, in scope: MemoryScope,
+        guarding: Bool
+    ) async throws -> GuardedDelete {
         guard guarding else {
             return try await delete(key, in: scope) ? .deleted : .absent
         }
         let taskID = try await task(for: scope)
         let address = Self.address(for: key)
-        let active = await engine.recall(taskID: taskID,
-                                         namespace: address.namespace,
-                                         key: address.key)
+        let active = await engine.recall(
+            taskID: taskID,
+            namespace: address.namespace,
+            key: address.key)
         if let active, active.provenance?.author == .user,
-           active.status.isEligibleForContext {
-            _ = try? await engine.dispute(taskID: taskID,
-                                          namespace: address.namespace,
-                                          key: address.key)
+            active.status.isEligibleForContext
+        {
+            _ = try? await engine.dispute(
+                taskID: taskID,
+                namespace: address.namespace,
+                key: address.key)
             return .heldByGuard
         }
         return try await delete(key, in: scope) ? .deleted : .absent
     }
 
-    public func set(_ record: MemoryRecord, in scope: MemoryScope,
-                    guarding: Bool,
-                    flaggingReversions: Bool) async throws -> GuardedWrite {
+    public func set(
+        _ record: MemoryRecord, in scope: MemoryScope,
+        guarding: Bool,
+        flaggingReversions: Bool
+    ) async throws -> GuardedWrite {
         guard guarding, !record.isUserAsserted else {
-            let reverted = try await set(record, in: scope,
-                                         flaggingReversions: flaggingReversions)
+            let reverted = try await set(
+                record, in: scope,
+                flaggingReversions: flaggingReversions)
             return reverted ? .reverted : .stored
         }
         let taskID = try await task(for: scope)
         let address = Self.address(for: Self.normalize(record).key)
-        let active = await engine.recall(taskID: taskID,
-                                         namespace: address.namespace,
-                                         key: address.key)
+        let active = await engine.recall(
+            taskID: taskID,
+            namespace: address.namespace,
+            key: address.key)
         if let active, active.provenance?.author == .user, active.status != .archived,
-           Self.fold(active.value) != Self.fold(record.value) {
-            _ = try? await engine.dispute(taskID: taskID,
-                                          namespace: address.namespace,
-                                          key: address.key)
+            Self.fold(active.value) != Self.fold(record.value)
+        {
+            _ = try? await engine.dispute(
+                taskID: taskID,
+                namespace: address.namespace,
+                key: address.key)
             return .heldByGuard(existing: active.value)
         }
-        let reverted = try await set(record, in: scope,
-                                     flaggingReversions: flaggingReversions)
+        let reverted = try await set(
+            record, in: scope,
+            flaggingReversions: flaggingReversions)
         return reverted ? .reverted : .stored
     }
 
-    public func set(_ record: MemoryRecord, in scope: MemoryScope,
-                    flaggingReversions: Bool) async throws -> Bool {
-        guard flaggingReversions else { try await set(record, in: scope); return false }
+    public func set(
+        _ record: MemoryRecord, in scope: MemoryScope,
+        flaggingReversions: Bool
+    ) async throws -> Bool {
+        guard flaggingReversions else {
+            try await set(record, in: scope)
+            return false
+        }
         let taskID = try await task(for: scope)
         let address = Self.address(for: Self.normalize(record).key)
-        let history = await engine.history(taskID: taskID, namespace: address.namespace,
-                                           key: address.key)
+        let history = await engine.history(
+            taskID: taskID, namespace: address.namespace,
+            key: address.key)
         let incoming = Self.fold(record.value)
         let current = history.last.map { Self.fold($0.value) }
-        let reverts = current != nil && current != incoming
+        let reverts =
+            current != nil && current != incoming
             && history.dropLast().contains { Self.fold($0.value) == incoming }
         try await set(record, in: scope)
         if reverts {
-            _ = try? await engine.dispute(taskID: taskID, namespace: address.namespace,
-                                          key: address.key)
+            _ = try? await engine.dispute(
+                taskID: taskID, namespace: address.namespace,
+                key: address.key)
         }
         return reverts
     }
@@ -376,15 +421,16 @@ public actor ContinuityStore: MemoryStore {
 
     private func record(from item: ContinuityCore.MemoryItem) throws -> MemoryRecord {
         let key = try MemoryKey(validating: Self.keyText(for: item))
-        var record = MemoryRecord(key: key,
-                                  value: item.value,
-                                  importance: item.importance,
-                                  confidence: item.confidence,
-                                  tags: item.tags,
-                                  sourceSession: item.provenance?.sessionID
-                                      .flatMap { sessionLabels[$0] },
-                                  createdAt: item.createdAt,
-                                  updatedAt: item.updatedAt)
+        var record = MemoryRecord(
+            key: key,
+            value: item.value,
+            importance: item.importance,
+            confidence: item.confidence,
+            tags: item.tags,
+            sourceSession: item.provenance?.sessionID
+                .flatMap { sessionLabels[$0] },
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt)
         record.isDisputed = item.status == .disputed
         // Authority has to survive a read. Without this, every
         // read-modify-write -- `append` is one -- rewrites a fact the person
@@ -436,8 +482,9 @@ public actor ContinuityStore: MemoryStore {
         guard !segments.isEmpty else { return PrefixPlan(namespace: nil, residual: "") }
         if normalized.hasSuffix("/") {
             // Whole segments: "decisions/" is exactly the namespace k.decisions.
-            return PrefixPlan(namespace: (["k"] + segments).joined(separator: "."),
-                              residual: normalized)
+            return PrefixPlan(
+                namespace: (["k"] + segments).joined(separator: "."),
+                residual: normalized)
         }
         guard segments.count >= 2 else {
             // One partial segment. It could be a namespace or a bare key, so
@@ -445,19 +492,21 @@ public actor ContinuityStore: MemoryStore {
             return PrefixPlan(namespace: nil, residual: normalized)
         }
         let leading = segments.dropLast()
-        return PrefixPlan(namespace: (["k"] + leading).joined(separator: "."),
-                          residual: normalized)
+        return PrefixPlan(
+            namespace: (["k"] + leading).joined(separator: "."),
+            residual: normalized)
     }
 
     private func task(for scope: MemoryScope) async throws -> UUID {
         if let existing = taskIDs[scope] { return existing }
         let id = Self.taskIdentifier(for: scope)
         if await engine.task(id) == nil {
-            _ = try await engine.createTask(title: "\(scope.workspace)",
-                                            objective: "Durable memory for "
-                                                + "\(scope.namespace)/\(scope.user)/"
-                                                + "\(scope.workspace)",
-                                            id: id)
+            _ = try await engine.createTask(
+                title: "\(scope.workspace)",
+                objective: "Durable memory for "
+                    + "\(scope.namespace)/\(scope.user)/"
+                    + "\(scope.workspace)",
+                id: id)
         }
         taskIDs[scope] = id
         return id
@@ -495,10 +544,11 @@ public actor ContinuityStore: MemoryStore {
     /// idempotent, so a key handed back to the model resolves to the same
     /// address when it comes round again.
     static func normalizeKeyText(_ raw: String) -> String {
-        String(raw.lowercased().map { character in
-            if character == "." { return "-" }
-            return character
-        })
+        String(
+            raw.lowercased().map { character in
+                if character == "." { return "-" }
+                return character
+            })
     }
 
     static func normalize(_ record: MemoryRecord) -> MemoryRecord {
@@ -531,10 +581,13 @@ public actor ContinuityStore: MemoryStore {
         }
         bytes[6] = (bytes[6] & 0x0F) | 0x40
         bytes[8] = (bytes[8] & 0x3F) | 0x80
-        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3],
-                           bytes[4], bytes[5], bytes[6], bytes[7],
-                           bytes[8], bytes[9], bytes[10], bytes[11],
-                           bytes[12], bytes[13], bytes[14], bytes[15]))
+        return UUID(
+            uuid: (
+                bytes[0], bytes[1], bytes[2], bytes[3],
+                bytes[4], bytes[5], bytes[6], bytes[7],
+                bytes[8], bytes[9], bytes[10], bytes[11],
+                bytes[12], bytes[13], bytes[14], bytes[15]
+            ))
     }
 
     static func translate(_ error: ContinuityError) -> MemoryError {

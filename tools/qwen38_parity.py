@@ -7,6 +7,7 @@ quantized weights, so any disagreement is in the forward pass.
 
 Usage:  python3 tools/qwen38_parity.py <model-dir> <dump-dir> <token-id>
 """
+
 import sys
 from pathlib import Path
 
@@ -53,8 +54,7 @@ def report(label: str, mine: np.ndarray, reference: np.ndarray) -> bool:
     # error; a wired-up-wrong stage misses by whole orders of magnitude, so the
     # gap between pass and fail is not a close call.
     ok = rel < 0.05 and cos > 0.99
-    print(f"  {label:24s} {'ok  ' if ok else 'FAIL'} "
-          f"max_rel={rel:.4f} cos={cos:.5f}")
+    print(f"  {label:24s} {'ok  ' if ok else 'FAIL'} max_rel={rel:.4f} cos={cos:.5f}")
     return ok
 
 
@@ -86,8 +86,7 @@ def main():
     inject = 2.0 * sigmoid((inj_w @ xn) / HC)
     block_out = load(dump_dir, "L0_attn_out")
     combined = pre.reshape(HC, D) + block_out[None, :] * inject[:, None]
-    report("L0 attn write gate", load(dump_dir, "L0_hidden_post_attn"),
-           combined.reshape(-1))
+    report("L0 attn write gate", load(dump_dir, "L0_hidden_post_attn"), combined.reshape(-1))
 
     # --- layer 0 mlp read gate -------------------------------------------
     post = load(dump_dir, "L0_hidden_post_attn")
@@ -104,14 +103,19 @@ def main():
     # Position 0 is the whole point of checking here: the conv history and the
     # recurrent state are both zero, so the block reduces to closed-form
     # algebra and a mismatch cannot be blamed on carried state.
-    report("L0 GDN block", load(dump_dir, "L0_attn_out"),
-           gdn_first_token(w, P + "layers.0.linear_attn.",
-                           load(dump_dir, "L0_attn_in")))
+    report(
+        "L0 GDN block",
+        load(dump_dir, "L0_attn_out"),
+        gdn_first_token(w, P + "layers.0.linear_attn.", load(dump_dir, "L0_attn_in")),
+    )
 
     # --- layer 0 MoE block ------------------------------------------------
     experts = PackedExperts(model_dir)
-    report("L0 MoE block", load(dump_dir, "L0_mlp_out"),
-           moe_block(w, experts, 0, load(dump_dir, "L0_mlp_in")))
+    report(
+        "L0 MoE block",
+        load(dump_dir, "L0_mlp_out"),
+        moe_block(w, experts, 0, load(dump_dir, "L0_mlp_in")),
+    )
 
     # --- layer 0 mlp write gate, which is what layer 1 starts from --------
     inj_m = w.get(P + "layers.0.mlp_hyper_connection.block_inject_weight.weight")
@@ -124,18 +128,22 @@ def main():
     # The block's own output is never resident on its own -- the next thing
     # that touches it is the attention read gate -- so the check runs through
     # that gate, using the residual the runner actually had.
-    after_ple = ple_block(w, 1, load(dump_dir, "L1_entry"),
-                          load(dump_dir, "ple_embedding"))
-    report("L1 PLE + read gate", load(dump_dir, "L1_attn_in"),
-           hc_read(w, P + "layers.1.attn_hyper_connection.", after_ple))
+    after_ple = ple_block(w, 1, load(dump_dir, "L1_entry"), load(dump_dir, "ple_embedding"))
+    report(
+        "L1 PLE + read gate",
+        load(dump_dir, "L1_attn_in"),
+        hc_read(w, P + "layers.1.attn_hyper_connection.", after_ple),
+    )
 
     # --- layer 3 QSA block, at position 0 ---------------------------------
     # One key: the softmax is a no-op, so this isolates the projections, the
     # q||gate interleave and the per-head sigmoid gate from the mask and the
     # indexer, which only matter once the context is longer.
-    report("L3 QSA block", load(dump_dir, "L3_attn_out"),
-           qsa_first_token(w, P + "layers.3.self_attn.",
-                           load(dump_dir, "L3_attn_in")))
+    report(
+        "L3 QSA block",
+        load(dump_dir, "L3_attn_out"),
+        qsa_first_token(w, P + "layers.3.self_attn.", load(dump_dir, "L3_attn_in")),
+    )
 
 
 HK, HV, DK, DV, CONV_K = 16, 48, 128, 128, 4
@@ -155,11 +163,11 @@ def gdn_first_token(w, prefix: str, x: np.ndarray) -> np.ndarray:
 
     key_dim = HK * DK
     q = conv_out[:key_dim].reshape(HK, DK)
-    k = conv_out[key_dim:2 * key_dim].reshape(HK, DK)
-    v = conv_out[2 * key_dim:].reshape(HV, DV)
+    k = conv_out[key_dim : 2 * key_dim].reshape(HK, DK)
+    v = conv_out[2 * key_dim :].reshape(HV, DV)
 
     def l2(t):
-        return t / np.sqrt((t ** 2).sum(axis=-1, keepdims=True) + EPS)
+        return t / np.sqrt((t**2).sum(axis=-1, keepdims=True) + EPS)
 
     q, k = l2(q), l2(k)
     # 16 key heads serve 48 value heads, three value heads to each.
@@ -167,8 +175,10 @@ def gdn_first_token(w, prefix: str, x: np.ndarray) -> np.ndarray:
     k = np.repeat(k, HV // HK, axis=0)
 
     beta = sigmoid(b)
-    g = np.exp(-np.exp(w.get(prefix + "A_log").astype(np.float64))
-               * softplus(a + w.get(prefix + "dt_bias")))
+    g = np.exp(
+        -np.exp(w.get(prefix + "A_log").astype(np.float64))
+        * softplus(a + w.get(prefix + "dt_bias"))
+    )
     # With a zero state the recurrence collapses: delta = beta * v, the state
     # becomes k (x) delta, and the readout is delta scaled by <q, k>.
     _ = g  # the decay multiplies a zero state at t = 0
@@ -177,18 +187,13 @@ def gdn_first_token(w, prefix: str, x: np.ndarray) -> np.ndarray:
 
     y = y / np.sqrt(DV)
     gamma = w.get(prefix + "norm.weight")
-    yn = y / np.sqrt((y ** 2).mean(axis=-1, keepdims=True) + EPS) * gamma
+    yn = y / np.sqrt((y**2).mean(axis=-1, keepdims=True) + EPS) * gamma
     out = yn * sigmoid(z.reshape(HV, DV))
     return w.get(prefix + "out_proj.weight") @ out.reshape(-1)
 
 
 def softplus(x):
     return np.log1p(np.exp(-np.abs(x))) + np.maximum(x, 0.0)
-
-
-
-
-
 
 
 TOP_K = 10
@@ -207,15 +212,15 @@ def moe_block(w, experts, layer: int, x: np.ndarray) -> np.ndarray:
     scores = scores / max(scores.sum(), 6.103515625e-5)
 
     routed = np.zeros_like(x)
-    for expert, score in zip(chosen, scores):
+    for expert, score in zip(chosen, scores, strict=False):
         gate = experts.tensor(layer, int(expert), "gate") @ x
         up = experts.tensor(layer, int(expert), "up") @ x
-        routed += score * (experts.tensor(layer, int(expert), "down")
-                           @ (silu(gate) * up))
+        routed += score * (experts.tensor(layer, int(expert), "down") @ (silu(gate) * up))
 
     shared = w.get(P + "mlp.shared_expert.down_proj.weight") @ (
         silu(w.get(P + "mlp.shared_expert.gate_proj.weight") @ x)
-        * (w.get(P + "mlp.shared_expert.up_proj.weight") @ x))
+        * (w.get(P + "mlp.shared_expert.up_proj.weight") @ x)
+    )
     shared_gate = sigmoid(w.get(P + "mlp.shared_expert_gate.weight") @ x)
     return routed + shared_gate * shared
 

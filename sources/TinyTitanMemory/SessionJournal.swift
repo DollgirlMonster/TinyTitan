@@ -47,18 +47,20 @@ public struct JournalTurn: Sendable, Codable, Equatable {
     /// summary of a larger exchange rather than the whole of a small one.
     public let droppedBytes: Int
 
-    public init(session: String,
-                workspace: String,
-                index: Int,
-                timestamp: Date = Date(),
-                prompt: String,
-                reply: String,
-                model: String? = nil,
-                promptTokens: Int = 0,
-                completionTokens: Int = 0,
-                latencyMilliseconds: Int = 0,
-                stopReason: String? = nil,
-                droppedBytes: Int = 0) {
+    public init(
+        session: String,
+        workspace: String,
+        index: Int,
+        timestamp: Date = Date(),
+        prompt: String,
+        reply: String,
+        model: String? = nil,
+        promptTokens: Int = 0,
+        completionTokens: Int = 0,
+        latencyMilliseconds: Int = 0,
+        stopReason: String? = nil,
+        droppedBytes: Int = 0
+    ) {
         self.session = session
         self.workspace = workspace
         self.index = index
@@ -87,8 +89,10 @@ public struct JournalSessionSummary: Sendable, Codable, Equatable {
     public let turnCount: Int
     public let model: String?
 
-    public init(session: String, workspace: String, firstSeen: Date, lastSeen: Date,
-                turnCount: Int, model: String?) {
+    public init(
+        session: String, workspace: String, firstSeen: Date, lastSeen: Date,
+        turnCount: Int, model: String?
+    ) {
         self.session = session
         self.workspace = workspace
         self.firstSeen = firstSeen
@@ -186,8 +190,9 @@ public struct JournalFilter: Sendable, Equatable {
                 } else {
                     if block.count > maximumBlockLines {
                         let bytes = block.reduce(0) { $0 + $1.utf8.count }
-                        output.append("[\(block.count) lines, \(bytes) bytes of "
-                                      + "\(languageName(fence)) omitted]")
+                        output.append(
+                            "[\(block.count) lines, \(bytes) bytes of "
+                                + "\(languageName(fence)) omitted]")
                     } else {
                         output.append(fence ?? "```")
                         output.append(contentsOf: block)
@@ -227,9 +232,11 @@ public struct JournalLimits: Sendable, Equatable {
     public var sessionsPerWorkspace: Int
     public var filter: JournalFilter
 
-    public init(turnsPerSession: Int = 200,
-                sessionsPerWorkspace: Int = 100,
-                filter: JournalFilter = .init()) {
+    public init(
+        turnsPerSession: Int = 200,
+        sessionsPerWorkspace: Int = 100,
+        filter: JournalFilter = .init()
+    ) {
         self.turnsPerSession = turnsPerSession
         self.sessionsPerWorkspace = sessionsPerWorkspace
         self.filter = filter

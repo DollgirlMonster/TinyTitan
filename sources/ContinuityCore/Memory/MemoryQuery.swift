@@ -22,16 +22,18 @@ public struct MemoryQuery: Sendable, Equatable {
     public var limit: Int?
     public var order: MemoryOrder
 
-    public init(namespaces: [String] = [],
-                keys: [String] = [],
-                namespacePrefix: String? = nil,
-                text: String? = nil,
-                tags: [String] = [],
-                statuses: [MemoryStatus] = [.active, .disputed],
-                updatedAfter: Date? = nil,
-                minimumImportance: Double? = nil,
-                limit: Int? = nil,
-                order: MemoryOrder = .relevance) {
+    public init(
+        namespaces: [String] = [],
+        keys: [String] = [],
+        namespacePrefix: String? = nil,
+        text: String? = nil,
+        tags: [String] = [],
+        statuses: [MemoryStatus] = [.active, .disputed],
+        updatedAfter: Date? = nil,
+        minimumImportance: Double? = nil,
+        limit: Int? = nil,
+        order: MemoryOrder = .relevance
+    ) {
         self.namespaces = namespaces
         self.keys = keys
         self.namespacePrefix = namespacePrefix

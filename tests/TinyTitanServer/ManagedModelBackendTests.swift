@@ -44,10 +44,11 @@ private struct StubBackend: ServerInferenceBackend {
             content: "ok",
             toolCalls: [],
             finishReason: "stop",
-            usage: OpenAIUsage(promptTokens: 1,
-                               completionTokens: 1,
-                               totalTokens: 2,
-                               cachedTokens: 0))
+            usage: OpenAIUsage(
+                promptTokens: 1,
+                completionTokens: 1,
+                totalTokens: 2,
+                cachedTokens: 0))
     }
 }
 
@@ -73,10 +74,11 @@ private actor GatedBackend: ServerInferenceBackend {
             content: "ok",
             toolCalls: [],
             finishReason: "stop",
-            usage: OpenAIUsage(promptTokens: 1,
-                               completionTokens: 1,
-                               totalTokens: 2,
-                               cachedTokens: 0))
+            usage: OpenAIUsage(
+                promptTokens: 1,
+                completionTokens: 1,
+                totalTokens: 2,
+                cachedTokens: 0))
     }
 }
 
@@ -117,9 +119,10 @@ struct ManagedModelBackendTests {
     }
 
     private func facts() -> ModelSessionFacts {
-        ModelSessionFacts(modelID: "stub",
-                          prefillChunkTokens: 4_096,
-                          promptCacheMode: .multiPrefix)
+        ModelSessionFacts(
+            modelID: "stub",
+            prefillChunkTokens: 4_096,
+            promptCacheMode: .multiPrefix)
     }
 
     private func request() -> ValidatedChatRequest {
@@ -336,8 +339,9 @@ struct ManagedModelBackendTests {
         try await Task.sleep(for: .milliseconds(50))
         await gate.open()
 
-        #expect(await unloading.value,
-                "unload reported nothing released while a load was in flight")
+        #expect(
+            await unloading.value,
+            "unload reported nothing released while a load was in flight")
         #expect(await managed.isLoaded == false)
         _ = try await request.value
     }
@@ -437,10 +441,10 @@ struct ManagedModelBackendTests {
     }
 }
 
-private extension ManagedModelBackend {
+extension ManagedModelBackend {
     /// Runs `body` with the in-flight count raised, mirroring a request that is
     /// mid-generation while the reaper wakes.
-    func withInFlight(_ body: () async -> Void) async {
+    fileprivate func withInFlight(_ body: () async -> Void) async {
         bumpInFlightForTesting(1)
         await body()
         bumpInFlightForTesting(-1)

@@ -34,7 +34,8 @@ extension RealForwardRunner {
     /// more is what catches state threaded between tokens -- the KV cache,
     /// the delta-rule state, and the two convolution histories -- which a
     /// single position cannot exercise at all.
-    static let dumpPositionCount = ProcessInfo.processInfo
+    static let dumpPositionCount =
+        ProcessInfo.processInfo
         .environment["TINYTITAN_ACT_DUMP_POSITIONS"].flatMap(Int.init) ?? 1
 
     func activationDumpActive(position: Int) -> Bool {
@@ -68,20 +69,25 @@ extension RealForwardRunner {
     /// `resourceOptions (0x20) specify MTLResourceStorageModePrivate, which is
     /// not CPU accessible` -- so a prefill dump goes through a blit, and the
     /// command buffer is awaited before the bytes are read.
-    func dumpActivationPrivate(_ name: String,
-                               _ buffer: MTLBuffer,
-                               count: Int,
-                               position: Int,
-                               offset: Int = 0) {
+    func dumpActivationPrivate(
+        _ name: String,
+        _ buffer: MTLBuffer,
+        count: Int,
+        position: Int,
+        offset: Int = 0
+    ) {
         guard activationDumpDirectory(position: position) != nil else { return }
         let bytes = count * MemoryLayout<Float16>.stride
         guard offset + bytes <= buffer.length,
-              let staging = ctx.device.makeBuffer(length: bytes,
-                                                  options: .storageModeShared),
-              let cb = ctx.queue.makeCommandBuffer(),
-              let blit = cb.makeBlitCommandEncoder() else { return }
-        blit.copy(from: buffer, sourceOffset: offset,
-                  to: staging, destinationOffset: 0, size: bytes)
+            let staging = ctx.device.makeBuffer(
+                length: bytes,
+                options: .storageModeShared),
+            let cb = ctx.queue.makeCommandBuffer(),
+            let blit = cb.makeBlitCommandEncoder()
+        else { return }
+        blit.copy(
+            from: buffer, sourceOffset: offset,
+            to: staging, destinationOffset: 0, size: bytes)
         blit.endEncoding()
         cb.commit()
         cb.waitUntilCompleted()
@@ -97,15 +103,19 @@ extension RealForwardRunner {
     /// layer is zeros. That reads exactly like a stage computing nothing.
     /// Deferring to the end of the layer, after the wait, is what makes a
     /// mid-layer dump mean what it says.
-    func dumpActivationDeferred(_ name: String,
-                                _ buffer: MTLBuffer,
-                                count: Int,
-                                position: Int,
-                                offset: Int = 0) {
+    func dumpActivationDeferred(
+        _ name: String,
+        _ buffer: MTLBuffer,
+        count: Int,
+        position: Int,
+        offset: Int = 0
+    ) {
         guard activationDumpDirectory(position: position) != nil else { return }
-        pendingDumps.append(PendingActivationDump(name: name, buffer: buffer,
-                                                  count: count, position: position,
-                                                  offset: offset))
+        pendingDumps.append(
+            PendingActivationDump(
+                name: name, buffer: buffer,
+                count: count, position: position,
+                offset: offset))
     }
 
     /// Performs every deferred dump. Call once the layer's work is awaited.
@@ -114,8 +124,9 @@ extension RealForwardRunner {
         let pending = pendingDumps
         pendingDumps.removeAll(keepingCapacity: true)
         for dump in pending {
-            dumpActivationPrivate(dump.name, dump.buffer, count: dump.count,
-                                  position: dump.position, offset: dump.offset)
+            dumpActivationPrivate(
+                dump.name, dump.buffer, count: dump.count,
+                position: dump.position, offset: dump.offset)
         }
     }
 
@@ -124,12 +135,14 @@ extension RealForwardRunner {
     /// buffer that produced the values, because reading a shared buffer the
     /// GPU is still writing would dump a mixture of two states and look like
     /// a numerical bug.
-    func dumpActivation(_ name: String,
-                        _ buffer: MTLBuffer,
-                        count: Int,
-                        position: Int,
-                        offset: Int = 0,
-                        after commandBuffer: MTLCommandBuffer? = nil) {
+    func dumpActivation(
+        _ name: String,
+        _ buffer: MTLBuffer,
+        count: Int,
+        position: Int,
+        offset: Int = 0,
+        after commandBuffer: MTLCommandBuffer? = nil
+    ) {
         guard let directory = activationDumpDirectory(position: position)
         else { return }
         commandBuffer?.waitUntilCompleted()
@@ -138,13 +151,15 @@ extension RealForwardRunner {
             // Reported rather than skipped in silence: a dump that quietly
             // writes nothing looks exactly like a stage computing zeros, which
             // is the confusion this facility exists to remove.
-            FileHandle.standardError.write(Data(
-                ("TINYTITAN_ACT_DUMP: \(name) needs \(offset + bytes) bytes but the buffer "
-                 + "holds \(buffer.length); nothing written\n").utf8))
+            FileHandle.standardError.write(
+                Data(
+                    ("TINYTITAN_ACT_DUMP: \(name) needs \(offset + bytes) bytes but the buffer "
+                        + "holds \(buffer.length); nothing written\n").utf8))
             return
         }
-        let data = Data(bytes: buffer.contents().advanced(by: offset),
-                        count: bytes)
+        let data = Data(
+            bytes: buffer.contents().advanced(by: offset),
+            count: bytes)
         try? data.write(to: directory.appendingPathComponent("\(name).f16"))
     }
 }

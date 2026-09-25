@@ -1,18 +1,21 @@
 import Foundation
 import Testing
+
 @testable import ContinuityCore
 
 @Suite struct TaskMemoryTests {
     @Test func writingTheSameAddressVersionsRatherThanOverwrites() async throws {
         let memory = TaskMemory()
         let task = UUID()
-        let first = try await memory.write(taskID: task, namespace: "plot",
-                                           key: "brother", value: "missing")
+        let first = try await memory.write(
+            taskID: task, namespace: "plot",
+            key: "brother", value: "missing")
         #expect(first.isNew)
         #expect(first.item.version == 1)
 
-        let second = try await memory.write(taskID: task, namespace: "plot",
-                                            key: "brother", value: "found in act three")
+        let second = try await memory.write(
+            taskID: task, namespace: "plot",
+            key: "brother", value: "found in act three")
         #expect(second.isNew == false)
         #expect(second.previousVersion == 1)
         #expect(second.item.version == 2)
@@ -30,12 +33,14 @@ import Testing
         let task = UUID()
         let sessionOne = UUID()
         let sessionTwo = UUID()
-        try await memory.write(taskID: task, namespace: "decision", key: "storage",
-                               value: "valkey",
-                               provenance: Provenance(sessionID: sessionOne, author: .model))
-        try await memory.write(taskID: task, namespace: "decision", key: "storage",
-                               value: "native swift",
-                               provenance: Provenance(sessionID: sessionTwo, author: .user))
+        try await memory.write(
+            taskID: task, namespace: "decision", key: "storage",
+            value: "valkey",
+            provenance: Provenance(sessionID: sessionOne, author: .model))
+        try await memory.write(
+            taskID: task, namespace: "decision", key: "storage",
+            value: "native swift",
+            provenance: Provenance(sessionID: sessionTwo, author: .user))
 
         let history = await memory.history(taskID: task, namespace: "decision", key: "storage")
         #expect(history[0].provenance?.sessionID == sessionOne)
@@ -62,8 +67,9 @@ import Testing
     @Test func archivingKeepsTheValueAndRemovesItFromContext() async throws {
         let memory = TaskMemory()
         let task = UUID()
-        try await memory.write(taskID: task, namespace: "plot", key: "subplot",
-                               value: "the cousin")
+        try await memory.write(
+            taskID: task, namespace: "plot", key: "subplot",
+            value: "the cousin")
         try await memory.archive(taskID: task, namespace: "plot", key: "subplot")
 
         let active = await memory.query(taskID: task)
@@ -79,8 +85,9 @@ import Testing
         let memory = TaskMemory()
         let task = UUID()
         try await memory.write(taskID: task, namespace: "fact", key: "age", value: "41")
-        try await memory.setStatus(taskID: task, namespace: "fact", key: "age",
-                                   status: .disputed)
+        try await memory.setStatus(
+            taskID: task, namespace: "fact", key: "age",
+            status: .disputed)
         let visible = await memory.query(taskID: task)
         #expect(visible.count == 1)
         #expect(visible.first?.status == .disputed)
@@ -92,12 +99,15 @@ import Testing
     @Test func aStatusChangeDoesNotAddToTheVersionChain() async throws {
         let memory = TaskMemory()
         let task = UUID()
-        try await memory.write(taskID: task, namespace: "fact", key: "photo",
-                               value: "he has not seen it")
-        try await memory.write(taskID: task, namespace: "fact", key: "photo",
-                               value: "he recognises it")
-        try await memory.setStatus(taskID: task, namespace: "fact", key: "photo",
-                                   status: .disputed)
+        try await memory.write(
+            taskID: task, namespace: "fact", key: "photo",
+            value: "he has not seen it")
+        try await memory.write(
+            taskID: task, namespace: "fact", key: "photo",
+            value: "he recognises it")
+        try await memory.setStatus(
+            taskID: task, namespace: "fact", key: "photo",
+            status: .disputed)
 
         let history = await memory.history(taskID: task, namespace: "fact", key: "photo")
         #expect(history.map(\.version) == [1, 2])
@@ -105,8 +115,9 @@ import Testing
         #expect(history.first?.value == "he has not seen it")
 
         // A later value change still versions normally.
-        try await memory.write(taskID: task, namespace: "fact", key: "photo",
-                               value: "chapter 30 was the error")
+        try await memory.write(
+            taskID: task, namespace: "fact", key: "photo",
+            value: "chapter 30 was the error")
         let extended = await memory.history(taskID: task, namespace: "fact", key: "photo")
         #expect(extended.map(\.version) == [1, 2, 3])
     }
@@ -117,48 +128,60 @@ import Testing
         try await memory.write(taskID: task, namespace: "n", key: "k", value: "one")
         try await memory.write(taskID: task, namespace: "n", key: "k", value: "two")
 
-        await #expect(throws: ContinuityError.versionConflict(namespace: "n", key: "k",
-                                                              expected: 1, actual: 2)) {
-            try await memory.write(taskID: task, namespace: "n", key: "k",
-                                   value: "three", expectedVersion: 1)
+        await #expect(
+            throws: ContinuityError.versionConflict(
+                namespace: "n", key: "k",
+                expected: 1, actual: 2)
+        ) {
+            try await memory.write(
+                taskID: task, namespace: "n", key: "k",
+                value: "three", expectedVersion: 1)
         }
         // The correct version goes through, and the value is unchanged by the
         // rejected attempt.
         #expect(await memory.value(taskID: task, namespace: "n", key: "k") == "two")
-        try await memory.write(taskID: task, namespace: "n", key: "k",
-                               value: "three", expectedVersion: 2)
+        try await memory.write(
+            taskID: task, namespace: "n", key: "k",
+            value: "three", expectedVersion: 2)
         #expect(await memory.value(taskID: task, namespace: "n", key: "k") == "three")
     }
 
     @Test func expectingVersionZeroAssertsTheAddressIsNew() async throws {
         let memory = TaskMemory()
         let task = UUID()
-        try await memory.write(taskID: task, namespace: "n", key: "k",
-                               value: "first", expectedVersion: 0)
+        try await memory.write(
+            taskID: task, namespace: "n", key: "k",
+            value: "first", expectedVersion: 0)
         await #expect(throws: ContinuityError.self) {
-            try await memory.write(taskID: task, namespace: "n", key: "k",
-                                   value: "again", expectedVersion: 0)
+            try await memory.write(
+                taskID: task, namespace: "n", key: "k",
+                value: "again", expectedVersion: 0)
         }
     }
 
     @Test func queriesFilterAndOrder() async throws {
         let memory = TaskMemory()
         let task = UUID()
-        try await memory.write(taskID: task, namespace: "plot.act1", key: "open",
-                               value: "a storm", importance: 0.2, tags: ["scene"])
-        try await memory.write(taskID: task, namespace: "plot.act2", key: "turn",
-                               value: "the brother returns", importance: 0.9,
-                               tags: ["scene", "pivot"])
-        try await memory.write(taskID: task, namespace: "style", key: "voice",
-                               value: "close third person", importance: 0.5)
+        try await memory.write(
+            taskID: task, namespace: "plot.act1", key: "open",
+            value: "a storm", importance: 0.2, tags: ["scene"])
+        try await memory.write(
+            taskID: task, namespace: "plot.act2", key: "turn",
+            value: "the brother returns", importance: 0.9,
+            tags: ["scene", "pivot"])
+        try await memory.write(
+            taskID: task, namespace: "style", key: "voice",
+            value: "close third person", importance: 0.5)
 
-        let byPrefix = await memory.query(taskID: task,
-                                          MemoryQuery(namespacePrefix: "plot"))
+        let byPrefix = await memory.query(
+            taskID: task,
+            MemoryQuery(namespacePrefix: "plot"))
         #expect(byPrefix.count == 2)
         // Prefixes respect segment boundaries, so "plot" never drags in a
         // namespace that merely starts with the same letters.
-        let plotting = await memory.query(taskID: task,
-                                          MemoryQuery(namespacePrefix: "plo"))
+        let plotting = await memory.query(
+            taskID: task,
+            MemoryQuery(namespacePrefix: "plo"))
         #expect(plotting.isEmpty)
 
         let byTag = await memory.query(taskID: task, MemoryQuery(tags: ["pivot"]))
@@ -180,26 +203,35 @@ import Testing
     @Test func dependenciesResolveTransitively() async throws {
         let memory = TaskMemory()
         let task = UUID()
-        try await memory.write(taskID: task, namespace: "constraint", key: "no_network",
-                               value: "the core opens no sockets")
-        try await memory.write(taskID: task, namespace: "constraint", key: "in_process",
-                               value: "same binary", dependencies: ["constraint.no_network"])
-        try await memory.write(taskID: task, namespace: "decision", key: "storage",
-                               value: "native swift actors",
-                               dependencies: ["constraint.in_process"])
+        try await memory.write(
+            taskID: task, namespace: "constraint", key: "no_network",
+            value: "the core opens no sockets")
+        try await memory.write(
+            taskID: task, namespace: "constraint", key: "in_process",
+            value: "same binary", dependencies: ["constraint.no_network"])
+        try await memory.write(
+            taskID: task, namespace: "decision", key: "storage",
+            value: "native swift actors",
+            dependencies: ["constraint.in_process"])
 
-        let seed = await memory.item(taskID: task, namespace: "decision", key: "storage")!
+        let seed = try #require(
+            await memory.item(taskID: task, namespace: "decision", key: "storage"))
         let resolved = await memory.dependencies(taskID: task, of: [seed])
-        #expect(Set(resolved.map(\.address)) == ["constraint.in_process",
-                                                 "constraint.no_network"])
+        #expect(
+            Set(resolved.map(\.address)) == [
+                "constraint.in_process",
+                "constraint.no_network",
+            ])
     }
 
     @Test func addressesAreValidated() async throws {
         let memory = TaskMemory()
         let task = UUID()
         for bad in ["", "Plot", "plot..act", "plot act", "plot/act"] {
-            await #expect(throws: ContinuityError.self,
-                          "namespace '\(bad)' should be rejected") {
+            await #expect(
+                throws: ContinuityError.self,
+                "namespace '\(bad)' should be rejected"
+            ) {
                 try await memory.write(taskID: task, namespace: bad, key: "k", value: "v")
             }
         }
@@ -208,15 +240,17 @@ import Testing
                 try await memory.write(taskID: task, namespace: "n", key: bad, value: "v")
             }
         }
-        try await memory.write(taskID: task, namespace: "plot.act-1", key: "a_key_2",
-                               value: "fine")
+        try await memory.write(
+            taskID: task, namespace: "plot.act-1", key: "a_key_2",
+            value: "fine")
     }
 
     @Test func oversizedValuesAreRefused() async throws {
         let memory = TaskMemory(limits: MemoryLimits(maxValueBytes: 32))
         await #expect(throws: ContinuityError.self) {
-            try await memory.write(taskID: UUID(), namespace: "n", key: "k",
-                                   value: String(repeating: "x", count: 33))
+            try await memory.write(
+                taskID: UUID(), namespace: "n", key: "k",
+                value: String(repeating: "x", count: 33))
         }
     }
 
@@ -242,8 +276,9 @@ import Testing
         let restored = TaskMemory()
         await restored.restore(snapshot)
         #expect(await restored.value(taskID: task, namespace: "n", key: "k") == "two")
-        #expect(await restored.history(taskID: task, namespace: "n", key: "k")
-                    .map(\.version) == [1, 2])
+        #expect(
+            await restored.history(taskID: task, namespace: "n", key: "k")
+                .map(\.version) == [1, 2])
     }
 
     @Test func observerReportsSupersessionBeforeTheWrite() async throws {
@@ -296,11 +331,13 @@ actor MutationCollector {
     @Test func aRewriteChargesForTheRetainedVersion() async throws {
         let memory = TaskMemory()
         let task = UUID()
-        try await memory.write(taskID: task, namespace: "n", key: "k",
-                               value: String(repeating: "a", count: 500))
+        try await memory.write(
+            taskID: task, namespace: "n", key: "k",
+            value: String(repeating: "a", count: 500))
         let afterFirst = await memory.byteCount(taskID: task)
-        try await memory.write(taskID: task, namespace: "n", key: "k",
-                               value: String(repeating: "b", count: 500))
+        try await memory.write(
+            taskID: task, namespace: "n", key: "k",
+            value: String(repeating: "b", count: 500))
         let afterSecond = await memory.byteCount(taskID: task)
         // History is not free, and a budget that pretended it was would be
         // overrun by exactly the amount of history kept.
@@ -309,16 +346,19 @@ actor MutationCollector {
     }
 
     @Test func theBudgetRefusesRatherThanEvicts() async throws {
-        let memory = TaskMemory(limits: MemoryLimits(maxValueBytes: 4096,
-                                                     maxBytesPerTask: 8192))
+        let memory = TaskMemory(
+            limits: MemoryLimits(
+                maxValueBytes: 4096,
+                maxBytesPerTask: 8192))
         let task = UUID()
         let chunk = String(repeating: "x", count: 1000)
         var written = 0
         var refused = false
         for index in 0..<20 {
             do {
-                try await memory.write(taskID: task, namespace: "n", key: "k\(index)",
-                                       value: chunk)
+                try await memory.write(
+                    taskID: task, namespace: "n", key: "k\(index)",
+                    value: chunk)
                 written += 1
             } catch let error as ContinuityError {
                 guard case .storeFull = error else {
@@ -342,8 +382,9 @@ actor MutationCollector {
         let memory = TaskMemory(limits: MemoryLimits(maxValueBytes: 1 << 20, maxBytesPerTask: 0))
         let task = UUID()
         for index in 0..<50 {
-            try await memory.write(taskID: task, namespace: "n", key: "k\(index)",
-                                   value: String(repeating: "x", count: 100_000))
+            try await memory.write(
+                taskID: task, namespace: "n", key: "k\(index)",
+                value: String(repeating: "x", count: 100_000))
         }
         #expect(await memory.count(taskID: task) == 50)
         #expect(await memory.byteCount(taskID: task) > 5_000_000)
@@ -353,8 +394,9 @@ actor MutationCollector {
     @Test func archivingAndForgettingReleaseTheirBytes() async throws {
         let memory = TaskMemory()
         let task = UUID()
-        try await memory.write(taskID: task, namespace: "n", key: "k",
-                               value: String(repeating: "x", count: 2000))
+        try await memory.write(
+            taskID: task, namespace: "n", key: "k",
+            value: String(repeating: "x", count: 2000))
         #expect(await memory.byteCount(taskID: task) > 2000)
         // Archiving keeps the value on purpose, so it keeps costing.
         try await memory.archive(taskID: task, namespace: "n", key: "k")
@@ -394,8 +436,10 @@ actor MutationCollector {
     }
 
     @Test func theItemCountIsStillABackstop() async throws {
-        let memory = TaskMemory(limits: MemoryLimits(maxBytesPerTask: 1 << 30,
-                                                     maxItemsPerTask: 3))
+        let memory = TaskMemory(
+            limits: MemoryLimits(
+                maxBytesPerTask: 1 << 30,
+                maxItemsPerTask: 3))
         let task = UUID()
         for index in 0..<3 {
             try await memory.write(taskID: task, namespace: "n", key: "k\(index)", value: "v")

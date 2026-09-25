@@ -16,29 +16,35 @@ public struct GDNReference {
     }
 
     public let cfg: LinearAttentionConfig
-    public let convW: [Float]          // [C, K], bf16-representable
-    public let aLog: [Float]           // [Hv]
-    public let dtBias: [Float]         // [Hv]
-    public let normW: [Float]          // [Dv]
+    public let convW: [Float]  // [C, K], bf16-representable
+    public let aLog: [Float]  // [Hv]
+    public let dtBias: [Float]  // [Hv]
+    public let normW: [Float]  // [Dv]
 
-    public var tail: [[Float]]         // K-1 rows of C
-    public var state: [Float]          // [Hv, Dv, Dk]
+    public var tail: [[Float]]  // K-1 rows of C
+    public var state: [Float]  // [Hv, Dv, Dk]
 
-    public init(cfg: LinearAttentionConfig, convW: [Float], aLog: [Float],
-         dtBias: [Float], normW: [Float]) {
+    public init(
+        cfg: LinearAttentionConfig, convW: [Float], aLog: [Float],
+        dtBias: [Float], normW: [Float]
+    ) {
         self.cfg = cfg
         self.convW = convW
         self.aLog = aLog
         self.dtBias = dtBias
         self.normW = normW
-        self.tail = Array(repeating: [Float](repeating: 0, count: cfg.qkvDim),
-                          count: cfg.convKernelSize - 1)
-        self.state = [Float](repeating: 0,
-                             count: cfg.numVHeads * cfg.valueHeadDim * cfg.keyHeadDim)
+        self.tail = Array(
+            repeating: [Float](repeating: 0, count: cfg.qkvDim),
+            count: cfg.convKernelSize - 1)
+        self.state = [Float](
+            repeating: 0,
+            count: cfg.numVHeads * cfg.valueHeadDim * cfg.keyHeadDim)
     }
 
-    public mutating func step(qkvRaw: [Float], a: [Float], b: [Float],
-                       z: [Float]) -> [Float] {
+    public mutating func step(
+        qkvRaw: [Float], a: [Float], b: [Float],
+        z: [Float]
+    ) -> [Float] {
         let C = cfg.qkvDim
         let K = cfg.convKernelSize
         let Hk = cfg.numKHeads

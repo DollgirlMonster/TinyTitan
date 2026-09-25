@@ -110,7 +110,10 @@ export function sendJson(res, status, payload) {
  * @returns the sub-path after the prefix, or `undefined` when it does not match.
  */
 export function subPath(url, basePath) {
-  const pathname = String(url ?? "/").split("?")[0].replace(/\/+$/, "") || "/";
+  const pathname =
+    String(url ?? "/")
+      .split("?")[0]
+      .replace(/\/+$/, "") || "/";
   if (pathname === basePath) return "/";
   if (pathname.startsWith(`${basePath}/`)) return pathname.slice(basePath.length);
   return undefined;
@@ -208,7 +211,7 @@ export function createHandler(options) {
         sendJson(res, error.status, { error: error.code, message: error.message });
         return;
       }
-      log(`handler threw: ${error instanceof Error ? error.stack ?? error.message : error}`);
+      log(`handler threw: ${error instanceof Error ? (error.stack ?? error.message) : error}`);
       sendJson(res, 500, {
         error: "internal-error",
         message: error instanceof Error ? error.message : String(error),
@@ -255,7 +258,19 @@ export function isAllowedOrigin(origin, host, config) {
  * @param args - handler state.
  * @returns `{status, body}` or a value the caller serializes.
  */
-async function dispatch({ route, method, req, res, ctx, config, peers, self, messageFactory, maxBodyBytes, source }) {
+async function dispatch({
+  route,
+  method,
+  req,
+  res,
+  ctx,
+  config,
+  peers,
+  self,
+  messageFactory,
+  maxBodyBytes,
+  source,
+}) {
   if (method === "OPTIONS") return { status: 204, body: { ok: true } };
 
   if (route === "/" || route === "/health") {
@@ -354,9 +369,13 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
     // Starting needs the workspace to exist, so it is a second step. If it fails,
     // the typed error propagates and the workspace half is still there — which the
     // message says rather than implying nothing happened.
-    const session = body.startSession === true
-      ? await startSession(ctx, { workspaceId: receipt.workspaceId, agentPreset: body.agentPreset })
-      : null;
+    const session =
+      body.startSession === true
+        ? await startSession(ctx, {
+            workspaceId: receipt.workspaceId,
+            agentPreset: body.agentPreset,
+          })
+        : null;
     return { body: { ok: true, ...receipt, ...(session === null ? {} : { session }) } };
   }
 
@@ -372,7 +391,9 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
   }
 
   if (method === "GET" && route === "/workspaces") {
-    const result = listActiveWorkspaces(ctx, { includeEmpty: config.includeEmptyWorkspaces === true });
+    const result = listActiveWorkspaces(ctx, {
+      includeEmpty: config.includeEmptyWorkspaces === true,
+    });
     return { body: { ok: true, ...result } };
   }
 
@@ -412,8 +433,10 @@ async function dispatch({ route, method, req, res, ctx, config, peers, self, mes
     const body = await readJsonBody(req, maxBodyBytes);
     if (body.prompt === undefined) throw new ApiError("bad-request", "prompt is required", 400);
     const result = promptAllActive(ctx, body.prompt, messageFactory, body);
-    return { status: result.failed.length > 0 && result.delivered.length === 0 ? 502 : 200,
-      body: { ok: result.delivered.length > 0, ...result } };
+    return {
+      status: result.failed.length > 0 && result.delivered.length === 0 ? 502 : 200,
+      body: { ok: result.delivered.length > 0, ...result },
+    };
   }
 
   const archive = /^\/sessions\/([^/]+)\/archive$/.exec(route);

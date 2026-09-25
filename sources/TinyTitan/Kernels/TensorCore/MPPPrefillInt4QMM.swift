@@ -60,16 +60,18 @@ final class MPPPrefillInt4QMM {
     /// requests the MPP path. Auto-selected callers keep `required: false`
     /// and check the returned `Path`.
     @discardableResult
-    func encode(commandBuffer: MTLCommandBuffer,
-                       weights: MTLBuffer, weightsOffset: Int = 0,
-                       scales: MTLBuffer, scalesOffset: Int = 0,
-                       biases: MTLBuffer, biasesOffset: Int = 0,
-                       x: MTLBuffer, xOffset: Int = 0,
-                       y: MTLBuffer, yOffset: Int = 0,
-                       m: Int,
-                       n: Int,
-                       k: Int,
-                       required: Bool = false) throws -> Path {
+    func encode(
+        commandBuffer: MTLCommandBuffer,
+        weights: MTLBuffer, weightsOffset: Int = 0,
+        scales: MTLBuffer, scalesOffset: Int = 0,
+        biases: MTLBuffer, biasesOffset: Int = 0,
+        x: MTLBuffer, xOffset: Int = 0,
+        y: MTLBuffer, yOffset: Int = 0,
+        m: Int,
+        n: Int,
+        k: Int,
+        required: Bool = false
+    ) throws -> Path {
         // `k` must be a whole number of K tiles. The kernel's A operand declares a
         // *static* `tileK` extent and the MPP operation trusts the operand's
         // extents, so a partial K tile would read past the staged weights -- the
@@ -85,17 +87,19 @@ final class MPPPrefillInt4QMM {
         // tile is the supported case. Requiring `m % 64 == 0` here would refuse
         // shapes the API handles, so it stays a fallback for `k` only.
         guard m > 0,
-              n > 0,
-              k > 0,
-              k.isMultiple(of: Self.tileK),
-              weightsOffset >= 0,
-              scalesOffset.isMultiple(of: MemoryLayout<UInt16>.stride),
-              biasesOffset.isMultiple(of: MemoryLayout<UInt16>.stride),
-              xOffset.isMultiple(of: MemoryLayout<Float16>.stride),
-              yOffset.isMultiple(of: MemoryLayout<Float16>.stride) else {
+            n > 0,
+            k > 0,
+            k.isMultiple(of: Self.tileK),
+            weightsOffset >= 0,
+            scalesOffset.isMultiple(of: MemoryLayout<UInt16>.stride),
+            biasesOffset.isMultiple(of: MemoryLayout<UInt16>.stride),
+            xOffset.isMultiple(of: MemoryLayout<Float16>.stride),
+            yOffset.isMultiple(of: MemoryLayout<Float16>.stride)
+        else {
             if required {
                 throw MPPPrefillInt4QMMError.invalidArguments(
-                    "m=\(m) n=\(n) k=\(k) offsets \(weightsOffset)/\(scalesOffset)/\(biasesOffset)/\(xOffset)/\(yOffset)")
+                    "m=\(m) n=\(n) k=\(k) offsets \(weightsOffset)/\(scalesOffset)/\(biasesOffset)/\(xOffset)/\(yOffset)"
+                )
             }
             return .unavailable
         }
@@ -126,12 +130,14 @@ final class MPPPrefillInt4QMM {
         encoder.setBytes(&nValue, length: MemoryLayout<UInt32>.size, index: 6)
         encoder.setBytes(&kValue, length: MemoryLayout<UInt32>.size, index: 7)
         encoder.dispatchThreadgroups(
-            MTLSize(width: (n + Self.tileN - 1) / Self.tileN,
-                    height: (m + Self.tileM - 1) / Self.tileM,
-                    depth: 1),
-            threadsPerThreadgroup: MTLSize(width: pipeline.threadExecutionWidth * 4,
-                                           height: 1,
-                                           depth: 1))
+            MTLSize(
+                width: (n + Self.tileN - 1) / Self.tileN,
+                height: (m + Self.tileM - 1) / Self.tileM,
+                depth: 1),
+            threadsPerThreadgroup: MTLSize(
+                width: pipeline.threadExecutionWidth * 4,
+                height: 1,
+                depth: 1))
         encoder.endEncoding()
         return .affineThreadgroupF16
     }

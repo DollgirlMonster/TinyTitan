@@ -1,6 +1,7 @@
-import Testing
 import Foundation
 import Metal
+import Testing
+
 @testable import TinyTitan
 
 @Suite struct ResidentBufferTests {

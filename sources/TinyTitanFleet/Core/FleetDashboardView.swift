@@ -34,9 +34,10 @@ public enum FleetDashboardView {
     // MARK: - screens
 
     private static func tooSmall(width: Int, height: Int) -> FleetFrame {
-        let message = "terminal too small — need \(minimumWidth)×\(minimumHeight), have \(width)×\(height)"
+        let message =
+            "terminal too small — need \(minimumWidth)×\(minimumHeight), have \(width)×\(height)"
         let lines = [fit("", width), fit(center(message, width), width)]
-        return FleetFrame(lines: Array(lines.prefix(max(1, height))) , selectedLine: nil)
+        return FleetFrame(lines: Array(lines.prefix(max(1, height))), selectedLine: nil)
     }
 
     private static func help(width: Int, height: Int) -> FleetFrame {
@@ -87,7 +88,8 @@ public enum FleetDashboardView {
             lines.append(fit(text, width))
         }
         if rows.isEmpty {
-            lines.append(fit("  no members yet — each machine discovers the others on its own timer", width))
+            lines.append(
+                fit("  no members yet — each machine discovers the others on its own timer", width))
         }
         while lines.count < height - 2 { lines.append(fit("", width)) }
 
@@ -99,7 +101,8 @@ public enum FleetDashboardView {
     private static func header(_ state: FleetDashboard, width: Int) -> String {
         let group = state.group.group ?? "unknown group"
         let age = state.refreshedAt.map { "refreshed \(Self.age(since: $0))" } ?? "reading…"
-        let tail = "  ·  \(group)  ·  \(state.group.nodes.count) members"
+        let tail =
+            "  ·  \(group)  ·  \(state.group.nodes.count) members"
             + "  ·  \(state.group.workspaces) ws  ·  \(state.group.sessions) sess  ·  \(age)"
         // The product's name where it fits, the command where it does not: the
         // group and the counts are what a narrow window needs to keep.
@@ -115,8 +118,11 @@ public enum FleetDashboardView {
     private static func footer(_ state: FleetDashboard, width: Int) -> String {
         switch state.mode {
         case .browse:
-            let prompt = state.selectedRow.flatMap { state.promptTarget(for: $0)?.label } ?? "nothing selected"
-            let keys = "↑↓ move · → expand · p prompt · P node · A all · c create · a archive · d delete · r refresh · ? help · q quit"
+            let prompt =
+                state.selectedRow.flatMap { state.promptTarget(for: $0)?.label }
+                ?? "nothing selected"
+            let keys =
+                "↑↓ move · → expand · p prompt · P node · A all · c create · a archive · d delete · r refresh · ? help · q quit"
             let line = " \(prompt)  |  \(keys)"
             return line.count <= width ? line : " " + keys
         case .input(.promptText(let target)):
@@ -142,7 +148,9 @@ public enum FleetDashboardView {
     static func describe(_ row: FleetRow, state: FleetDashboard, columns: Columns) -> FleetLine {
         switch row {
         case .node(let index):
-            guard state.group.nodes.indices.contains(index) else { return FleetLine(row: row, name: "?") }
+            guard state.group.nodes.indices.contains(index) else {
+                return FleetLine(row: row, name: "?")
+            }
             let node = state.group.nodes[index]
             let expanded = state.expanded.contains(node.id)
             let name = "\(expanded ? "▾" : "▸") \(node.name)"
@@ -160,7 +168,8 @@ public enum FleetDashboardView {
             )
         case .workspace(let nodeIndex, let index):
             guard state.group.nodes.indices.contains(nodeIndex),
-                  state.group.nodes[nodeIndex].workspaces.indices.contains(index) else {
+                state.group.nodes[nodeIndex].workspaces.indices.contains(index)
+            else {
                 return FleetLine(row: row, name: "?")
             }
             let workspace = state.group.nodes[nodeIndex].workspaces[index]
@@ -174,7 +183,8 @@ public enum FleetDashboardView {
             )
         case .session(let nodeIndex, let index):
             guard state.group.nodes.indices.contains(nodeIndex),
-                  state.group.nodes[nodeIndex].sessions.indices.contains(index) else {
+                state.group.nodes[nodeIndex].sessions.indices.contains(index)
+            else {
                 return FleetLine(row: row, name: "?")
             }
             let session = state.group.nodes[nodeIndex].sessions[index]
@@ -246,11 +256,17 @@ public struct Columns: Sendable {
         while total() > width, addressWidth > 22 { addressWidth -= 1 }
         while total() > width, nameWidth > 12 { nameWidth -= 1 }
         while total() > width {
-            if showIPv6 { showIPv6 = false }
-            else if showLastSeen { showLastSeen = false }
-            else if showVersion { showVersion = false }
-            else if showKind { showKind = false }
-            else { break }
+            if showIPv6 {
+                showIPv6 = false
+            } else if showLastSeen {
+                showLastSeen = false
+            } else if showVersion {
+                showVersion = false
+            } else if showKind {
+                showKind = false
+            } else {
+                break
+            }
         }
         while total() > width, addressWidth > 12 { addressWidth -= 1 }
         while total() > width, nameWidth > 10 { nameWidth -= 1 }

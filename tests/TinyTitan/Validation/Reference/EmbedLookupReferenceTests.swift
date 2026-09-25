@@ -1,14 +1,16 @@
-import Testing
 import Foundation
+import Testing
 import TinyTitan
 import TinyTitanValidationSupport
 
 @Suite struct EmbedLookupReferenceTests {
-    @Test("Lookup matches direct dequant of the same row", arguments: [
-        (Int(16), 128, UInt64(0x10B)),
-        (Int(32), 256, UInt64(0x10C)),
-        (Int(64), 512, UInt64(0x10D)),
-    ])
+    @Test(
+        "Lookup matches direct dequant of the same row",
+        arguments: [
+            (Int(16), 128, UInt64(0x10B)),
+            (Int(32), 256, UInt64(0x10C)),
+            (Int(64), 512, UInt64(0x10D)),
+        ])
     func lookupMatchesDirectDequant(v: Int, d: Int, seed: UInt64) {
         var rng = SeedTree(seed).key("embed-lookup-v\(v)-d\(d)")
         var rows: [[Float]] = []
@@ -18,7 +20,7 @@ import TinyTitanValidationSupport
         }
 
         let groupsPerRow = d / Quantization.groupSize
-        var packed = [UInt8]( repeating: 0, count: v * d)
+        var packed = [UInt8](repeating: 0, count: v * d)
         var scales = [UInt16](repeating: 0, count: v * groupsPerRow)
         var biases = [UInt16](repeating: 0, count: v * groupsPerRow)
         for token in 0..<v {

@@ -98,9 +98,11 @@ public struct ModelCatalog: Sendable {
         /// an `@cpu` / `@gpu` suffix on the id.
         public let engines: [Backend]
 
-        public init(id: String, name: String, kind: Kind, quant: Int, path: URL,
-                    sampling: GenerationDefaults.Sampling, contextLimit: Int? = nil,
-                    sizeBytes: Int64 = 0, engines: [Backend]? = nil) {
+        public init(
+            id: String, name: String, kind: Kind, quant: Int, path: URL,
+            sampling: GenerationDefaults.Sampling, contextLimit: Int? = nil,
+            sizeBytes: Int64 = 0, engines: [Backend]? = nil
+        ) {
             self.id = id
             self.name = name
             self.kind = kind
@@ -122,12 +124,14 @@ public struct ModelCatalog: Sendable {
         /// the engine.
         public func served(by backend: Backend, id aliasID: String) -> Entry? {
             guard engines.contains(backend),
-                  let kind = kind.kind(forBackend: backend) else { return nil }
-            return Entry(id: aliasID,
-                         name: "\(name) (\(backend.rawValue.uppercased()))",
-                         kind: kind, quant: quant, path: path, sampling: sampling,
-                         contextLimit: contextLimit, sizeBytes: sizeBytes,
-                         engines: engines)
+                let kind = kind.kind(forBackend: backend)
+            else { return nil }
+            return Entry(
+                id: aliasID,
+                name: "\(name) (\(backend.rawValue.uppercased()))",
+                kind: kind, quant: quant, path: path, sampling: sampling,
+                contextLimit: contextLimit, sizeBytes: sizeBytes,
+                engines: engines)
         }
     }
 
@@ -148,8 +152,10 @@ public struct ModelCatalog: Sendable {
 
     // MARK: - Scanning
 
-    public static func scan(directory: URL,
-                            fileManager: FileManager = .default) -> ModelCatalog {
+    public static func scan(
+        directory: URL,
+        fileManager: FileManager = .default
+    ) -> ModelCatalog {
         let root = directory.standardizedFileURL
         var catalog = ModelCatalog(directory: root, entries: [])
         let children: [URL]
@@ -167,7 +173,8 @@ public struct ModelCatalog: Sendable {
             let target = child.resolvingSymlinksInPath()
             // Lock files and other loose files sit beside the installs; they
             // are not models and not worth a warning.
-            guard (try? target.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else {
+            guard (try? target.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            else {
                 continue
             }
             catalog.add(probing: target)
@@ -186,9 +193,11 @@ public struct ModelCatalog: Sendable {
         switch Self.probe(path) {
         case .success(let entry):
             if let existing = entries.first(where: { $0.id == entry.id }) {
-                skipped.append(Skipped(
-                    path: path,
-                    reason: "duplicate id \(entry.id), already served from \(existing.path.path)"))
+                skipped.append(
+                    Skipped(
+                        path: path,
+                        reason:
+                            "duplicate id \(entry.id), already served from \(existing.path.path)"))
                 return nil
             }
             entries.append(entry)
@@ -211,8 +220,9 @@ public struct ModelCatalog: Sendable {
         if fileManager.fileExists(atPath: directory.appendingPathComponent("config.json").path) {
             return probeSnapshot(directory)
         }
-        return .failure(ProbeFailure(
-            reason: "neither manifest.json (a GPU install) nor config.json (a CPU snapshot)"))
+        return .failure(
+            ProbeFailure(
+                reason: "neither manifest.json (a GPU install) nor config.json (a CPU snapshot)"))
     }
 
     private static func probeInstall(_ directory: URL) -> Result<Entry, ProbeFailure> {
@@ -226,32 +236,39 @@ public struct ModelCatalog: Sendable {
         case .qwen36MTP, .qwen38flashMTP:
             // A draft head has no tokenizer and no layers of its own to run;
             // listing it would offer a model that fails on first use.
-            return .failure(ProbeFailure(
-                reason: "an MTP draft head (\(identity.family.rawValue)), served only beside its target"))
+            return .failure(
+                ProbeFailure(
+                    reason:
+                        "an MTP draft head (\(identity.family.rawValue)), served only beside its target"
+                ))
         case .qwen36, .qwen38flash, .qwen35Dense:
             break
         }
         guard GFTokenizer.tokenizerFolder(forModelDirectory: directory) != nil else {
-            return .failure(ProbeFailure(reason: "no tokenizer/tokenizer.json; the install is incomplete"))
+            return .failure(
+                ProbeFailure(reason: "no tokenizer/tokenizer.json; the install is incomplete"))
         }
-        let id = ServerModelIdentity.apiModelID(manifestModelID: identity.modelID,
-                                                family: identity.family,
-                                                weightBits: identity.weightBits)
-        let base = ServerModelIdentity.base(manifestModelID: identity.modelID,
-                                            family: identity.family)
-        return .success(Entry(
-            id: id,
-            name: displayNames[base] ?? base,
-            // A dense install is served by the GPU engine by default now that
-            // the family is implemented there, and by the CPU engine when the
-            // request (or the launch) names it -- `engines` is what says both
-            // are available, and `ModelRouter` derives the `@cpu` alias from it.
-            kind: .gpu(identity.family),
-            quant: identity.weightBits,
-            path: directory,
-            sampling: ModelProfile.resolve(identity: identity).sampling,
-            sizeBytes: sizeOnDisk(directory),
-            engines: identity.family == .qwen35Dense ? [.gpu, .cpu] : nil))
+        let id = ServerModelIdentity.apiModelID(
+            manifestModelID: identity.modelID,
+            family: identity.family,
+            weightBits: identity.weightBits)
+        let base = ServerModelIdentity.base(
+            manifestModelID: identity.modelID,
+            family: identity.family)
+        return .success(
+            Entry(
+                id: id,
+                name: displayNames[base] ?? base,
+                // A dense install is served by the GPU engine by default now that
+                // the family is implemented there, and by the CPU engine when the
+                // request (or the launch) names it -- `engines` is what says both
+                // are available, and `ModelRouter` derives the `@cpu` alias from it.
+                kind: .gpu(identity.family),
+                quant: identity.weightBits,
+                path: directory,
+                sampling: ModelProfile.resolve(identity: identity).sampling,
+                sizeBytes: sizeOnDisk(directory),
+                engines: identity.family == .qwen35Dense ? [.gpu, .cpu] : nil))
     }
 
     private static func probeSnapshot(_ directory: URL) -> Result<Entry, ProbeFailure> {
@@ -270,28 +287,35 @@ public struct ModelCatalog: Sendable {
             return .failure(ProbeFailure(reason: CPUModelFamily.refusal(modelType: modelType)))
         }
         guard let quantization = config["quantization"] as? [String: Any],
-              let bits = quantization["bits"] as? Int else {
-            return .failure(ProbeFailure(
-                reason: "config.json has no quantization block; the CPU engine serves affine snapshots"))
+            let bits = quantization["bits"] as? Int
+        else {
+            return .failure(
+                ProbeFailure(
+                    reason:
+                        "config.json has no quantization block; the CPU engine serves affine snapshots"
+                ))
         }
         // Snapshots are written in place by a converter, so a config can
         // exist before the rest of the directory does.
         for required in ["model.safetensors.index.json", "tokenizer.json"]
-        where !FileManager.default.fileExists(atPath: directory.appendingPathComponent(required).path) {
+        where !FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent(required).path)
+        {
             return .failure(ProbeFailure(reason: "incomplete snapshot: no \(required)"))
         }
         let declared = (config["model_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let id = declared ?? directory.lastPathComponent
         let name = (config["display_name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? id
-        return .success(Entry(
-            id: id,
-            name: name,
-            kind: .cpu(family),
-            quant: bits,
-            path: directory,
-            sampling: family.samplingDefaults,
-            contextLimit: config["max_position_embeddings"] as? Int,
-            sizeBytes: sizeOnDisk(directory)))
+        return .success(
+            Entry(
+                id: id,
+                name: name,
+                kind: .cpu(family),
+                quant: bits,
+                path: directory,
+                sampling: family.samplingDefaults,
+                contextLimit: config["max_position_embeddings"] as? Int,
+                sizeBytes: sizeOnDisk(directory)))
     }
 
     /// A single-model CPU server's family, for fitting `--reasoning` to it
@@ -305,7 +329,8 @@ public struct ModelCatalog: Sendable {
     /// shape the three dense Qwen 3.5 models are installed as.
     static func snapshotFamily(_ directory: URL) throws -> CPUModelFamily {
         if FileManager.default.fileExists(
-            atPath: directory.appendingPathComponent("manifest.json").path) {
+            atPath: directory.appendingPathComponent("manifest.json").path)
+        {
             let family = try ManifestReader.peekFamily(directoryURL: directory)
             guard family == .qwen35Dense else {
                 throw CPUModelBackend.CPUBackendError.unsupported(
@@ -346,12 +371,15 @@ public struct ModelCatalog: Sendable {
     /// really occupies rather than its logical length.
     static func sizeOnDisk(_ directory: URL) -> Int64 {
         let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileSizeKey, .isRegularFileKey]
-        guard let walker = FileManager.default.enumerator(
-            at: directory, includingPropertiesForKeys: keys) else { return 0 }
+        guard
+            let walker = FileManager.default.enumerator(
+                at: directory, includingPropertiesForKeys: keys)
+        else { return 0 }
         var total: Int64 = 0
         for case let file as URL in walker {
             guard let values = try? file.resourceValues(forKeys: Set(keys)),
-                  values.isRegularFile == true else { continue }
+                values.isRegularFile == true
+            else { continue }
             total += Int64(values.totalFileAllocatedSize ?? values.fileSize ?? 0)
         }
         return total
@@ -376,8 +404,10 @@ public struct ModelCatalog: Sendable {
     /// One notice for everything skipped, written once at startup.
     public func reportSkipped(to handle: FileHandle = .standardError) {
         guard !skipped.isEmpty else { return }
-        var lines = ["catalog: skipped \(skipped.count) of \(skipped.count + entries.count) "
-            + "directories in \(directory.path):"]
+        var lines = [
+            "catalog: skipped \(skipped.count) of \(skipped.count + entries.count) "
+                + "directories in \(directory.path):"
+        ]
         for item in skipped {
             lines.append("  \(item.path.lastPathComponent): \(item.reason)")
         }
@@ -396,7 +426,8 @@ public struct ModelCatalog: Sendable {
 
     private static func json(for entry: Entry) throws -> String {
         let thinking = try entry.kind.supportedReasoningLevels.map { try quoted($0.rawValue) }
-        let sampling = "{\"temperature\":\(decimal(entry.sampling.temperature, places: 4)),"
+        let sampling =
+            "{\"temperature\":\(decimal(entry.sampling.temperature, places: 4)),"
             + "\"top_p\":\(decimal(entry.sampling.topP, places: 4)),"
             + "\"top_k\":\(entry.sampling.topK)}"
         let fields: [(key: String, value: String)] = [
@@ -417,7 +448,7 @@ public struct ModelCatalog: Sendable {
     private static func quoted(_ value: String) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
-        return String(decoding: try encoder.encode(value), as: UTF8.self)
+        return try encoder.encode(value).lossyUTF8String
     }
 
     /// Float 0.6 widens to 0.6000000238; a launcher showing the defaults

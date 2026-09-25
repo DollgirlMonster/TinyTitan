@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import Synchronization
 import Testing
+
 @testable import TinyTitanRepackCore
 
 @Suite struct InstallLockTests {
@@ -168,11 +169,11 @@ private final class HangingInstallURLProtocol: URLProtocol, @unchecked Sendable 
         state.withLock { $0 = false }
     }
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with request: URLRequest) -> Bool {
         true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 

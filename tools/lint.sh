@@ -12,6 +12,12 @@
 #   converter           routed experts must land at their own index
 #   arch-path           no hardcoded SwiftPM triple in a build path (see below)
 #   shell-portability   scripts run on the system bash (3.2), not just the dev one
+#   shell-lint          shellcheck warnings-as-errors over every script, pinned version
+#   swiftlint           SwiftLint violations-as-errors under the committed config
+#   swift-format        formatting enforced under the committed .swift-format
+#   javascript          eslint + prettier --check over the plugin packages, pinned
+#   python              ruff check + ruff format --check under pyproject.toml,
+#                       with the pinned ruff version
 #
 # Opting out of force-cast: put `lint:allow-force <reason>` in a comment on
 # the line immediately above. The reason is mandatory and is what a reviewer
@@ -22,7 +28,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export ROOT
 BASELINE="$SCRIPT_DIR/func-length-baseline.txt"
 MAX_FUNC_LINES="${MAX_FUNC_LINES:-120}"
 
@@ -241,11 +248,15 @@ check_unchecked_sendable() {
       lines.each_with_index do |line, i|
         next unless line.include?("@unchecked Sendable")
         next if line =~ /^\s*(\/\/|\/\/\/)/      # a comment mentioning it
-        # Contiguous comment block directly above, declaration line excluded.
+        # The invariant comment sits above the declaration, and the declaration
+        # may wrap over several lines (swift-format breaks a long inheritance
+        # clause), so walk the whole contiguous non-blank block above and collect
+        # its comments. The marker is still required; only its distance from the
+        # `@unchecked Sendable` token changed.
         j = i - 1
         block = []
-        while j >= 0 && lines[j] =~ /^\s*(\/\/|\/\/\/)/
-          block << lines[j]
+        while j >= 0 && !lines[j].strip.empty?
+          block << lines[j] if lines[j] =~ /^\s*(\/\/|\/\/\/)/
           j -= 1
         end
         text = block.join(" ").downcase
@@ -492,15 +503,274 @@ check_shell_portability() {
   return $failed
 }
 
+# --- python -----------------------------------------------------------------
+# Ruff is the Python standard: the rules and the format are pinned in the
+# repository's pyproject.toml. A missing or different ruff FAILS rather than
+# skipping — a gate that quietly does nothing is the failure mode this check
+# exists to prevent.
+RUFF_PIN="0.16.7"
+# The oldest Python the scripts must run on; pyproject.toml's target-version is
+# the same number, and CI installs this interpreter for the gates.
+PYTHON_FLOOR="3.13"
+
+check_python() {
+  echo "== python: ruff check + ruff format --check (pinned $RUFF_PIN) =="
+  if ! command -v ruff >/dev/null 2>&1; then
+    echo "  FAIL: ruff is not installed; this gate needs the pinned version:"
+    echo "        pipx install ruff==$RUFF_PIN   (or: python3 -m pip install --user ruff==$RUFF_PIN)"
+    status=1
+    return 1
+  fi
+  local version
+  version="$(ruff --version | awk '{print $2}')"
+  if [ "$version" != "$RUFF_PIN" ]; then
+    echo "  FAIL: ruff $version is installed, this gate pins $RUFF_PIN"
+    echo "        pipx install --force ruff==$RUFF_PIN"
+    status=1
+    return 1
+  fi
+  local output
+  if ! output="$(cd "$ROOT" && ruff check . 2>&1)"; then
+    printf '%s\n' "$output" | tail -25
+    echo "  FAIL: ruff check (fix: ruff check --fix .)"
+    status=1
+    return 1
+  fi
+  if ! output="$(cd "$ROOT" && ruff format --check . 2>&1)"; then
+    printf '%s\n' "$output" | tail -10
+    echo "  FAIL: ruff format --check (fix: ruff format .)"
+    status=1
+    return 1
+  fi
+  # The floor is enforced, not trusted: every script must PARSE under the pinned
+  # Python, not merely under whichever interpreter is on this Mac. Ruff's
+  # formatter rewrites to the target version's syntax (targeting 3.14 turned
+  # `except (A, B):` into PEP 758's `except A, B:`, a syntax error on 3.13), so
+  # the check is on the real files with the real floor.
+  if ! output="$(cd "$ROOT" && python3 - "$PYTHON_FLOOR" <<'PY' 2>&1
+import ast, pathlib, sys
+
+floor = tuple(int(part) for part in sys.argv[1].split("."))
+roots = [pathlib.Path("benchmark"), pathlib.Path("tools"), pathlib.Path("docs"),
+         pathlib.Path("AUDIT")]
+bad = []
+for root in roots:
+    for path in sorted(root.rglob("*.py")):
+        if ".build" in path.parts:
+            continue
+        try:
+            ast.parse(path.read_text(encoding="utf-8"), filename=str(path),
+                      feature_version=floor)
+        except SyntaxError as error:
+            bad.append(f"{path}:{error.lineno}: {error.msg}")
+if bad:
+    print("\n".join(bad))
+    sys.exit(1)
+PY
+)"; then
+    printf '%s\n' "$output" | tail -10
+    echo "  FAIL: a script does not parse under Python $PYTHON_FLOOR"
+    status=1
+    return 1
+  fi
+  echo "  ok (ruff $version, check and format clean, parses under $PYTHON_FLOOR)"
+  return 0
+}
+
+
+# --- shellcheck -------------------------------------------------------------
+# The scripts are the installer, the launcher and the release tooling: a real
+# bug here is a user's disk or a published artifact, not a style point. The
+# pinned version matters because shellcheck's checks change between releases.
+SHELLCHECK_PIN="0.11.0"
+
+check_shellcheck() {
+  echo "== shellcheck: warnings are errors over every script (pinned $SHELLCHECK_PIN) =="
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    echo "  FAIL: shellcheck is not installed; this gate needs the pinned version:"
+    echo "        brew install shellcheck  (CI downloads $SHELLCHECK_PIN from the release page)"
+    status=1
+    return 1
+  fi
+  local version
+  version="$(shellcheck --version | awk '/^version:/ {print $2}')"
+  if [ "$version" != "$SHELLCHECK_PIN" ]; then
+    echo "  FAIL: shellcheck $version is installed, this gate pins $SHELLCHECK_PIN"
+    status=1
+    return 1
+  fi
+  local scripts=() f output
+  while IFS= read -r f; do scripts+=("$f"); done < <(
+    find "$ROOT/tools" "$ROOT/benchmark" "$ROOT/docs" -name '*.sh' -not -path '*/.build/*' 2>/dev/null | sort)
+  if [ "${#scripts[@]}" -eq 0 ]; then
+    echo "  FAIL: no shell scripts found to check"
+    status=1
+    return 1
+  fi
+  if ! output="$(shellcheck -S warning -f gcc "${scripts[@]+"${scripts[@]}"}" 2>&1)"; then
+    printf '%s\n' "$output" | sed "s|$ROOT/||" | head -30
+    echo "  FAIL: shellcheck found warnings (see above)"
+    status=1
+    return 1
+  fi
+  echo "  ok (shellcheck $version, ${#scripts[@]} scripts, no warnings)"
+  return 0
+}
+
+# --- swiftlint --------------------------------------------------------------
+# The committed `.swiftlint.yml` is the Swift standard here: the safety rules
+# (force_unwrapping, implicitly_unwrapped_optional) are on and had to reach zero
+# before this gate could be wired, layout is delegated to swift-format and
+# size/complexity to the ratchet above, and every remaining decision is
+# justified in the config itself. `--strict` promotes every warning to a
+# failure. The pinned version matters because the rule set changes between
+# releases.
+SWIFTLINT_PIN="0.65.1"
+
+check_swiftlint() {
+  echo "== swiftlint: violations are errors under the committed config (pinned $SWIFTLINT_PIN) =="
+  if ! command -v swiftlint >/dev/null 2>&1; then
+    echo "  FAIL: swiftlint is not installed; this gate needs the pinned version:"
+    echo "        brew install swiftlint  (or the $SWIFTLINT_PIN release binary)"
+    status=1
+    return 1
+  fi
+  local version
+  version="$(swiftlint version)"
+  if [ "$version" != "$SWIFTLINT_PIN" ]; then
+    echo "  FAIL: swiftlint $version is installed, this gate pins $SWIFTLINT_PIN"
+    status=1
+    return 1
+  fi
+  local output
+  if ! output="$(cd "$ROOT" && swiftlint lint --strict --no-cache --quiet 2>&1)"; then
+    printf '%s\n' "$output" | sed "s|$ROOT/||" | head -30
+    echo "  FAIL: swiftlint found violations (fix them; an exclusion needs a written reason)"
+    status=1
+    return 1
+  fi
+  echo "  ok (swiftlint $version, --strict clean)"
+  return 0
+}
+
+# --- swift-format -----------------------------------------------------------
+# The committed `.swift-format` is the formatting standard: 4-space indentation
+# (the tree's actual style; swift-format defaults to 2) and
+# `AlwaysUseLowerCamelCase` off, because the numerical vocabulary (`D`, `N`,
+# `Dv`, `FmoE`, `qwen36_8bit`, ...) is the same deliberate naming the
+# `.swiftlint.yml` identifier_name decision already records (AUD-018).
+# Everything else is the formatter's default. The binary is the one bundled with
+# the pinned Xcode 27 / Swift 6.4 toolchain, so the toolchain pin IS the version
+# pin -- that build's `swift-format --version` reports the branch ("main"), which
+# is why there is no separate SWIFT_FORMAT_PIN.
+check_swift_format() {
+  echo "== swift-format: formatting is enforced under the committed .swift-format =="
+  if ! command -v xcrun >/dev/null 2>&1 || ! xcrun --find swift-format >/dev/null 2>&1; then
+    echo "  FAIL: swift-format is not available from the toolchain (needs Xcode 27 / Swift 6.4)"
+    status=1
+    return 1
+  fi
+  local output
+  if ! output="$(cd "$ROOT" && xcrun swift-format lint --strict --recursive \
+      sources tests benchmark Package.swift 2>&1)"; then
+    printf '%s\n' "$output" | sed "s|$ROOT/||" | head -30
+    echo "  FAIL: swift-format found formatting drift"
+    echo "        fix: xcrun swift-format format --in-place --recursive sources tests benchmark Package.swift"
+    status=1
+    return 1
+  fi
+  echo "  ok (xcrun swift-format, --strict clean)"
+  return 0
+}
+
+# --- javascript -------------------------------------------------------------
+# The two DSH plugin packages are npm packages with no runtime dependencies.
+# ESLint and Prettier are pinned exactly in each package.json and locked in its
+# package-lock.json, so `npm ci` reproduces the toolchain byte-for-byte; this
+# gate FAILS when the installed versions differ from those pins instead of
+# skipping, and it fails when a package has no toolchain installed at all.
+ESLINT_PIN="10.11.0"
+PRETTIER_PIN="3.9.9"
+NODE_FLOOR="22"
+
+check_javascript() {
+  echo "== javascript: eslint + prettier --check over the plugin packages (pinned $ESLINT_PIN/$PRETTIER_PIN) =="
+  if ! command -v node >/dev/null 2>&1; then
+    echo "  FAIL: node is not installed; the plugin packages need Node $NODE_FLOOR or newer"
+    status=1
+    return 1
+  fi
+  local node_version node_major
+  node_version="$(node --version)"
+  node_major="${node_version#v}"
+  node_major="${node_major%%.*}"
+  if [ "$node_major" -lt "$NODE_FLOOR" ]; then
+    echo "  FAIL: node $node_version is installed, the packages declare engines.node >=$NODE_FLOOR"
+    status=1
+    return 1
+  fi
+  local package name eslint prettier version output checked=0
+  for package in "$ROOT"/plugins/dsh-*; do
+    [ -f "$package/package.json" ] || continue
+    name="$(basename "$package")"
+    eslint="$package/node_modules/.bin/eslint"
+    prettier="$package/node_modules/.bin/prettier"
+    if [ ! -x "$eslint" ] || [ ! -x "$prettier" ]; then
+      echo "  FAIL: $name has no installed toolchain; run: (cd ${package#"$ROOT"/} && npm ci)"
+      status=1
+      return 1
+    fi
+    version="$("$eslint" --version | tr -d 'v')"
+    if [ "$version" != "$ESLINT_PIN" ]; then
+      echo "  FAIL: $name has eslint $version, this gate pins $ESLINT_PIN"
+      status=1
+      return 1
+    fi
+    version="$("$prettier" --version)"
+    if [ "$version" != "$PRETTIER_PIN" ]; then
+      echo "  FAIL: $name has prettier $version, this gate pins $PRETTIER_PIN"
+      status=1
+      return 1
+    fi
+    if ! output="$(cd "$package" && "$eslint" . 2>&1)"; then
+      printf '%s\n' "$output" | head -20
+      echo "  FAIL: $name: eslint findings (fix: npm run lint, then npm run format)"
+      status=1
+      return 1
+    fi
+    if ! output="$(cd "$package" && "$prettier" --check . 2>&1)"; then
+      printf '%s\n' "$output" | head -20
+      echo "  FAIL: $name: formatting drift (fix: npm run format)"
+      status=1
+      return 1
+    fi
+    checked=$((checked + 1))
+    echo "  ok: $name (node $node_version, eslint $ESLINT_PIN, prettier $PRETTIER_PIN)"
+  done
+  if [ "$checked" -eq 0 ]; then
+    echo "  FAIL: no plugin package found under plugins/"
+    status=1
+    return 1
+  fi
+  return 0
+}
+
 case "$want" in
-  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability ;;
+  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_shellcheck; check_swiftlint; check_swift_format; check_javascript; check_python ;;
   force-cast)  check_force_cast ;;
   func-length) check_func_length ;;
   sendable)    check_unchecked_sendable ;;
   converter)   check_converter_expert_order ;;
   arch-path)   check_arch_path ;;
   shell)       check_shell_portability ;;
-  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell)" >&2; exit 2 ;;
+  shellcheck)  check_shellcheck ;;
+  swiftlint)   check_swiftlint ;;
+  swift-format) check_swift_format ;;
+  format)      check_swift_format ;;
+  javascript)  check_javascript ;;
+  js)          check_javascript ;;
+  python)      check_python ;;
+  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|shellcheck|swiftlint|swift-format|javascript|python)" >&2; exit 2 ;;
 esac
 
 exit $status

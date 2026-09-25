@@ -18,6 +18,7 @@ the script. Nothing here touches the network or `models/`.
 
     cd benchmark && python3 -m unittest test_install_models_menu -v
 """
+
 from __future__ import annotations
 
 import os
@@ -44,8 +45,9 @@ echo "rc=$?"
 
 
 def run_menu(stdin: str | None) -> subprocess.CompletedProcess:
-    return subprocess.run(["bash", "-c", HARNESS], input=stdin,
-                          capture_output=True, text=True, timeout=60)
+    return subprocess.run(
+        ["bash", "-c", HARNESS], input=stdin, capture_output=True, text=True, timeout=60
+    )
 
 
 class InstallMenuAnswerTests(unittest.TestCase):
@@ -98,10 +100,12 @@ class StagingPathTests(unittest.TestCase):
                 self.assertNotIn(".build/", line)
 
     def test_download_and_conversion_arguments_use_the_work_root(self) -> None:
-        for argument in ('--work "$WORK/${preset}-shards"',
-                         '--output "$WORK/qwen38-affine-${width}bit"',
-                         '--work "$WORK/qwen38-shards"',
-                         '--output "$WORK/${preset}-affine"'):
+        for argument in (
+            '--work "$WORK/${preset}-shards"',
+            '--output "$WORK/qwen38-affine-${width}bit"',
+            '--work "$WORK/qwen38-shards"',
+            '--output "$WORK/${preset}-affine"',
+        ):
             with self.subTest(argument=argument):
                 self.assertIn(argument, self.script)
 
@@ -138,21 +142,26 @@ class DiskSpaceAndCleanupTests(unittest.TestCase):
 
     def stub_df(self, available_gb: int) -> None:
         df = self.df_dir / "df"
-        df.write_text(f'#!/bin/sh\necho "Filesystem 1G-blocks Used Available Capacity Mounted on"\n'
-                      f'echo "/dev/test 10000 1 {available_gb} 1% /"\n')
+        df.write_text(
+            f'#!/bin/sh\necho "Filesystem 1G-blocks Used Available Capacity Mounted on"\n'
+            f'echo "/dev/test 10000 1 {available_gb} 1% /"\n'
+        )
         df.chmod(0o755)
 
     def run_tool(self, *args: str, available_gb: int | None = None):
-        env = dict(os.environ,
-                   TINYTITAN_WORK_DIR=str(self.work),
-                   TINYTITAN_MODELS_DIR=str(self.models),
-                   TINYTITAN_BIN_DIR=str(self.bin),
-                   TINYTITAN_PYTHON="/usr/bin/true")
+        env = dict(
+            os.environ,
+            TINYTITAN_WORK_DIR=str(self.work),
+            TINYTITAN_MODELS_DIR=str(self.models),
+            TINYTITAN_BIN_DIR=str(self.bin),
+            TINYTITAN_PYTHON="/usr/bin/true",
+        )
         if available_gb is not None:
             self.stub_df(available_gb)
             env["PATH"] = f"{self.df_dir}:{env['PATH']}"
-        return subprocess.run(["bash", str(SCRIPT), *args], env=env,
-                              capture_output=True, text=True, timeout=120)
+        return subprocess.run(
+            ["bash", str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=120
+        )
 
     def install(self, name: str) -> None:
         (self.models / name).mkdir(parents=True, exist_ok=True)
@@ -181,14 +190,19 @@ class DiskSpaceAndCleanupTests(unittest.TestCase):
         self.assertIn("FAKE-REPACK", output)
 
     def test_the_precheck_can_be_skipped_explicitly(self) -> None:
-        env = dict(os.environ,
-                   TINYTITAN_WORK_DIR=str(self.work), TINYTITAN_MODELS_DIR=str(self.models),
-                   TINYTITAN_BIN_DIR=str(self.bin), TINYTITAN_PYTHON="/usr/bin/true",
-                   TINYTITAN_SKIP_DISK_CHECK="1")
+        env = dict(
+            os.environ,
+            TINYTITAN_WORK_DIR=str(self.work),
+            TINYTITAN_MODELS_DIR=str(self.models),
+            TINYTITAN_BIN_DIR=str(self.bin),
+            TINYTITAN_PYTHON="/usr/bin/true",
+            TINYTITAN_SKIP_DISK_CHECK="1",
+        )
         self.stub_df(3)
         env["PATH"] = f"{self.df_dir}:{env['PATH']}"
-        result = subprocess.run(["bash", str(SCRIPT), "ornith15"], env=env,
-                                capture_output=True, text=True, timeout=120)
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "ornith15"], env=env, capture_output=True, text=True, timeout=120
+        )
         self.assertIn("FAKE-REPACK", result.stdout + result.stderr)
 
     def test_staging_for_a_missing_width_is_kept_and_explained(self) -> None:

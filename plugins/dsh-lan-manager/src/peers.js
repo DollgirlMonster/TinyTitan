@@ -49,9 +49,7 @@ export function peerKey(address, port) {
  * @param options - `{address, port, path, method, token, body, timeoutMs}`.
  * @returns `{status, body}`; `status` is 0 when the connection failed.
  */
-export function httpJson({
-  address, port, path, method = "GET", token, body, timeoutMs = 2000,
-}) {
+export function httpJson({ address, port, path, method = "GET", token, body, timeoutMs = 2000 }) {
   return new Promise((resolve) => {
     const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
     let settled = false;
@@ -61,35 +59,42 @@ export function httpJson({
         resolve(value);
       }
     };
-    const req = request({
-      host: address,
-      port,
-      path,
-      method,
-      headers: {
-        ...(token ? { "x-dsh-token": token } : {}),
-        ...(payload ? { "content-type": "application/json", "content-length": payload.length } : {}),
+    const req = request(
+      {
+        host: address,
+        port,
+        path,
+        method,
+        headers: {
+          ...(token ? { "x-dsh-token": token } : {}),
+          ...(payload
+            ? { "content-type": "application/json", "content-length": payload.length }
+            : {}),
+        },
+        timeout: timeoutMs,
       },
-      timeout: timeoutMs,
-    }, (res) => {
-      const chunks = [];
-      res.on("data", (chunk) => chunks.push(chunk));
-      res.on("end", () => {
-        const text = Buffer.concat(chunks).toString("utf8");
-        let parsed;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          parsed = undefined;
-        }
-        done({ status: Number(res.statusCode ?? 0), body: parsed });
-      });
-    });
+      (res) => {
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          let parsed;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = undefined;
+          }
+          done({ status: Number(res.statusCode ?? 0), body: parsed });
+        });
+      },
+    );
     req.on("timeout", () => {
       req.destroy();
       done({ status: 0, body: undefined, error: "timeout" });
     });
-    req.on("error", (error) => done({ status: 0, body: undefined, error: String(error?.message ?? error) }));
+    req.on("error", (error) =>
+      done({ status: 0, body: undefined, error: String(error?.message ?? error) }),
+    );
     if (payload) req.write(payload);
     req.end();
   });
@@ -266,7 +271,13 @@ export class PeerTable {
       const key = peerKey(address, port);
       if (this.peers.has(key) || this.gossip.has(key)) continue;
       if (this.gossip.size >= MAX_GOSSIP_ENTRIES) break;
-      this.gossip.set(key, { address, port, name: String(entry?.name ?? address), source: `gossip:${from}`, seenAt: this.now() });
+      this.gossip.set(key, {
+        address,
+        port,
+        name: String(entry?.name ?? address),
+        source: `gossip:${from}`,
+        seenAt: this.now(),
+      });
       kept += 1;
     }
     return kept;
@@ -289,10 +300,15 @@ export class PeerTable {
     });
     if (status !== 200 || !body || body.ok !== true) {
       // A 401 means it answered but with another group key: reachable, not ours.
-      if (status === 401) this.log(`peer ${candidate.address}:${candidate.port} is not in our group (401)`);
+      if (status === 401)
+        this.log(`peer ${candidate.address}:${candidate.port} is not in our group (401)`);
       return undefined;
     }
-    if (body.group !== undefined && this.config.groupKey !== undefined && String(body.group) !== String(this.config.groupKey)) {
+    if (
+      body.group !== undefined &&
+      this.config.groupKey !== undefined &&
+      String(body.group) !== String(this.config.groupKey)
+    ) {
       this.log(`peer ${candidate.address}:${candidate.port} reports group ${body.group}, not ours`);
       return undefined;
     }
@@ -340,10 +356,8 @@ export class PeerTable {
     const seen = new Set();
     // Validation may resolve a hostname (threadpool), so it runs on its own,
     // shallower limit than the socket probes that follow.
-    const checked = await mapLimit(
-      candidates,
-      this.config.resolveConcurrency ?? 4,
-      (candidate) => this.validate(candidate, {
+    const checked = await mapLimit(candidates, this.config.resolveConcurrency ?? 4, (candidate) =>
+      this.validate(candidate, {
         config: this.config,
         resolve: (name) => this.resolveHost(name),
       }),
@@ -358,8 +372,11 @@ export class PeerTable {
       validated.push(check);
     }
 
-    const probed = await mapLimit(validated, this.config.discoveryConcurrency ?? DEFAULT_CONCURRENCY,
-      (candidate) => this.probe(candidate));
+    const probed = await mapLimit(
+      validated,
+      this.config.discoveryConcurrency ?? DEFAULT_CONCURRENCY,
+      (candidate) => this.probe(candidate),
+    );
 
     let added = 0;
     for (const record of probed) {
@@ -388,7 +405,11 @@ export class PeerTable {
   list() {
     return [...this.peers.values()]
       .sort((a, b) => b.lastSeen - a.lastSeen)
-      .map(({ gossip, ...rest }) => ({ ...rest, sessionCount: rest.sessions.length, workspaceCount: rest.workspaces.length }));
+      .map(({ gossip, ...rest }) => ({
+        ...rest,
+        sessionCount: rest.sessions.length,
+        workspaceCount: rest.workspaces.length,
+      }));
   }
 
   /**
@@ -408,8 +429,10 @@ export class PeerTable {
   get(selector) {
     const wanted = String(selector ?? "");
     if (!wanted) return undefined;
-    return this.peers.get(wanted)
-      ?? [...this.peers.values()].find((peer) => peer.address === wanted || peer.name === wanted);
+    return (
+      this.peers.get(wanted) ??
+      [...this.peers.values()].find((peer) => peer.address === wanted || peer.name === wanted)
+    );
   }
 
   /**

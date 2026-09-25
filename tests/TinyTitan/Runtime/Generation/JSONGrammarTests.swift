@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import TinyTitan
 
 /// The JSON grammar, on bytes alone. Every case here is a document a model
@@ -158,16 +159,18 @@ import Foundation
     }
 
     @Test func commonSchemasCompile() throws {
-        let node = try compile("""
-        {"type":"object","properties":{
-           "name":{"type":"string"},
-           "count":{"type":"integer"},
-           "tags":{"type":"array","items":{"type":"string"}},
-           "mode":{"enum":["fast","slow"]}
-         },"required":["name"],"additionalProperties":false}
-        """)
+        let node = try compile(
+            """
+            {"type":"object","properties":{
+               "name":{"type":"string"},
+               "count":{"type":"integer"},
+               "tags":{"type":"array","items":{"type":"string"}},
+               "mode":{"enum":["fast","slow"]}
+             },"required":["name"],"additionalProperties":false}
+            """)
         guard case .object(let properties, let required, let additional) = node else {
-            Issue.record("expected an object node, got \(node)"); return
+            Issue.record("expected an object node, got \(node)")
+            return
         }
         #expect(required == ["name"])
         #expect(!additional)
@@ -178,9 +181,11 @@ import Foundation
 
     @Test func annotationsAndBooleanSchemasAreAccepted() throws {
         #expect(try compile("true") == .any)
-        #expect(try compile("""
-        {"type":"string","title":"Name","description":"a name","default":"x","x-vendor":1}
-        """) == .scalar([.string]))
+        #expect(
+            try compile(
+                """
+                {"type":"string","title":"Name","description":"a name","default":"x","x-vendor":1}
+                """) == .scalar([.string]))
     }
 
     @Test func unsupportedKeywordsAreRefusedByName() throws {
@@ -206,7 +211,8 @@ import Foundation
             Issue.record("expected a refusal")
         } catch let error as JSONSchemaCompileError {
             guard case .unsupported(let keyword, let at) = error else {
-                Issue.record("unexpected \(error)"); return
+                Issue.record("unexpected \(error)")
+                return
             }
             #expect(keyword == "pattern")
             #expect(at == "$")
@@ -217,7 +223,9 @@ import Foundation
         #expect(throws: JSONSchemaCompileError.self) { _ = try self.compile(#"{"type":"strin"}"#) }
         #expect(throws: JSONSchemaCompileError.self) { _ = try self.compile(#"{"enum":[]}"#) }
         #expect(throws: JSONSchemaCompileError.self) {
-            _ = try self.compile(#"{"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":false,"required":["b"]}"#)
+            _ = try self.compile(
+                #"{"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":false,"required":["b"]}"#
+            )
         }
         #expect(throws: JSONSchemaCompileError.self) {
             // A completion (properties) beside an enum would be ignored.
@@ -242,7 +250,8 @@ import Foundation
     }
 
     @Test func propertiesAndItemsImplyTheirContainer() throws {
-        #expect(try compile(#"{"properties":{"a":{"type":"string"}}}"#)
+        #expect(
+            try compile(#"{"properties":{"a":{"type":"string"}}}"#)
                 == .object(properties: ["a": .scalar([.string])], required: [], additional: true))
         #expect(try compile(#"{"items":{"type":"string"}}"#) == .array(items: .scalar([.string])))
         #expect(throws: JSONSchemaCompileError.self) {

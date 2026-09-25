@@ -1,5 +1,5 @@
-import Foundation
 import Accelerate
+import Foundation
 
 /// FP32 reference for `softmax(softcap * tanh(x / softcap))`.
 ///
@@ -14,37 +14,46 @@ import Accelerate
 public enum LogitSoftcapSoftmaxRef {
     public static func apply(x: [Float], softcap: Float) -> [Float] {
         let v = x.count
+        // An empty array has no vDSP base address, and there is nothing to
+        // softmax: the old force unwrap made that case a crash rather than an
+        // empty distribution.
+        guard v > 0 else { return [] }
         let invC = 1.0 / softcap
 
         // 1. Apply softcap: y = softcap * tanh(x / softcap)
         //    Two-step: y = x * invC; y = tanh(y); y = y * softcap.
         var y = [Float](repeating: 0, count: v)
         var s = invC
-        x.withUnsafeBufferPointer { px in
-            y.withUnsafeMutableBufferPointer { py in
-                vDSP_vsmul(px.baseAddress!, 1, &s, py.baseAddress!, 1, vDSP_Length(v))
+        x.withUnsafeBufferPointer { pxBuffer in
+            y.withUnsafeMutableBufferPointer { pyBuffer in
+                guard let px = pxBuffer.baseAddress, let py = pyBuffer.baseAddress else { return }
+                vDSP_vsmul(px, 1, &s, py, 1, vDSP_Length(v))
             }
         }
         y = vForce.tanh(y)
         var c = softcap
-        y.withUnsafeMutableBufferPointer { py in
-            vDSP_vsmul(py.baseAddress!, 1, &c, py.baseAddress!, 1, vDSP_Length(v))
+        y.withUnsafeMutableBufferPointer { pyBuffer in
+            guard let py = pyBuffer.baseAddress else { return }
+            vDSP_vsmul(py, 1, &c, py, 1, vDSP_Length(v))
         }
 
         // 2. Numerically stable softmax: subtract max, exp, divide by sum.
         var mx: Float = -.infinity
-        y.withUnsafeBufferPointer { py in
-            vDSP_maxv(py.baseAddress!, 1, &mx, vDSP_Length(v))
+        y.withUnsafeBufferPointer { pyBuffer in
+            guard let py = pyBuffer.baseAddress else { return }
+            vDSP_maxv(py, 1, &mx, vDSP_Length(v))
         }
         var negMax = -mx
-        y.withUnsafeMutableBufferPointer { py in
-            vDSP_vsadd(py.baseAddress!, 1, &negMax, py.baseAddress!, 1, vDSP_Length(v))
+        y.withUnsafeMutableBufferPointer { pyBuffer in
+            guard let py = pyBuffer.baseAddress else { return }
+            vDSP_vsadd(py, 1, &negMax, py, 1, vDSP_Length(v))
         }
         y = vForce.exp(y)
 
         var sum: Float = 0
-        y.withUnsafeBufferPointer { py in
-            vDSP_sve(py.baseAddress!, 1, &sum, vDSP_Length(v))
+        y.withUnsafeBufferPointer { pyBuffer in
+            guard let py = pyBuffer.baseAddress else { return }
+            vDSP_sve(py, 1, &sum, vDSP_Length(v))
         }
         // An all-zero exponent vector (sum == 0) has no valid distribution;
         // return a zero distribution instead of dividing by zero.
@@ -52,8 +61,9 @@ public enum LogitSoftcapSoftmaxRef {
             return [Float](repeating: 0, count: v)
         }
         var invSum = 1.0 / sum
-        y.withUnsafeMutableBufferPointer { py in
-            vDSP_vsmul(py.baseAddress!, 1, &invSum, py.baseAddress!, 1, vDSP_Length(v))
+        y.withUnsafeMutableBufferPointer { pyBuffer in
+            guard let py = pyBuffer.baseAddress else { return }
+            vDSP_vsmul(py, 1, &invSum, py, 1, vDSP_Length(v))
         }
         return y
     }

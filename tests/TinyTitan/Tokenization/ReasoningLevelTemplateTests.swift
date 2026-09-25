@@ -34,7 +34,8 @@ struct ReasoningLevelTemplateTests {
         }
 
         func runtime(_ level: ReasoningLevel) throws
-            -> (thinking: ModelThinkingMode, effort: ModelReasoningEffort?) {
+            -> (thinking: ModelThinkingMode, effort: ModelReasoningEffort?)
+        {
             switch self {
             case .gpu(let family): try family.runtimeReasoning(for: level)
             case .cpu(let family): try family.runtimeReasoning(for: level)
@@ -56,17 +57,22 @@ struct ReasoningLevelTemplateTests {
         Template(fixture: "Qwen35ChatMLTokenizer", owner: .cpu(.qwen35Dense)),
     ]
 
-    static let binaryFixtures = ["ChatMLTokenizer", "AgentWorldChatMLTokenizer",
-                                 "OrnithChatMLTokenizer", "Qwen35ChatMLTokenizer"]
+    static let binaryFixtures = [
+        "ChatMLTokenizer", "AgentWorldChatMLTokenizer",
+        "OrnithChatMLTokenizer", "Qwen35ChatMLTokenizer",
+    ]
 
     private static func folder(_ fixture: String) throws -> URL {
-        try #require(Bundle.module.url(
-            forResource: fixture, withExtension: nil, subdirectory: "Fixtures"))
+        try #require(
+            Bundle.module.url(
+                forResource: fixture, withExtension: nil, subdirectory: "Fixtures"))
     }
 
     /// The Jinja context the tokenizer builds for these settings.
-    private static func context(_ thinking: ModelThinkingMode,
-                                _ effort: String?) -> [String: any Sendable] {
+    private static func context(
+        _ thinking: ModelThinkingMode,
+        _ effort: String?
+    ) -> [String: any Sendable] {
         var context: [String: any Sendable] = ["enable_thinking": thinking.isEnabled]
         if let effort { context["reasoning_effort"] = effort }
         return context
@@ -75,8 +81,10 @@ struct ReasoningLevelTemplateTests {
     /// Renders the template itself, bypassing the typed effort enum, so a
     /// value the runtime cannot express (`high`, `max`) can still be put to
     /// the template.
-    private static func render(_ tok: GFTokenizer,
-                               _ context: [String: any Sendable]) throws -> String {
+    private static func render(
+        _ tok: GFTokenizer,
+        _ context: [String: any Sendable]
+    ) throws -> String {
         let ids = try tok.tokenizer.applyChatTemplate(
             messages: [["role": "user", "content": "Hi"]],
             chatTemplate: nil,
@@ -88,22 +96,26 @@ struct ReasoningLevelTemplateTests {
         return tok.tokenizer.decode(tokens: ids, skipSpecialTokens: false)
     }
 
-    @Test("Every supported level renders its own prompt, on both render paths",
-          arguments: templates)
+    @Test(
+        "Every supported level renders its own prompt, on both render paths",
+        arguments: templates)
     func supportedLevelsRenderDistinctPrompts(_ template: Template) async throws {
         let levels = template.owner.levels
         var manual: [String] = []
         var jinja: [String] = []
         for level in levels {
             let (thinking, effort) = try template.owner.runtime(level)
-            let tok = try await GFTokenizer.load(from: Self.folder(template.fixture),
-                                                 thinkingMode: thinking,
-                                                 reasoningEffort: effort)
+            let tok = try await GFTokenizer.load(
+                from: Self.folder(template.fixture),
+                thinkingMode: thinking,
+                reasoningEffort: effort)
             let messages = [Message(role: .user, content: "Hi")]
             manual.append(try tok.applyChatTemplate(messages))
             let ids = try tok.encodeToolChat(messages: messages, tools: [])
-            jinja.append(tok.tokenizer.decode(tokens: ids.map(Int.init),
-                                              skipSpecialTokens: false))
+            jinja.append(
+                tok.tokenizer.decode(
+                    tokens: ids.map(Int.init),
+                    skipSpecialTokens: false))
         }
         #expect(Set(manual).count == levels.count, "\(zip(levels, manual).map { "\($0): \($1)" })")
         #expect(Set(jinja).count == levels.count)
@@ -111,8 +123,9 @@ struct ReasoningLevelTemplateTests {
         #expect(manual == jinja)
     }
 
-    @Test("A refused level would render nothing a supported level does not",
-          arguments: templates)
+    @Test(
+        "A refused level would render nothing a supported level does not",
+        arguments: templates)
     func refusedLevelsAddNoPrompt(_ template: Template) async throws {
         let tok = try await GFTokenizer.load(from: Self.folder(template.fixture))
         let levels = template.owner.levels
@@ -127,18 +140,21 @@ struct ReasoningLevelTemplateTests {
             #expect(throws: ReasoningLevelError.self) { try template.owner.runtime(level) }
             // What the level would have to mean to the template: plain `on` is
             // thinking with no effort named; every other level names itself.
-            let context = level == .on
+            let context =
+                level == .on
                 ? Self.context(.on, nil)
                 : Self.context(.on, level.rawValue)
             // A template that raises on the value cannot render it at all.
             guard let prompt = try? Self.render(tok, context) else { continue }
-            #expect(supported.contains(prompt),
-                    "\(template.fixture): \(level.rawValue) renders a prompt no supported level does")
+            #expect(
+                supported.contains(prompt),
+                "\(template.fixture): \(level.rawValue) renders a prompt no supported level does")
         }
     }
 
-    @Test("Binary templates render the same prompt whatever effort is named",
-          arguments: binaryFixtures)
+    @Test(
+        "Binary templates render the same prompt whatever effort is named",
+        arguments: binaryFixtures)
     func binaryTemplatesIgnoreEffort(_ fixture: String) async throws {
         let tok = try await GFTokenizer.load(from: Self.folder(fixture))
         let on = try Self.render(tok, Self.context(.on, nil))
@@ -163,8 +179,9 @@ struct ReasoningLevelTemplateTests {
         }
         // Why `.on` is not offered: it selects the default effort and renders
         // byte-identically to naming it.
-        #expect(try Self.render(tok, Self.context(.on, nil))
-            == Self.render(tok, Self.context(.on, "xhigh")))
+        #expect(
+            try Self.render(tok, Self.context(.on, nil))
+                == Self.render(tok, Self.context(.on, "xhigh")))
     }
 }
 
@@ -181,8 +198,9 @@ struct MidSessionReasoningTests {
     private typealias Message = GFTokenizer.Message
 
     private static func folder(_ fixture: String) throws -> URL {
-        try #require(Bundle.module.url(
-            forResource: fixture, withExtension: nil, subdirectory: "Fixtures"))
+        try #require(
+            Bundle.module.url(
+                forResource: fixture, withExtension: nil, subdirectory: "Fixtures"))
     }
 
     @Test("Switching thinking off and back on resolves different renders")
@@ -232,7 +250,8 @@ struct MidSessionReasoningTests {
     /// entry, not one per effort that came with it.
     @Test("Effort is dropped when thinking is off")
     func effortIsInertWhenOff() {
-        #expect(RequestReasoning(thinkingMode: .off, effort: .xhigh)
-            == RequestReasoning(thinkingMode: .off, effort: nil))
+        #expect(
+            RequestReasoning(thinkingMode: .off, effort: .xhigh)
+                == RequestReasoning(thinkingMode: .off, effort: nil))
     }
 }

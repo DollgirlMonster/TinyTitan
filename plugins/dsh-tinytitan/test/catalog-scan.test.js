@@ -24,17 +24,22 @@ const MODELS_DIR = join(REPO_ROOT, "models");
 const BINARY = join(REPO_ROOT, ".build", "release", "TinyTitanServer");
 
 /** A `.gturbo` install the way the repacker writes one, minus the weights. */
-function writeInstall(root, name, {
-  modelID, family, bits, activation = "silu", tokenizer = true,
-} = {}) {
+function writeInstall(
+  root,
+  name,
+  { modelID, family, bits, activation = "silu", tokenizer = true } = {},
+) {
   const directory = join(root, name);
   mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, "manifest.json"), JSON.stringify({
-    magic: "GTURBO",
-    modelID,
-    quant: { routedExpert: { weightBits: bits } },
-    arch: { family, hiddenActivation: activation },
-  }));
+  writeFileSync(
+    join(directory, "manifest.json"),
+    JSON.stringify({
+      magic: "GTURBO",
+      modelID,
+      quant: { routedExpert: { weightBits: bits } },
+      arch: { family, hiddenActivation: activation },
+    }),
+  );
   if (tokenizer) {
     mkdirSync(join(directory, "tokenizer"), { recursive: true });
     writeFileSync(join(directory, "tokenizer", "tokenizer.json"), "{}");
@@ -43,17 +48,22 @@ function writeInstall(root, name, {
 }
 
 /** A converted safetensors snapshot. */
-function writeSnapshot(root, name, {
-  modelType = "qwen3_5", bits = 8, modelID, displayName, complete = true,
-} = {}) {
+function writeSnapshot(
+  root,
+  name,
+  { modelType = "qwen3_5", bits = 8, modelID, displayName, complete = true } = {},
+) {
   const directory = join(root, name);
   mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, "config.json"), JSON.stringify({
-    model_type: modelType,
-    quantization: bits === undefined ? undefined : { bits },
-    model_id: modelID,
-    display_name: displayName,
-  }));
+  writeFileSync(
+    join(directory, "config.json"),
+    JSON.stringify({
+      model_type: modelType,
+      quantization: bits === undefined ? undefined : { bits },
+      model_id: modelID,
+      display_name: displayName,
+    }),
+  );
   if (complete) {
     writeFileSync(join(directory, "model.safetensors.index.json"), "{}");
     writeFileSync(join(directory, "tokenizer.json"), "{}");
@@ -66,8 +76,10 @@ test("the scan and the server catalog produce the same picker block", (t) => {
     t.skip("no built TinyTitanServer or models/ here; skipping the parity check");
     return;
   }
-  const printed = execFileSync(BINARY, ["--catalog", "--models-dir", MODELS_DIR],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const printed = execFileSync(BINARY, ["--catalog", "--models-dir", MODELS_DIR], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   const fromServer = JSON.parse(String(printed)).models;
   const fromFolder = scanModelsFolder(MODELS_DIR, { env: {} }).models;
   assert.equal(generateBlock(catalogRows(fromFolder)), generateBlock(catalogRows(fromServer)));
@@ -76,16 +88,38 @@ test("the scan and the server catalog produce the same picker block", (t) => {
 
 test("a folder is read the way the server reads it", () => {
   const root = mkdtempSync(join(tmpdir(), "dsh-tinytitan-scan-"));
-  writeInstall(root, "qwen3.5_2B_4Bit", { modelID: "qwen3.5-2b", family: "qwen3_5_dense", bits: 4 });
-  writeInstall(root, "qwen3.5_2B_8Bit", { modelID: "qwen3.5-2b", family: "qwen3_5_dense", bits: 8 });
+  writeInstall(root, "qwen3.5_2B_4Bit", {
+    modelID: "qwen3.5-2b",
+    family: "qwen3_5_dense",
+    bits: 4,
+  });
+  writeInstall(root, "qwen3.5_2B_8Bit", {
+    modelID: "qwen3.5-2b",
+    family: "qwen3_5_dense",
+    bits: 8,
+  });
   // An id the manifest already spelled a width into: the suffix is added once.
   writeInstall(root, "kat_4Bit", { modelID: "kat-coder-v2.5-4bit", family: "qwen36", bits: 4 });
   // An id outside the display-name table is listed by its id.
   writeInstall(root, "custom_4Bit", { modelID: "custom-model", family: "qwen36", bits: 4 });
   // Not models, for one reason each.
-  writeInstall(root, "mtp_4Bit", { modelID: "qwen3.8-flash-next-mtp", family: "qwen38flash_mtp", bits: 4 });
-  writeInstall(root, "incomplete_4Bit", { modelID: "half", family: "qwen36", bits: 4, tokenizer: false });
-  writeInstall(root, "gguf_4Bit", { modelID: "wrong-activation", family: "qwen36", bits: 4, activation: "gelu" });
+  writeInstall(root, "mtp_4Bit", {
+    modelID: "qwen3.8-flash-next-mtp",
+    family: "qwen38flash_mtp",
+    bits: 4,
+  });
+  writeInstall(root, "incomplete_4Bit", {
+    modelID: "half",
+    family: "qwen36",
+    bits: 4,
+    tokenizer: false,
+  });
+  writeInstall(root, "gguf_4Bit", {
+    modelID: "wrong-activation",
+    family: "qwen36",
+    bits: 4,
+    activation: "gelu",
+  });
   writeSnapshot(root, "qwen3.5_9B_8Bit", { modelID: "qwen3.5-9b", displayName: "Qwen 3.5 9B" });
   writeSnapshot(root, "llama_4Bit", { modelType: "llama" });
   writeSnapshot(root, "halfwritten_4Bit", { complete: false });
@@ -95,26 +129,41 @@ test("a folder is read the way the server reads it", () => {
 
   const { models, skipped } = scanModelsFolder(root, { env: {} });
 
-  assert.deepEqual(models.map((model) => [
-    model.id, model.backend, model.quant, model.engines, model.thinking.join(","),
-  ]), [
-    // GPU entries first, by id; then the CPU snapshot.
-    ["custom-model_4-Bit", "gpu", 4, "gpu", "off,on"],
-    ["kat-coder-v2.5_4-Bit", "gpu", 4, "gpu", "off,on"],
-    ["qwen3.5-2b_4-Bit", "gpu", 4, "gpu,cpu", "off,on"],
-    ["qwen3.5-2b_8-Bit", "gpu", 8, "gpu,cpu", "off,on"],
-    ["qwen3.5-9b", "cpu", 8, "cpu", "off,on"],
-  ]);
-  assert.deepEqual(models.map((model) => model.name), [
-    "custom-model", "KAT-Coder-V2.5-Dev 35B-A3B", "Qwen 3.5 2B", "Qwen 3.5 2B", "Qwen 3.5 9B",
-  ]);
+  assert.deepEqual(
+    models.map((model) => [
+      model.id,
+      model.backend,
+      model.quant,
+      model.engines,
+      model.thinking.join(","),
+    ]),
+    [
+      // GPU entries first, by id; then the CPU snapshot.
+      ["custom-model_4-Bit", "gpu", 4, "gpu", "off,on"],
+      ["kat-coder-v2.5_4-Bit", "gpu", 4, "gpu", "off,on"],
+      ["qwen3.5-2b_4-Bit", "gpu", 4, "gpu,cpu", "off,on"],
+      ["qwen3.5-2b_8-Bit", "gpu", 8, "gpu,cpu", "off,on"],
+      ["qwen3.5-9b", "cpu", 8, "cpu", "off,on"],
+    ],
+  );
+  assert.deepEqual(
+    models.map((model) => model.name),
+    ["custom-model", "KAT-Coder-V2.5-Dev 35B-A3B", "Qwen 3.5 2B", "Qwen 3.5 2B", "Qwen 3.5 9B"],
+  );
   // Every directory that is not a model says why, so the caller can log it.
   assert.deepEqual(skipped.map((entry) => entry.path.split("/").pop()).sort(), [
-    "gguf_4Bit", "halfwritten_4Bit", "incomplete_4Bit", "llama_4Bit", "loose-file-dir", "mtp_4Bit",
+    "gguf_4Bit",
+    "halfwritten_4Bit",
+    "incomplete_4Bit",
+    "llama_4Bit",
+    "loose-file-dir",
+    "mtp_4Bit",
   ]);
   for (const entry of skipped) assert.ok(entry.reason.length > 0, entry.path);
   assert.ok(skipped.find((entry) => entry.path.endsWith("mtp_4Bit")).reason.includes("MTP"));
-  assert.ok(skipped.find((entry) => entry.path.endsWith("incomplete_4Bit")).reason.includes("tokenizer"));
+  assert.ok(
+    skipped.find((entry) => entry.path.endsWith("incomplete_4Bit")).reason.includes("tokenizer"),
+  );
   assert.ok(skipped.find((entry) => entry.path.endsWith("llama_4Bit")).reason.includes("llama"));
 });
 
