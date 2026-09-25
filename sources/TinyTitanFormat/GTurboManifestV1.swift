@@ -265,7 +265,11 @@ package struct GTurboManifestQuantV1: Codable, Equatable, Sendable {
         if let overrides {
             var dynamic = encoder.container(keyedBy: AnyKey.self)
             for (stem, slot) in overrides {
-                try dynamic.encode(slot, forKey: AnyKey(stringValue: stem)!)
+                guard let key = AnyKey(stringValue: stem) else {
+                    throw TinyTitanFormatError.invalid(
+                        field: "manifest.overrides.\(stem)", reason: "not encodable as a key")
+                }
+                try dynamic.encode(slot, forKey: key)
             }
         }
     }
@@ -428,7 +432,10 @@ package enum GTurboManifestCodec {
                 throw TinyTitanFormatError.invalid(
                     field: "manifest.files.\(path)", reason: "reserved artifact filename")
             }
-            let entry = manifest.files[path]!
+            guard let entry = manifest.files[path] else {
+                throw TinyTitanFormatError.invalid(
+                    field: "manifest.files.\(path)", reason: "missing entry")
+            }
             guard entry.sha256.count == 64,
                   entry.sha256.unicodeScalars.allSatisfy({ scalar in
                       ("0"..."9").contains(Character(String(scalar)))

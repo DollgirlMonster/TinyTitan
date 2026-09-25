@@ -381,17 +381,20 @@ final class QSAIndexer {
         let buffers = try layerBuffers(layer)
         let query = weights.queryProjection
         try growQueryScratch(rows: tokens)
-        try project(commandBuffer, query, blockInput, queryRowsBuf!,
+        guard let queryRows = queryRowsBuf else {
+            throw MetalError.bufferAllocationFailed("QSA query scratch")
+        }
+        try project(commandBuffer, query, blockInput, queryRows,
                     heads * headDim, hiddenColumns(query), tokens)
         try rms.encodeBF16WPerHead(commandBuffer: commandBuffer,
-                                   x: queryRowsBuf!,
+                                   x: queryRows,
                                    weight: weights.queryNorm.buffer,
                                    weightOffset: Int(weights.queryNorm.offset),
-                                   out: queryRowsBuf!,
+                                   out: queryRows,
                                    headDim: UInt32(headDim),
                                    numHeads: heads * tokens, eps: eps)
         try rope.encodeNeoxSubdimStrided(
-            commandBuffer: commandBuffer, data: queryRowsBuf!,
+            commandBuffer: commandBuffer, data: queryRows,
             position: UInt32(startPosition),
             headDim: UInt32(headDim), numHeads: UInt32(heads),
             rotaryDim: UInt32(headDim), numTokens: UInt32(tokens),
@@ -403,7 +406,7 @@ final class QSAIndexer {
             throw MetalError.commandEncoderFailed
         }
         enc.setComputePipelineState(scoreRowsPSO)
-        enc.setBuffer(queryRowsBuf!, offset: 0, index: 0)
+        enc.setBuffer(queryRows, offset: 0, index: 0)
         enc.setBuffer(buffers.pooled, offset: 0, index: 1)
         enc.setBuffer(scoresBuf, offset: 0, index: 2)
         var d = UInt32(headDim), h = UInt32(heads)
@@ -528,7 +531,7 @@ final class QSAIndexer {
     private func growCompactScratch(rows: Int, width: Int) throws {
         let idxBytes = rows * width * MemoryLayout<UInt32>.stride
         let cntBytes = rows * MemoryLayout<UInt32>.stride
-        if keepIndexBuf == nil || keepIndexBuf!.length < idxBytes {
+        if (keepIndexBuf?.length ?? 0) < idxBytes {
             guard let made = ctx.device.makeBuffer(length: idxBytes,
                                                    options: .storageModeShared) else {
                 throw MetalError.bufferAllocationFailed("QSA selection indices")
@@ -536,7 +539,7 @@ final class QSAIndexer {
             made.label = "qsa.keep.indices"
             keepIndexBuf = made
         }
-        if keepCountBuf == nil || keepCountBuf!.length < cntBytes {
+        if (keepCountBuf?.length ?? 0) < cntBytes {
             guard let made = ctx.device.makeBuffer(length: cntBytes,
                                                    options: .storageModeShared) else {
                 throw MetalError.bufferAllocationFailed("QSA selection counts")

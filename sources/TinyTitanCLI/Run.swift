@@ -286,8 +286,8 @@ public func run(args: Args,
             let occupancy = runner.kernelGPUOccupancy()
             var lines = "\n[gpu by role over \(stats.newTokens) tokens]\n"
             for entry in summary.prefix(14) {
-                lines += String(format: "  %-24s %8.1f ms  x%d\n",
-                                (entry.role as NSString).utf8String!,
+                lines += String(format: "  %@ %8.1f ms  x%d\n",
+                                entry.role.padding(toLength: 24, withPad: " ", startingAt: 0),
                                 entry.millis, entry.count)
             }
             lines += String(format: "  busy %.0f ms of %.0f ms span (%.0f%% occupied)\n",

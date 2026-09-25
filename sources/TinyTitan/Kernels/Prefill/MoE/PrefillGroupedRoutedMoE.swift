@@ -399,10 +399,9 @@ final class PrefillGroupedRoutedMoE {
             }
             return PrefillGroupedRoutedMoEStreamedMetadataBuffers(sortedPairs: empty)
         }
-        guard let sortedPairs = routes.sortedPairs.withUnsafeBufferPointer({ ptr in
-            device.makeBuffer(bytes: ptr.baseAddress!,
-                              length: bytes,
-                              options: .storageModeShared)
+        guard let sortedPairs = routes.sortedPairs.withUnsafeBufferPointer({ ptr -> MTLBuffer? in
+            guard let base = ptr.baseAddress else { return nil }
+            return device.makeBuffer(bytes: base, length: bytes, options: .storageModeShared)
         }) else {
             throw PrefillGroupedRoutedMoEError.allocationFailed("prefill sorted route pairs")
         }

@@ -205,8 +205,7 @@ extension TinyTitanBench {
         let runSubset = kernelName == "moe_phase1_subset"
         // active-slot buffer for the subset mode (all 8 experts active).
         var activeSlots = [UInt32](0..<topK)
-        let activeSlotsBuf = device.makeBuffer(length: Int(topK) * MemoryLayout<UInt32>.size,
-                                               options: .storageModeShared)!
+        let activeSlotsBuf = try makeBuffer(Int(topK) * MemoryLayout<UInt32>.size, 0)
         activeSlotsBuf.contents().copyMemory(from: &activeSlots,
                                              byteCount: Int(topK) * MemoryLayout<UInt32>.size)
         var activeCount = topK

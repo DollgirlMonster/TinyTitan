@@ -232,10 +232,12 @@ import Testing
             let matrix = try snapshot.matrix("w.weight")
             let x = (0..<columns).map { Float($0) }
             var out = [Float](repeating: 0, count: rows)
-            x.withUnsafeBufferPointer { input in
-                out.withUnsafeMutableBufferPointer { output in
-                    CPUOps.gemv(matrix, x: input.baseAddress!,
-                                out: output.baseAddress!, threads: 4)
+            try x.withUnsafeBufferPointer { input in
+                try out.withUnsafeMutableBufferPointer { output in
+                    guard let inputBase = input.baseAddress, let outputBase = output.baseAddress else {
+                        return
+                    }
+                    try CPUOps.gemv(matrix, x: inputBase, out: outputBase, threads: 4)
                 }
             }
             // Levels alternate 0,1 by column, so each row sums the odd x.
@@ -259,18 +261,19 @@ import Testing
             let snapshot = try AffineSnapshot(directory: directory)
             let matrix = try snapshot.matrix("w.weight")
             let x = (0..<columns).map { Float($0 % 7) * 0.25 }
-            func run(_ threads: Int) -> [Float] {
+            func run(_ threads: Int) throws -> [Float] {
                 var out = [Float](repeating: 0, count: rows)
-                x.withUnsafeBufferPointer { input in
-                    out.withUnsafeMutableBufferPointer { output in
-                        CPUOps.gemv(matrix, x: input.baseAddress!,
-                                    out: output.baseAddress!, threads: threads)
+                try x.withUnsafeBufferPointer { input in
+                    try out.withUnsafeMutableBufferPointer { output in
+                        guard let inputBase = input.baseAddress,
+                              let outputBase = output.baseAddress else { return }
+                        try CPUOps.gemv(matrix, x: inputBase, out: outputBase, threads: threads)
                     }
                 }
                 return out
             }
-            #expect(run(1) == run(4), Comment(rawValue: "\(bits)-bit threading must be exact"))
-            #expect(run(4) == run(8))
+            #expect(try run(1) == run(4), Comment(rawValue: "\(bits)-bit threading must be exact"))
+            #expect(try run(4) == run(8))
         }
     }
 

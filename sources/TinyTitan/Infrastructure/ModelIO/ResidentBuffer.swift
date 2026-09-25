@@ -50,7 +50,9 @@ final class ResidentBuffer {
         if mapped == MAP_FAILED {
             throw ModelError.posixFailed(call: "mmap", errno: errno)
         }
-        let base = mapped!
+        guard let base = mapped else {
+            throw ModelError.posixFailed(call: "mmap", errno: errno)
+        }
 
         _ = posix_madvise(base, mappedLen, POSIX_MADV_RANDOM)
 

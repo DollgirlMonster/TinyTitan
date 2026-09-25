@@ -77,8 +77,9 @@ package final class GTurboModelDirectory {
         var total = 0
         while total < data.count {
             let remaining = data.count - total
-            let got = data.withUnsafeMutableBytes { raw in
-                pread(fd, raw.baseAddress!.advanced(by: total), remaining, off_t(total))
+            let got = data.withUnsafeMutableBytes { raw -> Int in
+                guard let base = raw.baseAddress else { return 0 }
+                return pread(fd, base.advanced(by: total), remaining, off_t(total))
             }
             if got < 0, errno == EINTR { continue }
             guard got > 0 else {

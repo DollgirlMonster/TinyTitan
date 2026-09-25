@@ -183,16 +183,16 @@ public final class CPUQwen35 {
         try snapshot.matrix(name)
     }
 
-    private func project(_ matrix: AffineSnapshot.Matrix, _ x: [Float]) -> [Float] {
+    private func project(_ matrix: AffineSnapshot.Matrix, _ x: [Float]) throws -> [Float] {
         var out = [Float](repeating: 0, count: matrix.rows)
-        x.withUnsafeBufferPointer { input in
-            out.withUnsafeMutableBufferPointer { output in
+        try x.withUnsafeBufferPointer { input in
+            try out.withUnsafeMutableBufferPointer { output in
                 // An empty input or a zero-row matrix has no base address and
                 // nothing to compute; the force unwrap made that a crash.
                 guard let inputBase = input.baseAddress, let outputBase = output.baseAddress else {
                     return
                 }
-                CPUOps.gemv(matrix, x: inputBase, out: outputBase, threads: threads)
+                try CPUOps.gemv(matrix, x: inputBase, out: outputBase, threads: threads)
             }
         }
         return out
@@ -236,15 +236,15 @@ public final class CPUQwen35 {
     }
 
     private func head(_ h: [Float]) throws -> [Float] {
-        project(try matrix(headWeightName()), h)
+        try project(try matrix(headWeightName()), h)
     }
 
     private func mlp(layer: Int, x: [Float]) throws -> [Float] {
         let stem = "\(prefix)layers.\(layer).mlp."
-        var gate = project(try matrix(stem + "gate_proj.weight"), x)
-        let up = project(try matrix(stem + "up_proj.weight"), x)
+        var gate = try project(try matrix(stem + "gate_proj.weight"), x)
+        let up = try project(try matrix(stem + "up_proj.weight"), x)
         for index in gate.indices { gate[index] = CPUOps.silu(gate[index]) * up[index] }
-        return project(try matrix(stem + "down_proj.weight"), gate)
+        return try project(try matrix(stem + "down_proj.weight"), gate)
     }
 
     private func attention(layer: Int, x: [Float]) throws -> [Float] {
@@ -256,7 +256,7 @@ public final class CPUQwen35 {
         // q_proj is twice as wide: the output gate is fused into it, packed
         // per head as [query ; gate]. Reading it as a plain query projection
         // gives a model that runs and is wrong.
-        let packed = project(try matrix(stem + "q_proj.weight"), x)
+        let packed = try project(try matrix(stem + "q_proj.weight"), x)
         var query = [Float](repeating: 0, count: heads * dim)
         var gate = [Float](repeating: 0, count: heads * dim)
         for head in 0..<heads {
@@ -266,8 +266,8 @@ public final class CPUQwen35 {
                 gate[head * dim + index] = packed[source + dim + index]
             }
         }
-        var key = project(try matrix(stem + "k_proj.weight"), x)
-        let value = project(try matrix(stem + "v_proj.weight"), x)
+        var key = try project(try matrix(stem + "k_proj.weight"), x)
+        let value = try project(try matrix(stem + "v_proj.weight"), x)
 
         // The per-layer norm weights must be in the snapshot; the force
         // unwraps below made a missing tensor a crash instead of an error.
@@ -335,7 +335,7 @@ public final class CPUQwen35 {
         keys[layer] = cachedKeys
         values[layer] = cachedValues
         for index in out.indices { out[index] *= CPUOps.sigmoid(gate[index]) }
-        return project(try matrix(stem + "o_proj.weight"), out)
+        return try project(try matrix(stem + "o_proj.weight"), out)
     }
 
     private func gatedDeltaNet(layer: Int, x: [Float]) throws -> [Float] {
@@ -346,8 +346,8 @@ public final class CPUQwen35 {
         let dv = configuration.linearValueHeadDim
         let kernel = configuration.convKernel
 
-        let mixed = project(try matrix(stem + "in_proj_qkv.weight"), x)
-        let z = project(try matrix(stem + "in_proj_z.weight"), x)
+        let mixed = try project(try matrix(stem + "in_proj_qkv.weight"), x)
+        let z = try project(try matrix(stem + "in_proj_z.weight"), x)
         // Every per-layer tensor this path needs, checked once: the force
         // unwraps below made a missing tensor a crash.
         guard let deltaWeightsA = deltaA[layer],
@@ -435,7 +435,7 @@ public final class CPUQwen35 {
         // that runs, keeps healthy activations, and predicts a bare space
         // for "Once upon a".
         for index in readout.indices { readout[index] *= CPUOps.silu(z[index]) }
-        return project(try matrix(stem + "out_proj.weight"), readout)
+        return try project(try matrix(stem + "out_proj.weight"), readout)
     }
 
     // MARK: - generation

@@ -276,18 +276,22 @@ final class MoE {
         // kernel is the same single-thread insertion sort, and the simd
         // kernel reproduces its order exactly (checked byte-identical on the
         // AgentWorld goldens, top-8 over 256 experts).
-        let simdSelect = routerTopKSimd && expertCount <= 1024 && routerSelectKNSimdPSO != nil
-        selector.setComputePipelineState(
-            simdSelect ? routerSelectKNSimdPSO!
-                : maxStreamedExperts == 8
-                    ? (useSpecialized ? routerSelectK8SpecializedPSO : routerSelectK8PSO)
-                    : routerSelectKNPSO)
+        let usesSimdSelector = routerTopKSimd && expertCount <= 1024 && routerSelectKNSimdPSO != nil
+        let selectPipeline: MTLComputePipelineState
+        if usesSimdSelector, let simd = routerSelectKNSimdPSO {
+            selectPipeline = simd
+        } else if maxStreamedExperts == 8 {
+            selectPipeline = useSpecialized ? routerSelectK8SpecializedPSO : routerSelectK8PSO
+        } else {
+            selectPipeline = routerSelectKNPSO
+        }
+        selector.setComputePipelineState(selectPipeline)
         selector.setBuffer(routerLogits, offset: 0, index: 0)
         selector.setBuffer(perExpertScale, offset: perExpertScaleOffset, index: 1)
         selector.setBuffer(outIndices, offset: 0, index: 2)
         selector.setBuffer(outWeights, offset: 0, index: 3)
         selector.setBytes(&expertCount, length: MemoryLayout<UInt32>.stride, index: 4)
-        if maxStreamedExperts != 8 || simdSelect {
+        if maxStreamedExperts != 8 || usesSimdSelector {
             var k = UInt32(maxStreamedExperts)
             selector.setBytes(&k, length: MemoryLayout<UInt32>.stride, index: 5)
         }

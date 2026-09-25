@@ -663,9 +663,12 @@ final class ANEPrefillAttention: @unchecked Sendable {
             selectionNegativeRow[history] = negatives
             selectionMasks[history] = array
         }
-        let storage = selectionMaskStorage[history]!
-        let negativeRow = selectionNegativeRow[history]!.bindMemory(
-            to: Float16.self, capacity: total)
+        guard let storage = selectionMaskStorage[history],
+              let negativeRow = selectionNegativeRow[history]?.bindMemory(
+                  to: Float16.self, capacity: total) else {
+            throw ModelError.internalInconsistency(
+                detail: "the ANE selection mask for history \(history) was not cached")
+        }
         let values = storage.bindMemory(to: Float16.self, capacity: count)
         let indices = selection.indices.contents().bindMemory(
             to: UInt32.self, capacity: max(1, tokenCount * selection.indexStride))
@@ -818,10 +821,11 @@ final class ANEPrefillAttention: @unchecked Sendable {
         }
         let offset = startPosition * rowBytes
         let length = tokenCount * rowBytes
-        memcpy(shadowK[layer]!.advanced(by: offset),
-               stagingK.contents(), length)
-        memcpy(shadowV[layer]!.advanced(by: offset),
-               stagingV.contents(), length)
+        guard let shadowKBuffer = shadowK[layer], let shadowVBuffer = shadowV[layer] else {
+            return
+        }
+        memcpy(shadowKBuffer.advanced(by: offset), stagingK.contents(), length)
+        memcpy(shadowVBuffer.advanced(by: offset), stagingV.contents(), length)
     }
 
     /// Marks the chunk's shadow rows visible to the next chunk. Called once

@@ -43,7 +43,9 @@ package enum GTurboResidentIndexCodec {
         guard bytes.count >= GTurboFormatV1.residentHeaderBytes else {
             throw TinyTitanFormatError.truncated(field: "resident.header")
         }
-        let base = bytes.baseAddress!
+        guard let base = bytes.baseAddress else {
+            throw TinyTitanFormatError.truncated(field: "resident.header")
+        }
         return GTurboResidentIndexHeaderV1(
             indexSize: readU64(base, 0),
             residentSize: readU64(base, 8),
@@ -71,7 +73,9 @@ package enum GTurboResidentIndexCodec {
         }
         let residentEnd = try gturboCheckedAdd(header.indexSize, header.residentSize,
                                                field: "resident.payload")
-        let base = bytes.baseAddress!
+        guard let base = bytes.baseAddress else {
+            throw TinyTitanFormatError.truncated(field: "resident.entryTable")
+        }
         var result: [GTurboResidentIndexEntryV1] = []
         result.reserveCapacity(Int(header.entryCount))
         var names = Set<String>()

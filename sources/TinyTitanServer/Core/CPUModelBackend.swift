@@ -163,8 +163,17 @@ public actor CPUModelBackend: ServerInferenceBackend, PromptCacheDescribing {
         let budget = min(request.maximumCompletionTokens, context - prompt.count)
         var configuration = request.generationConfig
         if let node = request.jsonSchema {
-            if jsonTokenTable == nil { jsonTokenTable = JSONTokenTable(tokenizer: tokenizer) }
-            configuration.constraint = JSONConstraint(table: jsonTokenTable!, node: node,
+            // One local for the table: the force unwrap here used to be the
+            // only thing standing between a nil cache and a crash.
+            let table: JSONTokenTable
+            if let existing = jsonTokenTable {
+                table = existing
+            } else {
+                let made = JSONTokenTable(tokenizer: tokenizer)
+                jsonTokenTable = made
+                table = made
+            }
+            configuration.constraint = JSONConstraint(table: table, node: node,
                                                       vocab: model.configuration.vocabulary)
         }
         let sampler = CPUSampler(

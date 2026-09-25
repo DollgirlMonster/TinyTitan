@@ -93,7 +93,8 @@ public final class ExpertLoadOperation: @unchecked Sendable {
                 condition.unlock()
                 continuation.resume()
             case .failed:
-                let error = failure!
+                let error = failure ?? ModelError.internalInconsistency(
+                    detail: "the expert load failed without recording an error")
                 condition.unlock()
                 continuation.resume(throwing: error)
             case .submitted, .inFlight:

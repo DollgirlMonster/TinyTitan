@@ -156,9 +156,12 @@ enum ResidentIndexReader {
                                      into buffer: UnsafeMutableRawBufferPointer,
                                      offset: off_t,
                                      field: String) throws {
+        guard let base = buffer.baseAddress else {
+            throw ModelError.indexCorrupt(detail: "no storage for \(field)")
+        }
         var total = 0
         while total < buffer.count {
-            let count = pread(fd, buffer.baseAddress!.advanced(by: total),
+            let count = pread(fd, base.advanced(by: total),
                               buffer.count - total, offset + off_t(total))
             if count < 0, errno == EINTR { continue }
             guard count > 0 else {

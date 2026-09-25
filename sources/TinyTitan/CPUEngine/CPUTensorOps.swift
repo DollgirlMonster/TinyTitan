@@ -114,12 +114,15 @@ public enum CPUOps {
     public static func gemv(_ matrix: AffineSnapshot.Matrix,
                             x: UnsafePointer<Float>,
                             out: UnsafeMutablePointer<Float>,
-                            threads: Int) {
+                            threads: Int) throws {
         // The kernel's own row stride and group count both come from
         // `columns`, so a width that is not a whole number of groups mis-strides
         // every row after the first while still returning a full-length result.
         Int8AffineGEMV.requireWholeGroups(matrix.columns, "CPUTensorOps.gemv")
-        let weights = matrix.weights.baseAddress!.assumingMemoryBound(to: UInt8.self)
+        guard let weights = matrix.weights.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+            throw ModelError.internalInconsistency(
+                detail: "the affine matrix has no packed weights to multiply")
+        }
         let bytesPerRow = matrix.columns * matrix.bits / 8
         let groupsPerRow = matrix.columns / matrix.groupSize
         let kernel: (UnsafePointer<UInt8>, UnsafePointer<UInt16>, UnsafePointer<UInt16>,

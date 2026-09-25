@@ -507,9 +507,14 @@ public struct AffineSnapshot: Sendable {
                 "\(stem): scales and biases do not match \(rows)x\(columns) "
                 + "at \(width) bits, group \(groupSize)")
         }
+        guard let scalesBase = scales.baseAddress?.assumingMemoryBound(to: UInt16.self),
+              let biasesBase = biases.baseAddress?.assumingMemoryBound(to: UInt16.self) else {
+            throw SafeTensorsFile.Failure.malformed(
+                "\(stem): scales or biases have no storage")
+        }
         return Matrix(weights: try shard.bytes(name),
-                      scales: scales.baseAddress!.assumingMemoryBound(to: UInt16.self),
-                      biases: biases.baseAddress!.assumingMemoryBound(to: UInt16.self),
+                      scales: scalesBase,
+                      biases: biasesBase,
                       rows: rows,
                       columns: columns,
                       bits: width,

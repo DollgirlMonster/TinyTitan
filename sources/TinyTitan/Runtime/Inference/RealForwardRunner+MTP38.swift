@@ -80,8 +80,8 @@ extension RealForwardRunner {
             .assumingMemoryBound(to: UInt8.self), count: expectedBytes)
         let ids = tokens.map { UInt32(bitPattern: $0) }
         ids.withUnsafeBytes { bytes in
-            tokenBuffer.contents().copyMemory(from: bytes.baseAddress!,
-                                              byteCount: bytes.count)
+            guard let base = bytes.baseAddress else { return }
+            tokenBuffer.contents().copyMemory(from: base, byteCount: bytes.count)
         }
         guard let cb = ctx.queue.makeCommandBuffer() else {
             throw ModelError.residentBufferWrapFailed
