@@ -13,7 +13,7 @@ extension RemotePayloadCopyTests {
         defer { cleanUpRemote([target]) }
 
         let result = try await fakeHFSession().transfer(
-            request: rangeRequest(length: 4),
+            request: try rangeRequest(length: 4),
             targetPath: target,
             expectation: RemoteRangeExpectation(
                 filename: "file.bin",
@@ -41,7 +41,7 @@ extension RemotePayloadCopyTests {
 
         await #expect(throws: RepackError.self) {
             _ = try await fakeHFSession().transfer(
-                request: rangeRequest(length: 1),
+                request: try rangeRequest(length: 1),
                 targetPath: target,
                 expectation: RemoteRangeExpectation(
                     filename: "file.bin",
@@ -72,7 +72,7 @@ extension RemotePayloadCopyTests {
 
         await #expect(throws: RepackError.self) {
             _ = try await fakeHFSession().transfer(
-                request: rangeRequest(length: 1),
+                request: try rangeRequest(length: 1),
                 targetPath: target,
                 expectation: RemoteRangeExpectation(
                     filename: "file.bin",
@@ -119,7 +119,7 @@ extension RemotePayloadCopyTests {
 
         await #expect(throws: RepackError.self) {
             _ = try await fakeHFSession().transfer(
-                request: rangeRequest(length: 1),
+                request: try rangeRequest(length: 1),
                 targetPath: target,
                 expectation: RemoteRangeExpectation(
                     filename: "file.bin",
@@ -243,19 +243,20 @@ extension RemotePayloadCopyTests {
     }
 
     @Test func redirectPolicyPermanentlyStripsAuthorizationAfterHostChange() throws {
-        var original = rangeRequest(length: 4)
+        var original = try rangeRequest(length: 4)
         original.setValue("Bearer secret", forHTTPHeaderField: "Authorization")
         var policy = RemoteRedirectPolicy(
             originalRequest: original,
             maximumRedirects: 3)
-        let sourceResponse = HTTPURLResponse(
-            url: original.url!,
+        let sourceURL = try #require(original.url)
+        let sourceResponse = try #require(HTTPURLResponse(
+            url: sourceURL,
             statusCode: 302,
             httpVersion: nil,
-            headerFields: nil)!
+            headerFields: nil))
 
         var storageRequest = URLRequest(
-            url: URL(string: "https://storage.test/signed?token=private")!)
+            url: try #require(URL(string: "https://storage.test/signed?token=private")))
         storageRequest.httpMethod = "GET"
         let first = try policy.request(
             response: sourceResponse,
@@ -264,12 +265,13 @@ extension RemotePayloadCopyTests {
         #expect(first.value(forHTTPHeaderField: "Range") == "bytes=0-3")
         #expect(first.value(forHTTPHeaderField: "Accept-Encoding") == "identity")
 
-        let storageResponse = HTTPURLResponse(
-            url: storageRequest.url!,
+        let storageURL = try #require(storageRequest.url)
+        let storageResponse = try #require(HTTPURLResponse(
+            url: storageURL,
             statusCode: 302,
             httpVersion: nil,
-            headerFields: nil)!
-        var backToSource = URLRequest(url: original.url!)
+            headerFields: nil))
+        var backToSource = URLRequest(url: sourceURL)
         backToSource.setValue("Bearer leaked", forHTTPHeaderField: "Authorization")
         let second = try policy.request(
             response: storageResponse,
@@ -279,12 +281,13 @@ extension RemotePayloadCopyTests {
     }
 
     @Test func redirectPolicyRejectsNonHTTPSAndExcessHops() throws {
-        let original = rangeRequest(length: 1)
-        let response = HTTPURLResponse(
-            url: original.url!,
+        let original = try rangeRequest(length: 1)
+        let originalURL = try #require(original.url)
+        let response = try #require(HTTPURLResponse(
+            url: originalURL,
             statusCode: 302,
             httpVersion: nil,
-            headerFields: nil)!
+            headerFields: nil))
 
         var insecurePolicy = RemoteRedirectPolicy(
             originalRequest: original,
@@ -292,7 +295,8 @@ extension RemotePayloadCopyTests {
         #expect(throws: RepackError.self) {
             _ = try insecurePolicy.request(
                 response: response,
-                proposedRequest: URLRequest(url: URL(string: "http://storage.test/file")!))
+                proposedRequest: URLRequest(
+                    url: try #require(URL(string: "http://storage.test/file"))))
         }
 
         var boundedPolicy = RemoteRedirectPolicy(
@@ -300,17 +304,22 @@ extension RemotePayloadCopyTests {
             maximumRedirects: 1)
         _ = try boundedPolicy.request(
             response: response,
-            proposedRequest: URLRequest(url: URL(string: "https://storage.test/file")!))
+            proposedRequest: URLRequest(
+                url: try #require(URL(string: "https://storage.test/file"))))
         #expect(throws: RepackError.self) {
             _ = try boundedPolicy.request(
                 response: response,
-                proposedRequest: URLRequest(url: URL(string: "https://storage-2.test/file")!))
+                proposedRequest: URLRequest(
+                    url: try #require(URL(string: "https://storage-2.test/file"))))
         }
     }
 
-    private func rangeRequest(length: Int) -> URLRequest {
+    /// The fixture URL is a compile-time constant, so a failure to build it is a
+    /// broken test rather than a runtime condition; reporting it keeps the
+    /// process alive instead of trapping.
+    private func rangeRequest(length: Int) throws -> URLRequest {
         let commit = String(repeating: "a", count: 40)
-        let url = URL(string: "https://hf.test/owner/model/resolve/\(commit)/file.bin")!
+        let url = try #require(URL(string: "https://hf.test/owner/model/resolve/\(commit)/file.bin"))
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("bytes=0-\(length - 1)", forHTTPHeaderField: "Range")

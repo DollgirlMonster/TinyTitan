@@ -82,22 +82,22 @@ import TinyTitanValidationSupport
 
         func pack(_ p: (rows: [Quantization.Int8AffineRow],
                         packed: [UInt8], scales: [UInt16], biases: [UInt16]),
-                  rows: UInt32, cols: UInt32) -> SharedExpertInt8Proj {
-            let wBuf = ctx.device.makeBuffer(bytes: p.packed,
-                                             length: p.packed.count,
-                                             options: .storageModeShared)!
-            let sBuf = ctx.device.makeBuffer(bytes: p.scales,
-                                             length: p.scales.count * 2,
-                                             options: .storageModeShared)!
-            let bBuf = ctx.device.makeBuffer(bytes: p.biases,
-                                             length: p.biases.count * 2,
-                                             options: .storageModeShared)!
+                  rows: UInt32, cols: UInt32) throws -> SharedExpertInt8Proj {
+            let wBuf = try #require(ctx.device.makeBuffer(bytes: p.packed,
+                                                          length: p.packed.count,
+                                                          options: .storageModeShared))
+            let sBuf = try #require(ctx.device.makeBuffer(bytes: p.scales,
+                                                          length: p.scales.count * 2,
+                                                          options: .storageModeShared))
+            let bBuf = try #require(ctx.device.makeBuffer(bytes: p.biases,
+                                                          length: p.biases.count * 2,
+                                                          options: .storageModeShared))
             return SharedExpertInt8Proj(weights: wBuf, scales: sBuf, biases: bBuf,
                                         rows: rows, cols: cols)
         }
-        let gateProj = pack(gatePack, rows: UInt32(Sizes.F), cols: UInt32(Sizes.D))
-        let upProj   = pack(upPack,   rows: UInt32(Sizes.F), cols: UInt32(Sizes.D))
-        let downProj = pack(downPack, rows: UInt32(Sizes.D), cols: UInt32(Sizes.F))
+        let gateProj = try pack(gatePack, rows: UInt32(Sizes.F), cols: UInt32(Sizes.D))
+        let upProj   = try pack(upPack,   rows: UInt32(Sizes.F), cols: UInt32(Sizes.D))
+        let downProj = try pack(downPack, rows: UInt32(Sizes.D), cols: UInt32(Sizes.F))
 
         let cb = try #require(ctx.queue.makeCommandBuffer())
         try wrapper.encode(commandBuffer: cb,

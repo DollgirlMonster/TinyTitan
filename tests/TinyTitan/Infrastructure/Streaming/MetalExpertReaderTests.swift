@@ -15,8 +15,10 @@ import Testing
         try Data(bytes).write(to: url)
 
         let context = try MetalContext()
-        let first = context.device.makeBuffer(length: page, options: .storageModeShared)!
-        let second = context.device.makeBuffer(length: page, options: .storageModeShared)!
+        let first = try #require(
+            context.device.makeBuffer(length: page, options: .storageModeShared))
+        let second = try #require(
+            context.device.makeBuffer(length: page, options: .storageModeShared))
         let reader = try MetalExpertReader(path: url.path, device: context.device)
 
         try reader.fetch(
@@ -42,8 +44,8 @@ import Testing
         let context = try MetalContext()
         let coordinator = try #require(ExpertIOEventCoordinator(device: context.device))
         let token = try coordinator.reserve()
-        let destination = context.device.makeBuffer(
-            length: page, options: .storageModeShared)!
+        let destination = try #require(context.device.makeBuffer(
+            length: page, options: .storageModeShared))
         let reader = try MetalExpertReader(path: url.path, device: context.device)
 
         try await withCheckedThrowingContinuation { continuation in

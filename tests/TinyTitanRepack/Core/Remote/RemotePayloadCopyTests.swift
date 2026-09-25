@@ -20,15 +20,36 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
         request
     }
 
-    override func startLoading() {
-        guard let url = request.url,
-              let filename = Self.filename(from: url) else {
-            let response = HTTPURLResponse(url: request.url!,
-                                           statusCode: 404,
-                                           httpVersion: nil,
-                                           headerFields: nil)!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    /// Sends a response, or reports a URL error when the response object cannot
+    /// be built. A stub that traps takes the whole test process down with it, so
+    /// an unbuildable response is an error the client observes, not a crash.
+    private func respond(url: URL,
+                         status: Int,
+                         headers: [String: String]? = nil,
+                         body: Data? = nil) {
+        guard let response = HTTPURLResponse(url: url,
+                                             statusCode: status,
+                                             httpVersion: nil,
+                                             headerFields: headers) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if let body {
+            client?.urlProtocol(self, didLoad: body)
+        }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func startLoading() {
+        guard let url = request.url else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        guard let filename = Self.filename(from: url) else {
+            respond(url: url, status: 404)
             return
         }
         let method = request.httpMethod ?? "GET"
@@ -43,34 +64,17 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(code))
             return
         case .http(let status):
-            let response = HTTPURLResponse(url: url,
-                                           statusCode: status,
-                                           httpVersion: nil,
-                                           headerFields: nil)!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocolDidFinishLoading(self)
+            respond(url: url, status: status)
             return
         case .response(let status, let headers, let body):
-            let response = HTTPURLResponse(
-                url: url,
-                statusCode: status,
-                httpVersion: nil,
-                headerFields: headers)!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: body)
-            client?.urlProtocolDidFinishLoading(self)
+            respond(url: url, status: status, headers: headers, body: body)
             return
         case .truncatedBody, nil:
             break
         }
 
         guard let data = Self.files[filename] else {
-            let response = HTTPURLResponse(url: request.url!,
-                                           statusCode: 404,
-                                           httpVersion: nil,
-                                           headerFields: nil)!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocolDidFinishLoading(self)
+            respond(url: url, status: 404)
             return
         }
 
@@ -78,23 +82,13 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
             let headers = baseHeaders(filename: filename,
                                       data: data,
                                       contentLength: data.count)
-            let response = HTTPURLResponse(url: url,
-                                           statusCode: 200,
-                                           httpVersion: nil,
-                                           headerFields: headers)!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocolDidFinishLoading(self)
+            respond(url: url, status: 200, headers: headers)
             return
         }
 
         let range = request.value(forHTTPHeaderField: "Range")
         guard let (start, end) = parseRange(range, fileSize: data.count) else {
-            let response = HTTPURLResponse(url: url,
-                                           statusCode: 416,
-                                           httpVersion: nil,
-                                           headerFields: nil)!
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocolDidFinishLoading(self)
+            respond(url: url, status: 416)
             return
         }
         let expectedLength = end - start + 1
@@ -108,13 +102,7 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
                                   data: data,
                                   contentLength: expectedLength)
         headers["Content-Range"] = "bytes \(start)-\(end)/\(data.count)"
-        let response = HTTPURLResponse(url: url,
-                                       statusCode: 206,
-                                       httpVersion: nil,
-                                       headerFields: headers)!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body))
-        client?.urlProtocolDidFinishLoading(self)
+        respond(url: url, status: 206, headers: headers, body: body)
     }
 
     override func stopLoading() {}

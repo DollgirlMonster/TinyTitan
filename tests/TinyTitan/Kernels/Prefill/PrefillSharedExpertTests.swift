@@ -38,9 +38,9 @@ import TinyTitanValidationSupport
             return
         }
 
-        let gateProj = Self.makeProjection(ctx: ctx, packed: gate, rows: Self.f, cols: Self.d)
-        let upProj = Self.makeProjection(ctx: ctx, packed: up, rows: Self.f, cols: Self.d)
-        let downProj = Self.makeProjection(ctx: ctx, packed: down, rows: Self.d, cols: Self.f)
+        let gateProj = try Self.makeProjection(ctx: ctx, packed: gate, rows: Self.f, cols: Self.d)
+        let upProj = try Self.makeProjection(ctx: ctx, packed: up, rows: Self.f, cols: Self.d)
+        let downProj = try Self.makeProjection(ctx: ctx, packed: down, rows: Self.d, cols: Self.f)
         let halfBytes = MemoryLayout<Float16>.stride
 
         let refCB = try #require(ctx.queue.makeCommandBuffer())
@@ -117,9 +117,9 @@ import TinyTitanValidationSupport
             return
         }
 
-        let gateProj = Self.makeProjection(ctx: ctx, packed: gate, rows: Self.f, cols: Self.d)
-        let upProj = Self.makeProjection(ctx: ctx, packed: up, rows: Self.f, cols: Self.d)
-        let downProj = Self.makeProjection(ctx: ctx, packed: down, rows: Self.d, cols: Self.f)
+        let gateProj = try Self.makeProjection(ctx: ctx, packed: gate, rows: Self.f, cols: Self.d)
+        let upProj = try Self.makeProjection(ctx: ctx, packed: up, rows: Self.f, cols: Self.d)
+        let downProj = try Self.makeProjection(ctx: ctx, packed: down, rows: Self.d, cols: Self.f)
 
         let halfBytes = MemoryLayout<Float16>.stride
         let refCB = try #require(ctx.queue.makeCommandBuffer())
@@ -198,9 +198,9 @@ import TinyTitanValidationSupport
             return
         }
 
-        let gateProj = makeProjection(ctx: ctx, packed: gate, rows: f, cols: d)
-        let upProj = makeProjection(ctx: ctx, packed: up, rows: f, cols: d)
-        let downProj = makeProjection(ctx: ctx, packed: down, rows: d, cols: f)
+        let gateProj = try makeProjection(ctx: ctx, packed: gate, rows: f, cols: d)
+        let upProj = try makeProjection(ctx: ctx, packed: up, rows: f, cols: d)
+        let downProj = try makeProjection(ctx: ctx, packed: down, rows: d, cols: f)
 
         let halfBytes = MemoryLayout<Float16>.stride
         let refCB = try #require(ctx.queue.makeCommandBuffer())
@@ -286,16 +286,16 @@ import TinyTitanValidationSupport
         packed: (packed: [UInt8], scales: [UInt16], biases: [UInt16]),
         rows: Int,
         cols: Int
-    ) -> SharedExpertInt8Proj {
-        let w = ctx.device.makeBuffer(bytes: packed.packed,
-                                      length: packed.packed.count,
-                                      options: .storageModeShared)!
-        let s = ctx.device.makeBuffer(bytes: packed.scales,
-                                      length: packed.scales.count * MemoryLayout<UInt16>.stride,
-                                      options: .storageModeShared)!
-        let b = ctx.device.makeBuffer(bytes: packed.biases,
-                                      length: packed.biases.count * MemoryLayout<UInt16>.stride,
-                                      options: .storageModeShared)!
+    ) throws -> SharedExpertInt8Proj {
+        let w = try #require(ctx.device.makeBuffer(bytes: packed.packed,
+                                                   length: packed.packed.count,
+                                                   options: .storageModeShared))
+        let s = try #require(ctx.device.makeBuffer(bytes: packed.scales,
+                                                   length: packed.scales.count * MemoryLayout<UInt16>.stride,
+                                                   options: .storageModeShared))
+        let b = try #require(ctx.device.makeBuffer(bytes: packed.biases,
+                                                   length: packed.biases.count * MemoryLayout<UInt16>.stride,
+                                                   options: .storageModeShared))
         return SharedExpertInt8Proj(weights: w,
                                     scales: s,
                                     biases: b,

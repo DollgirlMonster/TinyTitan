@@ -40,11 +40,11 @@ import TinyTitanValidationSupport
         let input = [Float16](repeating: 1, count: columns)
         let ctx = try MetalContext()
         let kernel = try AffineQuantGEMV(context: ctx, weightBits: bits)
-        let w = ctx.device.makeBuffer(bytes: packed, length: packed.count)!
-        let s = ctx.device.makeBuffer(bytes: scales, length: scales.count * 2)!
-        let b = ctx.device.makeBuffer(bytes: biases, length: biases.count * 2)!
-        let x = Fp16Buffer.make(ctx.device, halves: input)!
-        let y = Fp16Buffer.make(ctx.device, count: rows)!
+        let w = try #require(ctx.device.makeBuffer(bytes: packed, length: packed.count))
+        let s = try #require(ctx.device.makeBuffer(bytes: scales, length: scales.count * 2))
+        let b = try #require(ctx.device.makeBuffer(bytes: biases, length: biases.count * 2))
+        let x = try #require(Fp16Buffer.make(ctx.device, halves: input))
+        let y = try #require(Fp16Buffer.make(ctx.device, count: rows))
         let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encode(commandBuffer: cb, weights: w, scales: s, biases: b,
                       x: x, y: y, m: UInt32(rows), n: UInt32(columns))
@@ -64,10 +64,10 @@ import TinyTitanValidationSupport
         let biases = [UInt16](repeating: 0, count: scales.count)
         let ctx = try MetalContext()
         let kernel = try AffineQuantEmbeddingLookup(context: ctx, weightBits: bits)
-        let w = ctx.device.makeBuffer(bytes: packed, length: packed.count)!
-        let s = ctx.device.makeBuffer(bytes: scales, length: scales.count * 2)!
-        let b = ctx.device.makeBuffer(bytes: biases, length: biases.count * 2)!
-        let y = Fp16Buffer.make(ctx.device, count: columns)!
+        let w = try #require(ctx.device.makeBuffer(bytes: packed, length: packed.count))
+        let s = try #require(ctx.device.makeBuffer(bytes: scales, length: scales.count * 2))
+        let b = try #require(ctx.device.makeBuffer(bytes: biases, length: biases.count * 2))
+        let y = try #require(Fp16Buffer.make(ctx.device, count: columns))
         let cb = try #require(ctx.queue.makeCommandBuffer())
         try kernel.encode(commandBuffer: cb, table: w, scales: s, biases: b,
                       out: y, tokenId: 1, d: UInt32(columns), outScale: 1,

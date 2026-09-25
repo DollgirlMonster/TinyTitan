@@ -58,22 +58,23 @@ import Testing
                           streamer: PreadExpertStreamer,
                           moe: MoE,
                           context: MetalContext) throws -> Classification {
-        func buffer<T>(_ values: [T]) -> MTLBuffer {
-            values.withUnsafeBytes { bytes in
-                context.device.makeBuffer(
-                    bytes: bytes.baseAddress!,
+        func buffer<T>(_ values: [T]) throws -> MTLBuffer {
+            try values.withUnsafeBytes { bytes in
+                let base = try #require(bytes.baseAddress)
+                return try #require(context.device.makeBuffer(
+                    bytes: base,
                     length: max(1, bytes.count),
-                    options: .storageModeShared)!
+                    options: .storageModeShared))
             }
         }
-        let topK = buffer(experts)
-        let hitCount = buffer([UInt32(0)])
-        let hitPositions = buffer([UInt32](repeating: 0, count: experts.count))
-        let missCount = buffer([UInt32(0)])
-        let missPositions = buffer([UInt32](repeating: 0, count: experts.count))
-        let missExperts = buffer([UInt32](repeating: 0, count: experts.count))
-        let slots = buffer([UInt32](repeating: 0, count: experts.count))
-        let generations = buffer([UInt64](repeating: 0, count: experts.count))
+        let topK = try buffer(experts)
+        let hitCount = try buffer([UInt32(0)])
+        let hitPositions = try buffer([UInt32](repeating: 0, count: experts.count))
+        let missCount = try buffer([UInt32(0)])
+        let missPositions = try buffer([UInt32](repeating: 0, count: experts.count))
+        let missExperts = try buffer([UInt32](repeating: 0, count: experts.count))
+        let slots = try buffer([UInt32](repeating: 0, count: experts.count))
+        let generations = try buffer([UInt64](repeating: 0, count: experts.count))
         let resources = streamer.expertResidencyResources()
         let commandBuffer = try #require(context.queue.makeCommandBuffer())
         try moe.encodeResidencyClassification(

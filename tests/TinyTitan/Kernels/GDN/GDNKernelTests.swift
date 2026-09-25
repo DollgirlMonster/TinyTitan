@@ -447,7 +447,7 @@ import TinyTitanValidationSupport
         let view: TensorView
 
         init(device: MTLDevice, rows: Int, n: Int, weightPad: Int,
-             rng: inout SplitMix64) {
+             rng: inout SplitMix64) throws {
             let packedPerRow = n / 2
             let groups = n / Quantization.groupSize
             var weights = [UInt8](repeating: 0, count: rows * packedPerRow)
@@ -479,8 +479,8 @@ import TinyTitanValidationSupport
                 let raw = UnsafeRawBufferPointer(src)
                 bytes.replaceSubrange(biasOffset..<(biasOffset + raw.count), with: raw)
             }
-            let buffer = device.makeBuffer(bytes: bytes, length: total,
-                                           options: .storageModeShared)!
+            let buffer = try #require(device.makeBuffer(bytes: bytes, length: total,
+                                                        options: .storageModeShared))
             self.view = TensorView(buffer: buffer,
                                    offset: UInt64(weightsOffset),
                                    length: UInt64(weights.count),
@@ -508,14 +508,14 @@ import TinyTitanValidationSupport
                           specializedHiddenSize: specialize ? hiddenSize : nil)
         let gemv = try DequantInt4GEMV(context: ctx)
 
-        let qkv = PackedProjection(device: ctx.device, rows: cfg.qkvDim,
-                                   n: hiddenSize, weightPad: weightPad, rng: &rng)
-        let z = PackedProjection(device: ctx.device, rows: cfg.valueDim,
-                                 n: hiddenSize, weightPad: weightPad, rng: &rng)
-        let a = PackedProjection(device: ctx.device, rows: cfg.numVHeads,
-                                 n: hiddenSize, weightPad: weightPad, rng: &rng)
-        let b = PackedProjection(device: ctx.device, rows: cfg.numVHeads,
-                                 n: hiddenSize, weightPad: weightPad, rng: &rng)
+        let qkv = try PackedProjection(device: ctx.device, rows: cfg.qkvDim,
+                                       n: hiddenSize, weightPad: weightPad, rng: &rng)
+        let z = try PackedProjection(device: ctx.device, rows: cfg.valueDim,
+                                     n: hiddenSize, weightPad: weightPad, rng: &rng)
+        let a = try PackedProjection(device: ctx.device, rows: cfg.numVHeads,
+                                     n: hiddenSize, weightPad: weightPad, rng: &rng)
+        let b = try PackedProjection(device: ctx.device, rows: cfg.numVHeads,
+                                     n: hiddenSize, weightPad: weightPad, rng: &rng)
         let x = (0..<hiddenSize).map { _ in Float16(rng.uniform(-1.0, 1.0)) }
 
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: x),

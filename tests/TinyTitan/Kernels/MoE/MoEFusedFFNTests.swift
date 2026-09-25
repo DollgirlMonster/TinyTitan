@@ -23,19 +23,20 @@ import TinyTitanValidationSupport
                              specializedD: UInt32(Self.dimension),
                              specializedF: UInt32(Self.intermediate),
                              specializedNumExperts: 256)
-        let routed = blobs.map {
-            context.device.makeBuffer(bytes: $0.bytes, length: $0.bytes.count)!
+        let routed = try blobs.map {
+            try #require(context.device.makeBuffer(bytes: $0.bytes, length: $0.bytes.count))
         }
-        let x = Fp16Buffer.make(context.device,
-                                halves: [Float16](repeating: 1, count: Self.dimension))!
-        let acts = Fp16Buffer.make(context.device,
-                                   count: Self.topK * Self.intermediate)!
-        let weights = Fp16Buffer.make(context.device,
-                                      halves: [Float16](repeating: 0.125, count: Self.topK))!
-        let residual = Fp16Buffer.make(context.device, count: Self.dimension)!
-        let output = Fp16Buffer.make(context.device, count: Self.dimension)!
+        let x = try #require(Fp16Buffer.make(
+            context.device, halves: [Float16](repeating: 1, count: Self.dimension)))
+        let acts = try #require(Fp16Buffer.make(
+            context.device, count: Self.topK * Self.intermediate))
+        let weights = try #require(Fp16Buffer.make(
+            context.device, halves: [Float16](repeating: 0.125, count: Self.topK)))
+        let residual = try #require(Fp16Buffer.make(context.device, count: Self.dimension))
+        let output = try #require(Fp16Buffer.make(context.device, count: Self.dimension))
         memset(residual.contents(), 0, residual.length)
-        let args = kernel.makeRoutedArgumentBuffer(routedBlobs: routed, topK: 8)!
+        let args = try #require(
+            kernel.makeRoutedArgumentBuffer(routedBlobs: routed, topK: 8))
         let cb = try #require(context.queue.makeCommandBuffer())
         try kernel.encodeRoutedPersistentPhase1U16Load(
             commandBuffer: cb, routedArgBuffer: args, routedBlobs: routed,

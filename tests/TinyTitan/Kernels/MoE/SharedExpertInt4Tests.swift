@@ -37,9 +37,9 @@ import TinyTitanValidationSupport
         let commandBuffer = try #require(context.queue.makeCommandBuffer())
         try runtime.encode(commandBuffer: commandBuffer,
                            x: xBuffer,
-                           gate: Self.projection(context, gatePack, rows: Self.f, cols: Self.d),
-                           up: Self.projection(context, upPack, rows: Self.f, cols: Self.d),
-                           down: Self.projection(context, downPack, rows: Self.d, cols: Self.f),
+                           gate: try Self.projection(context, gatePack, rows: Self.f, cols: Self.d),
+                           up: try Self.projection(context, upPack, rows: Self.f, cols: Self.d),
+                           down: try Self.projection(context, downPack, rows: Self.d, cols: Self.f),
                            y: yBuffer,
                            scratchGate: gateScratch,
                            scratchUp: upScratch,
@@ -66,17 +66,17 @@ import TinyTitanValidationSupport
         _ packed: (rows: [Quantization.Int4AffineRow], packed: [UInt8], scales: [UInt16], biases: [UInt16]),
         rows: Int,
         cols: Int
-    ) -> SharedExpertProjection {
+    ) throws -> SharedExpertProjection {
         SharedExpertProjection(
-            weights: context.device.makeBuffer(bytes: packed.packed,
-                                                length: packed.packed.count,
-                                                options: .storageModeShared)!,
-            scales: context.device.makeBuffer(bytes: packed.scales,
-                                               length: packed.scales.count * 2,
-                                               options: .storageModeShared)!,
-            biases: context.device.makeBuffer(bytes: packed.biases,
-                                               length: packed.biases.count * 2,
-                                               options: .storageModeShared)!,
+            weights: try #require(context.device.makeBuffer(bytes: packed.packed,
+                                                            length: packed.packed.count,
+                                                            options: .storageModeShared)),
+            scales: try #require(context.device.makeBuffer(bytes: packed.scales,
+                                                           length: packed.scales.count * 2,
+                                                           options: .storageModeShared)),
+            biases: try #require(context.device.makeBuffer(bytes: packed.biases,
+                                                           length: packed.biases.count * 2,
+                                                           options: .storageModeShared)),
             rows: UInt32(rows), cols: UInt32(cols))
     }
 }
