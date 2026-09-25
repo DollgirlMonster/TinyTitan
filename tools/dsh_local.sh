@@ -856,7 +856,7 @@ done
 
 case "$COMMAND" in
   ensure) cmd_ensure ;;
-  web)    cmd_web ;;
+  web)    cmd_web "$@" ;;
   smoke)  cmd_smoke ;;
   port)   cmd_port ;;
   status) cmd_status ;;

@@ -12,6 +12,7 @@
 #   converter           routed experts must land at their own index
 #   arch-path           no hardcoded SwiftPM triple in a build path (see below)
 #   shell-portability   scripts run on the system bash (3.2), not just the dev one
+#   shell-lint          shellcheck warnings-as-errors over every script, pinned version
 #   python              ruff check + ruff format --check under pyproject.toml,
 #                       with the pinned ruff version
 #
@@ -24,7 +25,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export ROOT
 BASELINE="$SCRIPT_DIR/func-length-baseline.txt"
 MAX_FUNC_LINES="${MAX_FUNC_LINES:-120}"
 
@@ -568,16 +570,57 @@ PY
   return 0
 }
 
+
+# --- shellcheck -------------------------------------------------------------
+# The scripts are the installer, the launcher and the release tooling: a real
+# bug here is a user's disk or a published artifact, not a style point. The
+# pinned version matters because shellcheck's checks change between releases.
+SHELLCHECK_PIN="0.11.0"
+
+check_shellcheck() {
+  echo "== shellcheck: warnings are errors over every script (pinned $SHELLCHECK_PIN) =="
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    echo "  FAIL: shellcheck is not installed; this gate needs the pinned version:"
+    echo "        brew install shellcheck  (CI downloads $SHELLCHECK_PIN from the release page)"
+    status=1
+    return 1
+  fi
+  local version
+  version="$(shellcheck --version | awk '/^version:/ {print $2}')"
+  if [ "$version" != "$SHELLCHECK_PIN" ]; then
+    echo "  FAIL: shellcheck $version is installed, this gate pins $SHELLCHECK_PIN"
+    status=1
+    return 1
+  fi
+  local scripts=() f output
+  while IFS= read -r f; do scripts+=("$f"); done < <(
+    find "$ROOT/tools" "$ROOT/benchmark" "$ROOT/docs" -name '*.sh' -not -path '*/.build/*' 2>/dev/null | sort)
+  if [ "${#scripts[@]}" -eq 0 ]; then
+    echo "  FAIL: no shell scripts found to check"
+    status=1
+    return 1
+  fi
+  if ! output="$(shellcheck -S warning -f gcc "${scripts[@]+"${scripts[@]}"}" 2>&1)"; then
+    printf '%s\n' "$output" | sed "s|$ROOT/||" | head -30
+    echo "  FAIL: shellcheck found warnings (see above)"
+    status=1
+    return 1
+  fi
+  echo "  ok (shellcheck $version, ${#scripts[@]} scripts, no warnings)"
+  return 0
+}
+
 case "$want" in
-  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_python ;;
+  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_shellcheck; check_python ;;
   force-cast)  check_force_cast ;;
   func-length) check_func_length ;;
   sendable)    check_unchecked_sendable ;;
   converter)   check_converter_expert_order ;;
   arch-path)   check_arch_path ;;
   shell)       check_shell_portability ;;
+  shellcheck)  check_shellcheck ;;
   python)      check_python ;;
-  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|python)" >&2; exit 2 ;;
+  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|shellcheck|python)" >&2; exit 2 ;;
 esac
 
 exit $status

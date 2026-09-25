@@ -48,7 +48,7 @@ STAGE="$STAGE_ROOT/tinytitan-$VERSION-macos-arm64"
 ARCHIVE="$STAGE_ROOT/tinytitan-$VERSION-macos-arm64.tar.gz"
 SCRATCH="$STAGE_ROOT/build"
 
-cd "$ROOT"
+cd "$ROOT" || die "cannot cd to $ROOT"
 
 # --- preconditions ----------------------------------------------------------
 step "preconditions"

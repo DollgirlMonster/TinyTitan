@@ -200,7 +200,7 @@ latest_tag() {
 # under $INSTALL_ROOT. No git, no Xcode, no Swift, no brew, no Python: the engine
 # arrives built, and the tools that drive it arrive as text.
 install_from_release() {
-  local tag="$1" tmp asset src_url src_dir
+  local tag="$1" tmp asset src_url
   [[ "$tag" == v* ]] || tag="v$tag"
   asset="tinytitan-${tag#v}-macos-arm64.tar.gz"
   tmp="$(mktemp -d)"

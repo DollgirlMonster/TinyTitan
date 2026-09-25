@@ -41,6 +41,16 @@ jobs:
         run: |
           python3 -m pip install --user --disable-pip-version-check --quiet ruff==0.16.7
           echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
+      - name: Install the pinned shell linter
+        # `tools/lint.sh`'s shellcheck gate pins 0.11.0 and fails when another
+        # version is present; Homebrew cannot pin, so the release binary is
+        # downloaded. The scripts it checks are the installer, the launcher and
+        # the release tooling.
+        run: |
+          curl -fsSL -o /tmp/shellcheck.tar.xz \
+            https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          echo "/tmp/shellcheck-v0.11.0" >> "$GITHUB_PATH"
       - name: Plugin tests (harness-version pins)
         # The cheapest gate, and independent of the Swift build: the plugin
         # suites run in about a second together. dsh-tinytitan asserts the one

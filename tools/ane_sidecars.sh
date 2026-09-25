@@ -59,11 +59,15 @@ done
 
 # The runtime only accepts these as a prefill chunk, and only routes a chunk to
 # the sidecar when the two match.
-case " 32 64 128 256 512 1024 2048 4096 " in
-  *" $CHUNK "*) ;;
-  *) echo "error: --chunk $CHUNK is not a prefill chunk the runtime accepts" >&2
-     echo "       (32, 64, 128, 256, 512, 1024, 2048, 4096)" >&2; exit 2 ;;
-esac
+allowed_chunk=0
+for choice in 32 64 128 256 512 1024 2048 4096; do
+  [ "$CHUNK" = "$choice" ] && allowed_chunk=1
+done
+if [ "$allowed_chunk" -eq 0 ]; then
+  echo "error: --chunk $CHUNK is not a prefill chunk the runtime accepts" >&2
+  echo "       (32, 64, 128, 256, 512, 1024, 2048, 4096)" >&2
+  exit 2
+fi
 
 # 4,096 keeps the historical directory; any other width gets its own, so a model
 # can carry several and the configured chunk picks one.
