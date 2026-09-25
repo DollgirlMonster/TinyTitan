@@ -62,10 +62,27 @@ let package = Package(
         // application package and nothing depends on it. Raising Swift to
         // `-O3` was tried and rejected for the same constraint, having measured
         // the same as the release default (0.675 vs 0.680 ms).
+        //
+        // The language standard and the hardening warnings are enforced here,
+        // not merely declared: `-std=c99` comes from `cLanguageStandard` above,
+        // and these settings add the flags `-Wall -Wextra` does not imply plus
+        // `-Werror`, so a new kernel cannot land with a shadowed variable, a
+        // narrowing conversion, a dropped qualifier, a non-literal format or a
+        // missing prototype. All three C files compile clean under the full set
+        // (AUDIT/tool-coverage.md, proof L8), and `-pedantic-errors` rejects the
+        // implicit declarations and GNU extensions C99 does not have.
         .target(
             name: "TinyTitanKernelsC",
             path: "sources/TinyTitanKernelsC",
-            cSettings: [.unsafeFlags(["-O2"])],
+            cSettings: [.unsafeFlags([
+                "-O2",
+                "-pedantic-errors",
+                "-Wall", "-Wextra",
+                "-Wshadow", "-Wconversion", "-Wsign-conversion", "-Wcast-qual",
+                "-Wwrite-strings", "-Wformat=2", "-Wstrict-prototypes",
+                "-Wmissing-prototypes",
+                "-Werror",
+            ])],
             swiftSettings: tinytitanLanguageStandard
         ),
         .target(
@@ -243,5 +260,10 @@ let package = Package(
             swiftSettings: tinytitanLanguageStandard
         ),
     ],
-    swiftLanguageModes: [.v6]
+    swiftLanguageModes: [.v6],
+    // The C in this package is written to strict C99; declaring it here makes
+    // the compiler enforce it instead of documenting an intention. Together
+    // with the TinyTitanKernelsC cSettings below this is the C language
+    // standard in force, and AUDIT/tool-coverage.md proves a violation fails.
+    cLanguageStandard: .c99
 )
