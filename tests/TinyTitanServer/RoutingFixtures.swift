@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
@@ -119,18 +120,21 @@ enum RoutingFixture {
         contextLimit: 262_144)
 
     static var catalog: ModelCatalog {
-        ModelCatalog(directory: URL(fileURLWithPath: "/models"),
-                     entries: [alpha, flash, small, dense])
+        ModelCatalog(
+            directory: URL(fileURLWithPath: "/models"),
+            entries: [alpha, flash, small, dense])
     }
 
     static let configuredContext = 65_536
 
-    static func router(initial: String = alpha.id,
-                       reasoning: ReasoningLevel = .off,
-                       log: RoutingEventLog,
-                       gates: [String: RoutingGate] = [:],
-                       failing: Set<String> = [],
-                       delay: Duration? = nil) throws -> ModelRouter {
+    static func router(
+        initial: String = alpha.id,
+        reasoning: ReasoningLevel = .off,
+        log: RoutingEventLog,
+        gates: [String: RoutingGate] = [:],
+        failing: Set<String> = [],
+        delay: Duration? = nil
+    ) throws -> ModelRouter {
         try ModelRouter(
             catalog: catalog, initialModelID: initial, reasoning: reasoning,
             maximumContext: configuredContext,
@@ -161,9 +165,11 @@ enum RoutingFixture {
 
     /// Polls a condition instead of sleeping a fixed time, so a slow machine
     /// makes the test slower rather than wrong.
-    static func eventually(_ what: String,
-                           timeout: Duration = .seconds(10),
-                           _ condition: @Sendable () async -> Bool) async {
+    static func eventually(
+        _ what: String,
+        timeout: Duration = .seconds(10),
+        _ condition: @Sendable () async -> Bool
+    ) async {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             if await condition() { return }

@@ -27,8 +27,9 @@ extension ServerHTTPHandler {
             // The spec requires `model`; it is decoded as optional so a missing
             // one is refused by name rather than as malformed JSON.
             guard let requestedModel = decoded.model, !requestedModel.isEmpty else {
-                throw ServerRequestError.invalid(message: "model is required",
-                                                 param: "model", code: "invalid_value")
+                throw ServerRequestError.invalid(
+                    message: "model is required",
+                    param: "model", code: "invalid_value")
             }
             let target = try servedModel(named: requestedModel)
             let conversation = try ResponsesAPIMapper.chatMessages(
@@ -40,7 +41,8 @@ extension ServerHTTPHandler {
             }
             let budget = ServerCompaction.targetTokens(
                 maxContext: target.maximumContext, requested: decoded.maxCompactionTokens)
-            let resourceID = "resp_cmp_"
+            let resourceID =
+                "resp_cmp_"
                 + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
             let created = Int(Date().timeIntervalSince1970)
             let contextBox = SendableContext(context)
@@ -49,39 +51,47 @@ extension ServerHTTPHandler {
                 do {
                     let result = try await self.compacted(
                         conversation: conversation, target: target, budget: budget)
-                    ServerLog.compacted(id: resourceID, mode: result.envelope.mode.rawValue,
-                                        noteTokens: result.noteTokens, budget: budget)
+                    ServerLog.compacted(
+                        id: resourceID, mode: result.envelope.mode.rawValue,
+                        noteTokens: result.noteTokens, budget: budget)
                     var output: [[String: Any]] = []
                     // The caller's instructions are preserved verbatim rather
                     // than summarised: the spec asks compaction to keep system
                     // prompts, and a paraphrase of a constraint is not the
                     // constraint.
                     if let instructions = decoded.instructions, !instructions.isEmpty {
-                        output.append(ResponsesAPIBuilder.messageItem(
-                            id: ResponsesAPIBuilder.messageItemID(responseID: resourceID),
-                            role: "developer", text: instructions, status: "completed"))
+                        output.append(
+                            ResponsesAPIBuilder.messageItem(
+                                id: ResponsesAPIBuilder.messageItemID(responseID: resourceID),
+                                role: "developer", text: instructions, status: "completed"))
                     }
-                    output.append(ResponsesAPIBuilder.compactionItem(
-                        id: "cmp_" + resourceID.dropFirst("resp_cmp_".count),
-                        encryptedContent: try ServerCompaction.encode(result.envelope),
-                        createdBy: "tinytitan"))
-                    self.writeJSON(contextBox.value, status: .ok,
-                                   object: ResponsesAPIBuilder.compactResource(
-                                       id: resourceID, created: created, output: output,
-                                       usage: result.usage))
+                    output.append(
+                        ResponsesAPIBuilder.compactionItem(
+                            id: "cmp_" + resourceID.dropFirst("resp_cmp_".count),
+                            encryptedContent: try ServerCompaction.encode(result.envelope),
+                            createdBy: "tinytitan"))
+                    self.writeJSON(
+                        contextBox.value, status: .ok,
+                        object: ResponsesAPIBuilder.compactResource(
+                            id: resourceID, created: created, output: output,
+                            usage: result.usage))
                 } catch {
-                    self.handleAsyncFailure(error, context: contextBox.value, id: resourceID,
-                                            phase: "compact", stream: false, outbox: nil,
-                                            streamState: StreamState(), surface: .responses)
+                    self.handleAsyncFailure(
+                        error, context: contextBox.value, id: resourceID,
+                        phase: "compact", stream: false, outbox: nil,
+                        streamState: StreamState(), surface: .responses)
                 }
             }
         } catch let error as ServerRequestError {
-            writeError(context, status: error == .unknownModel ? .notFound : .badRequest,
-                       error.envelope)
+            writeError(
+                context, status: error == .unknownModel ? .notFound : .badRequest,
+                error.envelope)
         } catch {
-            writeError(context, status: .badRequest,
-                       OpenAIErrorEnvelope(message: "malformed JSON request",
-                                           code: "invalid_json"))
+            writeError(
+                context, status: .badRequest,
+                OpenAIErrorEnvelope(
+                    message: "malformed JSON request",
+                    code: "invalid_json"))
         }
     }
 
@@ -103,16 +113,20 @@ extension ServerHTTPHandler {
     /// nothing usable falls back to the newest text trimmed to the budget, so the
     /// caller always gets a window: a compact endpoint that fails the turn is
     /// worse than one that compacts badly and says which way.
-    func compacted(conversation: [OpenAIChatMessage], target: ServedModel,
-                   budget: Int) async throws -> CompactionOutcome {
+    func compacted(
+        conversation: [OpenAIChatMessage], target: ServedModel,
+        budget: Int
+    ) async throws -> CompactionOutcome {
         let transcript = ServerCompaction.transcript(conversation)
         let created = Int(Date().timeIntervalSince1970)
         let structured = ServerCompaction.instruction(limit: budget)
-        let first = try await summarise(instruction: structured, body: transcript,
-                                        target: target, budget: budget)
+        let first = try await summarise(
+            instruction: structured, body: transcript,
+            target: target, budget: budget)
         var usage = first.usage
-        var note = ServerCompaction.strippingInstructionEcho(first.content,
-                                                             instruction: structured)
+        var note = ServerCompaction.strippingInstructionEcho(
+            first.content,
+            instruction: structured)
         var mode = CompactionMode.model
 
         // A pass that echoed its instruction, or looped, has not summarised
@@ -124,23 +138,27 @@ extension ServerHTTPHandler {
         }
         if unusable(note) {
             let plain = ServerCompaction.plainInstruction(limit: budget)
-            let retry = try await summarise(instruction: plain, body: transcript,
-                                            target: target, budget: budget)
+            let retry = try await summarise(
+                instruction: plain, body: transcript,
+                target: target, budget: budget)
             usage = usage.adding(retry.usage)
             note = ServerCompaction.strippingInstructionEcho(retry.content, instruction: plain)
         }
 
         if unusable(note) {
             mode = .extractive
-            note = ServerCompaction.extractiveSummary(transcript: transcript,
-                                                      characterBudget: budget * 3)
+            note = ServerCompaction.extractiveSummary(
+                transcript: transcript,
+                characterBudget: budget * 3)
         } else if try await tokenCount(of: note, target: target) > budget {
             let instruction = ServerCompaction.compressionInstruction(limit: budget)
-            let second = try await summarise(instruction: instruction, body: note,
-                                             target: target, budget: budget)
+            let second = try await summarise(
+                instruction: instruction, body: note,
+                target: target, budget: budget)
             usage = usage.adding(second.usage)
-            let compressed = ServerCompaction.strippingInstructionEcho(second.content,
-                                                                       instruction: instruction)
+            let compressed = ServerCompaction.strippingInstructionEcho(
+                second.content,
+                instruction: instruction)
             if !compressed.isEmpty {
                 note = compressed
                 mode = .compressed
@@ -148,28 +166,35 @@ extension ServerHTTPHandler {
             // One compression pass, then trim: a model that missed the budget
             // twice will miss it a third time, and the caller is waiting.
             if try await tokenCount(of: note, target: target) > budget {
-                note = ServerCompaction.extractiveSummary(transcript: note,
-                                                          characterBudget: budget * 3)
+                note = ServerCompaction.extractiveSummary(
+                    transcript: note,
+                    characterBudget: budget * 3)
                 mode = .extractive
             }
         }
-        let envelope = CompactionEnvelope(model: target.id, createdAt: created,
-                                          mode: mode, summary: note)
-        return CompactionOutcome(envelope: envelope, usage: usage,
-                                 noteTokens: try await tokenCount(of: note, target: target))
+        let envelope = CompactionEnvelope(
+            model: target.id, createdAt: created,
+            mode: mode, summary: note)
+        return CompactionOutcome(
+            envelope: envelope, usage: usage,
+            noteTokens: try await tokenCount(of: note, target: target))
     }
 
     /// One summariser pass through the normal queue, so a compaction waits its
     /// turn and is shed under load like any other generation.
-    private func summarise(instruction: String, body: String, target: ServedModel,
-                           budget: Int) async throws -> ServerCompletion {
+    private func summarise(
+        instruction: String, body: String, target: ServedModel,
+        budget: Int
+    ) async throws -> ServerCompletion {
         let request = OpenAIChatRequest(
             model: target.id,
             messages: [
-                OpenAIChatMessage(role: "system", content: .text(instruction),
-                                  toolCalls: nil, toolCallID: nil, name: nil),
-                OpenAIChatMessage(role: "user", content: .text(body),
-                                  toolCalls: nil, toolCallID: nil, name: nil),
+                OpenAIChatMessage(
+                    role: "system", content: .text(instruction),
+                    toolCalls: nil, toolCallID: nil, name: nil),
+                OpenAIChatMessage(
+                    role: "user", content: .text(body),
+                    toolCalls: nil, toolCallID: nil, name: nil),
             ],
             stream: false,
             // Greedy: a compaction should be the same note for the same session,
@@ -194,8 +219,11 @@ extension ServerHTTPHandler {
         guard let counting = backend as? any PromptTokenCounting else { return 0 }
         let request = OpenAIChatRequest(
             model: target.id,
-            messages: [OpenAIChatMessage(role: "user", content: .text(text),
-                                         toolCalls: nil, toolCallID: nil, name: nil)],
+            messages: [
+                OpenAIChatMessage(
+                    role: "user", content: .text(text),
+                    toolCalls: nil, toolCallID: nil, name: nil)
+            ],
             stream: false,
             maxCompletionTokens: 1)
         return try await counting.countPromptTokens(try validate(request, for: target))

@@ -35,14 +35,17 @@ public final class ExpertLoadOperation: @unchecked Sendable {
     private let eventCoordinator: ExpertIOEventCoordinator?
     private let backendSignalsEvent: Bool
 
-    init(completionToken: ExpertIOCompletionToken? = nil,
-         eventCoordinator: ExpertIOEventCoordinator? = nil,
-         backendSignalsEvent: Bool = false,
-         metalStagingTransfer: MetalExpertStagingTransfer? = nil,
-         requiresGPUFinalization: Bool = false,
-         submittedNanos: UInt64 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) {
-        precondition(!requiresGPUFinalization || metalStagingTransfer != nil,
-                     "a staged Metal load requires a staging transfer")
+    init(
+        completionToken: ExpertIOCompletionToken? = nil,
+        eventCoordinator: ExpertIOEventCoordinator? = nil,
+        backendSignalsEvent: Bool = false,
+        metalStagingTransfer: MetalExpertStagingTransfer? = nil,
+        requiresGPUFinalization: Bool = false,
+        submittedNanos: UInt64 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+    ) {
+        precondition(
+            !requiresGPUFinalization || metalStagingTransfer != nil,
+            "a staged Metal load requires a staging transfer")
         self.completionToken = completionToken
         self.eventCoordinator = eventCoordinator
         self.backendSignalsEvent = backendSignalsEvent
@@ -93,8 +96,10 @@ public final class ExpertLoadOperation: @unchecked Sendable {
                 condition.unlock()
                 continuation.resume()
             case .failed:
-                let error = failure ?? ModelError.internalInconsistency(
-                    detail: "the expert load failed without recording an error")
+                let error =
+                    failure
+                    ?? ModelError.internalInconsistency(
+                        detail: "the expert load failed without recording an error")
                 condition.unlock()
                 continuation.resume(throwing: error)
             case .submitted, .inFlight:
@@ -106,8 +111,9 @@ public final class ExpertLoadOperation: @unchecked Sendable {
 
     func markInFlight() {
         condition.withLock {
-            precondition(currentState == .submitted,
-                         "expert load operation started more than once")
+            precondition(
+                currentState == .submitted,
+                "expert load operation started more than once")
             currentState = .inFlight
             startedAtNanos = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         }
@@ -115,8 +121,9 @@ public final class ExpertLoadOperation: @unchecked Sendable {
 
     func finish(_ result: Result<Void, any Error>) {
         condition.lock()
-        precondition(currentState == .submitted || currentState == .inFlight,
-                     "expert load operation completed more than once")
+        precondition(
+            currentState == .submitted || currentState == .inFlight,
+            "expert load operation completed more than once")
         completedAtNanos = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         switch result {
         case .success:
@@ -205,7 +212,8 @@ final class ExpertIOScheduler: @unchecked Sendable {
             while demandQueue.isEmpty && speculativeQueue.isEmpty {
                 condition.wait()
             }
-            let work = demandQueue.isEmpty
+            let work =
+                demandQueue.isEmpty
                 ? speculativeQueue.removeFirst() : demandQueue.removeFirst()
             condition.unlock()
             work()

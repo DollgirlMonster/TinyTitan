@@ -49,12 +49,13 @@ public actor InMemoryJournal: SessionJournal {
         return sessions.prefix(max(0, limit)).compactMap { session in
             let stored = turns[Key(scope: scope, session: session)] ?? []
             guard let first = stored.first, let last = stored.last else { return nil }
-            return JournalSessionSummary(session: session,
-                                         workspace: scope.workspace,
-                                         firstSeen: first.timestamp,
-                                         lastSeen: last.timestamp,
-                                         turnCount: stored.count,
-                                         model: last.model)
+            return JournalSessionSummary(
+                session: session,
+                workspace: scope.workspace,
+                firstSeen: first.timestamp,
+                lastSeen: last.timestamp,
+                turnCount: stored.count,
+                model: last.model)
         }
     }
 
@@ -66,7 +67,8 @@ public actor InMemoryJournal: SessionJournal {
         for session in sessions {
             for turn in (turns[Key(scope: scope, session: session)] ?? []).reversed()
             where turn.prompt.lowercased().contains(needle)
-                || turn.reply.lowercased().contains(needle) {
+                || turn.reply.lowercased().contains(needle)
+            {
                 matches.append(turn)
                 if matches.count >= max(0, limit) { return matches }
             }

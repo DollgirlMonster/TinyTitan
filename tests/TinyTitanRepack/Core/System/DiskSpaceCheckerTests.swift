@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanRepackCore
 
 @Suite struct DiskSpaceCheckerTests {
@@ -25,9 +26,10 @@ import Testing
         let target = root.appendingPathComponent("model.gturbo", isDirectory: true)
 
         let assessed = try DiskSpaceChecker.assess(path: target.path, bytes: 100, reserveBytes: 20)
-        let required = try DiskSpaceChecker.requireAvailable(path: target.path,
-                                                             bytes: 100,
-                                                             reserveBytes: 20)
+        let required = try DiskSpaceChecker.requireAvailable(
+            path: target.path,
+            bytes: 100,
+            reserveBytes: 20)
         #expect(assessed.requiredBytes == required.requiredBytes)
     }
 
@@ -40,11 +42,14 @@ import Testing
         let required = UInt64.max
 
         #expect {
-            _ = try DiskSpaceChecker.requireAvailable(path: target.path,
-                                                      bytes: required,
-                                                      reserveBytes: 0)
+            _ = try DiskSpaceChecker.requireAvailable(
+                path: target.path,
+                bytes: required,
+                reserveBytes: 0)
         } throws: { error in
-            guard case RepackError.diskSpaceInsufficient(_, let reportedRequired, let actual) = error else {
+            guard
+                case RepackError.diskSpaceInsufficient(_, let reportedRequired, let actual) = error
+            else {
                 return false
             }
             return reportedRequired == required && actual < required

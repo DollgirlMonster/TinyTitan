@@ -1,5 +1,6 @@
 import Testing
 import TinyTitan
+
 @testable import TinyTitanCLICore
 
 @Suite struct CLIArgumentsTests {
@@ -87,8 +88,10 @@ import TinyTitan
     @Test func presencePenaltyIsBoundedToTheOpenAIRange() throws {
         // Qwen3.8's instruct row is 1.5, so the flag has to accept it; outside
         // OpenAI's -2...2 is refused rather than clamped.
-        let accepted = try Args.parse(["--model", "m", "--prompt", "x",
-                                       "--presence-penalty", "-0.5"])
+        let accepted = try Args.parse([
+            "--model", "m", "--prompt", "x",
+            "--presence-penalty", "-0.5",
+        ])
         #expect(accepted.presencePenalty == -0.5)
         #expect(accepted.presencePenaltyWasSet)
         #expect(throws: ArgsError.self) {
@@ -163,8 +166,11 @@ import TinyTitan
         let unset = try Args.parse(["--model", "m.gturbo", "--prompt", "hi"])
         #expect(unset.reasoningEffort == nil)
         // The template defines low, medium, and xhigh; "high" does not exist.
-        #expect(throws: ArgsError.invalidValue(flag: "--reasoning-effort",
-                                               value: "high")) {
+        #expect(
+            throws: ArgsError.invalidValue(
+                flag: "--reasoning-effort",
+                value: "high")
+        ) {
             _ = try Args.parse([
                 "--model", "m.gturbo", "--prompt", "hi",
                 "--thinking", "on", "--reasoning-effort", "high",
@@ -173,8 +179,10 @@ import TinyTitan
     }
 
     @Test func reasoningEffortRequiresThinkingOn() {
-        #expect(throws: ArgsError.invalidValue(
-            flag: "--reasoning-effort", value: "low requires --thinking on")) {
+        #expect(
+            throws: ArgsError.invalidValue(
+                flag: "--reasoning-effort", value: "low requires --thinking on")
+        ) {
             _ = try Args.parse([
                 "--model", "m.gturbo", "--prompt", "hi",
                 "--reasoning-effort", "low",

@@ -64,39 +64,43 @@ public struct FleetRunner: Sendable {
     public static func assemble(inventory: FleetInventory, seed: FleetTarget) -> FleetGroup {
         var nodes: [FleetNode] = []
         if let me = inventory.node {
-            nodes.append(FleetNode(
-                id: me.id ?? "\(seed)",
-                name: me.name ?? seed.host,
-                host: seed.host,
-                port: me.port ?? seed.port,
-                isSelf: true,
-                source: "local",
-                addresses: me.addresses ?? [],
-                dshVersion: me.dshVersion,
-                workspaces: inventory.workspaces ?? [],
-                sessions: inventory.sessions ?? []
-            ))
+            nodes.append(
+                FleetNode(
+                    id: me.id ?? "\(seed)",
+                    name: me.name ?? seed.host,
+                    host: seed.host,
+                    port: me.port ?? seed.port,
+                    isSelf: true,
+                    source: "local",
+                    addresses: me.addresses ?? [],
+                    dshVersion: me.dshVersion,
+                    workspaces: inventory.workspaces ?? [],
+                    sessions: inventory.sessions ?? []
+                ))
         }
         for peer in inventory.peers ?? [] {
-            nodes.append(FleetNode(
-                id: peer.id,
-                name: peer.name ?? peer.address,
-                host: peer.address,
-                port: peer.port,
-                isSelf: false,
-                source: peer.source ?? "unknown",
-                addresses: peer.addresses ?? [],
-                dshVersion: peer.dshVersion,
-                lastSeen: peer.lastSeen,
-                workspaces: peer.workspaces ?? [],
-                sessions: peer.sessions ?? []
-            ))
+            nodes.append(
+                FleetNode(
+                    id: peer.id,
+                    name: peer.name ?? peer.address,
+                    host: peer.address,
+                    port: peer.port,
+                    isSelf: false,
+                    source: peer.source ?? "unknown",
+                    addresses: peer.addresses ?? [],
+                    dshVersion: peer.dshVersion,
+                    lastSeen: peer.lastSeen,
+                    workspaces: peer.workspaces ?? [],
+                    sessions: peer.sessions ?? []
+                ))
         }
         return FleetGroup(group: inventory.group, nodes: nodes)
     }
 
     /// Prompt one session on the member that owns it.
-    public func prompt(group: FleetGroup, sessionId: String, text: String) async throws -> FleetOutcome {
+    public func prompt(group: FleetGroup, sessionId: String, text: String) async throws
+        -> FleetOutcome
+    {
         guard let owner = group.owner(ofSession: sessionId) else {
             throw FleetError.notFound("session \(sessionId)")
         }
@@ -123,7 +127,9 @@ public struct FleetRunner: Sendable {
             let delivered = await withTaskGroup(of: FleetOutcome.self) { group in
                 for item in batch {
                     group.addTask {
-                        await Self.deliver(client: client, node: item.node, sessionId: item.session.sessionId, text: text)
+                        await Self.deliver(
+                            client: client, node: item.node, sessionId: item.session.sessionId,
+                            text: text)
                     }
                 }
                 var collected: [FleetOutcome] = []
@@ -145,7 +151,9 @@ public struct FleetRunner: Sendable {
     ) async -> FleetOutcome {
         do {
             let ack = try await client.prompt(to: node.target, sessionId: sessionId, text: text)
-            return FleetOutcome(node: node.name, sessionId: sessionId, ok: ack.ok, detail: ack.ok ? "delivered" : "refused")
+            return FleetOutcome(
+                node: node.name, sessionId: sessionId, ok: ack.ok,
+                detail: ack.ok ? "delivered" : "refused")
         } catch {
             let detail = (error as? FleetError)?.description ?? "\(error)"
             return FleetOutcome(node: node.name, sessionId: sessionId, ok: false, detail: detail)
@@ -153,7 +161,9 @@ public struct FleetRunner: Sendable {
     }
 
     /// Register a folder as a workspace on a named member.
-    public func createWorkspace(group: FleetGroup, node selector: String, path: String, title: String?) async throws -> FleetAck {
+    public func createWorkspace(
+        group: FleetGroup, node selector: String, path: String, title: String?
+    ) async throws -> FleetAck {
         guard let node = Self.node(group, matching: selector) else {
             throw FleetError.notFound("member \(selector)")
         }
@@ -169,17 +179,21 @@ public struct FleetRunner: Sendable {
     }
 
     /// Delete a workspace from the member that owns it.
-    public func deleteWorkspace(group: FleetGroup, workspaceId: String, archiveSessions: Bool) async throws -> FleetAck {
+    public func deleteWorkspace(group: FleetGroup, workspaceId: String, archiveSessions: Bool)
+        async throws -> FleetAck
+    {
         guard let owner = group.owner(ofWorkspace: workspaceId) else {
             throw FleetError.notFound("workspace \(workspaceId)")
         }
-        return try await client.deleteWorkspace(on: owner.target, workspaceId: workspaceId, archiveSessions: archiveSessions)
+        return try await client.deleteWorkspace(
+            on: owner.target, workspaceId: workspaceId, archiveSessions: archiveSessions)
     }
 
     /// Resolve a member by id, name or address.
     public static func node(_ group: FleetGroup, matching selector: String) -> FleetNode? {
         group.nodes.first {
-            $0.id == selector || $0.name == selector || "\($0.target)" == selector || $0.host == selector
+            $0.id == selector || $0.name == selector || "\($0.target)" == selector
+                || $0.host == selector
         }
     }
 
@@ -213,7 +227,8 @@ public struct FleetRunner: Sendable {
                 guard let node = Self.node(group, matching: nodeID) else {
                     throw FleetError.notFound("member \(nodeID)")
                 }
-                return try await client.deleteWorkspace(on: node.target, workspaceId: workspaceID, archiveSessions: true)
+                return try await client.deleteWorkspace(
+                    on: node.target, workspaceId: workspaceID, archiveSessions: true)
             }
 
         case .createWorkspace(let nodeID, let path, let title):
@@ -226,7 +241,9 @@ public struct FleetRunner: Sendable {
         }
     }
 
-    private func performPrompt(target: FleetPromptTarget, text: String, in group: FleetGroup) async -> String {
+    private func performPrompt(target: FleetPromptTarget, text: String, in group: FleetGroup) async
+        -> String
+    {
         switch target {
         case .group:
             let outcomes = await promptAll(group: group, text: text)
@@ -236,21 +253,28 @@ public struct FleetRunner: Sendable {
         case .session(_, let sessionID):
             do {
                 let outcome = try await prompt(group: group, sessionId: sessionID, text: text)
-                return outcome.ok ? "prompted \(sessionID)" : "refused \(sessionID): \(outcome.detail)"
+                return outcome.ok
+                    ? "prompted \(sessionID)" : "refused \(sessionID): \(outcome.detail)"
             } catch {
                 return "failed: \((error as? FleetError)?.description ?? "\(error)")"
             }
 
         case .node(let nodeID):
-            guard let node = Self.node(group, matching: nodeID) else { return "no member \(nodeID)" }
-            return await deliver(text, to: node, sessions: node.sessions.map(\.sessionId), label: node.name)
+            guard let node = Self.node(group, matching: nodeID) else {
+                return "no member \(nodeID)"
+            }
+            return await deliver(
+                text, to: node, sessions: node.sessions.map(\.sessionId), label: node.name)
 
         case .workspace(_, let workspaceID):
             guard let node = group.owner(ofWorkspace: workspaceID),
-                  let workspace = node.workspaces.first(where: { $0.id == workspaceID }) else {
+                let workspace = node.workspaces.first(where: { $0.id == workspaceID })
+            else {
                 return "no member holds workspace \(workspaceID)"
             }
-            let ids = workspace.sessionIds ?? node.sessions
+            let ids =
+                workspace.sessionIds
+                ?? node.sessions
                 .filter { $0.workspaceId == workspaceID }
                 .map(\.sessionId)
             return await deliver(text, to: node, sessions: ids, label: workspaceID)
@@ -258,17 +282,21 @@ public struct FleetRunner: Sendable {
     }
 
     /// Prompt a list of sessions on one member, reporting how many took it.
-    private func deliver(_ text: String, to node: FleetNode, sessions: [String], label: String) async -> String {
+    private func deliver(_ text: String, to node: FleetNode, sessions: [String], label: String)
+        async -> String
+    {
         guard !sessions.isEmpty else { return "\(label) has no active sessions" }
         var delivered = 0
         for sessionId in sessions {
-            let outcome = await Self.deliver(client: client, node: node, sessionId: sessionId, text: text)
+            let outcome = await Self.deliver(
+                client: client, node: node, sessionId: sessionId, text: text)
             if outcome.ok { delivered += 1 }
         }
         return "prompted \(label): \(delivered)/\(sessions.count) delivered"
     }
 
-    private func performMutation(label: String, _ work: () async throws -> FleetAck) async -> String {
+    private func performMutation(label: String, _ work: () async throws -> FleetAck) async -> String
+    {
         do {
             let ack = try await work()
             return ack.ok ? label : "\(label) — refused: \(ack.message ?? "no message")"
@@ -283,8 +311,9 @@ public enum FleetRenderer {
     /// The whole group as a readable tree.
     public static func text(_ group: FleetGroup) -> String {
         var lines: [String] = []
-        lines.append("group \(group.group ?? "(unknown)") — \(group.nodes.count) Mac(s), "
-            + "\(group.workspaces) workspace(s), \(group.sessions) session(s)")
+        lines.append(
+            "group \(group.group ?? "(unknown)") — \(group.nodes.count) Mac(s), "
+                + "\(group.workspaces) workspace(s), \(group.sessions) session(s)")
         for node in group.nodes {
             lines.append("")
             lines.append("\(node.name)\(node.isSelf ? "  (this instance)" : "")  \(node.target)")
@@ -301,7 +330,9 @@ public enum FleetRenderer {
             let count = workspace.sessionCount ?? workspace.sessionIds?.count ?? 0
             let hidden = workspace.hiddenSessionCount ?? 0
             let title = workspace.title.map { "  \($0)" } ?? ""
-            lines.append("    \(workspace.id)\(title)  \(workspace.path)  [\(count) visible\(hidden > 0 ? ", \(hidden) archived" : "")]")
+            lines.append(
+                "    \(workspace.id)\(title)  \(workspace.path)  [\(count) visible\(hidden > 0 ? ", \(hidden) archived" : "")]"
+            )
         }
         return lines
     }
@@ -322,11 +353,14 @@ public enum FleetRenderer {
         guard !outcomes.isEmpty else { return "no active sessions to prompt" }
         var lines: [String] = []
         for outcome in outcomes {
-            lines.append("\(outcome.ok ? "ok  " : "FAIL") \(outcome.node)  \(outcome.sessionId)  \(outcome.detail)")
+            lines.append(
+                "\(outcome.ok ? "ok  " : "FAIL") \(outcome.node)  \(outcome.sessionId)  \(outcome.detail)"
+            )
         }
         let ok = outcomes.filter(\.ok).count
         lines.append("")
-        lines.append("\(ok) delivered, \(outcomes.count - ok) failed, of \(outcomes.count) considered")
+        lines.append(
+            "\(ok) delivered, \(outcomes.count - ok) failed, of \(outcomes.count) considered")
         return lines.joined(separator: "\n")
     }
 }

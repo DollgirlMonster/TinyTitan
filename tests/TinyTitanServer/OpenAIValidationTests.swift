@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 import NIOHTTP1
+import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
@@ -24,9 +25,10 @@ struct OpenAIValidationTests {
 
         let on = try OpenAIRequestValidator.validate(
             request, modelID: "m",
-            reasoningProfile: ServerReasoningProfile(family: .qwen38flash,
-                                                     thinkingMode: .on,
-                                                     reasoningEffort: nil),
+            reasoningProfile: ServerReasoningProfile(
+                family: .qwen38flash,
+                thinkingMode: .on,
+                reasoningEffort: nil),
             sampling: GenerationDefaults.qwen38Thinking)
         #expect(on.generationConfig.temperature == 1.0)
         #expect(on.generationConfig.topP == 0.95)
@@ -37,9 +39,10 @@ struct OpenAIValidationTests {
         // row even though the model was loaded with the thinking one.
         let off = try OpenAIRequestValidator.validate(
             request, modelID: "m",
-            reasoningProfile: ServerReasoningProfile(family: .qwen38flash,
-                                                     thinkingMode: .off,
-                                                     reasoningEffort: nil),
+            reasoningProfile: ServerReasoningProfile(
+                family: .qwen38flash,
+                thinkingMode: .off,
+                reasoningEffort: nil),
             sampling: GenerationDefaults.qwen38Thinking)
         #expect(off.generationConfig.temperature == 0.7)
         #expect(off.generationConfig.topP == 0.80)
@@ -48,9 +51,10 @@ struct OpenAIValidationTests {
     }
 
     @Test func requiredToolChoiceIsRejected() throws {
-        let data = Data(#"""
-        {"model":"m","messages":[{"role":"user","content":"x"}],"tool_choice":"required"}
-        """#.utf8)
+        let data = Data(
+            #"""
+            {"model":"m","messages":[{"role":"user","content":"x"}],"tool_choice":"required"}
+            """#.utf8)
         let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
         #expect(throws: ServerRequestError.self) {
             try OpenAIRequestValidator.validate(request, modelID: "m")
@@ -58,25 +62,27 @@ struct OpenAIValidationTests {
     }
 
     @Test func acceptsLeadingSystemAndDeveloperGuidance() throws {
-        let data = Data(#"""
-        {"model":"m","messages":[
-          {"role":"system","content":"system"},
-          {"role":"developer","content":"developer"},
-          {"role":"user","content":"hello"}
-        ]}
-        """#.utf8)
+        let data = Data(
+            #"""
+            {"model":"m","messages":[
+              {"role":"system","content":"system"},
+              {"role":"developer","content":"developer"},
+              {"role":"user","content":"hello"}
+            ]}
+            """#.utf8)
         let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
         let validated = try OpenAIRequestValidator.validate(request, modelID: "m")
         #expect(validated.messages.map(\.role) == [.system, .developer, .user])
     }
 
     @Test func rejectsLateDeveloperGuidance() throws {
-        let data = Data(#"""
-        {"model":"m","messages":[
-          {"role":"user","content":"hello"},
-          {"role":"developer","content":"late"}
-        ]}
-        """#.utf8)
+        let data = Data(
+            #"""
+            {"model":"m","messages":[
+              {"role":"user","content":"hello"},
+              {"role":"developer","content":"late"}
+            ]}
+            """#.utf8)
         let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
         #expect(throws: ServerRequestError.self) {
             try OpenAIRequestValidator.validate(request, modelID: "m")
@@ -98,9 +104,10 @@ struct OpenAIValidationTests {
     }
 
     @Test func fastAliasOfUnservedModelIsRejected() throws {
-        let data = Data(#"""
-        {"model":"nope-fast","messages":[{"role":"user","content":"hi"}]}
-        """#.utf8)
+        let data = Data(
+            #"""
+            {"model":"nope-fast","messages":[{"role":"user","content":"hi"}]}
+            """#.utf8)
         let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
         #expect(throws: ServerRequestError.self) {
             try OpenAIRequestValidator.validate(request, modelID: "m")
@@ -130,34 +137,36 @@ struct OpenAIValidationTests {
         #expect(encodedEdges.contains(signedMinimum))
         #expect(encodedEdges.contains(signedMaximum))
         #expect(encodedEdges.contains(unsignedMaximum))
-        #expect(try JSONDecoder().decode(
-            JSONValue.self,
-            from: Data(encodedEdges.utf8)) == edges.arguments)
+        #expect(
+            try JSONDecoder().decode(
+                JSONValue.self,
+                from: Data(encodedEdges.utf8)) == edges.arguments)
         // The Qwen parser keeps non-JSON parameter values as raw strings
         // (no strict numeric grammar); malformed-number rejection lives in
         // QwenToolCallParserTests via the JSONValue decode path.
 
-        let data = Data(#"""
-        {
-          "model":"m",
-          "messages":[
-            {"role":"user","content":"lookup"},
-            {"role":"assistant","tool_calls":[{
-              "id":"call_0123456789abcdef01234567",
-              "type":"function",
-              "function":{"name":"lookup","arguments":"{\"id\":9007199254740993}"}
-            }]},
-            {"role":"tool","tool_call_id":"call_0123456789abcdef01234567","content":"ok"}
-          ],
-          "tools":[{
-            "type":"function",
-            "function":{
-              "name":"lookup",
-              "parameters":{"type":"object","properties":{"id":{"type":"integer"}}}
+        let data = Data(
+            #"""
+            {
+              "model":"m",
+              "messages":[
+                {"role":"user","content":"lookup"},
+                {"role":"assistant","tool_calls":[{
+                  "id":"call_0123456789abcdef01234567",
+                  "type":"function",
+                  "function":{"name":"lookup","arguments":"{\"id\":9007199254740993}"}
+                }]},
+                {"role":"tool","tool_call_id":"call_0123456789abcdef01234567","content":"ok"}
+              ],
+              "tools":[{
+                "type":"function",
+                "function":{
+                  "name":"lookup",
+                  "parameters":{"type":"object","properties":{"id":{"type":"integer"}}}
+                }
+              }]
             }
-          }]
-        }
-        """#.utf8)
+            """#.utf8)
         let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
         let validated = try OpenAIRequestValidator.validate(request, modelID: "m")
         let call = try #require(validated.messages[1].toolCalls.first)
@@ -175,27 +184,28 @@ struct OpenAIValidationTests {
         // otherwise valid (the tool call IS answered by a tool result), so
         // the rejection below is specifically about the unrepresentable
         // number, not the S19 unresolved-tool-call check.
-        let unrepresentableHistory = Data(#"""
-        {
-          "model":"m",
-          "messages":[
-            {"role":"user","content":"lookup"},
-            {"role":"assistant","tool_calls":[{
-              "id":"call_0123456789abcdef01234569",
-              "type":"function",
-              "function":{"name":"lookup","arguments":"{\"id\":18446744073709551615}"}
-            }]},
-            {"role":"tool","tool_call_id":"call_0123456789abcdef01234569","content":"ok"}
-          ],
-          "tools":[{
-            "type":"function",
-            "function":{
-              "name":"lookup",
-              "parameters":{"type":"object","properties":{"id":{"type":"integer"}}}
+        let unrepresentableHistory = Data(
+            #"""
+            {
+              "model":"m",
+              "messages":[
+                {"role":"user","content":"lookup"},
+                {"role":"assistant","tool_calls":[{
+                  "id":"call_0123456789abcdef01234569",
+                  "type":"function",
+                  "function":{"name":"lookup","arguments":"{\"id\":18446744073709551615}"}
+                }]},
+                {"role":"tool","tool_call_id":"call_0123456789abcdef01234569","content":"ok"}
+              ],
+              "tools":[{
+                "type":"function",
+                "function":{
+                  "name":"lookup",
+                  "parameters":{"type":"object","properties":{"id":{"type":"integer"}}}
+                }
+              }]
             }
-          }]
-        }
-        """#.utf8)
+            """#.utf8)
         let rejected = try JSONDecoder().decode(
             OpenAIChatRequest.self,
             from: unrepresentableHistory)
@@ -205,26 +215,27 @@ struct OpenAIValidationTests {
     }
 
     @Test func acceptedNonIdentifierParameterKeysParseAndRender() async throws {
-        let data = Data(#"""
-        {
-          "model":"m",
-          "messages":[{"role":"user","content":"lookup"}],
-          "tools":[{
-            "type":"function",
-            "function":{
-              "name":"lookup",
-              "parameters":{
-                "type":"object",
-                "properties":{
-                  "$id":{"type":"string"},
-                  "file-path":{"type":"string"},
-                  "nested":{"type":"object","properties":{"child-key":{"type":"integer"}}}
+        let data = Data(
+            #"""
+            {
+              "model":"m",
+              "messages":[{"role":"user","content":"lookup"}],
+              "tools":[{
+                "type":"function",
+                "function":{
+                  "name":"lookup",
+                  "parameters":{
+                    "type":"object",
+                    "properties":{
+                      "$id":{"type":"string"},
+                      "file-path":{"type":"string"},
+                      "nested":{"type":"object","properties":{"child-key":{"type":"integer"}}}
+                    }
+                  }
                 }
-              }
+              }]
             }
-          }]
-        }
-        """#.utf8)
+            """#.utf8)
         let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
         let validated = try OpenAIRequestValidator.validate(request, modelID: "m")
         let tokenizer = try await GFTokenizer.load(from: TokenizerFixture.folder())
@@ -249,30 +260,32 @@ struct OpenAIValidationTests {
             id: "call_0123456789abcdef01234567")
         #expect(parsed.arguments.objectValue?["$id"] == .string("item"))
         #expect(parsed.arguments.objectValue?["file-path"] == .string("/tmp/x"))
-        #expect(parsed.arguments.objectValue?["nested"]
+        #expect(
+            parsed.arguments.objectValue?["nested"]
                 == .object(["child-key": .integer(7)]))
     }
 
     @Test func freeFormParameterNamesAreAccepted() throws {
-        let data = Data(#"""
-        {
-          "model":"m",
-          "messages":[{"role":"user","content":"lookup"}],
-          "tools":[{
-            "type":"function",
-            "function":{
-              "name":"lookup",
-              "parameters":{
-                "type":"object",
-                "allOf":[{
-                  "type":"object",
-                  "properties":{"bad:key":{"type":"string"}}
-                }]
-              }
+        let data = Data(
+            #"""
+            {
+              "model":"m",
+              "messages":[{"role":"user","content":"lookup"}],
+              "tools":[{
+                "type":"function",
+                "function":{
+                  "name":"lookup",
+                  "parameters":{
+                    "type":"object",
+                    "allOf":[{
+                      "type":"object",
+                      "properties":{"bad:key":{"type":"string"}}
+                    }]
+                  }
+                }
+              }]
             }
-          }]
-        }
-        """#.utf8)
+            """#.utf8)
         let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
         // S-audit: tool parameter names are deliberately free-form (only the
         // schema structure is validated), even inside allOf compositions.
@@ -287,27 +300,31 @@ struct OpenAIValidationTests {
     /// with prose. The grammar itself is covered by `StructuredOutputTests`.
     @Test func carriesStructuredOutputFormatsAndRefusesUnknownOnes() throws {
         func validate(_ format: String) throws -> ValidatedChatRequest {
-            let data = Data(#"""
-            {"model":"m","messages":[{"role":"user","content":"hi"}],"response_format":\#(format)}
-            """#.utf8)
+            let data = Data(
+                #"""
+                {"model":"m","messages":[{"role":"user","content":"hi"}],"response_format":\#(format)}
+                """#.utf8)
             let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
             return try OpenAIRequestValidator.validate(request, modelID: "m")
         }
-        #expect(try validate(#"{"type":"json_object"}"#).jsonSchema
-                    == .object(properties: [:], required: [], additional: true))
+        #expect(
+            try validate(#"{"type":"json_object"}"#).jsonSchema
+                == .object(properties: [:], required: [], additional: true))
         // An empty schema says nothing, so it compiles to "any JSON value" --
         // the document grammar without a schema layer.
-        #expect(try validate(#"{"type":"json_schema","json_schema":{"name":"x","schema":{}}}"#)
-                    .jsonSchema == .any)
+        #expect(
+            try validate(#"{"type":"json_schema","json_schema":{"name":"x","schema":{}}}"#)
+                .jsonSchema == .any)
         #expect(try validate(#"{"type":"text"}"#).jsonSchema == nil)
         #expect(throws: ServerRequestError.self) { _ = try validate(#"{"type":"xml"}"#) }
     }
 
     @Test func acceptsPlainTextResponseFormat() throws {
-        let data = Data(#"""
-        {"model":"m","messages":[{"role":"user","content":"hi"}],
-         "response_format":{"type":"text"}}
-        """#.utf8)
+        let data = Data(
+            #"""
+            {"model":"m","messages":[{"role":"user","content":"hi"}],
+             "response_format":{"type":"text"}}
+            """#.utf8)
         let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
         let validated = try OpenAIRequestValidator.validate(request, modelID: "m")
         #expect(validated.messages.count == 1)
@@ -319,12 +336,13 @@ struct OpenAIValidationTests {
     /// (the OpenAI SDKs default it; Codex sends `false` on every turn).
     @Test func acceptsParallelToolCallsEitherWay() throws {
         for value in ["true", "false"] {
-            let data = Data(#"""
-            {"model":"m","messages":[{"role":"user","content":"lookup"}],
-             "parallel_tool_calls":\#(value),
-             "tools":[{"type":"function","function":{"name":"lookup",
-                       "parameters":{"type":"object"}}}]}
-            """#.utf8)
+            let data = Data(
+                #"""
+                {"model":"m","messages":[{"role":"user","content":"lookup"}],
+                 "parallel_tool_calls":\#(value),
+                 "tools":[{"type":"function","function":{"name":"lookup",
+                           "parameters":{"type":"object"}}}]}
+                """#.utf8)
             let request = try JSONDecoder().decode(OpenAIChatRequest.self, from: data)
             let validated = try OpenAIRequestValidator.validate(request, modelID: "m")
             #expect(validated.tools.count == 1, "parallel_tool_calls=\(value) dropped the tools")
@@ -443,12 +461,14 @@ struct ServerArgumentTests {
     }
 
     @Test func mtpForcesPromptCacheOff() {
-        #expect(ServerModelSession.effectivePromptCacheMode(
-            requested: .multiPrefix,
-            mtpEnabled: true) == .off)
-        #expect(ServerModelSession.effectivePromptCacheMode(
-            requested: .multiPrefix,
-            mtpEnabled: false) == .multiPrefix)
+        #expect(
+            ServerModelSession.effectivePromptCacheMode(
+                requested: .multiPrefix,
+                mtpEnabled: true) == .off)
+        #expect(
+            ServerModelSession.effectivePromptCacheMode(
+                requested: .multiPrefix,
+                mtpEnabled: false) == .multiPrefix)
     }
 
     @Test func parsesSinglePrefixModeAndRejectsUnknownMode() throws {
@@ -510,10 +530,13 @@ struct ServerArgumentTests {
     }
 
     private static func effortRequest(_ effort: String) throws -> OpenAIChatRequest {
-        try JSONDecoder().decode(OpenAIChatRequest.self, from: Data("""
-        {"model":"m","messages":[{"role":"user","content":"x"}],\
-        "reasoning_effort":"\(effort)"}
-        """.utf8))
+        try JSONDecoder().decode(
+            OpenAIChatRequest.self,
+            from: Data(
+                """
+                {"model":"m","messages":[{"role":"user","content":"x"}],\
+                "reasoning_effort":"\(effort)"}
+                """.utf8))
     }
 
     /// A coding agent that names a level this model cannot render must keep
@@ -525,17 +548,19 @@ struct ServerArgumentTests {
         // The default profile is the compatible Qwen3.5-MoE baseline, whose
         // template defines only the binary switch.
         let validated = try OpenAIRequestValidator.validate(request, modelID: "m")
-        #expect(validated.reasoningNotes.count == 1,
-                "the clamp is reported rather than silent")
+        #expect(
+            validated.reasoningNotes.count == 1,
+            "the clamp is reported rather than silent")
         #expect(validated.reasoningNotes[0].contains("low"))
     }
 
     /// The agent keeps its work: the request validates, and the note says
     /// what the model will actually do instead.
     @Test func reasoningEffortReportsWhatWasApplied() throws {
-        let profile = ServerReasoningProfile(family: .qwen38flash,
-                                             thinkingMode: .on,
-                                             reasoningEffort: nil)
+        let profile = ServerReasoningProfile(
+            family: .qwen38flash,
+            thinkingMode: .on,
+            reasoningEffort: nil)
         // With no override the template default xhigh is the active level, so
         // asking for it is exact and silent.
         let exact = try OpenAIRequestValidator.validate(
@@ -561,9 +586,10 @@ struct ServerArgumentTests {
         #expect(!max.reasoningNotes.isEmpty)
         #expect(max.reasoningNotes[0].contains("extra high"))
 
-        let lowProfile = ServerReasoningProfile(family: .qwen38flash,
-                                                thinkingMode: .on,
-                                                reasoningEffort: .low)
+        let lowProfile = ServerReasoningProfile(
+            family: .qwen38flash,
+            thinkingMode: .on,
+            reasoningEffort: .low)
         let low = try OpenAIRequestValidator.validate(
             try Self.effortRequest("low"), modelID: "m",
             reasoningProfile: lowProfile)
@@ -575,9 +601,10 @@ struct ServerArgumentTests {
     @Test func reasoningEffortIsCarriedForTheSession() throws {
         // Loaded on/off and thinking off: a request naming an effort level
         // must come back wanting thinking on.
-        let binary = ServerReasoningProfile(family: .qwen36,
-                                            thinkingMode: .off,
-                                            reasoningEffort: nil)
+        let binary = ServerReasoningProfile(
+            family: .qwen36,
+            thinkingMode: .off,
+            reasoningEffort: nil)
         let wantsThinking = try OpenAIRequestValidator.validate(
             try Self.effortRequest("xhigh"), modelID: "m",
             reasoningProfile: binary)
@@ -585,9 +612,10 @@ struct ServerArgumentTests {
 
         // And naming "off" on a server loaded with thinking on must come back
         // wanting it off -- the switch a coding agent reaches for.
-        let effortOn = ServerReasoningProfile(family: .qwen38flash,
-                                              thinkingMode: .on,
-                                              reasoningEffort: .xhigh)
+        let effortOn = ServerReasoningProfile(
+            family: .qwen38flash,
+            thinkingMode: .on,
+            reasoningEffort: .xhigh)
         let wantsOff = try OpenAIRequestValidator.validate(
             try Self.effortRequest("off"), modelID: "m",
             reasoningProfile: effortOn)
@@ -627,9 +655,10 @@ struct ServerArgumentTests {
     /// summarization calls -- so the model's own thinking cannot eat the output
     /// cap and truncate the summary -- had the fix silently lost.
     @Test func templateKwargsTurnThinkingOff() throws {
-        let loadedOn = ServerReasoningProfile(family: .qwen38flash,
-                                              thinkingMode: .on,
-                                              reasoningEffort: .xhigh)
+        let loadedOn = ServerReasoningProfile(
+            family: .qwen38flash,
+            thinkingMode: .on,
+            reasoningEffort: .xhigh)
         let off = try OpenAIRequestValidator.validate(
             try Self.request(withExtra: #""chat_template_kwargs":{"enable_thinking":false}"#),
             modelID: "m", reasoningProfile: loadedOn)
@@ -638,9 +667,10 @@ struct ServerArgumentTests {
 
         // `true` is the switch the other way: it must turn a thinking-off
         // server on rather than being ignored as a no-op.
-        let loadedOff = ServerReasoningProfile(family: .qwen36,
-                                               thinkingMode: .off,
-                                               reasoningEffort: nil)
+        let loadedOff = ServerReasoningProfile(
+            family: .qwen36,
+            thinkingMode: .off,
+            reasoningEffort: nil)
         let on = try OpenAIRequestValidator.validate(
             try Self.request(withExtra: #""chat_template_kwargs":{"enable_thinking":true}"#),
             modelID: "m", reasoningProfile: loadedOff)
@@ -651,9 +681,10 @@ struct ServerArgumentTests {
     /// `reasoning_effort` wins over it. The precedence is pinned so a client
     /// that sends both cannot be surprised by which one applied.
     @Test func templateKwargsEffortIsHonouredAndTopLevelWins() throws {
-        let profile = ServerReasoningProfile(family: .qwen38flash,
-                                             thinkingMode: .on,
-                                             reasoningEffort: .xhigh)
+        let profile = ServerReasoningProfile(
+            family: .qwen38flash,
+            thinkingMode: .on,
+            reasoningEffort: .xhigh)
         let fromKwargs = try OpenAIRequestValidator.validate(
             try Self.request(withExtra: #""chat_template_kwargs":{"reasoning_effort":"low"}"#),
             modelID: "m", reasoningProfile: profile)
@@ -665,8 +696,9 @@ struct ServerArgumentTests {
                 withExtra: #""reasoning_effort":"medium","#
                     + #""chat_template_kwargs":{"reasoning_effort":"low"}"#),
             modelID: "m", reasoningProfile: profile)
-        #expect(both.reasoning?.effort == .medium,
-                "the top-level field is this project's own spelling and takes precedence")
+        #expect(
+            both.reasoning?.effort == .medium,
+            "the top-level field is this project's own spelling and takes precedence")
     }
 
     /// llama.cpp's per-request thinking budget is accepted and reported as
@@ -676,18 +708,22 @@ struct ServerArgumentTests {
     @Test func reasoningBudgetTokensIsAcceptedAndReported() throws {
         let validated = try OpenAIRequestValidator.validate(
             try Self.request(withExtra: #""reasoning_budget_tokens":4096"#), modelID: "m")
-        #expect(validated.reasoningNotes.contains { $0.contains("reasoning_budget_tokens") },
-                "an accepted-but-unenforced field must say so")
+        #expect(
+            validated.reasoningNotes.contains { $0.contains("reasoning_budget_tokens") },
+            "an accepted-but-unenforced field must say so")
     }
 
     /// Every spelling a coding agent might send means something on the
     /// ladder, so none of them is a failure.
     @Test func unfamiliarReasoningVocabularyIsAccepted() throws {
-        let profile = ServerReasoningProfile(family: .qwen38flash,
-                                             thinkingMode: .on,
-                                             reasoningEffort: nil)
-        for word in ["ultra", "none", "extra-high", "thinking", "auto",
-                     "max", "minimal", "EXTRA HIGH", "highest"] {
+        let profile = ServerReasoningProfile(
+            family: .qwen38flash,
+            thinkingMode: .on,
+            reasoningEffort: nil)
+        for word in [
+            "ultra", "none", "extra-high", "thinking", "auto",
+            "max", "minimal", "EXTRA HIGH", "highest",
+        ] {
             let validated = try OpenAIRequestValidator.validate(
                 try Self.effortRequest(word), modelID: "m",
                 reasoningProfile: profile)
@@ -705,10 +741,13 @@ struct ServerArgumentTests {
     }
 
     @Test func responsesReasoningEffortMapsIntoTheChatRequest() throws {
-        let decoded = try JSONDecoder().decode(ResponsesAPIRequest.self, from: Data("""
-        {"model":"m","input":[{"type":"message","role":"user","content":"x"}],\
-        "reasoning":{"effort":"medium"}}
-        """.utf8))
+        let decoded = try JSONDecoder().decode(
+            ResponsesAPIRequest.self,
+            from: Data(
+                """
+                {"model":"m","input":[{"type":"message","role":"user","content":"x"}],\
+                "reasoning":{"effort":"medium"}}
+                """.utf8))
         let chatRequest = try ResponsesAPIMapper.chatRequest(decoded)
         #expect(chatRequest.reasoningEffort == "medium")
     }
@@ -742,8 +781,9 @@ struct ServerArgumentTests {
         func head(_ value: String?) -> HTTPRequestHead {
             var headers = HTTPHeaders()
             if let value { headers.add(name: "X-TinyTitan-Workspace", value: value) }
-            return HTTPRequestHead(version: .http1_1, method: .POST,
-                                   uri: "/v1/chat/completions", headers: headers)
+            return HTTPRequestHead(
+                version: .http1_1, method: .POST,
+                uri: "/v1/chat/completions", headers: headers)
         }
         #expect(WorkspaceHeader.value(in: head("proj-alpha")) == "proj-alpha")
         #expect(WorkspaceHeader.value(in: head("  proj-beta  ")) == "proj-beta")

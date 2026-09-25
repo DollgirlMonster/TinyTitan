@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// Structured output end to end through the real decode loop: the mask is
 /// applied by the real sampler on the real Metal path, the loop advances the
@@ -42,22 +43,28 @@ import TinyTitanValidationSupport
             repeating: .argmax(tokenizer.eosID), count: max(0, prompt.count - 1))
         for text in document {
             let allowedID = try #require(tokenizer.encode(text, addBOS: false).first)
-            built.append(.vector(sparse(vocab: tokenizer.vocabSize,
-                                        high: [(baitID, 30), (allowedID, 20)])))
+            built.append(
+                .vector(
+                    sparse(
+                        vocab: tokenizer.vocabSize,
+                        high: [(baitID, 30), (allowedID, 20)])))
         }
         let script = built
         let producer = ScriptedLogitProducer(vocabSize: tokenizer.vocabSize) { _, call in
             call < script.count ? script[call] : .argmax(tokenizer.eosID)
         }
-        let config = GenerationConfig(maxNewTokens: 16, temperature: 0,
-                                      topK: nil, topP: nil, constraint: constraint)
+        let config = GenerationConfig(
+            maxNewTokens: 16, temperature: 0,
+            topK: nil, topP: nil, constraint: constraint)
         let scratch = try RawCompletionScratch(context: context, vocab: tokenizer.vocabSize)
         let collected = Collected()
         let box = Collector(collected)
-        let result = try await runRawCompletion(producer: producer, tokenizer: tokenizer,
-                                                promptIds: prompt, config: config,
-                                                context: context, scratch: scratch,
-                                                prefillConfig: .off) { progress in
+        let result = try await runRawCompletion(
+            producer: producer, tokenizer: tokenizer,
+            promptIds: prompt, config: config,
+            context: context, scratch: scratch,
+            prefillConfig: .off
+        ) { progress in
             if case .token(let index, let id, let delta) = progress {
                 box.append((index, id, delta))
             }
@@ -83,8 +90,9 @@ import TinyTitanValidationSupport
 
     @Test func theMaskOverridesTheModelsPreference() async throws {
         let tokenizer = try await fixture()
-        let constraint = JSONConstraint(table: JSONTokenTable(tokenizer: tokenizer),
-                                       node: schema())
+        let constraint = JSONConstraint(
+            table: JSONTokenTable(tokenizer: tokenizer),
+            node: schema())
         let (collected, result) = try await run(constraint: constraint)
         #expect(collected.text == #"{"a":1}"#)
         #expect(result.reason == .endOfTurn || result.reason == .eos)

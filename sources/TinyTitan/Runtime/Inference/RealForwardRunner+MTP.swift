@@ -8,7 +8,8 @@ import Metal
 /// per file, no signature or behavior changes.
 extension RealForwardRunner {
     func captureSpeculativeCheckpoint(maximumBytes: Int) throws
-        -> SpeculativeInferenceCheckpoint {
+        -> SpeculativeInferenceCheckpoint
+    {
         guard let kv else { throw InferenceStateSnapshotError.invalidLayout }
         let required = gdnState?.speculativePayloadBytes ?? 0
         guard required <= maximumBytes else {
@@ -44,7 +45,8 @@ extension RealForwardRunner {
     /// copying payload bytes; the next draft pass overwrites the stale row.
     func rewindMTP(to position: Int) throws {
         guard cfg.family == .qwen36MTP || cfg.family == .qwen38flashMTP,
-              let kv else {
+            let kv
+        else {
             throw InferenceStateSnapshotError.invalidLayout
         }
         try kv.rewind(to: position)
@@ -99,8 +101,10 @@ extension RealForwardRunner {
     static let mtpVerifyScheduleResult =
         Result { try RuntimeMTPVerifySchedule.environmentValue() }
 
-    func verifyGreedyPair(_ tokens: [Int32],
-                          startPosition: Int) async throws -> TargetPairVerification {
+    func verifyGreedyPair(
+        _ tokens: [Int32],
+        startPosition: Int
+    ) async throws -> TargetPairVerification {
         guard tokens.count == 2 else {
             throw PrefillError.chunkedUnsupported("MTP verification requires exactly two tokens")
         }
@@ -113,29 +117,32 @@ extension RealForwardRunner {
         let config = PrefillRuntimeConfig.production(chunkTokens: 32)
         let scratch = try ensurePrefillScratch(config: config)
         let tBackbone = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-        try await executePrefillChunk(tokens: tokens[...],
-                                      startPosition: startPosition,
-                                      outputMode: .logits,
-                                      logits: verificationLogits,
-                                      scratch: scratch,
-                                      config: config,
-                                      writeFinalHead: false,
-                                      snapshotGDNAfterFirstToken: true,
-                                      useTwoRowProjection: true,
-                                      pairRoutedMoE: pairMoE)
+        try await executePrefillChunk(
+            tokens: tokens[...],
+            startPosition: startPosition,
+            outputMode: .logits,
+            logits: verificationLogits,
+            scratch: scratch,
+            config: config,
+            writeFinalHead: false,
+            snapshotGDNAfterFirstToken: true,
+            useTwoRowProjection: true,
+            pairRoutedMoE: pairMoE)
         let tHead = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
 
         let finalNorm = try model.finalNorm()
         let lm = try model.lmHead()
         guard let cb = ctx.queue.makeCommandBuffer(),
-              let blit = cb.makeBlitCommandEncoder() else {
+            let blit = cb.makeBlitCommandEncoder()
+        else {
             throw ModelError.residentBufferWrapFailed
         }
-        blit.copy(from: scratch.hidden,
-                  sourceOffset: 0,
-                  to: verificationHidden,
-                  destinationOffset: 0,
-                  size: 2 * residualWidth * MemoryLayout<Float16>.stride)
+        blit.copy(
+            from: scratch.hidden,
+            sourceOffset: 0,
+            to: verificationHidden,
+            destinationOffset: 0,
+            size: 2 * residualWidth * MemoryLayout<Float16>.stride)
         blit.endEncoding()
         if let hc = hyperConnection {
             // This stack does not end in an RMSNorm: it ends in the gated
@@ -146,17 +153,18 @@ extension RealForwardRunner {
             // the whole output, not a rounding difference.
             let rowBytes = residualWidth * MemoryLayout<Float16>.stride
             for row in 0..<2 {
-                try hc.encodeRead(commandBuffer: cb,
-                                  streamsBuffer: scratch.hidden,
-                                  streamsOffset: row * rowBytes,
-                                  hcNorm: finalNorm.buffer,
-                                  hcNormOffset: Int(finalNorm.offset),
-                                  down: gateWeightsPublic(try model.hcMixerDown()),
-                                  up: gateWeightsPublic(try model.hcMixerUp()),
-                                  blockInput: scratch.normed,
-                                  blockInputOffset: row * cfg.hiddenSize
-                                      * MemoryLayout<Float16>.stride,
-                                  eps: 1e-6)
+                try hc.encodeRead(
+                    commandBuffer: cb,
+                    streamsBuffer: scratch.hidden,
+                    streamsOffset: row * rowBytes,
+                    hcNorm: finalNorm.buffer,
+                    hcNormOffset: Int(finalNorm.offset),
+                    down: gateWeightsPublic(try model.hcMixerDown()),
+                    up: gateWeightsPublic(try model.hcMixerUp()),
+                    blockInput: scratch.normed,
+                    blockInputOffset: row * cfg.hiddenSize
+                        * MemoryLayout<Float16>.stride,
+                    eps: 1e-6)
             }
             for row in 0..<2 {
                 try encodeHeadGEMV(
@@ -202,8 +210,10 @@ extension RealForwardRunner {
     /// Argmax both verify rows and package the result. Shared by the two
     /// head paths so a family difference in the head cannot become a
     /// difference in what the verify pass reports.
-    private func finishVerifyPair(tBackbone: UInt64,
-                                  tHead: UInt64) throws -> TargetPairVerification {
+    private func finishVerifyPair(
+        tBackbone: UInt64,
+        tHead: UInt64
+    ) throws -> TargetPairVerification {
         let tArgmax = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         let logits = verificationLogits.contents()
             .assumingMemoryBound(to: Float16.self)
@@ -226,8 +236,9 @@ extension RealForwardRunner {
         return TargetPairVerification(
             predictionAfterFirst: first,
             predictionAfterSecond: second,
-            hiddenRows: Data(bytes: verificationHidden.contents(),
-                             count: 2 * residualWidth * MemoryLayout<Float16>.stride),
+            hiddenRows: Data(
+                bytes: verificationHidden.contents(),
+                count: 2 * residualWidth * MemoryLayout<Float16>.stride),
             backboneNanos: tHead &- tBackbone,
             headNanos: tArgmax &- tHead,
             argmaxNanos: tDone &- tArgmax)
@@ -236,10 +247,12 @@ extension RealForwardRunner {
     /// Advance the one-layer MTP sidecar with aligned `(target hidden,
     /// next-token)` pairs. At most 32 rows are admitted so adapter scratch is
     /// fixed and the routed expert cache remains exactly top-k sized.
-    func advanceMTP(tokens: ArraySlice<Int32>,
-                    targetHiddenRows: Data,
-                    startPosition: Int,
-                    predictNext: Bool) async throws -> Int32? {
+    func advanceMTP(
+        tokens: ArraySlice<Int32>,
+        targetHiddenRows: Data,
+        startPosition: Int,
+        predictNext: Bool
+    ) async throws -> Int32? {
         guard cfg.family == .qwen36MTP else {
             throw StreamingMTPError.sidecarMustBeQwen36MTP
         }
@@ -251,20 +264,23 @@ extension RealForwardRunner {
         let expectedBytes = tokens.count * D * MemoryLayout<Float16>.stride
         guard targetHiddenRows.count == expectedBytes else {
             throw PrefillError.chunkedUnsupported(
-                "MTP target hidden payload has \(targetHiddenRows.count) bytes; expected \(expectedBytes)")
+                "MTP target hidden payload has \(targetHiddenRows.count) bytes; expected \(expectedBytes)"
+            )
         }
         guard let tokenBuffer = mtpTokenBlock,
-              let embeddingBlock = mtpEmbeddingBlock,
-              let normalizedEmbedding = mtpNormalizedEmbeddingBlock,
-              let normalizedHidden = mtpNormalizedHiddenBlock,
-              let concat = mtpConcatBlock,
-              let projected = mtpProjectedBlock,
-              let targetHidden = mtpTargetHiddenBlock,
-              let elementwise else {
+            let embeddingBlock = mtpEmbeddingBlock,
+            let normalizedEmbedding = mtpNormalizedEmbeddingBlock,
+            let normalizedHidden = mtpNormalizedHiddenBlock,
+            let concat = mtpConcatBlock,
+            let projected = mtpProjectedBlock,
+            let targetHidden = mtpTargetHiddenBlock,
+            let elementwise
+        else {
             throw StreamingMTPError.sidecarMustBeQwen36MTP
         }
-        targetHiddenRows.copyBytes(to: targetHidden.contents()
-            .assumingMemoryBound(to: UInt8.self), count: expectedBytes)
+        targetHiddenRows.copyBytes(
+            to: targetHidden.contents()
+                .assumingMemoryBound(to: UInt8.self), count: expectedBytes)
         let ids = tokens.map { UInt32(bitPattern: $0) }
         ids.withUnsafeBytes { bytes in
             // An empty id list has no base address and nothing to copy.
@@ -275,68 +291,74 @@ extension RealForwardRunner {
             throw ModelError.residentBufferWrapFailed
         }
         let emb = try model.embedding()
-        try prefillEmbed.encode(commandBuffer: cb,
-                            table: emb.buffer,
-                            tableOffset: Int(emb.offset),
-                            scales: emb.buffer,
-                            scalesOffset: Int(emb.scaleOffset),
-                            biases: emb.buffer,
-                            biasesOffset: Int(emb.biasOffset),
-                            tokens: tokenBuffer,
-                            out: embeddingBlock,
-                            t: UInt32(tokens.count),
-                            d: UInt32(D),
-                            outScale: 1,
-                            vocab: UInt32(cfg.vocabSize))
+        try prefillEmbed.encode(
+            commandBuffer: cb,
+            table: emb.buffer,
+            tableOffset: Int(emb.offset),
+            scales: emb.buffer,
+            scalesOffset: Int(emb.scaleOffset),
+            biases: emb.buffer,
+            biasesOffset: Int(emb.biasOffset),
+            tokens: tokenBuffer,
+            out: embeddingBlock,
+            t: UInt32(tokens.count),
+            d: UInt32(D),
+            outScale: 1,
+            vocab: UInt32(cfg.vocabSize))
         let embeddingNorm = try model.mtpEmbeddingNorm()
         let hiddenNorm = try model.mtpHiddenNorm()
-        try prefillRMS.encodeBF16W(commandBuffer: cb,
-                               x: embeddingBlock,
-                               weight: embeddingNorm.buffer,
-                               weightOffset: Int(embeddingNorm.offset),
-                               out: normalizedEmbedding,
-                               t: UInt32(tokens.count),
-                               d: UInt32(D), eps: 1e-6)
-        try prefillRMS.encodeBF16W(commandBuffer: cb,
-                               x: targetHidden,
-                               weight: hiddenNorm.buffer,
-                               weightOffset: Int(hiddenNorm.offset),
-                               out: normalizedHidden,
-                               t: UInt32(tokens.count),
-                               d: UInt32(D), eps: 1e-6)
-        try elementwise.encodeConcatRows(commandBuffer: cb,
-                                     lhs: normalizedEmbedding,
-                                     rhs: normalizedHidden,
-                                     out: concat,
-                                     rows: tokens.count,
-                                     dim: D)
+        try prefillRMS.encodeBF16W(
+            commandBuffer: cb,
+            x: embeddingBlock,
+            weight: embeddingNorm.buffer,
+            weightOffset: Int(embeddingNorm.offset),
+            out: normalizedEmbedding,
+            t: UInt32(tokens.count),
+            d: UInt32(D), eps: 1e-6)
+        try prefillRMS.encodeBF16W(
+            commandBuffer: cb,
+            x: targetHidden,
+            weight: hiddenNorm.buffer,
+            weightOffset: Int(hiddenNorm.offset),
+            out: normalizedHidden,
+            t: UInt32(tokens.count),
+            d: UInt32(D), eps: 1e-6)
+        try elementwise.encodeConcatRows(
+            commandBuffer: cb,
+            lhs: normalizedEmbedding,
+            rhs: normalizedHidden,
+            out: concat,
+            rows: tokens.count,
+            dim: D)
         let projection = try model.mtpProjection()
-        try prefillQMM.encode(commandBuffer: cb,
-                          weights: projection.buffer,
-                          weightsOffset: Int(projection.offset),
-                          scales: projection.buffer,
-                          scalesOffset: Int(projection.scaleOffset),
-                          biases: projection.buffer,
-                          biasesOffset: Int(projection.biasOffset),
-                          x: concat,
-                          y: projected,
-                          t: tokens.count,
-                          n: D,
-                          k: 2 * D)
+        try prefillQMM.encode(
+            commandBuffer: cb,
+            weights: projection.buffer,
+            weightsOffset: Int(projection.offset),
+            scales: projection.buffer,
+            scalesOffset: Int(projection.scaleOffset),
+            biases: projection.buffer,
+            biasesOffset: Int(projection.biasOffset),
+            x: concat,
+            y: projected,
+            t: tokens.count,
+            n: D,
+            k: 2 * D)
         cb.commit()
         try waitForCompletion(cb)
 
         let runtime = PrefillRuntimeConfig.production(chunkTokens: 32)
         let scratch = try ensurePrefillScratch(config: runtime)
         let mode: PrefillOutputMode = useFusedGreedyHead ? .greedyIfAvailable : .logits
-        try await executePrefillChunk(tokens: tokens,
-                                      startPosition: startPosition,
-                                      outputMode: mode,
-                                      logits: verificationLogits,
-                                      scratch: scratch,
-                                      config: runtime,
-                                      writeFinalHead: predictNext,
-                                      preparedHidden: projected)
+        try await executePrefillChunk(
+            tokens: tokens,
+            startPosition: startPosition,
+            outputMode: mode,
+            logits: verificationLogits,
+            scratch: scratch,
+            config: runtime,
+            writeFinalHead: predictNext,
+            preparedHidden: projected)
         guard predictNext else { return nil }
         if useFusedGreedyHead {
             return Int32(bitPattern: lastGreedyToken)
@@ -360,8 +382,11 @@ extension RealForwardRunner {
         if let existing = mtpPrefillReadback, existing.length >= bytes {
             return existing
         }
-        guard let buffer = ctx.device.makeBuffer(length: bytes,
-                                                 options: .storageModeShared) else {
+        guard
+            let buffer = ctx.device.makeBuffer(
+                length: bytes,
+                options: .storageModeShared)
+        else {
             throw ModelError.residentBufferWrapFailed
         }
         buffer.label = "mtp.target-hidden-readback"
@@ -372,17 +397,21 @@ extension RealForwardRunner {
     /// Target prefill with a bounded hidden-state tap that simultaneously
     /// aligns the streaming MTP sidecar. Only one target chunk is exposed at a
     /// time; no prompt-sized hidden-state tensor is retained.
-    func prefillChunkedWithMTP(tokens: ArraySlice<Int32>,
-                               config: PrefillRuntimeConfig,
-                               into logits: MTLBuffer,
-                               mtp: RealForwardRunner,
-                               onProgress: (Int) -> Void) async throws -> MTPPrefillResult {
+    func prefillChunkedWithMTP(
+        tokens: ArraySlice<Int32>,
+        config: PrefillRuntimeConfig,
+        into logits: MTLBuffer,
+        mtp: RealForwardRunner,
+        onProgress: (Int) -> Void
+    ) async throws -> MTPPrefillResult {
         defer { resetExpertUseCountsAfterPrefill() }
         guard cfg.family == .qwen36 || cfg.family == .qwen38flash else {
             throw StreamingMTPError.targetMustBeQwen36
         }
-        guard mtp.cfg.family == .qwen36MTP
-                || mtp.cfg.family == .qwen38flashMTP else {
+        guard
+            mtp.cfg.family == .qwen36MTP
+                || mtp.cfg.family == .qwen38flashMTP
+        else {
             throw StreamingMTPError.sidecarMustBeQwen36MTP
         }
         guard !tokens.isEmpty, tokens.count <= mtp.maxContext else {
@@ -392,41 +421,46 @@ extension RealForwardRunner {
         reset()
         mtp.reset()
         let scratch = try ensurePrefillScratch(config: config)
-        let spans = PrefillChunkPlanner.spans(tokenCount: tokens.count,
-                                              startPosition: 0,
-                                              config: config)
+        let spans = PrefillChunkPlanner.spans(
+            tokenCount: tokens.count,
+            startPosition: 0,
+            config: config)
         var carry: Data?
         do {
             for (spanIndex, span) in spans.enumerated() {
                 let lower = tokens.index(tokens.startIndex, offsetBy: span.tokenOffset)
                 let upper = tokens.index(lower, offsetBy: span.tokenCount)
                 let chunk = tokens[lower..<upper]
-                try await executePrefillChunk(tokens: chunk,
-                                              startPosition: span.startPosition,
-                                              outputMode: useFusedGreedyHead
-                                                ? .greedyIfAvailable : .logits,
-                                              logits: logits,
-                                              scratch: scratch,
-                                              config: config,
-                                              writeFinalHead: spanIndex == spans.count - 1)
+                try await executePrefillChunk(
+                    tokens: chunk,
+                    startPosition: span.startPosition,
+                    outputMode: useFusedGreedyHead
+                        ? .greedyIfAvailable : .logits,
+                    logits: logits,
+                    scratch: scratch,
+                    config: config,
+                    writeFinalHead: spanIndex == spans.count - 1)
 
                 let readback = try ensureMTPPrefillReadback(rows: span.tokenCount)
                 guard let cb = ctx.queue.makeCommandBuffer(),
-                      let blit = cb.makeBlitCommandEncoder() else {
+                    let blit = cb.makeBlitCommandEncoder()
+                else {
                     throw ModelError.residentBufferWrapFailed
                 }
                 // The draft is handed the residual as the target carries it,
                 // which for a hyper-connection family is the wide form: its
                 // fusion reads all four streams, not a collapsed one.
                 let rowBytes = residualWidth * MemoryLayout<Float16>.stride
-                blit.copy(from: scratch.hidden, sourceOffset: 0,
-                          to: readback, destinationOffset: 0,
-                          size: span.tokenCount * rowBytes)
+                blit.copy(
+                    from: scratch.hidden, sourceOffset: 0,
+                    to: readback, destinationOffset: 0,
+                    size: span.tokenCount * rowBytes)
                 blit.endEncoding()
                 cb.commit()
                 try waitForCompletion(cb)
-                let chunkHidden = Data(bytes: readback.contents(),
-                                       count: span.tokenCount * rowBytes)
+                let chunkHidden = Data(
+                    bytes: readback.contents(),
+                    count: span.tokenCount * rowBytes)
 
                 var pairTokens: [Int32] = []
                 var pairHidden = Data()
@@ -468,7 +502,8 @@ extension RealForwardRunner {
         guard let lastTargetHidden = carry else {
             throw StreamingMTPError.draftNotReady
         }
-        let seed: PrefillSeed = useFusedGreedyHead
+        let seed: PrefillSeed =
+            useFusedGreedyHead
             ? .greedyToken(lastGreedyToken) : .logitsWritten
         return MTPPrefillResult(
             target: PrefillResult(newPosition: tokens.count, seed: seed),
@@ -511,28 +546,30 @@ extension RealForwardRunner {
                 detail: "MTP prefill stage reached for a model with no router")
         }
         try prefillRouter.encodeBlock(
-                    commandBuffer: cb,
-                    weights: routerView.buffer,
-                    weightsOffset: Int(routerView.offset),
-                    scales: routerView.buffer,
-                    scalesOffset: Int(routerView.scaleOffset),
-                    biases: routerView.buffer,
-                    biasesOffset: Int(routerView.biasOffset),
-                    hidden: scratch.routedX,
-                    effectiveScale: effectiveScaleBuffers[L],
-                    perExpertScale: perExpertScale.buffer,
-                    perExpertScaleOffset: perExpertScale.offset,
-                    outIndices: scratch.routeIDs,
-                    outWeights: scratch.routeWeights,
-                    queryCount: UInt32(t),
-                    numExperts: UInt32(cfg.numExperts),
-                    d: UInt32(D),
-                    topK: topK,
-                    hiddenStrideElements: UInt32(D))
+            commandBuffer: cb,
+            weights: routerView.buffer,
+            weightsOffset: Int(routerView.offset),
+            scales: routerView.buffer,
+            scalesOffset: Int(routerView.scaleOffset),
+            biases: routerView.buffer,
+            biasesOffset: Int(routerView.biasOffset),
+            hidden: scratch.routedX,
+            effectiveScale: effectiveScaleBuffers[L],
+            perExpertScale: perExpertScale.buffer,
+            perExpertScaleOffset: perExpertScale.offset,
+            outIndices: scratch.routeIDs,
+            outWeights: scratch.routeWeights,
+            queryCount: UInt32(t),
+            numExperts: UInt32(cfg.numExperts),
+            d: UInt32(D),
+            topK: topK,
+            hiddenStrideElements: UInt32(D))
         cb.commit()
         try waitForCompletion(cb)
-        recordKernelGPU(role: cfg.layerIsLinear(L) ? "prefill_gdn_router"
-                            : "prefill_attn_router", cb)
+        recordKernelGPU(
+            role: cfg.layerIsLinear(L)
+                ? "prefill_gdn_router"
+                : "prefill_attn_router", cb)
 
         let idPtr = scratch.routeIDs.contents()
             .bindMemory(to: UInt32.self, capacity: t * cfg.topKExperts)
@@ -541,8 +578,9 @@ extension RealForwardRunner {
         var unionIndex: [Int: Int] = [:]
         for row in 0..<t {
             for k in 0..<cfg.topKExperts {
-                let expert = min(Int(idPtr[row * cfg.topKExperts + k]),
-                                 cfg.numExperts - 1)
+                let expert = min(
+                    Int(idPtr[row * cfg.topKExperts + k]),
+                    cfg.numExperts - 1)
                 rowExperts[row].append(expert)
                 if unionIndex[expert] == nil {
                     unionIndex[expert] = union.count
@@ -563,20 +601,21 @@ extension RealForwardRunner {
             throw ModelError.residentBufferWrapFailed
         }
         let sharedProj = sharedExpertProjections[L]
-        try prefillSharedExpert.encodeBlock(commandBuffer: sharedCB,
-                                            x: scratch.routedX,
-                                            y: scratch.h1,
-                                            gate: sharedProj.gate,
-                                            up: sharedProj.up,
-                                            down: sharedProj.down,
-                                            scratchGate: scratch.sharedGateScratch,
-                                            scratchUp: scratch.sharedUpScratch,
-                                            scratchAct: scratch.sharedActScratch,
-                                            queryCount: t,
-                                            d: D,
-                                            intermediate: cfg.intermediateSize,
-                                            xStrideElements: D,
-                                            yStrideElements: D)
+        try prefillSharedExpert.encodeBlock(
+            commandBuffer: sharedCB,
+            x: scratch.routedX,
+            y: scratch.h1,
+            gate: sharedProj.gate,
+            up: sharedProj.up,
+            down: sharedProj.down,
+            scratchGate: scratch.sharedGateScratch,
+            scratchUp: scratch.sharedUpScratch,
+            scratchAct: scratch.sharedActScratch,
+            queryCount: t,
+            d: D,
+            intermediate: cfg.intermediateSize,
+            xStrideElements: D,
+            yStrideElements: D)
         if cfg.sharedExpertGated {
             let gateView = try requireTensorView(sharedProj.scalarGate, "shared-expert scalar gate")
             for row in 0..<t {
@@ -614,18 +653,22 @@ extension RealForwardRunner {
         }
 
         while verifyPairActs.count < t {
-            guard let made = ctx.device.makeBuffer(
-                length: cfg.topKExperts * cfg.moeIntermediateSize * halfBytes,
-                options: .storageModePrivate) else {
+            guard
+                let made = ctx.device.makeBuffer(
+                    length: cfg.topKExperts * cfg.moeIntermediateSize * halfBytes,
+                    options: .storageModePrivate)
+            else {
                 throw ModelError.residentBufferWrapFailed
             }
             made.label = "verify.pair.acts.\(verifyPairActs.count)"
             verifyPairActs.append(made)
         }
         while verifyPairY.count < t {
-            guard let made = ctx.device.makeBuffer(
-                length: D * halfBytes,
-                options: .storageModePrivate) else {
+            guard
+                let made = ctx.device.makeBuffer(
+                    length: D * halfBytes,
+                    options: .storageModePrivate)
+            else {
                 throw ModelError.residentBufferWrapFailed
             }
             made.label = "verify.pair.y.\(verifyPairY.count)"
@@ -657,10 +700,11 @@ extension RealForwardRunner {
             }
             rowBlobBuffers.append(rowBufs)
             let argBuf = verifyPairArgBuffers[row]
-            moe.writeRoutedArgumentBuffer(argBuf,
-                                          routedBlobs: rowBufs,
-                                          topK: topK,
-                                          routedBufferOffsets: rowOffsets)
+            moe.writeRoutedArgumentBuffer(
+                argBuf,
+                routedBlobs: rowBufs,
+                topK: topK,
+                routedBufferOffsets: rowOffsets)
             try moe.encodeRoutedPersistentPhase1U16Load(
                 commandBuffer: routedCB,
                 routedArgBuffer: argBuf,
@@ -705,23 +749,26 @@ extension RealForwardRunner {
                 throw ModelError.residentBufferWrapFailed
             }
             for row in 0..<t {
-                blit.copy(from: verifyPairY[row], sourceOffset: 0,
-                          to: scratch.h2, destinationOffset: row * D * halfBytes,
-                          size: D * halfBytes)
+                blit.copy(
+                    from: verifyPairY[row], sourceOffset: 0,
+                    to: scratch.h2, destinationOffset: row * D * halfBytes,
+                    size: D * halfBytes)
             }
             blit.endEncoding()
-            try encodeResidualExitPrefill(commandBuffer: routedCB,
-                                          hidden: scratch.hidden,
-                                          delta: scratch.h2,
-                                          sublayer: .mlp, layer: L,
-                                          tokens: t)
+            try encodeResidualExitPrefill(
+                commandBuffer: routedCB,
+                hidden: scratch.hidden,
+                delta: scratch.h2,
+                sublayer: .mlp, layer: L,
+                tokens: t)
         } else {
             for row in 0..<t {
-                try requireElementwise().encodeResidualAdd(commandBuffer: routedCB,
-                                               hidden: scratch.hidden,
-                                               hiddenOffset: row * D * halfBytes,
-                                               delta: verifyPairY[row],
-                                               count: D)
+                try requireElementwise().encodeResidualAdd(
+                    commandBuffer: routedCB,
+                    hidden: scratch.hidden,
+                    hiddenOffset: row * D * halfBytes,
+                    delta: verifyPairY[row],
+                    count: D)
             }
         }
         routedCB.commit()

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
@@ -32,12 +33,15 @@ struct StructuredOutputDiagnosticsTests {
         #expect(isLowercaseSHA256(diagnostics.effectivePromptHash))
         #expect(isLowercaseSHA256(diagnostics.generatedHash))
         let generated: [Int32] = [20, 21, 102]
-        #expect(diagnostics.generatedHash
-            == StructuredOutputFailureDiagnostics.i32leSHA256([generated[...]]))
-        #expect(reflected.hasPrefix(
-            "structured_output_failure kind=orphan_tool_response cause=none "))
-        #expect(("error=" + reflected).hasPrefix(
-            "error=structured_output_failure kind=orphan_tool_response cause=none "))
+        #expect(
+            diagnostics.generatedHash
+                == StructuredOutputFailureDiagnostics.i32leSHA256([generated[...]]))
+        #expect(
+            reflected.hasPrefix(
+                "structured_output_failure kind=orphan_tool_response cause=none "))
+        #expect(
+            ("error=" + reflected).hasPrefix(
+                "error=structured_output_failure kind=orphan_tool_response cause=none "))
         #expect(reflected.contains("completion_tokens=3"))
         #expect(reflected.contains("tool_response_count=1"))
         #expect(reflected.contains("last_tool_response_offset=2"))
@@ -47,27 +51,32 @@ struct StructuredOutputDiagnosticsTests {
     }
 
     @Test func parserCausesAreFixedAndUnknownToolNameIsDiscarded() {
-        #expect(StructuredOutputFailureCause.classify(
-            ToolCallParserError.malformed) == .malformed)
-        #expect(StructuredOutputFailureCause.classify(
-            ToolCallParserError.oversized) == .oversized)
-        #expect(StructuredOutputFailureCause.classify(
-            UnexpectedError()) == .unexpected)
+        #expect(
+            StructuredOutputFailureCause.classify(
+                ToolCallParserError.malformed) == .malformed)
+        #expect(
+            StructuredOutputFailureCause.classify(
+                ToolCallParserError.oversized) == .oversized)
+        #expect(
+            StructuredOutputFailureCause.classify(
+                UnexpectedError()) == .unexpected)
 
         let cause = StructuredOutputFailureCause.classify(
             ToolCallParserError.unknownTool("private-name"))
-        let reflected = String(reflecting: StructuredOutputFailure(
-            kind: .decoderConsume,
-            cause: cause,
-            diagnostics: makeDiagnostics()))
+        let reflected = String(
+            reflecting: StructuredOutputFailure(
+                kind: .decoderConsume,
+                cause: cause,
+                diagnostics: makeDiagnostics()))
         #expect(cause == .unknownTool)
         #expect(reflected.contains("cause=unknown_tool"))
         #expect(!reflected.contains("private-name"))
 
-        let unexpected = String(reflecting: StructuredOutputFailure(
-            kind: .decoderFinish,
-            cause: .classify(UnexpectedError()),
-            diagnostics: makeDiagnostics()))
+        let unexpected = String(
+            reflecting: StructuredOutputFailure(
+                kind: .decoderFinish,
+                cause: .classify(UnexpectedError()),
+                diagnostics: makeDiagnostics()))
         #expect(unexpected.contains("cause=unexpected"))
         #expect(!unexpected.contains("private-error-description"))
     }
@@ -79,20 +88,23 @@ struct StructuredOutputDiagnosticsTests {
             .decoderFinish,
             .orphanToolResponse,
         ] {
-            let reflected = String(reflecting: StructuredOutputFailure(
-                kind: kind,
-                cause: .none,
-                diagnostics: diagnostics))
-            #expect(reflected.hasPrefix(
-                "structured_output_failure kind=\(kind.rawValue) cause=none "))
+            let reflected = String(
+                reflecting: StructuredOutputFailure(
+                    kind: kind,
+                    cause: .none,
+                    diagnostics: diagnostics))
+            #expect(
+                reflected.hasPrefix(
+                    "structured_output_failure kind=\(kind.rawValue) cause=none "))
             #expect(reflected.hasSuffix(diagnostics.logDescription))
         }
     }
 
     @Test func tokenHashUsesUInt32LittleEndianBytes() {
         let tokens: [Int32] = [1, -1]
-        #expect(StructuredOutputFailureDiagnostics.i32leSHA256([tokens[...]])
-            == "b15348c8f462384c01e83b6d499c6faf3f96808f5aa07c6bab4b65b36b4445d4")
+        #expect(
+            StructuredOutputFailureDiagnostics.i32leSHA256([tokens[...]])
+                == "b15348c8f462384c01e83b6d499c6faf3f96808f5aa07c6bab4b65b36b4445d4")
     }
 
     @Test func invalidPrefillCountCannotCrashDiagnostics() {
@@ -103,7 +115,8 @@ struct StructuredOutputDiagnosticsTests {
     }
 
     private func makeDiagnostics(prefillTokens: Int = 3)
-        -> StructuredOutputFailureDiagnostics {
+        -> StructuredOutputFailureDiagnostics
+    {
         let renderedPrompt: [Int32] = [8, 10, 11, 12]
         let effectivePrompt: [Int32] = [10, 11, 12]
         let result = RawDecodeResult(

@@ -1,4 +1,5 @@
 import Testing
+
 @testable import TinyTitan
 
 /// Pins the Qwen3.8-Flash-Next geometry against the checkpoint facts recorded

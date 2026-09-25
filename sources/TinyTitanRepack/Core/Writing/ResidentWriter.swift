@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 import TinyTitanFormat
 
 /// Writes the resident LM `.bin` file (`model_weights.bin`) for the streaming
@@ -8,8 +8,10 @@ import TinyTitanFormat
 /// it, and lays down the binary index (header + entries + string table).
 enum ResidentWriter {
 
-    static func createAndWriteIndex(plan: ResidentFilePlan,
-                                    audit: RepackAudit) throws -> Int32 {
+    static func createAndWriteIndex(
+        plan: ResidentFilePlan,
+        audit: RepackAudit
+    ) throws -> Int32 {
         try Posix.mkdirP(((plan.path as NSString).deletingLastPathComponent))
         let fd = try Posix.openCreateRW(plan.path)
         do {
@@ -47,8 +49,9 @@ enum ResidentWriter {
                 detail: "resident tensor name is \(entry.name.utf8.count) bytes, over the "
                     + "\(UInt16.max)-byte limit the index stores: \(entry.name.prefix(120))")
         }
-        let idxBuf = UnsafeMutableRawBufferPointer.allocate(byteCount: idxBytes,
-                                                            alignment: 16_384)
+        let idxBuf = UnsafeMutableRawBufferPointer.allocate(
+            byteCount: idxBytes,
+            alignment: 16_384)
         defer { idxBuf.deallocate() }
         idxBuf.initializeMemory(as: UInt8.self, repeating: 0)
         // The allocation is `idxBytes > 0` bytes, so this cannot be nil; the
@@ -57,10 +60,11 @@ enum ResidentWriter {
             throw RepackError.configurationInvalid(
                 detail: "the resident index buffer could not be allocated")
         }
-        GTurboBinary.writeIndexHeader(into: idxBase,
-                                      indexSize: plan.indexSize,
-                                      residentSize: plan.residentSize,
-                                      entryCount: UInt64(plan.entries.count))
+        GTurboBinary.writeIndexHeader(
+            into: idxBase,
+            indexSize: plan.indexSize,
+            residentSize: plan.residentSize,
+            entryCount: UInt64(plan.entries.count))
         let entriesBase = 24
         let stringTableBase = entriesBase + plan.entries.count * GTurboBinary.indexEntryBytes
         for i in 0..<plan.entries.count {
@@ -76,9 +80,11 @@ enum ResidentWriter {
         return Data(bytes: idxBase, count: idxBytes)
     }
 
-    private static func writeIndex(plan: ResidentFilePlan,
-                                   fd: Int32,
-                                   audit: RepackAudit) throws {
+    private static func writeIndex(
+        plan: ResidentFilePlan,
+        fd: Int32,
+        audit: RepackAudit
+    ) throws {
         let data = try encodeIndex(plan: plan)
         let idxBytes = data.count
         if idxBytes > audit.largestScratchBytes {
@@ -86,8 +92,9 @@ enum ResidentWriter {
         }
         try data.withUnsafeBytes { raw in
             guard let base = raw.baseAddress else { return }
-            try Posix.pwriteAll(fd: fd, path: plan.path,
-                                buf: base, count: idxBytes, offset: 0)
+            try Posix.pwriteAll(
+                fd: fd, path: plan.path,
+                buf: base, count: idxBytes, offset: 0)
         }
         audit.recordWrite(bytes: idxBytes)
     }

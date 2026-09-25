@@ -44,7 +44,8 @@ public struct JSONTokenTable: Sendable {
             offsets.append(storage.count)
             let value = Int32(id)
             guard !markers.contains(value),
-                  let text = tokenizer.tokenizer.convertIdToToken(id), !text.isEmpty else {
+                let text = tokenizer.tokenizer.convertIdToToken(id), !text.isEmpty
+            else {
                 continue
             }
             var bytes: [UInt8] = []
@@ -73,8 +74,10 @@ public struct JSONTokenTable: Sendable {
     /// grammar's behaviour does not depend on a real tokenizer, only on the
     /// byte string each id stands for. Ids not named in `entries` have no
     /// bytes, exactly like a special token.
-    public init(vocab: Int, entries: [(id: Int32, bytes: [UInt8])],
-                stopTokens: Set<Int32> = []) {
+    public init(
+        vocab: Int, entries: [(id: Int32, bytes: [UInt8])],
+        stopTokens: Set<Int32> = []
+    ) {
         let highest = entries.map { Int($0.id) }.max() ?? -1
         let count = max(vocab, highest + 1, 1)
         let byID = Dictionary(grouping: entries, by: \.id)

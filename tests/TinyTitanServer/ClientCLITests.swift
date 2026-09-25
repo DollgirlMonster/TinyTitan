@@ -41,9 +41,11 @@ private func binary(_ name: String) -> String? {
 }
 
 /// Run a CLI with a timeout; returns stdout+stderr and the exit status.
-private func run(_ executable: String, _ arguments: [String],
-                 environment: [String: String], directory: URL,
-                 timeout: TimeInterval = 180) async throws -> (output: String, status: Int32) {
+private func run(
+    _ executable: String, _ arguments: [String],
+    environment: [String: String], directory: URL,
+    timeout: TimeInterval = 180
+) async throws -> (output: String, status: Int32) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
     process.arguments = arguments
@@ -80,21 +82,27 @@ struct ClientCLITests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let result = try await run(codex, [
-            "exec", "--skip-git-repo-check", "-s", "read-only",
-            "-c", "model_providers.tinytitan.name=TinyTitan",
-            "-c", "model_providers.tinytitan.base_url=http://127.0.0.1:\(port)/v1",
-            "-c", "model_providers.tinytitan.wire_api=responses",
-            "-c", "model_provider=tinytitan",
-            "-m", "test-model",
-            "Reply with one word.",
-        ], environment: ["OPENAI_API_KEY": "unused", "CODEX_HOME": directory.path],
-           directory: directory)
+        let result = try await run(
+            codex,
+            [
+                "exec", "--skip-git-repo-check", "-s", "read-only",
+                "-c", "model_providers.tinytitan.name=TinyTitan",
+                "-c", "model_providers.tinytitan.base_url=http://127.0.0.1:\(port)/v1",
+                "-c", "model_providers.tinytitan.wire_api=responses",
+                "-c", "model_provider=tinytitan",
+                "-m", "test-model",
+                "Reply with one word.",
+            ], environment: ["OPENAI_API_KEY": "unused", "CODEX_HOME": directory.path],
+            directory: directory)
         try await server.shutdown()
 
         let requests = backend.requests
-        #expect(!requests.isEmpty, "codex never reached the server (exit \(result.status)): \(result.output)")
-        #expect(result.output.contains("hello from tinytitan"), result.output.isEmpty ? "no output" : Comment(rawValue: result.output))
+        #expect(
+            !requests.isEmpty,
+            "codex never reached the server (exit \(result.status)): \(result.output)")
+        #expect(
+            result.output.contains("hello from tinytitan"),
+            result.output.isEmpty ? "no output" : Comment(rawValue: result.output))
         if let first = requests.first {
             // Codex sends its instructions as a leading system message and
             // its tool suite as function tools; both must have mapped.
@@ -117,25 +125,32 @@ struct ClientCLITests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let result = try await run(claude, [
-            "-p", "Reply with one word.", "--output-format", "text",
-            "--model", "test-model",
-        ], environment: [
-            "ANTHROPIC_BASE_URL": "http://127.0.0.1:\(port)",
-            "ANTHROPIC_API_KEY": "unused",
-            "ANTHROPIC_MODEL": "test-model",
-            "ANTHROPIC_SMALL_FAST_MODEL": "test-model",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL": "test-model",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL": "test-model",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL": "test-model",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-            "DISABLE_TELEMETRY": "1",
-        ], directory: directory)
+        let result = try await run(
+            claude,
+            [
+                "-p", "Reply with one word.", "--output-format", "text",
+                "--model", "test-model",
+            ],
+            environment: [
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:\(port)",
+                "ANTHROPIC_API_KEY": "unused",
+                "ANTHROPIC_MODEL": "test-model",
+                "ANTHROPIC_SMALL_FAST_MODEL": "test-model",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "test-model",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": "test-model",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": "test-model",
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+                "DISABLE_TELEMETRY": "1",
+            ], directory: directory)
         try await server.shutdown()
 
         let requests = backend.requests
-        #expect(!requests.isEmpty, "claude never reached the server (exit \(result.status)): \(result.output)")
-        #expect(result.output.contains("hello from tinytitan"), result.output.isEmpty ? "no output" : Comment(rawValue: result.output))
+        #expect(
+            !requests.isEmpty,
+            "claude never reached the server (exit \(result.status)): \(result.output)")
+        #expect(
+            result.output.contains("hello from tinytitan"),
+            result.output.isEmpty ? "no output" : Comment(rawValue: result.output))
         if let first = requests.first {
             #expect(first.messages.first?.role == .system)
             #expect(first.messages.contains { $0.role == .user })
@@ -148,18 +163,24 @@ struct ClientCLITests {
 /// run against it by hand while debugging a client's request grammar.
 @Suite struct StubServerForManualRuns {
     @Test func stubServer() async throws {
-        guard let seconds = ProcessInfo.processInfo.environment["TINYTITAN_STUB_SERVER_SECONDS"]
-            .flatMap(Double.init) else { return }
+        guard
+            let seconds = ProcessInfo.processInfo.environment["TINYTITAN_STUB_SERVER_SECONDS"]
+                .flatMap(Double.init)
+        else { return }
         let backend = GreetingBackend()
         let server = TinyTitanHTTPServer(modelID: "test-model", queueLimit: 2, backend: backend)
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
-        let file = ProcessInfo.processInfo.environment["TINYTITAN_STUB_SERVER_PORT_FILE"] ?? "/tmp/tinytitan-stub-port"
+        let file =
+            ProcessInfo.processInfo.environment["TINYTITAN_STUB_SERVER_PORT_FILE"]
+            ?? "/tmp/tinytitan-stub-port"
         try String(port).write(toFile: file, atomically: true, encoding: .utf8)
         print("stub server on port \(port) for \(seconds)s")
         try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
         for (index, request) in backend.requests.enumerated() {
-            print("request \(index): roles \(request.messages.map(\.role)) tools \(request.tools.count) max \(request.maximumCompletionTokens)")
+            print(
+                "request \(index): roles \(request.messages.map(\.role)) tools \(request.tools.count) max \(request.maximumCompletionTokens)"
+            )
         }
         try await server.shutdown()
     }

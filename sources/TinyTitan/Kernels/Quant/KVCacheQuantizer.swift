@@ -10,29 +10,34 @@ final class KVCacheQuantizer {
         self.pipeline = try context.pipeline("kv_cache_quantize_affine")
     }
 
-    func encode(commandBuffer: MTLCommandBuffer,
-                source: MTLBuffer,
-                sourceOffset: Int = 0,
-                sourceTokenStrideElements: Int,
-                destination: KVView,
-                tokenCount: Int,
-                elementCount: Int) throws {
-        precondition(destination.precision.isQuantized,
-                     "KV quantizer requires 4-bit or 8-bit destination")
+    func encode(
+        commandBuffer: MTLCommandBuffer,
+        source: MTLBuffer,
+        sourceOffset: Int = 0,
+        sourceTokenStrideElements: Int,
+        destination: KVView,
+        tokenCount: Int,
+        elementCount: Int
+    ) throws {
+        precondition(
+            destination.precision.isQuantized,
+            "KV quantizer requires 4-bit or 8-bit destination")
         precondition(tokenCount > 0, "tokenCount must be positive")
         precondition(elementCount > 0, "elementCount must be positive")
-        precondition(sourceTokenStrideElements >= elementCount,
-                     "source token stride is too small")
+        precondition(
+            sourceTokenStrideElements >= elementCount,
+            "source token stride is too small")
         // The kernel derives each element's index from `thread_position.x`
         // (`flat = group * group_size + lid`), so the dispatch width *is* the
         // group size, and its two-entry partial arrays assume exactly two SIMD
         // groups. Both come from `quantizationGroupSize` today; asserting it here
         // means a KV layout with any other group size fails loudly instead of
         // quantizing every group from the wrong elements.
-        precondition(destination.groupSize == KVCacheManager.quantizationGroupSize,
-                     "KV quantizer dispatches \(KVCacheManager.quantizationGroupSize) "
-                        + "threads but the destination uses groups of "
-                        + "\(destination.groupSize)")
+        precondition(
+            destination.groupSize == KVCacheManager.quantizationGroupSize,
+            "KV quantizer dispatches \(KVCacheManager.quantizationGroupSize) "
+                + "threads but the destination uses groups of "
+                + "\(destination.groupSize)")
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -54,8 +59,9 @@ final class KVCacheQuantizer {
         let groups = (elementCount + destination.groupSize - 1) / destination.groupSize
         encoder.dispatchThreadgroups(
             MTLSize(width: groups, height: tokenCount, depth: 1),
-            threadsPerThreadgroup: MTLSize(width: KVCacheManager.quantizationGroupSize,
-                                           height: 1, depth: 1))
+            threadsPerThreadgroup: MTLSize(
+                width: KVCacheManager.quantizationGroupSize,
+                height: 1, depth: 1))
         encoder.endEncoding()
     }
 }

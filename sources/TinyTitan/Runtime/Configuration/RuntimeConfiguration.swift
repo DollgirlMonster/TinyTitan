@@ -106,19 +106,24 @@ public enum RuntimeConfigurationError: Error, CustomStringConvertible, Equatable
     public var description: String {
         switch self {
         case .invalidExpertCacheSlots(let value):
-            return "unsupported expert-cache slot count \(value); allowed: \(RuntimeConfiguration.allowedExpertCacheSlots)"
+            return
+                "unsupported expert-cache slot count \(value); allowed: \(RuntimeConfiguration.allowedExpertCacheSlots)"
         case .invalidPrefillChunkTokens(let value):
-            return "unsupported prefill chunk size \(value); allowed: \(RuntimeConfiguration.allowedPrefillChunkTokens)"
+            return
+                "unsupported prefill chunk size \(value); allowed: \(RuntimeConfiguration.allowedPrefillChunkTokens)"
         case .invalidYaRNContextTokens(let value):
-            return "unsupported YaRN context \(value); allowed: \(RuntimeConfiguration.supportedYaRNContextTokens)"
+            return
+                "unsupported YaRN context \(value); allowed: \(RuntimeConfiguration.supportedYaRNContextTokens)"
         case .contextRequiresYaRN(let value):
-            return "context \(value) exceeds the native \(RuntimeConfiguration.nativeMaximumContextTokens)-token limit; enable YaRN"
+            return
+                "context \(value) exceeds the native \(RuntimeConfiguration.nativeMaximumContextTokens)-token limit; enable YaRN"
         case .yaRNContextMismatch(let maxContext, let configured):
             return "YaRN is configured for \(configured) tokens, but max context is \(maxContext)"
         case .yaRNUnsupportedArchitecture:
             return "YaRN requires the Qwen3.5-MoE NeoX sub-dimension RoPE architecture"
         case .invalidDecodeExpertExecution(let value):
-            return "unsupported decode expert execution '\(value)'; allowed: hit-fixup, barrier, gpu-residency"
+            return
+                "unsupported decode expert execution '\(value)'; allowed: hit-fixup, barrier, gpu-residency"
         case .invalidExpertIOSynchronization(let value):
             return "unsupported expert I/O synchronization '\(value)'; allowed: host, event"
         case .invalidExpertIOSubmission(let value):
@@ -145,7 +150,9 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     // hit rate); its route traces put the ceiling at 192 (95.5%, the rest
     // compulsory). 160 at 4-bit is 10 GiB and measured +4% with swap flat;
     // 192 is 12 GiB, +8%, and pushed 1.5 GB to swap on a 24 GB machine.
-    public static let allowedExpertCacheSlots = [8, 16, 24, 32, 40, 48, 64, 96, 112, 128, 160, 192, 256]
+    public static let allowedExpertCacheSlots = [
+        8, 16, 24, 32, 40, 48, 64, 96, 112, 128, 160, 192, 256,
+    ]
 
     /// Target bytes for the routed-expert slot cache when no count is given.
     ///
@@ -220,8 +227,10 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     /// Qwen 3.6 share the `qwen36` family and measured the same, so keying on
     /// family rather than model id is correct here rather than merely
     /// convenient.
-    public static func decodeTuning(family: ModelFamily,
-                                    weightBits: Int) -> DecodeTuning {
+    public static func decodeTuning(
+        family: ModelFamily,
+        weightBits: Int
+    ) -> DecodeTuning {
         switch (family, weightBits) {
         case (.qwen38flash, _), (.qwen38flashMTP, _):
             // 96 slots. The only family whose working set justifies the extra
@@ -230,11 +239,13 @@ public struct RuntimeConfiguration: Sendable, Equatable {
             // flattened above 90% hit rate.
             return DecodeTuning(expertCacheBudgetBytes: 12 << 30, prefetchDepth: 1)
         case (.qwen36, 8), (.qwen36MTP, 8):
-            return DecodeTuning(expertCacheBudgetBytes: defaultExpertCacheBudgetBytes,
-                                prefetchDepth: 1)
+            return DecodeTuning(
+                expertCacheBudgetBytes: defaultExpertCacheBudgetBytes,
+                prefetchDepth: 1)
         default:
-            return DecodeTuning(expertCacheBudgetBytes: defaultExpertCacheBudgetBytes,
-                                prefetchDepth: 0)
+            return DecodeTuning(
+                expertCacheBudgetBytes: defaultExpertCacheBudgetBytes,
+                prefetchDepth: 0)
         }
     }
 
@@ -281,7 +292,8 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     /// measured it.
     public static func affordableExpertCacheBudget(
         _ wanted: Int,
-        physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Int {
+        physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
+    ) -> Int {
         guard physicalMemory > 0 else { return wanted }
         return min(wanted, Int(physicalMemory / 3))
     }
@@ -320,15 +332,17 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     public static func expertCacheSlots(
         expertStrideBytes: UInt64,
         layers: Int,
-        budgetBytes: Int = defaultExpertCacheBudgetBytes) -> Int {
+        budgetBytes: Int = defaultExpertCacheBudgetBytes
+    ) -> Int {
         guard expertStrideBytes > 0, layers > 0 else {
             return allowedExpertCacheSlots.first ?? 8
         }
         let perSlot = Double(expertStrideBytes) * Double(layers)
         let wanted = Double(budgetBytes) / perSlot
-        var choice = allowedExpertCacheSlots.min {
-            abs(Double($0) - wanted) < abs(Double($1) - wanted)
-        } ?? allowedExpertCacheSlots.first ?? 8
+        var choice =
+            allowedExpertCacheSlots.min {
+                abs(Double($0) - wanted) < abs(Double($1) - wanted)
+            } ?? allowedExpertCacheSlots.first ?? 8
         // Nearest, then step down until the footprint honours the budget.
         //
         // Rounding to nearest alone can overshoot, and the overshoot grows with
@@ -353,7 +367,8 @@ public struct RuntimeConfiguration: Sendable, Equatable {
         // little; too many costs everything.
         let ceiling = Double(budgetBytes) * 1.15
         while Double(choice) * perSlot > ceiling,
-              let smaller = allowedExpertCacheSlots.last(where: { $0 < choice }) {
+            let smaller = allowedExpertCacheSlots.last(where: { $0 < choice })
+        {
             choice = smaller
         }
         return choice
@@ -404,9 +419,11 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     /// its budget, which is right for a tuned profile and wrong for a number the
     /// user asked the whole server to stay under. The smallest rung is the floor
     /// because a cache smaller than a layer's top-k cannot place its experts.
-    public static func expertCacheSlotsFitting(expertStrideBytes: UInt64,
-                                               layers: Int,
-                                               cacheBytes: Int) -> Int {
+    public static func expertCacheSlotsFitting(
+        expertStrideBytes: UInt64,
+        layers: Int,
+        cacheBytes: Int
+    ) -> Int {
         guard expertStrideBytes > 0, layers > 0 else {
             return allowedExpertCacheSlots.first ?? 8
         }
@@ -437,19 +454,21 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     public let ropeScalingMode: RuntimeRoPEScalingMode
     public let yarnContextTokens: Int
 
-    public init(expertCacheSlots: Int = 64,
-                expertCachePolicy: RuntimeExpertCachePolicy = .lfu,
-                rdadvisePolicy: RDAdvicePolicyMode = .default,
-                prefillEnabled: Bool = true,
-                prefillChunkTokens: Int = 128,
-                prefillAttentionPath: RuntimePrefillAttentionPath = .fullTensorOps2DPreferred,
-                forceLogitsHead: Bool = false,
-                decodeExpertExecution: RuntimeDecodeExpertExecution = .hitFixup,
-                expertIOSynchronization: RuntimeExpertIOSynchronization = .host,
-                expertIOSubmission: RuntimeExpertIOSubmission = .deferred,
-                kvCachePrecision: KVCachePrecision = .int8,
-                ropeScalingMode: RuntimeRoPEScalingMode = .none,
-                yarnContextTokens: Int = RuntimeConfiguration.defaultYaRNContextTokens) throws {
+    public init(
+        expertCacheSlots: Int = 64,
+        expertCachePolicy: RuntimeExpertCachePolicy = .lfu,
+        rdadvisePolicy: RDAdvicePolicyMode = .default,
+        prefillEnabled: Bool = true,
+        prefillChunkTokens: Int = 128,
+        prefillAttentionPath: RuntimePrefillAttentionPath = .fullTensorOps2DPreferred,
+        forceLogitsHead: Bool = false,
+        decodeExpertExecution: RuntimeDecodeExpertExecution = .hitFixup,
+        expertIOSynchronization: RuntimeExpertIOSynchronization = .host,
+        expertIOSubmission: RuntimeExpertIOSubmission = .deferred,
+        kvCachePrecision: KVCachePrecision = .int8,
+        ropeScalingMode: RuntimeRoPEScalingMode = .none,
+        yarnContextTokens: Int = RuntimeConfiguration.defaultYaRNContextTokens
+    ) throws {
         guard Self.allowedExpertCacheSlots.contains(expertCacheSlots) else {
             throw RuntimeConfigurationError.invalidExpertCacheSlots(expertCacheSlots)
         }

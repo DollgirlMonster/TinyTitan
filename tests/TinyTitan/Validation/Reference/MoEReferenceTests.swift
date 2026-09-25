@@ -1,5 +1,5 @@
-import Testing
 import Foundation
+import Testing
 import TinyTitan
 import TinyTitanValidationSupport
 
@@ -18,7 +18,8 @@ import TinyTitanValidationSupport
 
     @Test("FFN runs without divergence on small shape")
     func ffnRunsOnSmallShape() {
-        let d = 128, f = 64
+        let d = 128
+        let f = 64
         var rng = SeedTree(0x181).key("moe-ref-ffn")
         func randRow() -> Quantization.Int4AffineRow {
             let raw = (0..<d).map { _ in rng.uniform(-0.3, 0.3) }
@@ -29,12 +30,13 @@ import TinyTitanValidationSupport
             return Quantization.quantizeInt4Affine(raw)
         }
         let gate = (0..<f).map { _ in randRow() }
-        let up   = (0..<f).map { _ in randRow() }
+        let up = (0..<f).map { _ in randRow() }
         let down = (0..<d).map { _ in randDownRow() }
-        let x    = (0..<d).map { _ in rng.uniform(-0.3, 0.3) }
+        let x = (0..<d).map { _ in rng.uniform(-0.3, 0.3) }
 
-        let y = MoeRef.runFFN(gateRows: gate, upRows: up, downRows: down,
-                              x: x, d: d, f: f)
+        let y = MoeRef.runFFN(
+            gateRows: gate, upRows: up, downRows: down,
+            x: x, d: d, f: f)
         #expect(y.count == d)
         for v in y { #expect(v.isFinite) }
     }

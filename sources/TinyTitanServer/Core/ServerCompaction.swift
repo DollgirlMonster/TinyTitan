@@ -138,9 +138,10 @@ public enum ServerCompaction {
             }
             return withoutMarker.lowercased().trimmingCharacters(in: .whitespaces)
         }
-        let instructionLines = Set(instruction.split(separator: "\n")
-            .map { normalized(String($0)) }
-            .filter { !$0.isEmpty })
+        let instructionLines = Set(
+            instruction.split(separator: "\n")
+                .map { normalized(String($0)) }
+                .filter { !$0.isEmpty })
 
         var kept: [String] = []
         for line in note.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -148,7 +149,10 @@ public enum ServerCompaction {
             if !normalized(text).isEmpty, instructionLines.contains(normalized(text)) { continue }
             // Skip the blank runs a removal leaves behind.
             if text.trimmingCharacters(in: .whitespaces).isEmpty,
-               kept.last?.trimmingCharacters(in: .whitespaces).isEmpty != false { continue }
+                kept.last?.trimmingCharacters(in: .whitespaces).isEmpty != false
+            {
+                continue
+            }
             kept.append(text)
         }
         return kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -201,7 +205,8 @@ public enum ServerCompaction {
     /// endpoint must not have.
     public static func decode(_ payload: String) throws -> CompactionEnvelope {
         guard let data = Data(base64Encoded: payload),
-              let envelope = try? JSONDecoder().decode(CompactionEnvelope.self, from: data) else {
+            let envelope = try? JSONDecoder().decode(CompactionEnvelope.self, from: data)
+        else {
             throw ServerRequestError.invalid(
                 message: "compaction payload could not be read; it must be the "
                     + "encrypted_content this server returned",
@@ -250,7 +255,8 @@ public enum ServerCompaction {
                 }
             }
             if let calls = message.toolCalls, !calls.isEmpty {
-                let rendered = calls
+                let rendered =
+                    calls
                     .map { "\($0.function.name)\($0.function.arguments)" }
                     .joined(separator: ", ")
                 text += text.isEmpty ? "(tool call: \(rendered))" : "\n(tool call: \(rendered))"
@@ -267,12 +273,13 @@ extension OpenAIUsage {
     /// share: a second pass exists to make the note fit, and hiding that it ran
     /// would make the number a lie of omission.
     func adding(_ other: OpenAIUsage) -> OpenAIUsage {
-        OpenAIUsage(promptTokens: promptTokens + other.promptTokens,
-                    completionTokens: completionTokens + other.completionTokens,
-                    totalTokens: totalTokens + other.totalTokens,
-                    cachedTokens: promptTokensDetails.cachedTokens
-                        + other.promptTokensDetails.cachedTokens,
-                    reasoningTokens: completionTokensDetails.reasoningTokens
-                        + other.completionTokensDetails.reasoningTokens)
+        OpenAIUsage(
+            promptTokens: promptTokens + other.promptTokens,
+            completionTokens: completionTokens + other.completionTokens,
+            totalTokens: totalTokens + other.totalTokens,
+            cachedTokens: promptTokensDetails.cachedTokens
+                + other.promptTokensDetails.cachedTokens,
+            reasoningTokens: completionTokensDetails.reasoningTokens
+                + other.completionTokensDetails.reasoningTokens)
     }
 }

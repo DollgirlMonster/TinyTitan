@@ -90,7 +90,7 @@ jobs:
             exit 1
           fi
 
-      - name: Production gates (all ten)
+      - name: Production gates (all eleven)
         run: tools/lint.sh
 
       - name: Full suite with coverage

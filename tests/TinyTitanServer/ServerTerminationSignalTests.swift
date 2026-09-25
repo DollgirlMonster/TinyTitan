@@ -1,6 +1,7 @@
 import Darwin
 import Synchronization
 import Testing
+
 @testable import TinyTitanServerCore
 
 @Suite("Server termination signals", .serialized)
@@ -8,8 +9,10 @@ struct ServerTerminationSignalTests {
     /// Polls rather than awaiting, because the hook runs on the dispatch
     /// source's queue: a test that assumed it had already run would be racy, and
     /// one that let the real `exit(1)` run killed the whole test process.
-    private func waitForExitCount(_ exits: borrowing Mutex<Int>, toReach target: Int,
-                                  timeout: Duration = .seconds(2)) async -> Int {
+    private func waitForExitCount(
+        _ exits: borrowing Mutex<Int>, toReach target: Int,
+        timeout: Duration = .seconds(2)
+    ) async -> Int {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline, exits.withLock({ $0 }) < target {
             try? await Task.sleep(for: .milliseconds(5))
@@ -46,9 +49,11 @@ struct ServerTerminationSignalTests {
     /// so it aborted whichever suite ran next and left no summary.
     @Test func aSecondSignalForcesExitInsteadOfBeingDropped() async {
         let exits = Mutex(0)
-        let signals = ServerTerminationSignals([SIGUSR1], forceExit: {
-            exits.withLock { $0 += 1 }
-        })
+        let signals = ServerTerminationSignals(
+            [SIGUSR1],
+            forceExit: {
+                exits.withLock { $0 += 1 }
+            })
         let waiter = Task {
             await signals.wait()
         }
@@ -73,9 +78,11 @@ struct ServerTerminationSignalTests {
     /// forced exit for each later one.
     @Test func repeatedDeliveryKeepsTheFirstSignalAndForcesExitOnce() async {
         let exits = Mutex(0)
-        let signals = ServerTerminationSignals([SIGUSR1], forceExit: {
-            exits.withLock { $0 += 1 }
-        })
+        let signals = ServerTerminationSignals(
+            [SIGUSR1],
+            forceExit: {
+                exits.withLock { $0 += 1 }
+            })
         let waiter = Task {
             await signals.wait()
         }

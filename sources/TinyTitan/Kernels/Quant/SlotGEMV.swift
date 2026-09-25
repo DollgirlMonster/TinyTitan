@@ -27,9 +27,11 @@ struct SlotGEMV {
     let weightBits: Int
 
     init(context: MetalContext, weightBits: Int) throws {
-        precondition([4, 8].contains(weightBits),
-                     "unsupported slot width \(weightBits)")
-        self.quantized = weightBits == 4
+        precondition(
+            [4, 8].contains(weightBits),
+            "unsupported slot width \(weightBits)")
+        self.quantized =
+            weightBits == 4
             ? .int4(try DequantInt4GEMV(context: context))
             : .affine(try AffineQuantGEMV(context: context, weightBits: weightBits))
         self.bf16 = try BF16GEMV(context: context)
@@ -40,36 +42,41 @@ struct SlotGEMV {
     /// from the slot. Passing it wrongly is silent in the same way the
     /// INT4-only kernels were: the buffers are the right size for whichever
     /// reading you pick, and only the numbers come out wrong.
-    func encode(commandBuffer: MTLCommandBuffer,
-                weights: MTLBuffer, weightsOffset: Int = 0,
-                scales: MTLBuffer, scalesOffset: Int = 0,
-                biases: MTLBuffer, biasesOffset: Int = 0,
-                x: MTLBuffer, xOffset: Int = 0,
-                y: MTLBuffer, yOffset: Int = 0,
-                m: UInt32, n: UInt32,
-                isBF16: Bool = false) throws {
+    func encode(
+        commandBuffer: MTLCommandBuffer,
+        weights: MTLBuffer, weightsOffset: Int = 0,
+        scales: MTLBuffer, scalesOffset: Int = 0,
+        biases: MTLBuffer, biasesOffset: Int = 0,
+        x: MTLBuffer, xOffset: Int = 0,
+        y: MTLBuffer, yOffset: Int = 0,
+        m: UInt32, n: UInt32,
+        isBF16: Bool = false
+    ) throws {
         if isBF16 {
-            try bf16.encode(commandBuffer: commandBuffer,
-                            weights: weights, weightsOffset: weightsOffset,
-                            x: x, xOffset: xOffset, y: y, yOffset: yOffset,
-                            m: m, n: n)
+            try bf16.encode(
+                commandBuffer: commandBuffer,
+                weights: weights, weightsOffset: weightsOffset,
+                x: x, xOffset: xOffset, y: y, yOffset: yOffset,
+                m: m, n: n)
             return
         }
         switch quantized {
         case .int4(let gemv):
-            try gemv.encode(commandBuffer: commandBuffer,
-                            weights: weights, weightsOffset: weightsOffset,
-                            scales: scales, scalesOffset: scalesOffset,
-                            biases: biases, biasesOffset: biasesOffset,
-                            x: x, xOffset: xOffset, y: y, yOffset: yOffset,
-                            m: m, n: n)
+            try gemv.encode(
+                commandBuffer: commandBuffer,
+                weights: weights, weightsOffset: weightsOffset,
+                scales: scales, scalesOffset: scalesOffset,
+                biases: biases, biasesOffset: biasesOffset,
+                x: x, xOffset: xOffset, y: y, yOffset: yOffset,
+                m: m, n: n)
         case .affine(let gemv):
-            try gemv.encode(commandBuffer: commandBuffer,
-                            weights: weights, weightsOffset: weightsOffset,
-                            scales: scales, scalesOffset: scalesOffset,
-                            biases: biases, biasesOffset: biasesOffset,
-                            x: x, xOffset: xOffset, y: y, yOffset: yOffset,
-                            m: m, n: n)
+            try gemv.encode(
+                commandBuffer: commandBuffer,
+                weights: weights, weightsOffset: weightsOffset,
+                scales: scales, scalesOffset: scalesOffset,
+                biases: biases, biasesOffset: biasesOffset,
+                x: x, xOffset: xOffset, y: y, yOffset: yOffset,
+                m: m, n: n)
         }
     }
 }

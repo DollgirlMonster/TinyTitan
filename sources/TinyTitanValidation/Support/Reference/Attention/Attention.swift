@@ -1,5 +1,5 @@
-import Foundation
 import Accelerate
+import Foundation
 
 /// FP32 attention reference. Materializes the full attention matrix per Q
 /// head: compute all `seqLen` scores via `vDSP_dotpr`, apply the optional
@@ -22,8 +22,9 @@ public enum AttentionRef {
         window: Int? = nil,
         scale: Float? = nil
     ) -> [Float] {
-        precondition(numQHeads % numKVHeads == 0,
-                     "numQHeads must be a multiple of numKVHeads")
+        precondition(
+            numQHeads % numKVHeads == 0,
+            "numQHeads must be a multiple of numKVHeads")
         precondition(q.count == numQHeads * headDim)
         precondition(k.count == seqLen * numKVHeads * headDim)
         precondition(v.count == seqLen * numKVHeads * headDim)

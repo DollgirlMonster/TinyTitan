@@ -26,8 +26,10 @@ final class DequantInt4GEMV {
     /// `additionalShapes` compiles extra constant-folded variants for
     /// Qwen 3.6's decode shapes. Measured: an unspecialized
     /// 4096x2048 GEMV runs at 102 GB/s, the specialized one at 141 GB/s.
-    init(context: MetalContext,
-         additionalShapes: [(m: Int, n: Int)] = []) throws {
+    init(
+        context: MetalContext,
+        additionalShapes: [(m: Int, n: Int)] = []
+    ) throws {
         self.pipeline = try context.pipeline(
             "dequant_int4_gemv_simd",
             constants: [],
@@ -37,7 +39,8 @@ final class DequantInt4GEMV {
             constants: [],
             maxTotalThreadsPerThreadgroup: 512)
 
-        let shapes = Self.realDecodeShapes
+        let shapes =
+            Self.realDecodeShapes
             + additionalShapes.map { Shape(m: UInt32($0.m), n: UInt32($0.n)) }
         var specializedPipelines: [Shape: MTLComputePipelineState] = [:]
         var specializedTwoRowPipelines: [Shape: MTLComputePipelineState] = [:]
@@ -63,25 +66,29 @@ final class DequantInt4GEMV {
         self.specializedTwoRowPipelines = specializedTwoRowPipelines
     }
 
-    func encode(commandBuffer: MTLCommandBuffer,
-                weights: MTLBuffer,
-                weightsOffset: Int = 0,
-                scales: MTLBuffer,
-                scalesOffset: Int = 0,
-                biases: MTLBuffer,
-                biasesOffset: Int = 0,
-                x: MTLBuffer,
-                xOffset: Int = 0,
-                y: MTLBuffer,
-                yOffset: Int = 0,
-                m: UInt32,
-                n: UInt32) throws {
-        precondition(n % UInt32(Quantization.groupSize) == 0,
-                     "N must be a multiple of \(Quantization.groupSize)")
+    func encode(
+        commandBuffer: MTLCommandBuffer,
+        weights: MTLBuffer,
+        weightsOffset: Int = 0,
+        scales: MTLBuffer,
+        scalesOffset: Int = 0,
+        biases: MTLBuffer,
+        biasesOffset: Int = 0,
+        x: MTLBuffer,
+        xOffset: Int = 0,
+        y: MTLBuffer,
+        yOffset: Int = 0,
+        m: UInt32,
+        n: UInt32
+    ) throws {
+        precondition(
+            n % UInt32(Quantization.groupSize) == 0,
+            "N must be a multiple of \(Quantization.groupSize)")
         // The kernel reads packed weights through a `ushort*`; the repacker
         // guarantees two-byte sub-tensor alignment but not four-byte alignment.
-        precondition(weightsOffset % 2 == 0,
-                     "dequant_int4_gemv_simd needs a 2-aligned weightsOffset, got \(weightsOffset)")
+        precondition(
+            weightsOffset % 2 == 0,
+            "dequant_int4_gemv_simd needs a 2-aligned weightsOffset, got \(weightsOffset)")
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -105,18 +112,21 @@ final class DequantInt4GEMV {
             width: (Int(m) + Self.rowsPerThreadgroup - 1) / Self.rowsPerThreadgroup,
             height: 1,
             depth: 1)
-        encoder.dispatchThreadgroups(threadgroupCount,
-                                     threadsPerThreadgroup: threadgroupSize)
+        encoder.dispatchThreadgroups(
+            threadgroupCount,
+            threadsPerThreadgroup: threadgroupSize)
         encoder.endEncoding()
     }
 
-    func encodeTwoRows(commandBuffer: MTLCommandBuffer,
-                       weights: MTLBuffer, weightsOffset: Int = 0,
-                       scales: MTLBuffer, scalesOffset: Int = 0,
-                       biases: MTLBuffer, biasesOffset: Int = 0,
-                       x: MTLBuffer, xOffset: Int = 0,
-                       y: MTLBuffer, yOffset: Int = 0,
-                       m: UInt32, n: UInt32) throws {
+    func encodeTwoRows(
+        commandBuffer: MTLCommandBuffer,
+        weights: MTLBuffer, weightsOffset: Int = 0,
+        scales: MTLBuffer, scalesOffset: Int = 0,
+        biases: MTLBuffer, biasesOffset: Int = 0,
+        x: MTLBuffer, xOffset: Int = 0,
+        y: MTLBuffer, yOffset: Int = 0,
+        m: UInt32, n: UInt32
+    ) throws {
         precondition(n % UInt32(Quantization.groupSize) == 0)
         precondition(weightsOffset % 2 == 0)
         try encodeTwoRowsShared(

@@ -1,6 +1,7 @@
-import Testing
 import Foundation
 import Metal
+import Testing
+
 @testable import TinyTitan
 
 /// KV storage grows on demand instead of reserving `maxContext`.
@@ -14,9 +15,10 @@ import Metal
 @Suite struct KVCacheGrowthTests {
     private static func make(maxContext: Int) throws -> KVCacheManager? {
         guard let device = MTLCreateSystemDefaultDevice() else { return nil }
-        return try KVCacheManager(device: device,
-                                  config: .qwen36_35B_A3B,
-                                  maxContext: maxContext)
+        return try KVCacheManager(
+            device: device,
+            config: .qwen36_35B_A3B,
+            maxContext: maxContext)
     }
 
     /// Qwen 3.6 interleaves linear-attention layers, which hold a page-sized
@@ -85,8 +87,9 @@ import Metal
             let slot = kv.kSlot(layer: L, position: position)
             let byte = slot.buffer.contents().advanced(by: slot.offset)
                 .assumingMemoryBound(to: UInt8.self).pointee
-            #expect(byte == UInt8(position % 251),
-                    "token \(position) lost across growth")
+            #expect(
+                byte == UInt8(position % 251),
+                "token \(position) lost across growth")
         }
         #expect(kv.stride(layer: L) == stride, "stride must not change")
     }

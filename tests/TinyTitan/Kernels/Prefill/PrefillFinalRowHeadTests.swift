@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct PrefillFinalRowHeadTests {
     private static func packedAffine(bits: Int, rows: Int, columns: Int) -> [UInt8] {
@@ -78,53 +79,61 @@ import TinyTitanValidationSupport
         let finalRowHead = try PrefillFinalRowHeadInt4(context: ctx, maxD: d)
 
         guard let hiddenBuf = Fp16Buffer.make(ctx.device, halves: hidden),
-              let normBuf = ctx.device.makeBuffer(bytes: normBits,
-                                                  length: normBits.count * MemoryLayout<UInt16>.size,
-                                                  options: .storageModeShared),
-              let wBuf = ctx.device.makeBuffer(bytes: packed,
-                                               length: packed.count,
-                                               options: .storageModeShared),
-              let sBuf = ctx.device.makeBuffer(bytes: scales,
-                                               length: scales.count * MemoryLayout<UInt16>.size,
-                                               options: .storageModeShared),
-              let bBuf = ctx.device.makeBuffer(bytes: biases,
-                                               length: biases.count * MemoryLayout<UInt16>.size,
-                                               options: .storageModeShared),
-              let scalarNormed = Fp16Buffer.make(ctx.device, count: d),
-              let scalarLogits = Fp16Buffer.make(ctx.device, count: vocab),
-              let blockLogits = Fp16Buffer.make(ctx.device, count: vocab) else {
+            let normBuf = ctx.device.makeBuffer(
+                bytes: normBits,
+                length: normBits.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared),
+            let wBuf = ctx.device.makeBuffer(
+                bytes: packed,
+                length: packed.count,
+                options: .storageModeShared),
+            let sBuf = ctx.device.makeBuffer(
+                bytes: scales,
+                length: scales.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared),
+            let bBuf = ctx.device.makeBuffer(
+                bytes: biases,
+                length: biases.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared),
+            let scalarNormed = Fp16Buffer.make(ctx.device, count: d),
+            let scalarLogits = Fp16Buffer.make(ctx.device, count: vocab),
+            let blockLogits = Fp16Buffer.make(ctx.device, count: vocab)
+        else {
             Issue.record("alloc failed")
             return
         }
 
         let cb = try #require(ctx.queue.makeCommandBuffer())
-        try scalarNorm.encodeBF16W(commandBuffer: cb,
-                               x: hiddenBuf,
-                               xOffset: selectedRow * rowStride * MemoryLayout<Float16>.size,
-                               weight: normBuf,
-                               out: scalarNormed,
-                               d: UInt32(d),
-                               eps: eps)
-        try scalarHead.encode(commandBuffer: cb,
-                          weights: wBuf,
-                          scales: sBuf,
-                          biases: bBuf,
-                          x: scalarNormed,
-                          y: scalarLogits,
-                          m: UInt32(vocab),
-                          n: UInt32(d))
-        try finalRowHead.encodeLogits(commandBuffer: cb,
-                                  hiddenBlock: hiddenBuf,
-                                  row: selectedRow,
-                                  rowStrideElements: rowStride,
-                                  normWeight: normBuf,
-                                  weights: wBuf,
-                                  scales: sBuf,
-                                  biases: bBuf,
-                                  logits: blockLogits,
-                                  d: UInt32(d),
-                                  vocab: UInt32(vocab),
-                                  rmsEps: eps)
+        try scalarNorm.encodeBF16W(
+            commandBuffer: cb,
+            x: hiddenBuf,
+            xOffset: selectedRow * rowStride * MemoryLayout<Float16>.size,
+            weight: normBuf,
+            out: scalarNormed,
+            d: UInt32(d),
+            eps: eps)
+        try scalarHead.encode(
+            commandBuffer: cb,
+            weights: wBuf,
+            scales: sBuf,
+            biases: bBuf,
+            x: scalarNormed,
+            y: scalarLogits,
+            m: UInt32(vocab),
+            n: UInt32(d))
+        try finalRowHead.encodeLogits(
+            commandBuffer: cb,
+            hiddenBlock: hiddenBuf,
+            row: selectedRow,
+            rowStrideElements: rowStride,
+            normWeight: normBuf,
+            weights: wBuf,
+            scales: sBuf,
+            biases: bBuf,
+            logits: blockLogits,
+            d: UInt32(d),
+            vocab: UInt32(vocab),
+            rmsEps: eps)
         cb.commit()
         cb.waitUntilCompleted()
 
@@ -156,10 +165,12 @@ import TinyTitanValidationSupport
         }
         let packed = Self.packedAffine(bits: bits, rows: vocab, columns: d)
         let groups = d / Quantization.groupSize
-        let scales = [UInt16](repeating: Quantization.bf16Bits(0.002),
-                              count: vocab * groups)
-        let biases = [UInt16](repeating: Quantization.bf16Bits(-0.01),
-                              count: vocab * groups)
+        let scales = [UInt16](
+            repeating: Quantization.bf16Bits(0.002),
+            count: vocab * groups)
+        let biases = [UInt16](
+            repeating: Quantization.bf16Bits(-0.01),
+            count: vocab * groups)
 
         let context = try MetalContext()
         let scalarNorm = try RMSNorm(context: context)
@@ -169,21 +180,23 @@ import TinyTitanValidationSupport
             maxD: d,
             weightBits: bits)
         guard let hiddenBuffer = Fp16Buffer.make(context.device, halves: hidden),
-              let normBuffer = context.device.makeBuffer(
+            let normBuffer = context.device.makeBuffer(
                 bytes: normBits,
                 length: normBits.count * MemoryLayout<UInt16>.stride),
-              let weights = context.device.makeBuffer(bytes: packed,
-                                                       length: packed.count),
-              let scaleBuffer = context.device.makeBuffer(
+            let weights = context.device.makeBuffer(
+                bytes: packed,
+                length: packed.count),
+            let scaleBuffer = context.device.makeBuffer(
                 bytes: scales,
                 length: scales.count * MemoryLayout<UInt16>.stride),
-              let biasBuffer = context.device.makeBuffer(
+            let biasBuffer = context.device.makeBuffer(
                 bytes: biases,
                 length: biases.count * MemoryLayout<UInt16>.stride),
-              let normed = Fp16Buffer.make(context.device, count: d),
-              let expected = Fp16Buffer.make(context.device, count: vocab),
-              let actual = Fp16Buffer.make(context.device, count: vocab),
-              let commandBuffer = context.queue.makeCommandBuffer() else {
+            let normed = Fp16Buffer.make(context.device, count: d),
+            let expected = Fp16Buffer.make(context.device, count: vocab),
+            let actual = Fp16Buffer.make(context.device, count: vocab),
+            let commandBuffer = context.queue.makeCommandBuffer()
+        else {
             Issue.record("allocation failed")
             return
         }
@@ -196,31 +209,34 @@ import TinyTitanValidationSupport
             out: normed,
             d: UInt32(d),
             eps: eps)
-        try scalarHead.encode(commandBuffer: commandBuffer,
-                          weights: weights,
-                          scales: scaleBuffer,
-                          biases: biasBuffer,
-                          x: normed,
-                          y: expected,
-                          m: UInt32(vocab),
-                          n: UInt32(d))
-        try finalRowHead.encodeLogits(commandBuffer: commandBuffer,
-                                  hiddenBlock: hiddenBuffer,
-                                  row: selectedRow,
-                                  rowStrideElements: rowStride,
-                                  normWeight: normBuffer,
-                                  weights: weights,
-                                  scales: scaleBuffer,
-                                  biases: biasBuffer,
-                                  logits: actual,
-                                  d: UInt32(d),
-                                  vocab: UInt32(vocab),
-                                  rmsEps: eps)
+        try scalarHead.encode(
+            commandBuffer: commandBuffer,
+            weights: weights,
+            scales: scaleBuffer,
+            biases: biasBuffer,
+            x: normed,
+            y: expected,
+            m: UInt32(vocab),
+            n: UInt32(d))
+        try finalRowHead.encodeLogits(
+            commandBuffer: commandBuffer,
+            hiddenBlock: hiddenBuffer,
+            row: selectedRow,
+            rowStrideElements: rowStride,
+            normWeight: normBuffer,
+            weights: weights,
+            scales: scaleBuffer,
+            biases: biasBuffer,
+            logits: actual,
+            d: UInt32(d),
+            vocab: UInt32(vocab),
+            rmsEps: eps)
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         if let error = commandBuffer.error { throw error }
 
-        #expect(Fp16Buffer.read(actual, count: vocab)
+        #expect(
+            Fp16Buffer.read(actual, count: vocab)
                 == Fp16Buffer.read(expected, count: vocab))
     }
 }

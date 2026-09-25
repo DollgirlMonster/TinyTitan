@@ -131,17 +131,20 @@ extension RealForwardRunner {
     /// Appends one exact pre-plan routing/cache observation. `resident` is
     /// captured before cache planning so a later miss reservation cannot make
     /// the trace falsely report an expert as absent.
-    func recordPrefetchTrace(layer: Int,
-                                     position: Int,
-                                     experts: [Int],
-                                     misses: [Int],
-                                     resident: [Int],
-                                     nextLayerPrediction: [Int],
-                                     next2LayerPrediction: [Int] = [],
-                                     nextLayerWeights: [Float] = []) {
+    func recordPrefetchTrace(
+        layer: Int,
+        position: Int,
+        experts: [Int],
+        misses: [Int],
+        resident: [Int],
+        nextLayerPrediction: [Int],
+        next2LayerPrediction: [Int] = [],
+        nextLayerWeights: [Float] = []
+    ) {
         guard prefetchTraceFD >= 0 else { return }
         let weights = nextLayerWeights.map { String(format: "%.4f", $0) }.joined(separator: ",")
-        let line = "{\"position\":\(position),\"layer\":\(layer),\"experts\":\(experts),\"misses\":\(misses),\"resident\":\(resident),\"next_layer_prediction\":\(nextLayerPrediction),\"next2_layer_prediction\":\(next2LayerPrediction),\"next_weights\":[\(weights)]}\n"
+        let line =
+            "{\"position\":\(position),\"layer\":\(layer),\"experts\":\(experts),\"misses\":\(misses),\"resident\":\(resident),\"next_layer_prediction\":\(nextLayerPrediction),\"next2_layer_prediction\":\(next2LayerPrediction),\"next_weights\":[\(weights)]}\n"
         let bytes = Array(line.utf8)
         var written = 0
         while written < bytes.count {
@@ -154,19 +157,23 @@ extension RealForwardRunner {
         }
     }
 
-    func shouldSkipRDAdvice(position: Int,
-                                    requestedMisses: Int,
-                                    estimatedBytes: UInt64,
-                                    canOverlapUsefulGPUWork: Bool) -> ExpertIOAdviceResult? {
+    func shouldSkipRDAdvice(
+        position: Int,
+        requestedMisses: Int,
+        estimatedBytes: UInt64,
+        canOverlapUsefulGPUWork: Bool
+    ) -> ExpertIOAdviceResult? {
         switch rdadvisePolicyMode {
         case .bounded:
             if position <= rdadviseSkipUntilPosition {
-                return ExpertIOAdviceResult.skipped(requested: requestedMisses,
-                                                    bytes: estimatedBytes)
+                return ExpertIOAdviceResult.skipped(
+                    requested: requestedMisses,
+                    bytes: estimatedBytes)
             }
             if requestedMisses > Self.rdadviseBoundedMissCap {
-                return ExpertIOAdviceResult.skipped(requested: requestedMisses,
-                                                    bytes: estimatedBytes)
+                return ExpertIOAdviceResult.skipped(
+                    requested: requestedMisses,
+                    bytes: estimatedBytes)
             }
             return nil
         case .adaptive:
@@ -182,15 +189,18 @@ extension RealForwardRunner {
                 canOverlapUsefulGPUWork: canOverlapUsefulGPUWork)
             rdadviseAdaptivePositionBytes = cumulativeEstimatedBytes
             guard shouldSkip else { return nil }
-            return ExpertIOAdviceResult.skipped(requested: requestedMisses,
-                                                bytes: estimatedBytes)
+            return ExpertIOAdviceResult.skipped(
+                requested: requestedMisses,
+                bytes: estimatedBytes)
         case .default, .off:
             return nil
         }
     }
 
-    func updateRDAdvicePolicy(after result: ExpertIOAdviceResult,
-                                      position: Int) {
+    func updateRDAdvicePolicy(
+        after result: ExpertIOAdviceResult,
+        position: Int
+    ) {
         switch rdadvisePolicyMode {
         case .bounded:
             // Skip window is inclusive of `position`, matching the adaptive

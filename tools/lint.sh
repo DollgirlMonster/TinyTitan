@@ -14,6 +14,7 @@
 #   shell-portability   scripts run on the system bash (3.2), not just the dev one
 #   shell-lint          shellcheck warnings-as-errors over every script, pinned version
 #   swiftlint           SwiftLint violations-as-errors under the committed config
+#   swift-format        formatting enforced under the committed .swift-format
 #   javascript          eslint + prettier --check over the plugin packages, pinned
 #   python              ruff check + ruff format --check under pyproject.toml,
 #                       with the pinned ruff version
@@ -247,11 +248,15 @@ check_unchecked_sendable() {
       lines.each_with_index do |line, i|
         next unless line.include?("@unchecked Sendable")
         next if line =~ /^\s*(\/\/|\/\/\/)/      # a comment mentioning it
-        # Contiguous comment block directly above, declaration line excluded.
+        # The invariant comment sits above the declaration, and the declaration
+        # may wrap over several lines (swift-format breaks a long inheritance
+        # clause), so walk the whole contiguous non-blank block above and collect
+        # its comments. The marker is still required; only its distance from the
+        # `@unchecked Sendable` token changed.
         j = i - 1
         block = []
-        while j >= 0 && lines[j] =~ /^\s*(\/\/|\/\/\/)/
-          block << lines[j]
+        while j >= 0 && !lines[j].strip.empty?
+          block << lines[j] if lines[j] =~ /^\s*(\/\/|\/\/\/)/
           j -= 1
         end
         text = block.join(" ").downcase
@@ -648,6 +653,36 @@ check_swiftlint() {
   return 0
 }
 
+# --- swift-format -----------------------------------------------------------
+# The committed `.swift-format` is the formatting standard: 4-space indentation
+# (the tree's actual style; swift-format defaults to 2) and
+# `AlwaysUseLowerCamelCase` off, because the numerical vocabulary (`D`, `N`,
+# `Dv`, `FmoE`, `qwen36_8bit`, ...) is the same deliberate naming the
+# `.swiftlint.yml` identifier_name decision already records (AUD-018).
+# Everything else is the formatter's default. The binary is the one bundled with
+# the pinned Xcode 27 / Swift 6.4 toolchain, so the toolchain pin IS the version
+# pin -- that build's `swift-format --version` reports the branch ("main"), which
+# is why there is no separate SWIFT_FORMAT_PIN.
+check_swift_format() {
+  echo "== swift-format: formatting is enforced under the committed .swift-format =="
+  if ! command -v xcrun >/dev/null 2>&1 || ! xcrun --find swift-format >/dev/null 2>&1; then
+    echo "  FAIL: swift-format is not available from the toolchain (needs Xcode 27 / Swift 6.4)"
+    status=1
+    return 1
+  fi
+  local output
+  if ! output="$(cd "$ROOT" && xcrun swift-format lint --strict --recursive \
+      sources tests benchmark Package.swift 2>&1)"; then
+    printf '%s\n' "$output" | sed "s|$ROOT/||" | head -30
+    echo "  FAIL: swift-format found formatting drift"
+    echo "        fix: xcrun swift-format format --in-place --recursive sources tests benchmark Package.swift"
+    status=1
+    return 1
+  fi
+  echo "  ok (xcrun swift-format, --strict clean)"
+  return 0
+}
+
 # --- javascript -------------------------------------------------------------
 # The two DSH plugin packages are npm packages with no runtime dependencies.
 # ESLint and Prettier are pinned exactly in each package.json and locked in its
@@ -721,7 +756,7 @@ check_javascript() {
 }
 
 case "$want" in
-  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_shellcheck; check_swiftlint; check_javascript; check_python ;;
+  all)         check_force_cast; check_func_length; check_unchecked_sendable; check_converter_expert_order; check_arch_path; check_shell_portability; check_shellcheck; check_swiftlint; check_swift_format; check_javascript; check_python ;;
   force-cast)  check_force_cast ;;
   func-length) check_func_length ;;
   sendable)    check_unchecked_sendable ;;
@@ -730,10 +765,12 @@ case "$want" in
   shell)       check_shell_portability ;;
   shellcheck)  check_shellcheck ;;
   swiftlint)   check_swiftlint ;;
+  swift-format) check_swift_format ;;
+  format)      check_swift_format ;;
   javascript)  check_javascript ;;
   js)          check_javascript ;;
   python)      check_python ;;
-  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|shellcheck|swiftlint|javascript|python)" >&2; exit 2 ;;
+  *) echo "unknown check: $want (all|force-cast|func-length|sendable|converter|arch-path|shell|shellcheck|swiftlint|swift-format|javascript|python)" >&2; exit 2 ;;
 esac
 
 exit $status

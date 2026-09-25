@@ -49,7 +49,8 @@ extension ModelFamily {
         effort: ModelReasoningEffort?
     ) -> ModelReasoningEffort? {
         guard thinkingMode.isEnabled,
-              case .thinkingWithEffortLevels(let defaultEffort) = reasoningControl else {
+            case .thinkingWithEffortLevels(let defaultEffort) = reasoningControl
+        else {
             return nil
         }
         return effort ?? defaultEffort
@@ -58,8 +59,10 @@ extension ModelFamily {
     /// Rejects a reasoning-effort request this family's template does not
     /// define. A nil effort always passes: it means the binary control, or
     /// the template's own default level for effort-aware families.
-    public func validateReasoning(thinkingMode: ModelThinkingMode,
-                                  effort: ModelReasoningEffort?) throws {
+    public func validateReasoning(
+        thinkingMode: ModelThinkingMode,
+        effort: ModelReasoningEffort?
+    ) throws {
         guard let effort else { return }
         switch reasoningControl {
         case .binaryThinking:
@@ -81,7 +84,8 @@ extension ModelFamily {
     /// Runtime settings for a level; throws for a level the family does not
     /// support.
     public func runtimeReasoning(for level: ReasoningLevel) throws
-        -> (thinking: ModelThinkingMode, effort: ModelReasoningEffort?) {
+        -> (thinking: ModelThinkingMode, effort: ModelReasoningEffort?)
+    {
         try reasoningControl.runtimeReasoning(for: level, family: rawValue)
     }
 }
@@ -143,7 +147,8 @@ extension ReasoningLevel {
         case "": return nil
         case "0", "off", "false", "no", "none", "disabled", "nothink", "no_think":
             return .off
-        case "1", "on", "true", "yes", "enabled", "think", "thinking", "auto", "adaptive", "default":
+        case "1", "on", "true", "yes", "enabled", "think", "thinking", "auto", "adaptive",
+            "default":
             return .on
         case "minimal", "min", "least", "tiny":
             return .minimal
@@ -169,8 +174,9 @@ extension ReasoningLevel {
 }
 
 public enum ReasoningLevelError: Error, Equatable, CustomStringConvertible {
-    case unsupported(family: String, level: ReasoningLevel,
-                     supported: [ReasoningLevel])
+    case unsupported(
+        family: String, level: ReasoningLevel,
+        supported: [ReasoningLevel])
 
     public var description: String {
         switch self {
@@ -221,7 +227,8 @@ extension ModelReasoningControl {
     /// Shared by the GPU and CPU families so the two cannot disagree on what
     /// a level means.
     func runtimeReasoning(for level: ReasoningLevel, family: String) throws
-        -> (thinking: ModelThinkingMode, effort: ModelReasoningEffort?) {
+        -> (thinking: ModelThinkingMode, effort: ModelReasoningEffort?)
+    {
         let supported = supportedLevels
         guard supported.contains(level) else {
             throw ReasoningLevelError.unsupported(

@@ -1,8 +1,9 @@
 import Foundation
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct MoEFusedFFNTests {
     private static let dimension = 128
@@ -18,20 +19,24 @@ import TinyTitanValidationSupport
     func affineRoutedPipelineSupportsQwenBits(bits: Int) throws {
         let blobs = (0..<Self.topK).map { _ in Self.makeConstantBlob(bits: bits) }
         let context = try MetalContext()
-        let kernel = try MoE(context: context, siluActivation: true,
-                             routedWeightBits: bits,
-                             specializedD: UInt32(Self.dimension),
-                             specializedF: UInt32(Self.intermediate),
-                             specializedNumExperts: 256)
+        let kernel = try MoE(
+            context: context, siluActivation: true,
+            routedWeightBits: bits,
+            specializedD: UInt32(Self.dimension),
+            specializedF: UInt32(Self.intermediate),
+            specializedNumExperts: 256)
         let routed = try blobs.map {
             try #require(context.device.makeBuffer(bytes: $0.bytes, length: $0.bytes.count))
         }
-        let x = try #require(Fp16Buffer.make(
-            context.device, halves: [Float16](repeating: 1, count: Self.dimension)))
-        let acts = try #require(Fp16Buffer.make(
-            context.device, count: Self.topK * Self.intermediate))
-        let weights = try #require(Fp16Buffer.make(
-            context.device, halves: [Float16](repeating: 0.125, count: Self.topK)))
+        let x = try #require(
+            Fp16Buffer.make(
+                context.device, halves: [Float16](repeating: 1, count: Self.dimension)))
+        let acts = try #require(
+            Fp16Buffer.make(
+                context.device, count: Self.topK * Self.intermediate))
+        let weights = try #require(
+            Fp16Buffer.make(
+                context.device, halves: [Float16](repeating: 0.125, count: Self.topK)))
         let residual = try #require(Fp16Buffer.make(context.device, count: Self.dimension))
         let output = try #require(Fp16Buffer.make(context.device, count: Self.dimension))
         memset(residual.contents(), 0, residual.length)
@@ -47,7 +52,8 @@ import TinyTitanValidationSupport
             routedOffsets: blobs[0].offsets, acts: acts,
             routingWeights: weights, residual: residual, y: output,
             d: 128, f: 64, topK: 8)
-        cb.commit(); cb.waitUntilCompleted()
+        cb.commit()
+        cb.waitUntilCompleted()
         #expect(cb.error == nil)
         let expected = Float(2) / (1 + exp(-Float(2)))
         let actual = Fp16Buffer.read(output, count: Self.dimension)
@@ -102,31 +108,33 @@ import TinyTitanValidationSupport
         let context = try MetalContext()
         let kernel = try MoE(context: context)
         let routedBuffers = blobs.compactMap {
-            context.device.makeBuffer(bytes: $0.bytes,
-                                      length: $0.bytes.count,
-                                      options: .storageModeShared)
+            context.device.makeBuffer(
+                bytes: $0.bytes,
+                length: $0.bytes.count,
+                options: .storageModeShared)
         }
         guard routedBuffers.count == Self.topK,
-              let xBuffer = Fp16Buffer.make(context.device, values: x),
-              let residualBuffer = Fp16Buffer.make(context.device, values: residual),
-              let routingBuffer = Fp16Buffer.make(context.device, values: routingWeights),
-              let fullActs = Fp16Buffer.make(
+            let xBuffer = Fp16Buffer.make(context.device, values: x),
+            let residualBuffer = Fp16Buffer.make(context.device, values: residual),
+            let routingBuffer = Fp16Buffer.make(context.device, values: routingWeights),
+            let fullActs = Fp16Buffer.make(
                 context.device, count: Self.topK * Self.intermediate),
-              let splitActs = Fp16Buffer.make(
+            let splitActs = Fp16Buffer.make(
                 context.device, count: Self.topK * Self.intermediate),
-              let fullOutput = Fp16Buffer.make(context.device, count: Self.dimension),
-              let splitOutput = Fp16Buffer.make(context.device, count: Self.dimension),
-              let lowSlots = context.device.makeBuffer(
+            let fullOutput = Fp16Buffer.make(context.device, count: Self.dimension),
+            let splitOutput = Fp16Buffer.make(context.device, count: Self.dimension),
+            let lowSlots = context.device.makeBuffer(
                 bytes: [UInt32](0...3),
                 length: 4 * MemoryLayout<UInt32>.stride,
                 options: .storageModeShared),
-              let highSlots = context.device.makeBuffer(
+            let highSlots = context.device.makeBuffer(
                 bytes: [UInt32](4...7),
                 length: 4 * MemoryLayout<UInt32>.stride,
                 options: .storageModeShared),
-              let argumentBuffer = kernel.makeRoutedArgumentBuffer(
+            let argumentBuffer = kernel.makeRoutedArgumentBuffer(
                 routedBlobs: routedBuffers,
-                topK: UInt32(Self.topK)) else {
+                topK: UInt32(Self.topK))
+        else {
             Issue.record("buffer allocation failed")
             return
         }
@@ -159,8 +167,10 @@ import TinyTitanValidationSupport
         #expect(fullCommand.error == nil)
 
         let splitCommand = try #require(context.queue.makeCommandBuffer())
-        for (slots, activeSlots) in [([UInt32](0...3), lowSlots),
-                                     ([UInt32](4...7), highSlots)] {
+        for (slots, activeSlots) in [
+            ([UInt32](0...3), lowSlots),
+            ([UInt32](4...7), highSlots),
+        ] {
             try kernel.encodeRoutedPersistentPhase1SubsetU16Load(
                 commandBuffer: splitCommand,
                 routedArgBuffer: argumentBuffer,
@@ -194,8 +204,9 @@ import TinyTitanValidationSupport
         let full = Fp16Buffer.read(fullOutput, count: Self.dimension)
         let split = Fp16Buffer.read(splitOutput, count: Self.dimension)
         #expect(full == split)
-        #expect(RelError.compute(actual: full, reference: expected)
-            < Tolerance.fp16ChainedReduction)
+        #expect(
+            RelError.compute(actual: full, reference: expected)
+                < Tolerance.fp16ChainedReduction)
     }
 
     @Test("Specialized decode pipelines honour a top-k other than 8")
@@ -214,11 +225,14 @@ import TinyTitanValidationSupport
             (0..<rows).map { _ in (0..<columns).map { _ in rng.uniform(-0.4, 0.4) } }
         }
         let gates = (0..<k).map { _ in
-            matrix(rows: Self.intermediate, columns: Self.dimension) }
+            matrix(rows: Self.intermediate, columns: Self.dimension)
+        }
         let ups = (0..<k).map { _ in
-            matrix(rows: Self.intermediate, columns: Self.dimension) }
+            matrix(rows: Self.intermediate, columns: Self.dimension)
+        }
         let downs = (0..<k).map { _ in
-            matrix(rows: Self.dimension, columns: Self.intermediate) }
+            matrix(rows: Self.dimension, columns: Self.intermediate)
+        }
         let x = (0..<Self.dimension).map { _ in Float(Float16(rng.uniform(-0.5, 0.5))) }
         let residual = [Float](repeating: 0, count: Self.dimension)
         // Descending weights, so dropping the last slots is a small, plausible
@@ -233,26 +247,30 @@ import TinyTitanValidationSupport
             d: Self.dimension, f: Self.intermediate)
 
         let blobs = (0..<k).map {
-            Self.makeBlob(gate: gates[$0], up: ups[$0], down: downs[$0]) }
+            Self.makeBlob(gate: gates[$0], up: ups[$0], down: downs[$0])
+        }
         let context = try MetalContext()
         // Specializing on this test's own shape is what forces the
         // constant-folded pipelines to be the ones exercised.
-        let kernel = try MoE(context: context,
-                             specializedD: UInt32(Self.dimension),
-                             specializedF: UInt32(Self.intermediate),
-                             topKExperts: k)
+        let kernel = try MoE(
+            context: context,
+            specializedD: UInt32(Self.dimension),
+            specializedF: UInt32(Self.intermediate),
+            topKExperts: k)
         let routedBuffers = blobs.compactMap {
-            context.device.makeBuffer(bytes: $0.bytes, length: $0.bytes.count,
-                                      options: .storageModeShared)
+            context.device.makeBuffer(
+                bytes: $0.bytes, length: $0.bytes.count,
+                options: .storageModeShared)
         }
         guard routedBuffers.count == k,
-              let xBuffer = Fp16Buffer.make(context.device, values: x),
-              let residualBuffer = Fp16Buffer.make(context.device, values: residual),
-              let routingBuffer = Fp16Buffer.make(context.device, values: routingWeights),
-              let acts = Fp16Buffer.make(context.device, count: k * Self.intermediate),
-              let output = Fp16Buffer.make(context.device, count: Self.dimension),
-              let argumentBuffer = kernel.makeRoutedArgumentBuffer(
-                routedBlobs: routedBuffers, topK: UInt32(k)) else {
+            let xBuffer = Fp16Buffer.make(context.device, values: x),
+            let residualBuffer = Fp16Buffer.make(context.device, values: residual),
+            let routingBuffer = Fp16Buffer.make(context.device, values: routingWeights),
+            let acts = Fp16Buffer.make(context.device, count: k * Self.intermediate),
+            let output = Fp16Buffer.make(context.device, count: Self.dimension),
+            let argumentBuffer = kernel.makeRoutedArgumentBuffer(
+                routedBlobs: routedBuffers, topK: UInt32(k))
+        else {
             Issue.record("buffer allocation failed")
             return
         }
@@ -277,24 +295,32 @@ import TinyTitanValidationSupport
         // zero before the fix, so this names the failure directly.
         let allActs = Fp16Buffer.read(acts, count: k * Self.intermediate)
         for slot in 0..<k {
-            let slice = allActs[slot * Self.intermediate ..< (slot + 1) * Self.intermediate]
-            #expect(slice.contains { $0 != 0 },
-                    "expert slot \(slot) of \(k) was never written")
+            let slice = allActs[slot * Self.intermediate..<(slot + 1) * Self.intermediate]
+            #expect(
+                slice.contains { $0 != 0 },
+                "expert slot \(slot) of \(k) was never written")
         }
-        #expect(RelError.compute(actual: Fp16Buffer.read(output, count: Self.dimension),
-                                 reference: expected)
-            < Tolerance.fp16ChainedReduction)
+        #expect(
+            RelError.compute(
+                actual: Fp16Buffer.read(output, count: Self.dimension),
+                reference: expected)
+                < Tolerance.fp16ChainedReduction)
     }
 
-    private static func makeBlob(gate: [[Float]],
-                                 up: [[Float]],
-                                 down: [[Float]]) -> RoutedBlob {
+    private static func makeBlob(
+        gate: [[Float]],
+        up: [[Float]],
+        down: [[Float]]
+    ) -> RoutedBlob {
         func packed(_ rows: [[Float]])
-            -> (weights: [UInt8], scales: [UInt16], biases: [UInt16]) {
+            -> (weights: [UInt8], scales: [UInt16], biases: [UInt16])
+        {
             let quantized = rows.map { Quantization.quantizeInt4Affine($0) }
-            return (quantized.flatMap(\.packed),
-                    quantized.flatMap(\.scales),
-                    quantized.flatMap(\.biases))
+            return (
+                quantized.flatMap(\.packed),
+                quantized.flatMap(\.scales),
+                quantized.flatMap(\.biases)
+            )
         }
         var bytes = [UInt8]()
         func append(_ values: [UInt8]) { bytes.append(contentsOf: values) }
@@ -307,15 +333,24 @@ import TinyTitanValidationSupport
         let gateValues = packed(gate)
         let upValues = packed(up)
         let downValues = packed(down)
-        let gateW = UInt32(bytes.count); append(gateValues.weights)
-        let gateS = UInt32(bytes.count); append(gateValues.scales)
-        let gateB = UInt32(bytes.count); append(gateValues.biases)
-        let upW = UInt32(bytes.count); append(upValues.weights)
-        let upS = UInt32(bytes.count); append(upValues.scales)
-        let upB = UInt32(bytes.count); append(upValues.biases)
-        let downW = UInt32(bytes.count); append(downValues.weights)
-        let downS = UInt32(bytes.count); append(downValues.scales)
-        let downB = UInt32(bytes.count); append(downValues.biases)
+        let gateW = UInt32(bytes.count)
+        append(gateValues.weights)
+        let gateS = UInt32(bytes.count)
+        append(gateValues.scales)
+        let gateB = UInt32(bytes.count)
+        append(gateValues.biases)
+        let upW = UInt32(bytes.count)
+        append(upValues.weights)
+        let upS = UInt32(bytes.count)
+        append(upValues.scales)
+        let upB = UInt32(bytes.count)
+        append(upValues.biases)
+        let downW = UInt32(bytes.count)
+        append(downValues.weights)
+        let downS = UInt32(bytes.count)
+        append(downValues.scales)
+        let downB = UInt32(bytes.count)
+        append(downValues.biases)
         return RoutedBlob(
             bytes: bytes,
             offsets: MoEExpertOffsets(
@@ -352,9 +387,11 @@ import TinyTitanValidationSupport
         let downW = appendZeros(rows: dimension, cols: intermediate)
         let downS = appendBF16(0, count: dimension * intermediate / 64)
         let downB = appendBF16(1.0 / 64.0, count: dimension * intermediate / 64)
-        return RoutedBlob(bytes: bytes, offsets: MoEExpertOffsets(
-            gateWOff: gateW, gateSOff: gateS, gateBOff: gateB,
-            upWOff: upW, upSOff: upS, upBOff: upB,
-            downWOff: downW, downSOff: downS, downBOff: downB))
+        return RoutedBlob(
+            bytes: bytes,
+            offsets: MoEExpertOffsets(
+                gateWOff: gateW, gateSOff: gateS, gateBOff: gateB,
+                upWOff: upW, upSOff: upS, upBOff: upB,
+                downWOff: downW, downSOff: downS, downBOff: downB))
     }
 }

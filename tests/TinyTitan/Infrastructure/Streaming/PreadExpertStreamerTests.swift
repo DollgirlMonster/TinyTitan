@@ -1,7 +1,8 @@
-import Testing
-import Foundation
 import Darwin
+import Foundation
 import Metal
+import Testing
+
 @testable import TinyTitan
 
 // Unit tests for the synchronous `pread` backend: round-trip correctness,
@@ -41,11 +42,12 @@ import Metal
     }
 
     static func makeLayout(path: String) -> StreamLayout {
-        StreamLayout(path: path,
-                     streamOffset: streamOffset,
-                     streamSize: streamSize,
-                     expertsPerLayer: numExperts,
-                     expertStride: UInt64(expertStride))
+        StreamLayout(
+            path: path,
+            streamOffset: streamOffset,
+            streamSize: streamSize,
+            expertsPerLayer: numExperts,
+            expertStride: UInt64(expertStride))
     }
 
     static func bytes(of buffer: MTLBuffer, offset: UInt64, count: Int) -> [UInt8] {

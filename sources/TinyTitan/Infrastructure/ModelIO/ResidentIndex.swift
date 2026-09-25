@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 import TinyTitanFormat
 
 /// On-disk header. `indexSize` is the full byte size of the leading index
@@ -46,8 +46,10 @@ enum ResidentIndexReader {
     /// `pread` the header + index region out of `model_weights.bin`. The
     /// tensor data region (starting at byte `header.indexSize`) is **not**
     /// read here — that's the resident-buffer materialization job.
-    static func load(fileURL: URL,
-                            maxBytes: UInt64 = defaultMaxBytes) throws -> ResidentIndex {
+    static func load(
+        fileURL: URL,
+        maxBytes: UInt64 = defaultMaxBytes
+    ) throws -> ResidentIndex {
         let fd = open(fileURL.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else {
             throw ModelError.posixFailed(call: "open(\(fileURL.path))", errno: errno)
@@ -61,18 +63,22 @@ enum ResidentIndexReader {
             throw ModelError.indexCorrupt(detail: "resident index is not a regular file")
         }
 
-        return try load(fileDescriptor: fd, displayPath: fileURL.path,
-                        maxBytes: maxBytes)
+        return try load(
+            fileDescriptor: fd, displayPath: fileURL.path,
+            maxBytes: maxBytes)
     }
 
-    package static func load(fileDescriptor fd: Int32,
-                             displayPath: String,
-                             maxBytes: UInt64 = defaultMaxBytes) throws -> ResidentIndex {
+    package static func load(
+        fileDescriptor fd: Int32,
+        displayPath: String,
+        maxBytes: UInt64 = defaultMaxBytes
+    ) throws -> ResidentIndex {
         let headerBytes = GTurboFormatV1.residentHeaderBytes
         var headerBuf = [UInt8](repeating: 0, count: headerBytes)
         try headerBuf.withUnsafeMutableBytes {
-            try preadExactly(fd: fd, into: $0, offset: 0,
-                             field: "IndexHeader")
+            try preadExactly(
+                fd: fd, into: $0, offset: 0,
+                field: "IndexHeader")
         }
         let wireHeader: GTurboResidentIndexHeaderV1
         do {
@@ -94,7 +100,8 @@ enum ResidentIndexReader {
             throw ModelError.posixFailed(call: "fstat(\(displayPath))", errno: errno)
         }
         guard wireHeader.indexSize <= UInt64(st.st_size),
-              wireHeader.indexSize <= UInt64(Int.max) else {
+            wireHeader.indexSize <= UInt64(Int.max)
+        else {
             throw ModelError.indexCorrupt(detail: "index region exceeds file size")
         }
         // The payload region must fit the real file too, not just the header.
@@ -137,32 +144,40 @@ enum ResidentIndexReader {
         } catch {
             throw ModelError.indexCorrupt(detail: "\(error)")
         }
-        let header = ResidentIndexHeader(indexSize: wireHeader.indexSize,
-                                         residentSize: wireHeader.residentSize,
-                                         entryCount: wireHeader.entryCount)
-        let entries = Dictionary(uniqueKeysWithValues: wireEntries.map { wire in
-            let shape = wire.shape
-            return (wire.name, ResidentIndexEntry(
-                name: wire.name, dtype: wire.dtype,
-                fileOffset: wire.fileOffset, sizeBytes: wire.sizeBytes,
-                shape: (shape[0], shape[1], shape[2], shape[3]),
-                scaleOffset: wire.scaleOffset, scaleSize: wire.scaleSize,
-                biasOffset: wire.biasOffset, biasSize: wire.biasSize))
-        })
+        let header = ResidentIndexHeader(
+            indexSize: wireHeader.indexSize,
+            residentSize: wireHeader.residentSize,
+            entryCount: wireHeader.entryCount)
+        let entries = Dictionary(
+            uniqueKeysWithValues: wireEntries.map { wire in
+                let shape = wire.shape
+                return (
+                    wire.name,
+                    ResidentIndexEntry(
+                        name: wire.name, dtype: wire.dtype,
+                        fileOffset: wire.fileOffset, sizeBytes: wire.sizeBytes,
+                        shape: (shape[0], shape[1], shape[2], shape[3]),
+                        scaleOffset: wire.scaleOffset, scaleSize: wire.scaleSize,
+                        biasOffset: wire.biasOffset, biasSize: wire.biasSize)
+                )
+            })
         return ResidentIndex(header: header, entries: entries)
     }
 
-    private static func preadExactly(fd: Int32,
-                                     into buffer: UnsafeMutableRawBufferPointer,
-                                     offset: off_t,
-                                     field: String) throws {
+    private static func preadExactly(
+        fd: Int32,
+        into buffer: UnsafeMutableRawBufferPointer,
+        offset: off_t,
+        field: String
+    ) throws {
         guard let base = buffer.baseAddress else {
             throw ModelError.indexCorrupt(detail: "no storage for \(field)")
         }
         var total = 0
         while total < buffer.count {
-            let count = pread(fd, base.advanced(by: total),
-                              buffer.count - total, offset + off_t(total))
+            let count = pread(
+                fd, base.advanced(by: total),
+                buffer.count - total, offset + off_t(total))
             if count < 0, errno == EINTR { continue }
             guard count > 0 else {
                 throw ModelError.indexCorrupt(

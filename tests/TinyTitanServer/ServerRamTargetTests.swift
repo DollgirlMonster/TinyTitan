@@ -13,8 +13,9 @@ import Testing
     @Test func refusesATargetBelowTheFloor() {
         for tiny in ["1G", "2G", "3G", "3221225472"] {
             #expect(throws: ServerArgumentError.self) {
-                try ServerArguments.parse(["--model", "/m", "--ram-budget", tiny],
-                                          environment: [:])
+                try ServerArguments.parse(
+                    ["--model", "/m", "--ram-budget", tiny],
+                    environment: [:])
             }
         }
     }
@@ -23,7 +24,8 @@ import Testing
         for accepted in ["4G", "4GiB", "8G", "16G", "32G"] {
             let arguments = try ServerArguments.parse(
                 ["--model", "/m", "--ram-budget", accepted], environment: [:])
-            #expect(arguments.expertCacheBudgetBytes
+            #expect(
+                arguments.expertCacheBudgetBytes
                     == RuntimeConfiguration.parseBudgetBytes(accepted))
         }
     }
@@ -31,8 +33,9 @@ import Testing
     /// The message has to name the real reason, not just that the value is small.
     @Test func theRefusalNamesTheFloor() {
         do {
-            _ = try ServerArguments.parse(["--model", "/m", "--ram-budget", "2G"],
-                                          environment: [:])
+            _ = try ServerArguments.parse(
+                ["--model", "/m", "--ram-budget", "2G"],
+                environment: [:])
             Issue.record("2G should have been refused")
         } catch let error as ServerArgumentError {
             #expect(error.description.contains("at least 4G"), "\(error)")

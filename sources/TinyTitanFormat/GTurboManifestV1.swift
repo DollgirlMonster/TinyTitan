@@ -79,43 +79,45 @@ package struct GTurboManifestArchV1: Codable, Equatable, Sendable {
     package let sharedExpertGated: Bool?
     package let ropeNeoxSubdim: Bool?
 
-    package init(hiddenSize: Int, ffnIntermediate: Int, moeIntermediateSize: Int,
-                 numHeads: Int, numKVHeads: Int, numFullKVHeads: Int,
-                 headDim: Int, fullHeadDim: Int, vocabSize: Int,
-                 slidingWindow: Int, finalLogitSoftcap: Double,
-                 ropeTheta: Double, fullRopeTheta: Double,
-                 partialRotaryFactor: Double, numLayers: Int, numExperts: Int,
-                 topKExperts: Int, tieWordEmbeddings: Bool, attentionKEqV: Bool,
-                 hiddenActivation: String, fullAttentionLayerMask: [Int],
-                 family: String? = nil,
-                 hcCount: Int? = nil,
-                 hcLowRank: Int? = nil,
-                 indexerNumHeads: Int? = nil,
-                 indexerNumKVHeads: Int? = nil,
-                 indexerHeadDim: Int? = nil,
-                 indexerBudget: Int? = nil,
-                 indexerCompressRatio: Int? = nil,
-                 pleLayerIndices: [Int]? = nil,
-                 pleEmbedDim: Int? = nil,
-                 pleConvKernelSize: Int? = nil,
-                 pleNgramSize: Int? = nil,
-                 pleVocabSizeBase: Int? = nil,
-                 pleHeadsPerNgram: Int? = nil,
-                 pleVocabDivisor: Int? = nil,
-                 routerNormTopK: Bool? = nil,
-                 quantGroupSize: Int? = nil,
-                 linearNumKHeads: Int? = nil,
-                 linearNumVHeads: Int? = nil,
-                 linearKeyHeadDim: Int? = nil,
-                 linearValueHeadDim: Int? = nil,
-                 linearConvKernelSize: Int? = nil,
-                 attnOutputGate: Bool? = nil,
-                 attentionScale: Double? = nil,
-                 embeddingScaledBySqrtHidden: Bool? = nil,
-                 routerScaled: Bool? = nil,
-                 ffnSandwichNorms: Bool? = nil,
-                 sharedExpertGated: Bool? = nil,
-                 ropeNeoxSubdim: Bool? = nil) {
+    package init(
+        hiddenSize: Int, ffnIntermediate: Int, moeIntermediateSize: Int,
+        numHeads: Int, numKVHeads: Int, numFullKVHeads: Int,
+        headDim: Int, fullHeadDim: Int, vocabSize: Int,
+        slidingWindow: Int, finalLogitSoftcap: Double,
+        ropeTheta: Double, fullRopeTheta: Double,
+        partialRotaryFactor: Double, numLayers: Int, numExperts: Int,
+        topKExperts: Int, tieWordEmbeddings: Bool, attentionKEqV: Bool,
+        hiddenActivation: String, fullAttentionLayerMask: [Int],
+        family: String? = nil,
+        hcCount: Int? = nil,
+        hcLowRank: Int? = nil,
+        indexerNumHeads: Int? = nil,
+        indexerNumKVHeads: Int? = nil,
+        indexerHeadDim: Int? = nil,
+        indexerBudget: Int? = nil,
+        indexerCompressRatio: Int? = nil,
+        pleLayerIndices: [Int]? = nil,
+        pleEmbedDim: Int? = nil,
+        pleConvKernelSize: Int? = nil,
+        pleNgramSize: Int? = nil,
+        pleVocabSizeBase: Int? = nil,
+        pleHeadsPerNgram: Int? = nil,
+        pleVocabDivisor: Int? = nil,
+        routerNormTopK: Bool? = nil,
+        quantGroupSize: Int? = nil,
+        linearNumKHeads: Int? = nil,
+        linearNumVHeads: Int? = nil,
+        linearKeyHeadDim: Int? = nil,
+        linearValueHeadDim: Int? = nil,
+        linearConvKernelSize: Int? = nil,
+        attnOutputGate: Bool? = nil,
+        attentionScale: Double? = nil,
+        embeddingScaledBySqrtHidden: Bool? = nil,
+        routerScaled: Bool? = nil,
+        ffnSandwichNorms: Bool? = nil,
+        sharedExpertGated: Bool? = nil,
+        ropeNeoxSubdim: Bool? = nil
+    ) {
         self.hiddenSize = hiddenSize
         self.ffnIntermediate = ffnIntermediate
         self.moeIntermediateSize = moeIntermediateSize
@@ -185,8 +187,10 @@ package struct GTurboManifestQuantSlotV1: Codable, Equatable, Sendable {
     package let biasType: String
     package let groupSize: Int
 
-    package init(weightBits: Int, scheme: String, scaleType: String,
-                 biasType: String, groupSize: Int) {
+    package init(
+        weightBits: Int, scheme: String, scaleType: String,
+        biasType: String, groupSize: Int
+    ) {
         self.weightBits = weightBits
         self.scheme = scheme
         self.scaleType = scaleType
@@ -224,10 +228,12 @@ package struct GTurboManifestQuantV1: Codable, Equatable, Sendable {
         embedding = try container.decode(GTurboManifestQuantSlotV1.self, forKey: .embedding)
         attention = try container.decode(GTurboManifestQuantSlotV1.self, forKey: .attention)
         router = try container.decode(GTurboManifestQuantSlotV1.self, forKey: .router)
-        sharedExpert = try container.decode(GTurboManifestQuantSlotV1.self,
-                                            forKey: .sharedExpert)
-        routedExpert = try container.decode(GTurboManifestQuantSlotV1.self,
-                                            forKey: .routedExpert)
+        sharedExpert = try container.decode(
+            GTurboManifestQuantSlotV1.self,
+            forKey: .sharedExpert)
+        routedExpert = try container.decode(
+            GTurboManifestQuantSlotV1.self,
+            forKey: .routedExpert)
         let dynamic = try decoder.container(keyedBy: AnyKey.self)
         var overrides: [String: GTurboManifestQuantSlotV1] = [:]
         for key in dynamic.allKeys {
@@ -282,12 +288,14 @@ package struct GTurboManifestQuantV1: Codable, Equatable, Sendable {
         init?(intValue: Int) { nil }
     }
 
-    package init(embedding: GTurboManifestQuantSlotV1,
-                 attention: GTurboManifestQuantSlotV1,
-                 router: GTurboManifestQuantSlotV1,
-                 sharedExpert: GTurboManifestQuantSlotV1,
-                 routedExpert: GTurboManifestQuantSlotV1,
-                 overrides: [String: GTurboManifestQuantSlotV1]? = nil) {
+    package init(
+        embedding: GTurboManifestQuantSlotV1,
+        attention: GTurboManifestQuantSlotV1,
+        router: GTurboManifestQuantSlotV1,
+        sharedExpert: GTurboManifestQuantSlotV1,
+        routedExpert: GTurboManifestQuantSlotV1,
+        overrides: [String: GTurboManifestQuantSlotV1]? = nil
+    ) {
         self.overrides = overrides
         self.embedding = embedding
         self.attention = attention
@@ -312,15 +320,17 @@ package struct GTurboManifestV1: Codable, Equatable, Sendable {
     package let expertStride: UInt64
     package let bitWidthOverridesHonored: Int?
 
-    package init(magic: String = GTurboFormatV1.magic,
-                 versionMajor: Int = GTurboFormatV1.versionMajor,
-                 versionMinor: Int = GTurboFormatV1.versionMinor,
-                 flags: [String: Bool], modelID: String,
-                 sourceSnapshotHash: String?, arch: GTurboManifestArchV1,
-                 quant: GTurboManifestQuantV1?,
-                 files: [String: GTurboManifestFileV1],
-                 expertsPerLayer: Int, numLayers: Int, expertStride: UInt64,
-                 bitWidthOverridesHonored: Int?) {
+    package init(
+        magic: String = GTurboFormatV1.magic,
+        versionMajor: Int = GTurboFormatV1.versionMajor,
+        versionMinor: Int = GTurboFormatV1.versionMinor,
+        flags: [String: Bool], modelID: String,
+        sourceSnapshotHash: String?, arch: GTurboManifestArchV1,
+        quant: GTurboManifestQuantV1?,
+        files: [String: GTurboManifestFileV1],
+        expertsPerLayer: Int, numLayers: Int, expertStride: UInt64,
+        bitWidthOverridesHonored: Int?
+    ) {
         self.magic = magic
         self.versionMajor = versionMajor
         self.versionMinor = versionMinor
@@ -346,8 +356,9 @@ package enum GTurboManifestCodec {
 
     package static func decodeUnchecked(_ data: Data) throws -> GTurboManifestV1 {
         let manifest: GTurboManifestV1
-        do { manifest = try JSONDecoder().decode(GTurboManifestV1.self, from: data) }
-        catch { throw TinyTitanFormatError.invalid(field: "manifest.json", reason: "\(error)") }
+        do { manifest = try JSONDecoder().decode(GTurboManifestV1.self, from: data) } catch {
+            throw TinyTitanFormatError.invalid(field: "manifest.json", reason: "\(error)")
+        }
         return manifest
     }
 
@@ -356,26 +367,32 @@ package enum GTurboManifestCodec {
             throw TinyTitanFormatError.invalid(field: "manifest.magic", reason: "expected GTURBO")
         }
         guard manifest.versionMajor == GTurboFormatV1.versionMajor,
-              manifest.versionMinor >= 0 else {
-            throw TinyTitanFormatError.invalid(field: "manifest.version", reason: "unsupported version")
+            manifest.versionMinor >= 0
+        else {
+            throw TinyTitanFormatError.invalid(
+                field: "manifest.version", reason: "unsupported version")
         }
         for flag in manifest.flags.keys where !GTurboFormatV1.knownFlags.contains(flag) {
-            throw TinyTitanFormatError.invalid(field: "manifest.flags.\(flag)", reason: "unknown v1 flag")
+            throw TinyTitanFormatError.invalid(
+                field: "manifest.flags.\(flag)", reason: "unknown v1 flag")
         }
         // A dense payload has no routed experts at all -- the planner writes
         // expertsPerLayer 0 and expertStride 0 for one -- so "greater than
         // zero" is the wrong test for it. Every other family still needs both.
         let isDense = manifest.arch.family == "qwen3_5_dense"
         guard !manifest.modelID.isEmpty,
-              manifest.numLayers > 0,
-              isDense
+            manifest.numLayers > 0,
+            isDense
                 ? (manifest.expertsPerLayer == 0 && manifest.expertStride == 0)
                 : (manifest.expertsPerLayer > 0 && manifest.expertStride > 0),
-              manifest.expertStride % GTurboFormatV1.alignmentBytes == 0 else {
-            throw TinyTitanFormatError.invalid(field: "manifest", reason: "invalid dimensions or stride")
+            manifest.expertStride % GTurboFormatV1.alignmentBytes == 0
+        else {
+            throw TinyTitanFormatError.invalid(
+                field: "manifest", reason: "invalid dimensions or stride")
         }
         guard manifest.arch.numLayers == manifest.numLayers,
-              manifest.arch.numExperts == manifest.expertsPerLayer else {
+            manifest.arch.numExperts == manifest.expertsPerLayer
+        else {
             throw TinyTitanFormatError.invalid(
                 field: "manifest.arch", reason: "dimensions disagree with streaming metadata")
         }
@@ -383,19 +400,20 @@ package enum GTurboManifestCodec {
         // `moeIntermediateSize` is 0 for a dense model, which has no
         // per-expert FFN; its FFN width is `ffnIntermediate`.
         guard arch.hiddenSize > 0, arch.ffnIntermediate > 0,
-              isDense || arch.moeIntermediateSize > 0, arch.numHeads > 0,
-              arch.numKVHeads > 0, arch.numFullKVHeads > 0,
-              arch.headDim > 0, arch.fullHeadDim > 0,
-              arch.vocabSize > 0, arch.slidingWindow >= 0,
-              isDense || (arch.topKExperts > 0 && arch.topKExperts <= arch.numExperts),
-              arch.finalLogitSoftcap.isFinite,
-              arch.ropeTheta.isFinite, arch.ropeTheta > 0,
-              arch.fullRopeTheta.isFinite, arch.fullRopeTheta > 0,
-              arch.partialRotaryFactor.isFinite,
-              arch.partialRotaryFactor >= 0, arch.partialRotaryFactor <= 1,
-              !arch.hiddenActivation.isEmpty,
-              arch.fullAttentionLayerMask.count == arch.numLayers,
-              arch.fullAttentionLayerMask.allSatisfy({ $0 == 0 || $0 == 1 || $0 == 2 }) else {
+            isDense || arch.moeIntermediateSize > 0, arch.numHeads > 0,
+            arch.numKVHeads > 0, arch.numFullKVHeads > 0,
+            arch.headDim > 0, arch.fullHeadDim > 0,
+            arch.vocabSize > 0, arch.slidingWindow >= 0,
+            isDense || (arch.topKExperts > 0 && arch.topKExperts <= arch.numExperts),
+            arch.finalLogitSoftcap.isFinite,
+            arch.ropeTheta.isFinite, arch.ropeTheta > 0,
+            arch.fullRopeTheta.isFinite, arch.fullRopeTheta > 0,
+            arch.partialRotaryFactor.isFinite,
+            arch.partialRotaryFactor >= 0, arch.partialRotaryFactor <= 1,
+            !arch.hiddenActivation.isEmpty,
+            arch.fullAttentionLayerMask.count == arch.numLayers,
+            arch.fullAttentionLayerMask.allSatisfy({ $0 == 0 || $0 == 1 || $0 == 2 })
+        else {
             throw TinyTitanFormatError.invalid(
                 field: "manifest.arch", reason: "invalid architecture values")
         }
@@ -408,9 +426,10 @@ package enum GTurboManifestCodec {
                 ("routedExpert", quant.routedExpert),
             ] {
                 guard slot.weightBits > 0, slot.weightBits <= 32,
-                      slot.groupSize > 0,
-                      !slot.scheme.isEmpty, !slot.scaleType.isEmpty,
-                      !slot.biasType.isEmpty else {
+                    slot.groupSize > 0,
+                    !slot.scheme.isEmpty, !slot.scaleType.isEmpty,
+                    !slot.biasType.isEmpty
+                else {
                     throw TinyTitanFormatError.invalid(
                         field: "manifest.quant.\(name)", reason: "invalid quantization values")
                 }
@@ -427,8 +446,9 @@ package enum GTurboManifestCodec {
                     field: "manifest.files.\(path)", reason: "filesystem-equivalent duplicate path")
             }
             guard key != "tokenizer",
-                  !reservedFiles.contains(key),
-                  !reservedFiles.contains(where: { key.hasPrefix("\($0)/") }) else {
+                !reservedFiles.contains(key),
+                !reservedFiles.contains(where: { key.hasPrefix("\($0)/") })
+            else {
                 throw TinyTitanFormatError.invalid(
                     field: "manifest.files.\(path)", reason: "reserved artifact filename")
             }
@@ -437,13 +457,15 @@ package enum GTurboManifestCodec {
                     field: "manifest.files.\(path)", reason: "missing entry")
             }
             guard entry.sha256.count == 64,
-                  entry.sha256.unicodeScalars.allSatisfy({ scalar in
-                      ("0"..."9").contains(Character(String(scalar)))
-                          || ("a"..."f").contains(Character(String(scalar)))
-                          || ("A"..."F").contains(Character(String(scalar)))
-                  }) else {
+                entry.sha256.unicodeScalars.allSatisfy({ scalar in
+                    ("0"..."9").contains(Character(String(scalar)))
+                        || ("a"..."f").contains(Character(String(scalar)))
+                        || ("A"..."F").contains(Character(String(scalar)))
+                })
+            else {
                 throw TinyTitanFormatError.invalid(
-                    field: "manifest.files.\(path).sha256", reason: "expected 64 hexadecimal characters")
+                    field: "manifest.files.\(path).sha256",
+                    reason: "expected 64 hexadecimal characters")
             }
         }
         for (key, path) in canonicalPaths {

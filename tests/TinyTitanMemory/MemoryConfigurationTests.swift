@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanMemory
 
 @Suite struct MemoryConfigurationTests {
@@ -13,21 +14,27 @@ import Testing
         #expect(plain.storage.budget.logBytes == 0)
         #expect(plain.summary.contains("cap=none"))
 
-        let capped = MemoryConfiguration.fromEnvironment(["TINYTITAN_MEMORY": "1",
-                                                          "TINYTITAN_MEMORY_CACHE_MIB": "256"])
+        let capped = MemoryConfiguration.fromEnvironment([
+            "TINYTITAN_MEMORY": "1",
+            "TINYTITAN_MEMORY_CACHE_MIB": "256",
+        ])
         #expect(capped.storage.maximumMemoryBytes == 256 << 20)
         #expect(capped.summary.contains("cap=256MiB"))
 
         // Zero and junk are "no cap", not "a cap of nothing".
-        let zero = MemoryConfiguration.fromEnvironment(["TINYTITAN_MEMORY": "1",
-                                                        "TINYTITAN_MEMORY_CACHE_MIB": "0"])
+        let zero = MemoryConfiguration.fromEnvironment([
+            "TINYTITAN_MEMORY": "1",
+            "TINYTITAN_MEMORY_CACHE_MIB": "0",
+        ])
         #expect(zero.storage.maximumMemoryBytes == nil)
     }
 
     @Test func toolSurfaceIsChosenByName() {
         func surface(_ value: String) -> MemoryToolSurface {
-            MemoryConfiguration.fromEnvironment(["TINYTITAN_MEMORY": "1",
-                                                 "TINYTITAN_MEMORY_TOOLS": value]).toolSurface
+            MemoryConfiguration.fromEnvironment([
+                "TINYTITAN_MEMORY": "1",
+                "TINYTITAN_MEMORY_TOOLS": value,
+            ]).toolSurface
         }
         #expect(MemoryConfiguration().toolSurface == .off)
         #expect(surface("off") == .off)
@@ -58,7 +65,8 @@ import Testing
         var storage = ContinuityStorageConfiguration(
             directory: URL(fileURLWithPath: "/tmp/tinytitan-memory"))
         let scope = try MemoryScope(namespace: "tinytitan", user: "ada", workspace: "repo-1234abcd")
-        #expect(storage.journalURL(for: scope).path
+        #expect(
+            storage.journalURL(for: scope).path
                 == "/tmp/tinytitan-memory/tinytitan/ada/repo-1234abcd.ndjson")
         // Two workspaces never share a file, which is what makes deleting one
         // project's memory a file removal rather than an edit.
@@ -101,16 +109,19 @@ import Testing
     /// visibly rather than mix quietly.
     @Test func theHomeDirectoryIsNotAWorkspace() {
         let base = ["TINYTITAN_MEMORY": "1", "HOME": "/Users/ada"]
-        for (directory, label) in [("/Users/ada", "home"),
-                                   ("/Users/ada/", "home with slash"),
-                                   ("/Users", "parent of home"),
-                                   ("/", "root")] {
+        for (directory, label) in [
+            ("/Users/ada", "home"),
+            ("/Users/ada/", "home with slash"),
+            ("/Users", "parent of home"),
+            ("/", "root"),
+        ] {
             let configuration = MemoryConfiguration.fromEnvironment(
                 base.merging(["TINYTITAN_WORKSPACE_DIR": directory]) { $1 })
             #expect(!configuration.isEnabled, "\(label) should be refused")
             #expect(configuration.disabledReason?.contains("not a project") == true, "\(label)")
-            #expect(configuration.disabledReason?.contains("TINYTITAN_MEMORY_WORKSPACE") == true,
-                    "the refusal names the fix")
+            #expect(
+                configuration.disabledReason?.contains("TINYTITAN_MEMORY_WORKSPACE") == true,
+                "the refusal names the fix")
         }
 
         // A project directory is fine, and so is the home directory once the
@@ -121,8 +132,10 @@ import Testing
         #expect(project.isEnabled)
         #expect(project.disabledReason == nil)
         let named = MemoryConfiguration.fromEnvironment(
-            base.merging(["TINYTITAN_WORKSPACE_DIR": "/Users/ada",
-                          "TINYTITAN_MEMORY_WORKSPACE": "novel"]) { $1 })
+            base.merging([
+                "TINYTITAN_WORKSPACE_DIR": "/Users/ada",
+                "TINYTITAN_MEMORY_WORKSPACE": "novel",
+            ]) { $1 })
         #expect(named.isEnabled)
         #expect(named.workspace == "novel")
 
@@ -150,7 +163,8 @@ import Testing
         #expect(first != second)
         #expect(first.hasPrefix("tinytitan-") && second.hasPrefix("tinytitan-"))
         // Stable across processes: a restart must land on the same memory.
-        #expect(first == MemoryConfiguration.workspaceIdentifier(forPath: "/Users/ada/a/tinytitan/"))
+        #expect(
+            first == MemoryConfiguration.workspaceIdentifier(forPath: "/Users/ada/a/tinytitan/"))
     }
 
     @Test func perRequestWorkspaceCanBeRefused() throws {
@@ -207,14 +221,20 @@ import Testing
     /// them.
     @Test func theGuardIsOffUnlessExplicitlyAskedFor() {
         for value in ["0", "off", "false", "no", ""] {
-            let configuration = MemoryConfiguration.fromEnvironment(["TINYTITAN_MEMORY_GUARD": value])
-            #expect(configuration.guardsUserFacts == false,
-                    Comment(rawValue: "TINYTITAN_MEMORY_GUARD=\(value) must not enable it"))
+            let configuration = MemoryConfiguration.fromEnvironment([
+                "TINYTITAN_MEMORY_GUARD": value
+            ])
+            #expect(
+                configuration.guardsUserFacts == false,
+                Comment(rawValue: "TINYTITAN_MEMORY_GUARD=\(value) must not enable it"))
         }
         for value in ["1", "on", "true", "TRUE"] {
-            let configuration = MemoryConfiguration.fromEnvironment(["TINYTITAN_MEMORY_GUARD": value])
-            #expect(configuration.guardsUserFacts,
-                    Comment(rawValue: "TINYTITAN_MEMORY_GUARD=\(value) must enable it"))
+            let configuration = MemoryConfiguration.fromEnvironment([
+                "TINYTITAN_MEMORY_GUARD": value
+            ])
+            #expect(
+                configuration.guardsUserFacts,
+                Comment(rawValue: "TINYTITAN_MEMORY_GUARD=\(value) must enable it"))
         }
         // On by default: measured on three runs, and it closes the one
         // scenario where memory lost.

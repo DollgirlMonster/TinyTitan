@@ -10,23 +10,26 @@ final class PrefillPerHeadNorm {
         self.psoNoScale = try context.pipeline("prefill_rmsnorm_no_scale_perhead_block")
     }
 
-    func encodeBF16W(commandBuffer: MTLCommandBuffer,
-                            x: MTLBuffer,
-                            xOffset: Int = 0,
-                            weight: MTLBuffer,
-                            weightOffset: Int = 0,
-                            out: MTLBuffer,
-                            outOffset: Int = 0,
-                            queryCount: UInt32,
-                            headDim: UInt32,
-                            numHeads: UInt32,
-                            tokenStrideElements: UInt32,
-                            eps: Float) throws {
+    func encodeBF16W(
+        commandBuffer: MTLCommandBuffer,
+        x: MTLBuffer,
+        xOffset: Int = 0,
+        weight: MTLBuffer,
+        weightOffset: Int = 0,
+        out: MTLBuffer,
+        outOffset: Int = 0,
+        queryCount: UInt32,
+        headDim: UInt32,
+        numHeads: UInt32,
+        tokenStrideElements: UInt32,
+        eps: Float
+    ) throws {
         precondition(queryCount > 0, "queryCount must be positive")
         precondition(headDim > 0, "headDim must be positive")
         precondition(numHeads > 0, "numHeads must be positive")
-        precondition(tokenStrideElements >= headDim * numHeads,
-                     "token stride is too small")
+        precondition(
+            tokenStrideElements >= headDim * numHeads,
+            "token stride is too small")
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -45,26 +48,30 @@ final class PrefillPerHeadNorm {
         enc.setBytes(&stride, length: MemoryLayout<UInt32>.size, index: 6)
         enc.setBytes(&epsVar, length: MemoryLayout<Float>.size, index: 7)
         let threads = min(psoBF16W.maxTotalThreadsPerThreadgroup, 256)
-        enc.dispatchThreadgroups(MTLSize(width: Int(numHeads), height: Int(queryCount), depth: 1),
-                                 threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
+        enc.dispatchThreadgroups(
+            MTLSize(width: Int(numHeads), height: Int(queryCount), depth: 1),
+            threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
         enc.endEncoding()
     }
 
-    func encodeNoScale(commandBuffer: MTLCommandBuffer,
-                              x: MTLBuffer,
-                              xOffset: Int = 0,
-                              out: MTLBuffer,
-                              outOffset: Int = 0,
-                              queryCount: UInt32,
-                              headDim: UInt32,
-                              numHeads: UInt32,
-                              tokenStrideElements: UInt32,
-                              eps: Float) throws {
+    func encodeNoScale(
+        commandBuffer: MTLCommandBuffer,
+        x: MTLBuffer,
+        xOffset: Int = 0,
+        out: MTLBuffer,
+        outOffset: Int = 0,
+        queryCount: UInt32,
+        headDim: UInt32,
+        numHeads: UInt32,
+        tokenStrideElements: UInt32,
+        eps: Float
+    ) throws {
         precondition(queryCount > 0, "queryCount must be positive")
         precondition(headDim > 0, "headDim must be positive")
         precondition(numHeads > 0, "numHeads must be positive")
-        precondition(tokenStrideElements >= headDim * numHeads,
-                     "token stride is too small")
+        precondition(
+            tokenStrideElements >= headDim * numHeads,
+            "token stride is too small")
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -82,8 +89,9 @@ final class PrefillPerHeadNorm {
         enc.setBytes(&stride, length: MemoryLayout<UInt32>.size, index: 5)
         enc.setBytes(&epsVar, length: MemoryLayout<Float>.size, index: 6)
         let threads = min(psoNoScale.maxTotalThreadsPerThreadgroup, 256)
-        enc.dispatchThreadgroups(MTLSize(width: Int(numHeads), height: Int(queryCount), depth: 1),
-                                 threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
+        enc.dispatchThreadgroups(
+            MTLSize(width: Int(numHeads), height: Int(queryCount), depth: 1),
+            threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
         enc.endEncoding()
     }
 }

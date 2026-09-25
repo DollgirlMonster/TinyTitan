@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// The two stream-axis kernels of Qwen3.8-Flash-Next's Gated Residual, against
 /// CPU references. Everything else in the block (the three INT4 projections,
@@ -43,16 +44,20 @@ struct HyperConnectionTests {
         let ctx = try MetalContext()
         let kernel = try Elementwise(context: ctx)
         guard let mixBuf = Fp16Buffer.make(ctx.device, halves: mix),
-              let normBuf = Fp16Buffer.make(ctx.device, halves: normed),
-              let outBuf = Fp16Buffer.make(ctx.device, count: Self.dim) else {
-            Issue.record("alloc failed"); return
+            let normBuf = Fp16Buffer.make(ctx.device, halves: normed),
+            let outBuf = Fp16Buffer.make(ctx.device, count: Self.dim)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let cb = try #require(ctx.queue.makeCommandBuffer())
-        try kernel.encodeHCMixReduce(commandBuffer: cb, mix: mixBuf,
-                                     normed: normBuf, out: outBuf,
-                                     dim: Self.dim, streams: Self.streams,
-                                     inScale: 1)
-        cb.commit(); cb.waitUntilCompleted()
+        try kernel.encodeHCMixReduce(
+            commandBuffer: cb, mix: mixBuf,
+            normed: normBuf, out: outBuf,
+            dim: Self.dim, streams: Self.streams,
+            inScale: 1)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         var reference = [Float](repeating: 0, count: Self.dim)
         for d in 0..<Self.dim {
@@ -61,13 +66,15 @@ struct HyperConnectionTests {
                 let i = s * Self.dim + d
                 // The read gate lives inside the reduce now, so the mix
                 // arrives raw and is sigmoided per element.
-                acc += Float(Float16(Self.sigmoid(Float(mix[i]))))
+                acc +=
+                    Float(Float16(Self.sigmoid(Float(mix[i]))))
                     * Float(normed[i])
             }
             reference[d] = acc / Float(Self.streams)
         }
         let actual = Fp16Buffer.read(outBuf, count: Self.dim)
-        #expect(RelError.compute(actual: actual, reference: reference)
+        #expect(
+            RelError.compute(actual: actual, reference: reference)
                 < Tolerance.fp16Reduction)
     }
 
@@ -84,16 +91,20 @@ struct HyperConnectionTests {
         let ctx = try MetalContext()
         let kernel = try Elementwise(context: ctx)
         guard let streamBuf = Fp16Buffer.make(ctx.device, halves: initial),
-              let outBuf = Fp16Buffer.make(ctx.device, halves: blockOut),
-              let injBuf = Fp16Buffer.make(ctx.device, halves: inject) else {
-            Issue.record("alloc failed"); return
+            let outBuf = Fp16Buffer.make(ctx.device, halves: blockOut),
+            let injBuf = Fp16Buffer.make(ctx.device, halves: inject)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let cb = try #require(ctx.queue.makeCommandBuffer())
-        try kernel.encodeHCInject(commandBuffer: cb, streams: streamBuf,
-                                  blockOut: outBuf, inject: injBuf,
-                                  dim: Self.dim, streamCount: Self.streams,
-                                  inScale: 1)
-        cb.commit(); cb.waitUntilCompleted()
+        try kernel.encodeHCInject(
+            commandBuffer: cb, streams: streamBuf,
+            blockOut: outBuf, inject: injBuf,
+            dim: Self.dim, streamCount: Self.streams,
+            inScale: 1)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         var reference = [Float](repeating: 0, count: total)
         for s in 0..<Self.streams {
@@ -105,7 +116,8 @@ struct HyperConnectionTests {
             }
         }
         let actual = Fp16Buffer.read(streamBuf, count: total)
-        #expect(RelError.compute(actual: actual, reference: reference)
+        #expect(
+            RelError.compute(actual: actual, reference: reference)
                 < Tolerance.fp16Reduction)
     }
 
@@ -113,7 +125,8 @@ struct HyperConnectionTests {
     func injectAccumulates() throws {
         // The residual must carry forward: applying inject twice with the same
         // operands must double the added term, not repeat it.
-        let dim = 128, streams = 2
+        let dim = 128
+        let streams = 2
         let total = dim * streams
         let zeros = [Float16](repeating: 0, count: total)
         let blockOut = [Float16](repeating: Float16(1.0), count: dim)
@@ -122,17 +135,21 @@ struct HyperConnectionTests {
         let ctx = try MetalContext()
         let kernel = try Elementwise(context: ctx)
         guard let streamBuf = Fp16Buffer.make(ctx.device, halves: zeros),
-              let outBuf = Fp16Buffer.make(ctx.device, halves: blockOut),
-              let injBuf = Fp16Buffer.make(ctx.device, halves: inject) else {
-            Issue.record("alloc failed"); return
+            let outBuf = Fp16Buffer.make(ctx.device, halves: blockOut),
+            let injBuf = Fp16Buffer.make(ctx.device, halves: inject)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         for _ in 0..<2 {
             let cb = try #require(ctx.queue.makeCommandBuffer())
-            try kernel.encodeHCInject(commandBuffer: cb, streams: streamBuf,
-                                      blockOut: outBuf, inject: injBuf,
-                                      dim: dim, streamCount: streams,
-                                      inScale: 1)
-            cb.commit(); cb.waitUntilCompleted()
+            try kernel.encodeHCInject(
+                commandBuffer: cb, streams: streamBuf,
+                blockOut: outBuf, inject: injBuf,
+                dim: dim, streamCount: streams,
+                inScale: 1)
+            cb.commit()
+            cb.waitUntilCompleted()
         }
         // Two injects of blockOut 1.0 through gate 2*sigmoid(w): the point is
         // that the second adds the same amount again rather than replacing it.
@@ -152,7 +169,8 @@ struct HyperConnectionTests {
         // as a prompt that reads fine and answers slightly wrong.
         var rng = SeedTree(0x9A1).key("hc-batched-rows")
         let rows = 5
-        let dim = 128, streams = Self.streams
+        let dim = 128
+        let streams = Self.streams
         let wide = dim * streams
         let mix = (0..<wide * rows).map { _ in Float16(rng.uniform(0.0, 1.0)) }
         let normed = (0..<wide * rows).map { _ in Float16(rng.uniform(-2.0, 2.0)) }
@@ -165,15 +183,18 @@ struct HyperConnectionTests {
 
         func reduce(tokens: Int, mixSlice: [Float16], normSlice: [Float16]) throws -> [Float] {
             guard let m = Fp16Buffer.make(ctx.device, halves: mixSlice),
-                  let n = Fp16Buffer.make(ctx.device, halves: normSlice),
-                  let o = Fp16Buffer.make(ctx.device, count: dim * tokens) else {
+                let n = Fp16Buffer.make(ctx.device, halves: normSlice),
+                let o = Fp16Buffer.make(ctx.device, count: dim * tokens)
+            else {
                 throw MetalError.bufferAllocationFailed("reduce")
             }
             let cb = try #require(ctx.queue.makeCommandBuffer())
-            try kernel.encodeHCMixReduce(commandBuffer: cb, mix: m, normed: n,
-                                         out: o, dim: dim, streams: streams,
-                                         tokens: tokens, inScale: 1)
-            cb.commit(); cb.waitUntilCompleted()
+            try kernel.encodeHCMixReduce(
+                commandBuffer: cb, mix: m, normed: n,
+                out: o, dim: dim, streams: streams,
+                tokens: tokens, inScale: 1)
+            cb.commit()
+            cb.waitUntilCompleted()
             return Fp16Buffer.read(o, count: dim * tokens).map { Float($0) }
         }
 
@@ -182,36 +203,42 @@ struct HyperConnectionTests {
         for r in 0..<rows {
             perRowReduce += try reduce(
                 tokens: 1,
-                mixSlice: Array(mix[r * wide ..< (r + 1) * wide]),
-                normSlice: Array(normed[r * wide ..< (r + 1) * wide]))
+                mixSlice: Array(mix[r * wide..<(r + 1) * wide]),
+                normSlice: Array(normed[r * wide..<(r + 1) * wide]))
         }
         #expect(batchedReduce == perRowReduce)
 
-        func write(tokens: Int, streamsSlice: [Float16], blockSlice: [Float16],
-                   injectSlice: [Float16]) throws -> [Float] {
+        func write(
+            tokens: Int, streamsSlice: [Float16], blockSlice: [Float16],
+            injectSlice: [Float16]
+        ) throws -> [Float] {
             guard let st = Fp16Buffer.make(ctx.device, halves: streamsSlice),
-                  let bo = Fp16Buffer.make(ctx.device, halves: blockSlice),
-                  let inj = Fp16Buffer.make(ctx.device, halves: injectSlice) else {
+                let bo = Fp16Buffer.make(ctx.device, halves: blockSlice),
+                let inj = Fp16Buffer.make(ctx.device, halves: injectSlice)
+            else {
                 throw MetalError.bufferAllocationFailed("write")
             }
             let cb = try #require(ctx.queue.makeCommandBuffer())
-            try kernel.encodeHCInject(commandBuffer: cb, streams: st,
-                                      blockOut: bo, inject: inj,
-                                      dim: dim, streamCount: streams,
-                                      tokens: tokens, inScale: 1)
-            cb.commit(); cb.waitUntilCompleted()
+            try kernel.encodeHCInject(
+                commandBuffer: cb, streams: st,
+                blockOut: bo, inject: inj,
+                dim: dim, streamCount: streams,
+                tokens: tokens, inScale: 1)
+            cb.commit()
+            cb.waitUntilCompleted()
             return Fp16Buffer.read(st, count: wide * tokens).map { Float($0) }
         }
 
-        let batchedWrite = try write(tokens: rows, streamsSlice: residual,
-                                     blockSlice: block, injectSlice: inject)
+        let batchedWrite = try write(
+            tokens: rows, streamsSlice: residual,
+            blockSlice: block, injectSlice: inject)
         var perRowWrite = [Float]()
         for r in 0..<rows {
             perRowWrite += try write(
                 tokens: 1,
-                streamsSlice: Array(residual[r * wide ..< (r + 1) * wide]),
-                blockSlice: Array(block[r * dim ..< (r + 1) * dim]),
-                injectSlice: Array(inject[r * streams ..< (r + 1) * streams]))
+                streamsSlice: Array(residual[r * wide..<(r + 1) * wide]),
+                blockSlice: Array(block[r * dim..<(r + 1) * dim]),
+                injectSlice: Array(inject[r * streams..<(r + 1) * streams]))
         }
         #expect(batchedWrite == perRowWrite)
     }
@@ -219,25 +246,31 @@ struct HyperConnectionTests {
     @Test("Expand widens each row into every stream")
     func expandMatchesReference() throws {
         var rng = SeedTree(0x9A2).key("hc-expand")
-        let rows = 3, dim = 64, streams = Self.streams
+        let rows = 3
+        let dim = 64
+        let streams = Self.streams
         let source = (0..<dim * rows).map { _ in Float16(rng.uniform(-1.0, 1.0)) }
         let ctx = try MetalContext()
         let kernel = try Elementwise(context: ctx)
         guard let src = Fp16Buffer.make(ctx.device, halves: source),
-              let dst = Fp16Buffer.make(ctx.device, count: dim * streams * rows) else {
-            Issue.record("alloc failed"); return
+            let dst = Fp16Buffer.make(ctx.device, count: dim * streams * rows)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let cb = try #require(ctx.queue.makeCommandBuffer())
-        try kernel.encodeHCExpand(commandBuffer: cb, source: src, destination: dst,
-                                  dim: dim, streamCount: streams, tokens: rows)
-        cb.commit(); cb.waitUntilCompleted()
+        try kernel.encodeHCExpand(
+            commandBuffer: cb, source: src, destination: dst,
+            dim: dim, streamCount: streams, tokens: rows)
+        cb.commit()
+        cb.waitUntilCompleted()
         let got = Fp16Buffer.readHalf(dst, count: dim * streams * rows)
         for r in 0..<rows {
             let lower = r * dim
-            let expected: [Float16] = Array(source[lower ..< lower + dim])
+            let expected: [Float16] = Array(source[lower..<lower + dim])
             for s in 0..<streams {
                 let base: Int = (r * streams + s) * dim
-                let slice: [Float16] = Array(got[base ..< base + dim])
+                let slice: [Float16] = Array(got[base..<base + dim])
                 #expect(slice == expected, "row \(r) stream \(s)")
             }
         }
@@ -249,16 +282,21 @@ struct HyperConnectionTests {
         let ctx = try MetalContext()
         let kernel = try Elementwise(context: ctx)
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: values),
-              let sigBuf = Fp16Buffer.make(ctx.device, count: values.count),
-              let siluBuf = Fp16Buffer.make(ctx.device, count: values.count) else {
-            Issue.record("alloc failed"); return
+            let sigBuf = Fp16Buffer.make(ctx.device, count: values.count),
+            let siluBuf = Fp16Buffer.make(ctx.device, count: values.count)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let cb = try #require(ctx.queue.makeCommandBuffer())
-        try kernel.encodeSigmoid(commandBuffer: cb, x: xBuf, out: sigBuf,
-                                 count: values.count)
-        try kernel.encodeSilu(commandBuffer: cb, x: xBuf, out: siluBuf,
-                              count: values.count)
-        cb.commit(); cb.waitUntilCompleted()
+        try kernel.encodeSigmoid(
+            commandBuffer: cb, x: xBuf, out: sigBuf,
+            count: values.count)
+        try kernel.encodeSilu(
+            commandBuffer: cb, x: xBuf, out: siluBuf,
+            count: values.count)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let sig = Fp16Buffer.read(sigBuf, count: values.count)
         let silu = Fp16Buffer.read(siluBuf, count: values.count)
@@ -291,15 +329,20 @@ struct HyperConnectionBlockTests {
     /// Quantize an [m][n] matrix the way the checkpoint stores it, and keep the
     /// dequantized values so the reference sees exactly what the GPU reads.
     private static func quantize(_ rows: [[Float]]) -> QuantWeights {
-        var packed: [UInt8] = [], scales: [UInt16] = [], biases: [UInt16] = []
+        var packed: [UInt8] = []
+        var scales: [UInt16] = []
+        var biases: [UInt16] = []
         var dequant: [[Float]] = []
         for row in rows {
             let q = Quantization.quantizeInt4Affine(row)
-            packed += q.packed; scales += q.scales; biases += q.biases
+            packed += q.packed
+            scales += q.scales
+            biases += q.biases
             dequant.append(Quantization.dequantizeInt4Affine(q, n: row.count))
         }
-        return QuantWeights(packed: packed, scales: scales,
-                            biases: biases, dequant: dequant)
+        return QuantWeights(
+            packed: packed, scales: scales,
+            biases: biases, dequant: dequant)
     }
 
     private static func matvec(_ w: [[Float]], _ x: [Float]) -> [Float] {
@@ -314,50 +357,67 @@ struct HyperConnectionBlockTests {
         let wide = Self.dim * Self.streams
         let streamVals = (0..<wide).map { _ in Float16(rng.uniform(-1.0, 1.0)) }
         let hcNormF = (0..<wide).map { _ in rng.uniform(0.5, 1.5) }
-        let down = Self.quantize((0..<Self.lowRank).map { _ in
-            (0..<wide).map { _ in rng.uniform(-0.1, 0.1) } })
-        let up = Self.quantize((0..<wide).map { _ in
-            (0..<Self.lowRank).map { _ in rng.uniform(-0.1, 0.1) } })
+        let down = Self.quantize(
+            (0..<Self.lowRank).map { _ in
+                (0..<wide).map { _ in rng.uniform(-0.1, 0.1) }
+            })
+        let up = Self.quantize(
+            (0..<wide).map { _ in
+                (0..<Self.lowRank).map { _ in rng.uniform(-0.1, 0.1) }
+            })
 
         let ctx = try MetalContext()
-        let hc = try HyperConnection(context: ctx, dim: Self.dim,
-                                     streams: Self.streams, lowRank: Self.lowRank)
+        let hc = try HyperConnection(
+            context: ctx, dim: Self.dim,
+            streams: Self.streams, lowRank: Self.lowRank)
         let hcNormBits = hcNormF.map { Quantization.bf16Bits($0) }
         guard let streamBuf = Fp16Buffer.make(ctx.device, halves: streamVals),
-              let normBuf = ctx.device.makeBuffer(length: hcNormBits.count * 2,
-                                                  options: .storageModeShared),
-              let inputBuf = Fp16Buffer.make(ctx.device, count: Self.dim),
-              let dW = ctx.device.makeBuffer(bytes: down.packed,
-                                             length: down.packed.count,
-                                             options: .storageModeShared),
-              let dS = ctx.device.makeBuffer(bytes: down.scales,
-                                             length: down.scales.count * 2,
-                                             options: .storageModeShared),
-              let dB = ctx.device.makeBuffer(bytes: down.biases,
-                                             length: down.biases.count * 2,
-                                             options: .storageModeShared),
-              let uW = ctx.device.makeBuffer(bytes: up.packed,
-                                             length: up.packed.count,
-                                             options: .storageModeShared),
-              let uS = ctx.device.makeBuffer(bytes: up.scales,
-                                             length: up.scales.count * 2,
-                                             options: .storageModeShared),
-              let uB = ctx.device.makeBuffer(bytes: up.biases,
-                                             length: up.biases.count * 2,
-                                             options: .storageModeShared) else {
-            Issue.record("alloc failed"); return
+            let normBuf = ctx.device.makeBuffer(
+                length: hcNormBits.count * 2,
+                options: .storageModeShared),
+            let inputBuf = Fp16Buffer.make(ctx.device, count: Self.dim),
+            let dW = ctx.device.makeBuffer(
+                bytes: down.packed,
+                length: down.packed.count,
+                options: .storageModeShared),
+            let dS = ctx.device.makeBuffer(
+                bytes: down.scales,
+                length: down.scales.count * 2,
+                options: .storageModeShared),
+            let dB = ctx.device.makeBuffer(
+                bytes: down.biases,
+                length: down.biases.count * 2,
+                options: .storageModeShared),
+            let uW = ctx.device.makeBuffer(
+                bytes: up.packed,
+                length: up.packed.count,
+                options: .storageModeShared),
+            let uS = ctx.device.makeBuffer(
+                bytes: up.scales,
+                length: up.scales.count * 2,
+                options: .storageModeShared),
+            let uB = ctx.device.makeBuffer(
+                bytes: up.biases,
+                length: up.biases.count * 2,
+                options: .storageModeShared)
+        else {
+            Issue.record("alloc failed")
+            return
         }
-        let np = normBuf.contents().bindMemory(to: UInt16.self,
-                                               capacity: hcNormBits.count)
+        let np = normBuf.contents().bindMemory(
+            to: UInt16.self,
+            capacity: hcNormBits.count)
         for i in 0..<hcNormBits.count { np[i] = hcNormBits[i] }
 
         let cb = try #require(ctx.queue.makeCommandBuffer())
-        try hc.encodeRead(commandBuffer: cb,
-                          streamsBuffer: streamBuf, hcNorm: normBuf,
-                          down: .init(weights: dW, scales: dS, biases: dB),
-                          up: .init(weights: uW, scales: uS, biases: uB),
-                          blockInput: inputBuf, eps: Self.eps)
-        cb.commit(); cb.waitUntilCompleted()
+        try hc.encodeRead(
+            commandBuffer: cb,
+            streamsBuffer: streamBuf, hcNorm: normBuf,
+            down: .init(weights: dW, scales: dS, biases: dB),
+            up: .init(weights: uW, scales: uS, biases: uB),
+            blockInput: inputBuf, eps: Self.eps)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         // Reference: grouped norm, low-rank gate with the 1/S inside silu,
         // then the mix-weighted stream mean.
@@ -385,8 +445,9 @@ struct HyperConnectionBlockTests {
         }
         let actual = Fp16Buffer.read(inputBuf, count: Self.dim)
         // fp16 through a norm, two INT4 GEMVs and two nonlinearities.
-        #expect(RelError.compute(actual: actual, reference: reference) < 0.05,
-                "read gate: \(RelError.compute(actual: actual, reference: reference))")
+        #expect(
+            RelError.compute(actual: actual, reference: reference) < 0.05,
+            "read gate: \(RelError.compute(actual: actual, reference: reference))")
     }
 
     @Test("The write gate opens to twice the read gate's range")

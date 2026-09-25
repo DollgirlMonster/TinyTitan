@@ -32,20 +32,23 @@ struct DenseGPUEquivalenceTests {
     private func repositoryRoot() -> URL {
         // <root>/tests/TinyTitan/CPUEngine/<this file>
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // CPUEngine
-            .deletingLastPathComponent()   // TinyTitan
-            .deletingLastPathComponent()   // tests
-            .deletingLastPathComponent()   // <root>
+            .deletingLastPathComponent()  // CPUEngine
+            .deletingLastPathComponent()  // TinyTitan
+            .deletingLastPathComponent()  // tests
+            .deletingLastPathComponent()  // <root>
     }
 
     private func runCLI(_ executable: URL, prompt: String) throws -> String {
         let process = Process()
         process.executableURL = executable
-        process.arguments = ["--model", ProcessInfo.processInfo
-            .environment["TINYTITAN_DENSE_EQUIV_MODEL"] ?? "models/qwen3.5_2B_4Bit",
-                             "--prompt", prompt,
-                             "--max-new", "1",
-                             "--temperature", "0"]
+        process.arguments = [
+            "--model",
+            ProcessInfo.processInfo
+                .environment["TINYTITAN_DENSE_EQUIV_MODEL"] ?? "models/qwen3.5_2B_4Bit",
+            "--prompt", prompt,
+            "--max-new", "1",
+            "--temperature", "0",
+        ]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -55,8 +58,9 @@ struct DenseGPUEquivalenceTests {
         let output = data.lossyUTF8String
         // A non-zero exit is a failure of the engine, not of the expectation,
         // so it is reported with the output that explains it.
-        try #require(process.terminationStatus == 0,
-                     "CLI exited \(process.terminationStatus): \(output)")
+        try #require(
+            process.terminationStatus == 0,
+            "CLI exited \(process.terminationStatus): \(output)")
         return output
     }
 
@@ -64,19 +68,23 @@ struct DenseGPUEquivalenceTests {
     func theGPUEngineContinuesTheOraclesOwnChecks() throws {
         let root = repositoryRoot()
         let executable = root.appendingPathComponent(".build/release/TinyTitanCLI")
-        try #require(FileManager.default.isExecutableFile(atPath: executable.path),
-                     "build it first: swift build -c release --product TinyTitanCLI")
+        try #require(
+            FileManager.default.isExecutableFile(atPath: executable.path),
+            "build it first: swift build -c release --product TinyTitanCLI")
 
-        let model = ProcessInfo.processInfo.environment["TINYTITAN_DENSE_EQUIV_MODEL"]
+        let model =
+            ProcessInfo.processInfo.environment["TINYTITAN_DENSE_EQUIV_MODEL"]
             ?? "models/qwen3.5_2B_4Bit"
-        try #require(FileManager.default.fileExists(
-            atPath: root.appendingPathComponent(model).path),
-                     "no install at \(model)")
+        try #require(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(model).path),
+            "no install at \(model)")
 
         for check in Self.oracleChecks {
             let output = try runCLI(executable, prompt: check.prompt)
-            #expect(output.contains(check.nextToken),
-                    "\(check.prompt) -> expected \(check.nextToken), got: \(output)")
+            #expect(
+                output.contains(check.nextToken),
+                "\(check.prompt) -> expected \(check.nextToken), got: \(output)")
         }
     }
 }

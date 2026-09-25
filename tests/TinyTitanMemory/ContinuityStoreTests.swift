@@ -1,6 +1,7 @@
+import ContinuityCore
 import Foundation
 import Testing
-import ContinuityCore
+
 @testable import TinyTitanMemory
 
 /// The durable backend, which used to be Valkey and is now the in-process
@@ -10,9 +11,11 @@ import ContinuityCore
 /// the reference store never had to: an address mapping that round-trips, and
 /// state that survives a restart.
 @Suite struct ContinuityStoreTests {
-    private func scope(_ workspace: String = "repo-a",
-                       user: String = "local",
-                       namespace: String = "tinytitan") throws -> MemoryScope {
+    private func scope(
+        _ workspace: String = "repo-a",
+        user: String = "local",
+        namespace: String = "tinytitan"
+    ) throws -> MemoryScope {
         try MemoryScope(namespace: namespace, user: user, workspace: workspace)
     }
 
@@ -36,12 +39,13 @@ import ContinuityCore
         // not copied into the value, so it can only be reported for a session
         // the store has actually seen.
         _ = try await store.sessionInit(MemorySession(id: "session-1"), in: scope)
-        let record = MemoryRecord(key: try key("decisions/sync"),
-                                  value: "FooManager stays; it prevents a sync race.",
-                                  importance: 0.9,
-                                  confidence: 0.6,
-                                  tags: ["sync", "concurrency"],
-                                  sourceSession: "session-1")
+        let record = MemoryRecord(
+            key: try key("decisions/sync"),
+            value: "FooManager stays; it prevents a sync race.",
+            importance: 0.9,
+            confidence: 0.6,
+            tags: ["sync", "concurrency"],
+            sourceSession: "session-1")
         try await store.set(record, in: scope)
 
         let loaded = try #require(try await store.get(try key("decisions/sync"), in: scope))
@@ -108,9 +112,11 @@ import ContinuityCore
         let store = makeStore()
         let scope = try scope()
         for index in 0..<6 {
-            try await store.set(MemoryRecord(key: try key("notes/sync\(index)"),
-                                             value: "the sync race number \(index)",
-                                             importance: 0.5), in: scope)
+            try await store.set(
+                MemoryRecord(
+                    key: try key("notes/sync\(index)"),
+                    value: "the sync race number \(index)",
+                    importance: 0.5), in: scope)
         }
 
         let all = try await store.search(MemoryQuery(text: "sync", limit: 10), in: scope)
@@ -122,11 +128,15 @@ import ContinuityCore
     @Test func searchRanksByRelevance() async throws {
         let store = makeStore()
         let scope = try scope()
-        try await store.set(MemoryRecord(key: try key("decisions/sync"),
-                                         value: "the sync race is prevented by FooManager",
-                                         importance: 0.9, tags: ["sync"]), in: scope)
-        try await store.set(MemoryRecord(key: try key("notes/colour"),
-                                         value: "the palette is warm"), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("decisions/sync"),
+                value: "the sync race is prevented by FooManager",
+                importance: 0.9, tags: ["sync"]), in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("notes/colour"),
+                value: "the palette is warm"), in: scope)
 
         let hits = try await store.search(MemoryQuery(text: "sync", limit: 5), in: scope)
         #expect(hits.first?.key.rawValue == "decisions/sync")
@@ -147,13 +157,16 @@ import ContinuityCore
     }
 
     @Test func oversizedValuesAreRefusedWithTheCallersLimit() async throws {
-        let store = ContinuityStore(engine: ContinuityEngine(),
-                                    limits: TinyTitanMemory.MemoryLimits(maximumValueBytes: 64))
+        let store = ContinuityStore(
+            engine: ContinuityEngine(),
+            limits: TinyTitanMemory.MemoryLimits(maximumValueBytes: 64))
         let scope = try scope()
         await #expect(throws: MemoryError.self) {
-            try await store.set(MemoryRecord(key: try self.key("big"),
-                                             value: String(repeating: "x", count: 65)),
-                                in: scope)
+            try await store.set(
+                MemoryRecord(
+                    key: try self.key("big"),
+                    value: String(repeating: "x", count: 65)),
+                in: scope)
         }
     }
 
@@ -162,10 +175,12 @@ import ContinuityCore
         let store = ContinuityStore(engine: ContinuityEngine(), limits: limits)
         let scope = try scope()
         for index in 0..<6 {
-            try await store.set(MemoryRecord(key: try key("k\(index)"),
-                                             value: "value \(index)",
-                                             importance: Double(index) / 10),
-                                in: scope)
+            try await store.set(
+                MemoryRecord(
+                    key: try key("k\(index)"),
+                    value: "value \(index)",
+                    importance: Double(index) / 10),
+                in: scope)
         }
         let bootstrap = try await store.sessionInit(MemorySession(id: "s1"), in: scope)
         #expect(bootstrap.records.count == 2)
@@ -193,8 +208,9 @@ import ContinuityCore
     @Test func foldingIsIdempotentSoAReturnedKeyStillResolves() async throws {
         let store = makeStore()
         let scope = try scope()
-        try await store.set(MemoryRecord(key: try key("Decisions/Sync.v2"), value: "held"),
-                            in: scope)
+        try await store.set(
+            MemoryRecord(key: try key("Decisions/Sync.v2"), value: "held"),
+            in: scope)
 
         // The stored key is the folded one, and using it verbatim works.
         let listed = try await store.list(prefix: "", limit: 5, in: scope)
@@ -225,11 +241,13 @@ import ContinuityCore
             let engine = ContinuityEngine(journal: try FileJournal(url: url))
             try await engine.start()
             let store = ContinuityStore(engine: engine)
-            try await store.set(MemoryRecord(key: try key("decisions/storage"),
-                                             value: "native swift, same process",
-                                             importance: 0.95,
-                                             tags: ["architecture"]),
-                                in: scope)
+            try await store.set(
+                MemoryRecord(
+                    key: try key("decisions/storage"),
+                    value: "native swift, same process",
+                    importance: 0.95,
+                    tags: ["architecture"]),
+                in: scope)
             await engine.shutDown()
         }
 
@@ -279,14 +297,17 @@ import ContinuityCore
         return (store, ContinuityJournalStore(engine: engine, store: store))
     }
 
-    private func turn(_ index: Int,
-                      session: String = "s1",
-                      prompt: String,
-                      reply: String) -> JournalTurn {
-        JournalTurn(session: session, workspace: "repo-a", index: index,
-                    prompt: prompt, reply: reply, model: "qwen35b",
-                    promptTokens: 10, completionTokens: 20,
-                    latencyMilliseconds: 30, stopReason: "stop")
+    private func turn(
+        _ index: Int,
+        session: String = "s1",
+        prompt: String,
+        reply: String
+    ) -> JournalTurn {
+        JournalTurn(
+            session: session, workspace: "repo-a", index: index,
+            prompt: prompt, reply: reply, model: "qwen35b",
+            promptTokens: 10, completionTokens: 20,
+            latencyMilliseconds: 30, stopReason: "stop")
     }
 
     @Test func turnsComeBackNewestFirstWithTheirMeasurements() async throws {
@@ -321,10 +342,14 @@ import ContinuityCore
     @Test func searchFindsTurnsAcrossSessions() async throws {
         let (_, journal) = pair()
         let scope = try scope()
-        await journal.record(turn(0, session: "s1", prompt: "about sync races",
-                                  reply: "kept FooManager"), in: scope)
-        await journal.record(turn(0, session: "s2", prompt: "about colour",
-                                  reply: "warm palette"), in: scope)
+        await journal.record(
+            turn(
+                0, session: "s1", prompt: "about sync races",
+                reply: "kept FooManager"), in: scope)
+        await journal.record(
+            turn(
+                0, session: "s2", prompt: "about colour",
+                reply: "warm palette"), in: scope)
 
         let hits = await journal.search("SYNC", limit: 10, in: scope)
         #expect(hits.count == 1)
@@ -338,10 +363,12 @@ import ContinuityCore
     @Test func theJournalReusesTheSessionTheStoreOpened() async throws {
         let (store, journal) = pair()
         let scope = try scope()
-        _ = try await store.sessionInit(MemorySession(id: "shared", modelID: "qwen35b"),
-                                        in: scope)
-        await journal.record(turn(0, session: "shared", prompt: "hello", reply: "hi"),
-                             in: scope)
+        _ = try await store.sessionInit(
+            MemorySession(id: "shared", modelID: "qwen35b"),
+            in: scope)
+        await journal.record(
+            turn(0, session: "shared", prompt: "hello", reply: "hi"),
+            in: scope)
 
         let summaries = await journal.sessions(limit: 10, in: scope)
         #expect(summaries.count == 1)
@@ -352,12 +379,14 @@ import ContinuityCore
     @Test func retentionBoundsTurnsPerSession() async throws {
         let engine = ContinuityEngine()
         let store = ContinuityStore(engine: engine)
-        let journal = ContinuityJournalStore(engine: engine, store: store,
-                                             limits: JournalLimits(turnsPerSession: 3))
+        let journal = ContinuityJournalStore(
+            engine: engine, store: store,
+            limits: JournalLimits(turnsPerSession: 3))
         let scope = try scope()
         for index in 0..<10 {
-            await journal.record(turn(index, prompt: "ask \(index)", reply: "reply \(index)"),
-                                 in: scope)
+            await journal.record(
+                turn(index, prompt: "ask \(index)", reply: "reply \(index)"),
+                in: scope)
         }
         let stored = await journal.turns(session: "s1", limit: 50, in: scope)
         #expect(stored.count == 3)
@@ -391,14 +420,18 @@ import ContinuityCore
 
         do {
             let service = MemoryService(configuration: configuration)
-            let context = try #require(await service.beginSession(id: "s1",
-                                                                  modelID: "qwen35b"))
+            let context = try #require(
+                await service.beginSession(
+                    id: "s1",
+                    modelID: "qwen35b"))
             #expect(await service.isDurable)
             let result = await service.execute(
                 name: "memory_set",
-                arguments: ["key": .string("decisions/storage"),
-                            "value": .string("native swift, same process"),
-                            "importance": .number(0.9)],
+                arguments: [
+                    "key": .string("decisions/storage"),
+                    "value": .string("native swift, same process"),
+                    "importance": .number(0.9),
+                ],
                 in: context)
             guard case .ok = result else {
                 Issue.record("the write failed: \(result)")
@@ -416,8 +449,9 @@ import ContinuityCore
         // A second service over the same directory is a restart.
         let service = MemoryService(configuration: configuration)
         let context = try #require(await service.beginSession(id: "s2"))
-        #expect(await service.isDurable,
-                "the restarted service must own the journal, or nothing below means anything")
+        #expect(
+            await service.isDurable,
+            "the restarted service must own the journal, or nothing below means anything")
         #expect(context.bootstrap.records.count == 1)
         #expect(context.bootstrap.records.first?.key.rawValue == "decisions/storage")
         #expect(context.bootstrap.records.first?.value == "native swift, same process")
@@ -433,14 +467,17 @@ import ContinuityCore
 
         do {
             let service = MemoryService(configuration: configuration)
-            let context = try #require(await service.beginSession(id: "s1",
-                                                                  modelID: "qwen35b"))
-            await service.recordTurn(session: context, index: 0,
-                                     prompt: "write pong in swift",
-                                     reply: "done, 800 by 600",
-                                     model: "qwen35b", promptTokens: 12,
-                                     completionTokens: 40, latencyMilliseconds: 900,
-                                     stopReason: "stop")
+            let context = try #require(
+                await service.beginSession(
+                    id: "s1",
+                    modelID: "qwen35b"))
+            await service.recordTurn(
+                session: context, index: 0,
+                prompt: "write pong in swift",
+                reply: "done, 800 by 600",
+                model: "qwen35b", promptTokens: 12,
+                completionTokens: 40, latencyMilliseconds: 900,
+                stopReason: "stop")
             // As above: a restart releases the lock; one process has to ask.
             await service.shutDown()
         }
@@ -515,7 +552,8 @@ import ContinuityCore
         // The case the naive push-down got wrong: a prefix that stops in the
         // middle of the first segment.
         let byHead = try await store.list(prefix: "de", limit: 10, in: scope)
-        #expect(Set(byHead.map(\.rawValue))
+        #expect(
+            Set(byHead.map(\.rawValue))
                 == ["decisions/sync", "decisions/storage", "deploy/steps"])
 
         let byPartialKey = try await store.list(prefix: "decisions/st", limit: 10, in: scope)
@@ -530,19 +568,24 @@ import ContinuityCore
     @Test func searchDoesNotMatchTheStorageFormat() async throws {
         let store = ContinuityStore(engine: ContinuityEngine())
         let scope = try scope()
-        try await store.set(MemoryRecord(key: try key("notes/a"), value: "the palette is warm",
-                                         importance: 0.5, tags: ["colour"]),
-                            in: scope)
-        try await store.set(MemoryRecord(key: try key("notes/b"), value: "the sync race",
-                                         importance: 0.5),
-                            in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("notes/a"), value: "the palette is warm",
+                importance: 0.5, tags: ["colour"]),
+            in: scope)
+        try await store.set(
+            MemoryRecord(
+                key: try key("notes/b"), value: "the sync race",
+                importance: 0.5),
+            in: scope)
 
         for term in ["importance", "createdAt", "updatedAt", "tags", "value"] {
             let hits = try await store.search(MemoryQuery(text: term, limit: 10), in: scope)
             #expect(hits.isEmpty, "'\(term)' is a field name, not content")
         }
-        #expect(try await store.search(MemoryQuery(text: "palette", limit: 10), in: scope)
-                    .count == 1)
+        #expect(
+            try await store.search(MemoryQuery(text: "palette", limit: 10), in: scope)
+                .count == 1)
     }
 
     @Test func theBootstrapReadsABoundedSlice() async throws {
@@ -550,10 +593,12 @@ import ContinuityCore
         let store = ContinuityStore(engine: ContinuityEngine(), limits: limits)
         let scope = try scope()
         for index in 0..<200 {
-            try await store.set(MemoryRecord(key: try key("k\(index)"),
-                                             value: "value \(index)",
-                                             importance: Double(index) / 200),
-                                in: scope)
+            try await store.set(
+                MemoryRecord(
+                    key: try key("k\(index)"),
+                    value: "value \(index)",
+                    importance: Double(index) / 200),
+                in: scope)
         }
         let bootstrap = try await store.sessionInit(MemorySession(id: "s1"), in: scope)
         #expect(bootstrap.records.count == 5)
@@ -570,9 +615,11 @@ import ContinuityCore
         let engine = ContinuityEngine(journal: try FileJournal(url: url))
         try await engine.start()
         let store = ContinuityStore(engine: engine)
-        try await store.set(MemoryRecord(key: try key("decisions/sync"),
-                                         value: "FooManager prevents a race"),
-                            in: try scope())
+        try await store.set(
+            MemoryRecord(
+                key: try key("decisions/sync"),
+                value: "FooManager prevents a race"),
+            in: try scope())
         await engine.shutDown()
 
         // Readable in the file, which is what makes a journal inspectable
@@ -585,8 +632,10 @@ import ContinuityCore
 
 /// One workspace, one file, one writer.
 @Suite struct MemoryWorkspaceIsolationTests {
-    private func configuration(directory: URL,
-                               workspace: String = "repo-a") -> MemoryConfiguration {
+    private func configuration(
+        directory: URL,
+        workspace: String = "repo-a"
+    ) -> MemoryConfiguration {
         var configuration = MemoryConfiguration()
         configuration.isEnabled = true
         configuration.workspace = workspace
@@ -612,19 +661,27 @@ import ContinuityCore
 
         let service = MemoryService(configuration: configuration)
         let home = try #require(await service.beginSession(id: "s1"))
-        let other = try #require(await service.beginSession(id: "s2",
-                                                            workspaceOverride: "repo-b"))
+        let other = try #require(
+            await service.beginSession(
+                id: "s2",
+                workspaceOverride: "repo-b"))
         #expect(home.scope.workspace == "repo-a")
         #expect(other.scope.workspace == "repo-b")
 
-        _ = await service.execute(name: "memory_set",
-                                  arguments: ["key": .string("here"),
-                                              "value": .string("belongs to repo-a")],
-                                  in: home)
-        _ = await service.execute(name: "memory_set",
-                                  arguments: ["key": .string("here"),
-                                              "value": .string("belongs to repo-b")],
-                                  in: other)
+        _ = await service.execute(
+            name: "memory_set",
+            arguments: [
+                "key": .string("here"),
+                "value": .string("belongs to repo-a"),
+            ],
+            in: home)
+        _ = await service.execute(
+            name: "memory_set",
+            arguments: [
+                "key": .string("here"),
+                "value": .string("belongs to repo-b"),
+            ],
+            in: other)
         await service.shutDown()
 
         let first = directory.appendingPathComponent("tinytitan/local/repo-a.ndjson")
@@ -650,9 +707,10 @@ import ContinuityCore
         let first = MemoryService(configuration: configuration)
         let firstContext = try #require(await first.beginSession(id: "s1"))
         #expect(firstContext.isDurable)
-        _ = await first.execute(name: "memory_set",
-                                arguments: ["key": .string("k"), "value": .string("from first")],
-                                in: firstContext)
+        _ = await first.execute(
+            name: "memory_set",
+            arguments: ["key": .string("k"), "value": .string("from first")],
+            in: firstContext)
 
         let second = MemoryService(configuration: configuration)
         let secondContext = try #require(await second.beginSession(id: "s2"))
@@ -662,10 +720,13 @@ import ContinuityCore
         #expect(instructions.contains("lasts only for this session"))
 
         // Its writes work for the session and do not reach the other's file.
-        _ = await second.execute(name: "memory_set",
-                                 arguments: ["key": .string("k2"),
-                                             "value": .string("from second")],
-                                 in: secondContext)
+        _ = await second.execute(
+            name: "memory_set",
+            arguments: [
+                "key": .string("k2"),
+                "value": .string("from second"),
+            ],
+            in: secondContext)
         await first.shutDown()
         await second.shutDown()
 
@@ -690,19 +751,24 @@ import ContinuityCore
         let filler = String(repeating: "x", count: 4 << 10)
         for index in 0..<12 {
             let context = try #require(
-                await service.beginSession(id: "s\(index)",
-                                           workspaceOverride: "repo-\(index)"))
+                await service.beginSession(
+                    id: "s\(index)",
+                    workspaceOverride: "repo-\(index)"))
             for entry in 0..<8 {
-                _ = await service.execute(name: "memory_set",
-                                          arguments: ["key": .string("k\(entry)"),
-                                                      "value": .string(filler)],
-                                          in: context)
+                _ = await service.execute(
+                    name: "memory_set",
+                    arguments: [
+                        "key": .string("k\(entry)"),
+                        "value": .string(filler),
+                    ],
+                    in: context)
             }
             // Checked after every workspace, not just at the end: a ceiling
             // that only holds once the work has stopped is not a ceiling.
             let resident = await service.residentBytes()
-            #expect(resident <= 128 << 10,
-                    "resident \(resident) after workspace \(index)")
+            #expect(
+                resident <= 128 << 10,
+                "resident \(resident) after workspace \(index)")
         }
         await service.shutDown()
 
@@ -724,33 +790,45 @@ import ContinuityCore
         configuration.limits.maximumValueBytes = 8 << 10
 
         let service = MemoryService(configuration: configuration)
-        let early = try #require(await service.beginSession(id: "s0",
-                                                            workspaceOverride: "repo-early"))
-        _ = await service.execute(name: "memory_set",
-                                  arguments: ["key": .string("decisions/storage"),
-                                              "value": .string("native swift")],
-                                  in: early)
+        let early = try #require(
+            await service.beginSession(
+                id: "s0",
+                workspaceOverride: "repo-early"))
+        _ = await service.execute(
+            name: "memory_set",
+            arguments: [
+                "key": .string("decisions/storage"),
+                "value": .string("native swift"),
+            ],
+            in: early)
 
         // Enough other workspaces to push the first one out of residency.
         let filler = String(repeating: "x", count: 4 << 10)
         for index in 0..<12 {
             let context = try #require(
-                await service.beginSession(id: "f\(index)",
-                                           workspaceOverride: "repo-\(index)"))
+                await service.beginSession(
+                    id: "f\(index)",
+                    workspaceOverride: "repo-\(index)"))
             for entry in 0..<8 {
-                _ = await service.execute(name: "memory_set",
-                                          arguments: ["key": .string("k\(entry)"),
-                                                      "value": .string(filler)],
-                                          in: context)
+                _ = await service.execute(
+                    name: "memory_set",
+                    arguments: [
+                        "key": .string("k\(entry)"),
+                        "value": .string(filler),
+                    ],
+                    in: context)
             }
         }
 
-        let returning = try #require(await service.beginSession(id: "s1",
-                                                                workspaceOverride: "repo-early"))
+        let returning = try #require(
+            await service.beginSession(
+                id: "s1",
+                workspaceOverride: "repo-early"))
         #expect(returning.bootstrap.records.contains { $0.key.rawValue == "decisions/storage" })
-        let result = await service.execute(name: "memory_get",
-                                           arguments: ["key": .string("decisions/storage")],
-                                           in: returning)
+        let result = await service.execute(
+            name: "memory_get",
+            arguments: ["key": .string("decisions/storage")],
+            in: returning)
         #expect(result.jsonString().contains("native swift"))
         await service.shutDown()
     }
@@ -777,12 +855,14 @@ import ContinuityCore
     @Test func amongEqualImportanceTheOlderFactWins() throws {
         let early = Date(timeIntervalSince1970: 1_000)
         let late = Date(timeIntervalSince1970: 9_000)
-        let bible = MemoryRecord(key: try MemoryKey(validating: "characters/rosa/eyes"),
-                                 value: "hazel", importance: 0.9,
-                                 createdAt: early, updatedAt: early)
-        let state = MemoryRecord(key: try MemoryKey(validating: "continuity/last_scene"),
-                                 value: "Rosa on the shore", importance: 0.9,
-                                 createdAt: late, updatedAt: late)
+        let bible = MemoryRecord(
+            key: try MemoryKey(validating: "characters/rosa/eyes"),
+            value: "hazel", importance: 0.9,
+            createdAt: early, updatedAt: early)
+        let state = MemoryRecord(
+            key: try MemoryKey(validating: "continuity/last_scene"),
+            value: "Rosa on the shore", importance: 0.9,
+            createdAt: late, updatedAt: late)
         let limits = TinyTitanMemory.MemoryLimits(bootstrapRecords: 1, bootstrapBytes: 1 << 16)
         let bootstrap = MemoryBootstrap.build(from: [state, bible], limits: limits)
         #expect(bootstrap.records.map(\.key.rawValue) == ["characters/rosa/eyes"])
@@ -792,20 +872,25 @@ import ContinuityCore
     @Test func importanceStillComesFirst() throws {
         let early = Date(timeIntervalSince1970: 1_000)
         let late = Date(timeIntervalSince1970: 9_000)
-        let minor = MemoryRecord(key: try MemoryKey(validating: "notes/aside"), value: "x",
-                                 importance: 0.2, createdAt: early, updatedAt: early)
-        let major = MemoryRecord(key: try MemoryKey(validating: "rules/weather"),
-                                 value: "never rains", importance: 0.95,
-                                 createdAt: late, updatedAt: late)
+        let minor = MemoryRecord(
+            key: try MemoryKey(validating: "notes/aside"), value: "x",
+            importance: 0.2, createdAt: early, updatedAt: early)
+        let major = MemoryRecord(
+            key: try MemoryKey(validating: "rules/weather"),
+            value: "never rains", importance: 0.95,
+            createdAt: late, updatedAt: late)
         let limits = TinyTitanMemory.MemoryLimits(bootstrapRecords: 1, bootstrapBytes: 1 << 16)
-        #expect(MemoryBootstrap.build(from: [minor, major], limits: limits)
-                    .records.map(\.key.rawValue) == ["rules/weather"])
+        #expect(
+            MemoryBootstrap.build(from: [minor, major], limits: limits)
+                .records.map(\.key.rawValue) == ["rules/weather"])
     }
 }
 
 /// Project files must not pile up.
 @Suite struct MemoryRetentionTests {
-    private func configuration(directory: URL, days: Int = 30, cap: Int = 100) -> MemoryConfiguration {
+    private func configuration(directory: URL, days: Int = 30, cap: Int = 100)
+        -> MemoryConfiguration
+    {
         var configuration = MemoryConfiguration()
         configuration.isEnabled = true
         configuration.workspace = "live"
@@ -854,7 +939,7 @@ import ContinuityCore
             .appendingPathComponent("retention-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         for index in 0..<6 {
-            _ = try plant("p\(index)", in: directory, daysOld: index)   // p0 newest
+            _ = try plant("p\(index)", in: directory, daysOld: index)  // p0 newest
         }
         let service = MemoryService(configuration: configuration(directory: directory, cap: 4))
         await service.sweepStaleWorkspaces()
@@ -866,8 +951,10 @@ import ContinuityCore
             .appendingPathComponent("retention-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         for index in 0..<3 { _ = try plant("p\(index)", in: directory, daysOld: 60) }
-        let service = MemoryService(configuration: configuration(directory: directory,
-                                                                 days: 0, cap: 2))
+        let service = MemoryService(
+            configuration: configuration(
+                directory: directory,
+                days: 0, cap: 2))
         // Opening the live workspace creates its file and runs the sweep:
         // the live one plus one planted file fit the cap of two.
         let context = try #require(await service.beginSession(id: "s1"))
@@ -889,8 +976,10 @@ import ContinuityCore
             .appendingPathComponent("retention-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         for index in 0..<5 { _ = try plant("p\(index)", in: directory, daysOld: 400) }
-        let service = MemoryService(configuration: configuration(directory: directory,
-                                                                 days: 0, cap: 0))
+        let service = MemoryService(
+            configuration: configuration(
+                directory: directory,
+                days: 0, cap: 0))
         await service.sweepStaleWorkspaces()
         #expect(names(in: directory).count == 5)
     }
@@ -927,10 +1016,12 @@ import ContinuityCore
             for index in 0..<2 {
                 let session = try await engine.beginSession(taskID: task.id)
                 try await engine.recordUserPrompt(sessionID: session.id, text: "chapter \(index)")
-                try await engine.recordAssistantResponse(sessionID: session.id,
-                                                         text: String(repeating: "prose ", count: 200))
-                try await engine.remember(sessionID: session.id, namespace: "k.characters.rosa",
-                                          key: "eyes", value: "hazel")
+                try await engine.recordAssistantResponse(
+                    sessionID: session.id,
+                    text: String(repeating: "prose ", count: 200))
+                try await engine.remember(
+                    sessionID: session.id, namespace: "k.characters.rosa",
+                    key: "eyes", value: "hazel")
                 _ = try await engine.endSession(session.id)
             }
             await engine.shutDown()
@@ -970,8 +1061,10 @@ import ContinuityCore
         let engine = ContinuityEngine(journal: try FileJournal(url: url))
         try await engine.start()
         let task = try await engine.createTask(title: "Novel")
-        try await engine.remember(taskID: task.id, namespace: "k.state", key: "inn", value: "standing")
-        try await engine.remember(taskID: task.id, namespace: "k.state", key: "inn", value: "burned")
+        try await engine.remember(
+            taskID: task.id, namespace: "k.state", key: "inn", value: "standing")
+        try await engine.remember(
+            taskID: task.id, namespace: "k.state", key: "inn", value: "burned")
         // Read while the writer still holds the lock: no lock is taken.
         let file = try MemoryProjectFile.load(url)
         await engine.shutDown()
@@ -985,8 +1078,11 @@ import ContinuityCore
         #expect(files.count == 1)
         if case .success(let found) = MemoryProjectFile.resolve("photo", among: files) {
             #expect(found.workspace == "photograph-851a1c1a")
-        } else { Issue.record("prefix did not resolve") }
-        if case .failure = MemoryProjectFile.resolve("nothing", among: files) {} else {
+        } else {
+            Issue.record("prefix did not resolve")
+        }
+        if case .failure = MemoryProjectFile.resolve("nothing", among: files) {
+        } else {
             Issue.record("an unknown name resolved")
         }
     }

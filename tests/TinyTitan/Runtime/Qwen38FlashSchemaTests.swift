@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 /// Every tensor name this family's schema produces is checked against the
@@ -9,9 +10,11 @@ import Testing
 @Suite("Qwen38Flash tensor schema")
 struct Qwen38FlashSchemaTests {
     static let names: Set<String> = {
-        guard let url = Bundle.module.url(forResource: "qwen38_tensor_names",
-                                          withExtension: "txt"),
-              let text = try? String(contentsOf: url, encoding: .utf8)
+        guard
+            let url = Bundle.module.url(
+                forResource: "qwen38_tensor_names",
+                withExtension: "txt"),
+            let text = try? String(contentsOf: url, encoding: .utf8)
         else { return [] }
         return Set(text.split(separator: "\n").map(String.init))
     }()
@@ -75,10 +78,12 @@ struct Qwen38FlashSchemaTests {
         }
         // And the layer norms a plain transformer would have really are absent,
         // so pointing these roles anywhere else would have failed at load.
-        #expect(!Self.names.contains(
-            "model.language_model.layers.0.input_layernorm.weight"))
-        #expect(!Self.names.contains(
-            "model.language_model.layers.0.post_attention_layernorm.weight"))
+        #expect(
+            !Self.names.contains(
+                "model.language_model.layers.0.input_layernorm.weight"))
+        #expect(
+            !Self.names.contains(
+                "model.language_model.layers.0.post_attention_layernorm.weight"))
         #expect(!Self.names.contains("model.language_model.norm.weight"))
     }
 
@@ -120,8 +125,9 @@ struct Qwen38FlashSchemaTests {
         let cfg = ArchConfig.qwen38FlashNext
         #expect(cfg.ple.layerIndices == [1])
         for l in cfg.ple.layerIndices {
-            #expect(exists(Qwen38FlashTensors.pleConv(l)),
-                    "\(Qwen38FlashTensors.pleConv(l))")
+            #expect(
+                exists(Qwen38FlashTensors.pleConv(l)),
+                "\(Qwen38FlashTensors.pleConv(l))")
         }
         // And nowhere else -- the table is one layer's, not every layer's.
         for l in 0..<48 where !cfg.ple.layerIndices.contains(l) {
@@ -166,14 +172,16 @@ struct ResidualWidthTests {
     }
 
     static func slot(_ bits: Int) -> ManifestQuantSlot {
-        ManifestQuantSlot(weightBits: bits, scheme: "affine",
-                          scaleType: "BF16", biasType: "BF16", groupSize: 64)
+        ManifestQuantSlot(
+            weightBits: bits, scheme: "affine",
+            scaleType: "BF16", biasType: "BF16", groupSize: 64)
     }
 
     static func quant(attention: Int, routed: Int = 4) -> ManifestQuant {
-        ManifestQuant(embedding: slot(8), attention: slot(attention),
-                      router: slot(8), sharedExpert: slot(routed),
-                      routedExpert: slot(routed))
+        ManifestQuant(
+            embedding: slot(8), attention: slot(attention),
+            router: slot(8), sharedExpert: slot(routed),
+            routedExpert: slot(routed))
     }
 
     /// These three kernels took a `DequantInt4GEMV` unconditionally, so an

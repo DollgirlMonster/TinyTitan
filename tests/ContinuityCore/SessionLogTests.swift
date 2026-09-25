@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContinuityCore
 
 @Suite struct SessionLogTests {
@@ -43,14 +44,16 @@ import Testing
         let log = SessionLog()
         let task = await log.createTask(title: "T")
         let session = try await log.beginSession(taskID: task.id)
-        let response = try await log.beginAssistantResponse(sessionID: session.id,
-                                                            model: "qwen35b")
+        let response = try await log.beginAssistantResponse(
+            sessionID: session.id,
+            model: "qwen35b")
         for piece in ["Hello", ", ", "world"] {
             try await log.appendAssistantChunk(responseID: response, text: piece)
         }
-        _ = try await log.completeAssistantResponse(responseID: response,
-                                                    outputTokens: 3,
-                                                    finishReason: "stop")
+        _ = try await log.completeAssistantResponse(
+            responseID: response,
+            outputTokens: 3,
+            finishReason: "stop")
 
         let transcript = await log.transcript(sessionID: session.id)
         let replies = transcript.filter { $0.kind == .assistantResponseCompleted }
@@ -110,8 +113,9 @@ import Testing
 
         let first = try await log.beginSession(taskID: task.id)
         _ = try await log.recordUserPrompt(sessionID: first.id, text: "chapter one")
-        _ = try await log.recordAssistantResponse(sessionID: first.id,
-                                                  ResponseRecord(text: "written"))
+        _ = try await log.recordAssistantResponse(
+            sessionID: first.id,
+            ResponseRecord(text: "written"))
         _ = try await log.endSession(first.id)
 
         let second = try await log.beginSession(taskID: task.id)
@@ -148,8 +152,9 @@ import Testing
         _ = try await log.endSession(first.id)
 
         let second = try await log.beginSession(taskID: task.id)
-        _ = try await log.recordAssistantResponse(sessionID: second.id,
-                                                  ResponseRecord(text: "unsolicited"))
+        _ = try await log.recordAssistantResponse(
+            sessionID: second.id,
+            ResponseRecord(text: "unsolicited"))
         _ = try await log.endSession(second.id)
 
         let turns = await log.turns(taskID: task.id)
@@ -317,8 +322,9 @@ actor EventCollector {
         let task = await generous.createTask(title: "T")
         for index in 0..<20 {
             let session = try await generous.beginSession(taskID: task.id)
-            _ = try await generous.recordUserPrompt(sessionID: session.id,
-                                                    text: turnBytes(4000))
+            _ = try await generous.recordUserPrompt(
+                sessionID: session.id,
+                text: turnBytes(4000))
             _ = try await generous.endSession(session.id)
             _ = index
         }

@@ -10,10 +10,10 @@ public struct SeedTree {
 
     /// Derive a child PRNG by mixing the root with an FNV-1a hash of the label.
     public func key(_ label: String) -> SplitMix64 {
-        var h: UInt64 = 0xCBF29CE484222325
+        var h: UInt64 = 0xCBF2_9CE4_8422_2325
         for byte in label.utf8 {
             h ^= UInt64(byte)
-            h &*= 0x100000001B3
+            h &*= 0x100_0000_01B3
         }
         return SplitMix64(seed: root ^ h)
     }

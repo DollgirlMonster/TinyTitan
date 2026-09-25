@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanMemory
 
 /// The side-engine port, and the one judgement wired to a write so far.
@@ -25,10 +26,11 @@ import Testing
         let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: true)
         let log = LogCollector()
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    log: { log.append($0) })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            log: { log.append($0) })
         let context = try #require(await service.beginSession(id: "s-dup"))
         try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
 
@@ -41,8 +43,9 @@ import Testing
         // in, and the one the 4B answers YES to.
         #expect(engine.pairs.first?.0.key == "characters/marcus/eyes")
         #expect(engine.pairs.first?.1.key == "characters/marcus/eye_colour")
-        let stored = try await store.get(try MemoryKey(validating: "characters/marcus/eye_colour"),
-                                         in: context.scope)
+        let stored = try await store.get(
+            try MemoryKey(validating: "characters/marcus/eye_colour"),
+            in: context.scope)
         #expect(stored == nil)
         #expect(log.messages().contains { $0.contains("near-duplicate stopped") })
         #expect(log.messages().contains { $0.contains("stopped 1 near-duplicate") })
@@ -58,16 +61,18 @@ import Testing
             [try fact("characters/marcus/eye_colour", "grey")], in: context)
 
         #expect(written == 1)
-        let stored = try await store.get(try MemoryKey(validating: "characters/marcus/eye_colour"),
-                                         in: context.scope)
+        let stored = try await store.get(
+            try MemoryKey(validating: "characters/marcus/eye_colour"),
+            in: context.scope)
         #expect(stored?.value == "grey")
     }
 
     @Test func aNoDecisionFromTheEngineStoresTheFact() async throws {
         let store = InMemoryStore()
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: StubSideEngine(duplicates: nil))
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: StubSideEngine(duplicates: nil))
         let context = try #require(await service.beginSession(id: "s-nil"))
         try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
 
@@ -80,9 +85,10 @@ import Testing
     @Test func onlyFactsInTheSameLeadingSegmentAreCompared() async throws {
         let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: true)
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine)
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine)
         let context = try #require(await service.beginSession(id: "s-category"))
         try await store.set(try fact("gotchas/other", "grey"), in: context.scope)
 
@@ -96,9 +102,10 @@ import Testing
     @Test func theSameKeyIsNeverComparedWithItself() async throws {
         let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: true)
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine)
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine)
         let context = try #require(await service.beginSession(id: "s-same-key"))
         // Same key, different value: the unchanged check does not fire, and
         // the duplication check must not ask the engine about a key against
@@ -116,10 +123,11 @@ import Testing
         let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: false, contradicts: true)
         let log = LogCollector()
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    log: { log.append($0) })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            log: { log.append($0) })
         let context = try #require(await service.beginSession(id: "s-conflict"))
         try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
 
@@ -130,8 +138,9 @@ import Testing
         // tell them apart, is not ready. The fact is stored and the conflict
         // is logged.
         #expect(written == 1)
-        let stored = try await store.get(try MemoryKey(validating: "characters/marcus/eye_colour"),
-                                         in: context.scope)
+        let stored = try await store.get(
+            try MemoryKey(validating: "characters/marcus/eye_colour"),
+            in: context.scope)
         #expect(stored?.value == "hazel")
         #expect(log.messages().contains { $0.contains("possible conflict") })
         #expect(log.messages().contains { $0.contains("recorded 1 possible conflict") })
@@ -141,8 +150,9 @@ import Testing
         let eyes = try MemoryKey(validating: "characters/marcus/eyes")
         #expect(MemoryRuleLookup.ruleKey(for: eyes)?.rawValue == "rules/eyes")
         let facts = [try fact("rules/eyes", "eye colour is fixed and must never change.")]
-        #expect(MemoryRuleLookup.rule(for: eyes, among: facts)
-            == "eye colour is fixed and must never change.")
+        #expect(
+            MemoryRuleLookup.rule(for: eyes, among: facts)
+                == "eye colour is fixed and must never change.")
     }
 
     @Test func aSingleSegmentKeyHasNoRule() throws {
@@ -159,24 +169,28 @@ import Testing
 
     @Test func aStoredRuleStopsAChangeItFixes() async throws {
         let store = InMemoryStore()
-        let engine = StubSideEngine(duplicates: false, contradicts: false,
-                                    supersedes: .conflict)
+        let engine = StubSideEngine(
+            duplicates: false, contradicts: false,
+            supersedes: .conflict)
         let log = LogCollector()
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    log: { log.append($0) })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            log: { log.append($0) })
         let context = try #require(await service.beginSession(id: "s-rule"))
         try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
-        try await store.set(try fact("rules/eyes", "eye colour is fixed and must never change."),
-                            in: context.scope)
+        try await store.set(
+            try fact("rules/eyes", "eye colour is fixed and must never change."),
+            in: context.scope)
 
         let written = await service.storeConsolidation(
             [try fact("characters/marcus/eyes", "hazel")], in: context)
 
         #expect(written == 0)
-        let stored = try await store.get(try MemoryKey(validating: "characters/marcus/eyes"),
-                                         in: context.scope)
+        let stored = try await store.get(
+            try MemoryKey(validating: "characters/marcus/eyes"),
+            in: context.scope)
         #expect(stored?.value == "grey")
         #expect(engine.supersessionQuestions == 1)
         #expect(log.messages().contains { $0.contains("rule conflict") })
@@ -187,11 +201,13 @@ import Testing
         let store = InMemoryStore()
         // `.conflict` is what the engine would say, but it is never asked: no
         // rule is filed for this attribute.
-        let engine = StubSideEngine(duplicates: false, contradicts: false,
-                                    supersedes: .conflict)
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine)
+        let engine = StubSideEngine(
+            duplicates: false, contradicts: false,
+            supersedes: .conflict)
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine)
         let context = try #require(await service.beginSession(id: "s-no-rule"))
         try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
 
@@ -204,11 +220,13 @@ import Testing
 
     @Test func anUpdateUnderARuleIsStored() async throws {
         let store = InMemoryStore()
-        let engine = StubSideEngine(duplicates: false, contradicts: false,
-                                    supersedes: .update)
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine)
+        let engine = StubSideEngine(
+            duplicates: false, contradicts: false,
+            supersedes: .update)
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine)
         let context = try #require(await service.beginSession(id: "s-update"))
         try await store.set(try fact("state/inn", "standing"), in: context.scope)
         try await store.set(try fact("rules/inn", "the inn may burn."), in: context.scope)
@@ -222,15 +240,18 @@ import Testing
 
     @Test func aPersonsOwnChangeIsNotHeldByARule() async throws {
         let store = InMemoryStore()
-        let engine = StubSideEngine(duplicates: false, contradicts: false,
-                                    supersedes: .conflict)
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine)
+        let engine = StubSideEngine(
+            duplicates: false, contradicts: false,
+            supersedes: .conflict)
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine)
         let context = try #require(await service.beginSession(id: "s-person-rule"))
         try await store.set(try fact("characters/marcus/eyes", "grey"), in: context.scope)
-        try await store.set(try fact("rules/eyes", "eye colour is fixed and must never change."),
-                            in: context.scope)
+        try await store.set(
+            try fact("rules/eyes", "eye colour is fixed and must never change."),
+            in: context.scope)
 
         var asserted = try fact("characters/marcus/eyes", "hazel")
         asserted.isUserAsserted = true
@@ -243,9 +264,10 @@ import Testing
     @Test func aGlobalFactIsCheckedAgainstTheSharedWorkspace() async throws {
         let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: true)
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine)
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine)
         let context = try #require(await service.beginSession(id: "s-global"))
         let shared = try #require(await service.configuration.sharedScope)
         try await store.set(try fact("language/replies", "in German"), in: shared)
@@ -263,18 +285,20 @@ import Testing
         let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: false, contradicts: false, durable: false)
         let log = LogCollector()
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine,
-                                    log: { log.append($0) })
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine,
+            log: { log.append($0) })
         let context = try #require(await service.beginSession(id: "s-durable"))
 
         let written = await service.storeConsolidation(
             [try fact("chapters/note", "Chapter 12: Ines turned the pages.")], in: context)
 
         #expect(written == 0)
-        let stored = try await store.get(try MemoryKey(validating: "chapters/note"),
-                                         in: context.scope)
+        let stored = try await store.get(
+            try MemoryKey(validating: "chapters/note"),
+            in: context.scope)
         #expect(stored == nil)
         #expect(log.messages().contains { $0.contains("not worth keeping") })
         #expect(log.messages().contains { $0.contains("dropped 1 fact") })
@@ -287,9 +311,10 @@ import Testing
     @Test func aUsersOwnStatementIsNeverDropped() async throws {
         let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: false, contradicts: false, durable: false)
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine)
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine)
         let context = try #require(await service.beginSession(id: "s-asserted"))
 
         var asserted = try fact("decisions/sync", "Keep the queue single-threaded.")
@@ -302,15 +327,18 @@ import Testing
         #expect(engine.durabilityQuestions == 0)
     }
 
-    @Test func theQuestionBudgetSpansTheWholeConsolidation() async throws {        let store = InMemoryStore()
+    @Test func theQuestionBudgetSpansTheWholeConsolidation() async throws {
+        let store = InMemoryStore()
         let engine = StubSideEngine(duplicates: false, contradicts: false)
-        let service = MemoryService(configuration: configuration(),
-                                    durableStore: store,
-                                    sideEngine: engine)
+        let service = MemoryService(
+            configuration: configuration(),
+            durableStore: store,
+            sideEngine: engine)
         let context = try #require(await service.beginSession(id: "s-budget"))
         for index in 0..<20 {
-            try await store.set(try fact("characters/p\(index)", "value \(index)"),
-                                in: context.scope)
+            try await store.set(
+                try fact("characters/p\(index)", "value \(index)"),
+                in: context.scope)
         }
         let records = try (0..<5).map { try fact("characters/new_\($0)", "other \($0)") }
 
@@ -337,10 +365,12 @@ private final class StubSideEngine: MemorySideEngine, @unchecked Sendable {
     private var durabilityAsked = 0
     private var supersessionAsked = 0
 
-    init(duplicates duplicateAnswer: Bool?,
-         contradicts contradictionAnswer: Bool? = nil,
-         durable durabilityAnswer: Bool? = nil,
-         supersedes supersessionAnswer: MemorySupersession? = nil) {
+    init(
+        duplicates duplicateAnswer: Bool?,
+        contradicts contradictionAnswer: Bool? = nil,
+        durable durabilityAnswer: Bool? = nil,
+        supersedes supersessionAnswer: MemorySupersession? = nil
+    ) {
         self.duplicateAnswer = duplicateAnswer
         self.contradictionAnswer = contradictionAnswer
         self.durabilityAnswer = durabilityAnswer
@@ -361,8 +391,10 @@ private final class StubSideEngine: MemorySideEngine, @unchecked Sendable {
     }
 
     /// Mirrors the adapter: no rule, no answer.
-    func supersedes(_ stored: MemoryFact, _ new: MemoryFact,
-                    rule: String?) async -> MemorySupersession? {
+    func supersedes(
+        _ stored: MemoryFact, _ new: MemoryFact,
+        rule: String?
+    ) async -> MemorySupersession? {
         lock.withLock { supersessionAsked += 1 }
         return rule == nil ? nil : supersessionAnswer
     }

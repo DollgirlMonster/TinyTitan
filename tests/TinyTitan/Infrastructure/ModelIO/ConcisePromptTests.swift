@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 @Suite struct ConcisePromptTests {
@@ -41,7 +42,7 @@ import Testing
 
     @Test func opensTheMessagesWhenNoSystemGuidanceExists() {
         let messages = [
-            GFTokenizer.Message(role: .user, content: "question"),
+            GFTokenizer.Message(role: .user, content: "question")
         ]
         let injected = ConcisePrompt.appendingSystemPrompt("CONCISE", to: messages)
         #expect(injected.count == 2)

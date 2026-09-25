@@ -4,10 +4,12 @@
 /// IDs. Reusing caller-owned arrays matters because this runs once per MoE layer
 /// per generated token.
 enum DecodeExpertPartition {
-    static func populate(topK: Int,
-                         missIndices: [Int],
-                         hits: inout [UInt32],
-                         misses: inout [UInt32]) {
+    static func populate(
+        topK: Int,
+        missIndices: [Int],
+        hits: inout [UInt32],
+        misses: inout [UInt32]
+    ) {
         hits.removeAll(keepingCapacity: true)
         misses.removeAll(keepingCapacity: true)
         hits.reserveCapacity(topK)

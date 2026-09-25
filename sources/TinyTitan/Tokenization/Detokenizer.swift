@@ -44,8 +44,10 @@ struct GFByteLevelDecoderConfiguration: Sendable {
 
     let addedTokens: [Int32: AddedToken]
 
-    static func load(from tokenizerJSON: URL,
-                     tokenizer: any Tokenizer) throws -> Self {
+    static func load(
+        from tokenizerJSON: URL,
+        tokenizer: any Tokenizer
+    ) throws -> Self {
         let data = try Data(contentsOf: tokenizerJSON)
         let metadata = try JSONDecoder().decode(FileMetadata.self, from: data)
         guard metadata.decoder.type == "ByteLevel" else {
@@ -57,8 +59,9 @@ struct GFByteLevelDecoderConfiguration: Sendable {
         result.reserveCapacity(metadata.addedTokens.count)
         for entry in metadata.addedTokens {
             guard let id = Int32(exactly: entry.id),
-                  tokenizer.convertIdToToken(entry.id) == entry.content,
-                  result[id] == nil else {
+                tokenizer.convertIdToToken(entry.id) == entry.content,
+                result[id] == nil
+            else {
                 throw GFTokenizerError.unsupportedForDialect(
                     "tokenizer.json contains inconsistent added-token metadata")
             }
@@ -91,15 +94,17 @@ struct GFByteLevelDecoderConfiguration: Sendable {
         var result: [Int32: AddedToken] = [:]
         for token in special {
             if let id = tokenizer.convertTokenToId(token),
-               tokenizer.convertIdToToken(id) == token,
-               let id32 = Int32(exactly: id) {
+                tokenizer.convertIdToToken(id) == token,
+                let id32 = Int32(exactly: id)
+            {
                 result[id32] = AddedToken(content: token, special: true)
             }
         }
         for token in literal {
             if let id = tokenizer.convertTokenToId(token),
-               tokenizer.convertIdToToken(id) == token,
-               let id32 = Int32(exactly: id) {
+                tokenizer.convertIdToToken(id) == token,
+                let id32 = Int32(exactly: id)
+            {
                 result[id32] = AddedToken(content: token, special: false)
             }
         }
@@ -178,7 +183,8 @@ public struct GFDetokenizer {
         guard let last = bytes.last, last >= 0x80 else { return bytes.count }
         var lead = bytes.count - 1
         while lead > 0, bytes[lead] & 0xC0 == 0x80,
-              bytes.count - lead <= 3 {
+            bytes.count - lead <= 3
+        {
             lead -= 1
         }
         let first = bytes[lead]
@@ -191,7 +197,8 @@ public struct GFDetokenizer {
         }
         let available = bytes.count - lead
         guard available < expected,
-              bytes[(lead + 1)...].allSatisfy({ $0 & 0xC0 == 0x80 }) else {
+            bytes[(lead + 1)...].allSatisfy({ $0 & 0xC0 == 0x80 })
+        else {
             return bytes.count
         }
         if available >= 2 {
@@ -215,8 +222,9 @@ public struct GFDetokenizer {
             scalars.append(0x100 + next)
             next += 1
         }
-        return Dictionary(uniqueKeysWithValues: zip(scalars, bytes).map {
-            (UInt32($0.0), UInt8($0.1))
-        })
+        return Dictionary(
+            uniqueKeysWithValues: zip(scalars, bytes).map {
+                (UInt32($0.0), UInt8($0.1))
+            })
     }()
 }

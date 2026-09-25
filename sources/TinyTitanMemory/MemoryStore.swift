@@ -27,12 +27,16 @@ public protocol MemoryStore: Sendable {
     /// consolidation, and the model's own `memory_set` walked straight past
     /// it -- a fact the person established could be overwritten by the tool
     /// call in the very next session, with the guard switched on.
-    func set(_ record: MemoryRecord, in scope: MemoryScope,
-             guarding: Bool) async throws -> GuardedWrite
+    func set(
+        _ record: MemoryRecord, in scope: MemoryScope,
+        guarding: Bool
+    ) async throws -> GuardedWrite
     /// `delete`, subject to the same rule. Retiring the person's fact on the
     /// model's own initiative is the same failure as overwriting it.
-    func delete(_ key: MemoryKey, in scope: MemoryScope,
-                guarding: Bool) async throws -> GuardedDelete
+    func delete(
+        _ key: MemoryKey, in scope: MemoryScope,
+        guarding: Bool
+    ) async throws -> GuardedDelete
     func exists(_ key: MemoryKey, in scope: MemoryScope) async throws -> Bool
     /// Keys under a prefix, newest first, bounded by `limit`.
     func list(prefix: String, limit: Int, in scope: MemoryScope) async throws -> [MemoryKey]
@@ -41,10 +45,12 @@ public protocol MemoryStore: Sendable {
     /// Appends a line to a record, creating it when absent. Returns the record
     /// as stored afterwards.
     @discardableResult
-    func append(_ text: String, to key: MemoryKey, in scope: MemoryScope) async throws -> MemoryRecord
+    func append(_ text: String, to key: MemoryKey, in scope: MemoryScope) async throws
+        -> MemoryRecord
     /// Records the session and returns a bounded bootstrap: the few durable
     /// facts worth having before the first user message. Never the store.
-    func sessionInit(_ session: MemorySession, in scope: MemoryScope) async throws -> MemoryBootstrap
+    func sessionInit(_ session: MemorySession, in scope: MemoryScope) async throws
+        -> MemoryBootstrap
 }
 
 /// A validated memory key: slash-separated segments of a small, safe
@@ -121,7 +127,8 @@ public struct MemoryScope: Hashable, Sendable, Codable {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw MemoryError.invalidScope(field, "empty") }
         guard trimmed.count <= maximumComponentLength else {
-            throw MemoryError.invalidScope(field, "longer than \(maximumComponentLength) characters")
+            throw MemoryError.invalidScope(
+                field, "longer than \(maximumComponentLength) characters")
         }
         guard trimmed != "." && trimmed != ".." else {
             throw MemoryError.invalidScope(field, "relative")
@@ -223,14 +230,16 @@ public struct MemoryRecord: Sendable, Codable, Equatable {
         return true
     }
 
-    public init(key: MemoryKey,
-                value: String,
-                importance: Double? = nil,
-                confidence: Double? = nil,
-                tags: [String] = [],
-                sourceSession: String? = nil,
-                createdAt: Date = Date(),
-                updatedAt: Date = Date()) {
+    public init(
+        key: MemoryKey,
+        value: String,
+        importance: Double? = nil,
+        confidence: Double? = nil,
+        tags: [String] = [],
+        sourceSession: String? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
         self.key = key
         self.value = value
         self.importance = importance.map { min(max($0, 0), 1) }
@@ -252,11 +261,13 @@ public struct MemoryQuery: Sendable, Equatable {
     public var minimumImportance: Double?
     public var limit: Int
 
-    public init(text: String? = nil,
-                prefix: String? = nil,
-                tags: [String] = [],
-                minimumImportance: Double? = nil,
-                limit: Int = 10) {
+    public init(
+        text: String? = nil,
+        prefix: String? = nil,
+        tags: [String] = [],
+        minimumImportance: Double? = nil,
+        limit: Int = 10
+    ) {
         self.text = text
         self.prefix = prefix
         self.tags = tags
@@ -280,8 +291,10 @@ public struct MemorySession: Sendable, Equatable, Codable {
     /// ferry when the request is a chapter about Rosa.
     public let focus: String?
 
-    public init(id: String, startedAt: Date = Date(), modelID: String? = nil,
-                tag: String? = nil, focus: String? = nil) {
+    public init(
+        id: String, startedAt: Date = Date(), modelID: String? = nil,
+        tag: String? = nil, focus: String? = nil
+    ) {
         self.id = id
         self.startedAt = startedAt
         self.modelID = modelID
@@ -310,8 +323,10 @@ public struct MemoryBootstrap: Sendable, Equatable {
     /// is not relearned in the next repository.
     public let shared: [MemoryRecord]
 
-    public init(records: [MemoryRecord], omittedCount: Int, totalBytes: Int,
-                recent: [MemoryRecord] = [], shared: [MemoryRecord] = []) {
+    public init(
+        records: [MemoryRecord], omittedCount: Int, totalBytes: Int,
+        recent: [MemoryRecord] = [], shared: [MemoryRecord] = []
+    ) {
         self.records = records
         self.omittedCount = omittedCount
         self.totalBytes = totalBytes
@@ -321,8 +336,9 @@ public struct MemoryBootstrap: Sendable, Equatable {
 
     /// The same bootstrap with the shared facts attached.
     public func withShared(_ shared: [MemoryRecord]) -> MemoryBootstrap {
-        MemoryBootstrap(records: records, omittedCount: omittedCount, totalBytes: totalBytes,
-                        recent: recent, shared: shared)
+        MemoryBootstrap(
+            records: records, omittedCount: omittedCount, totalBytes: totalBytes,
+            recent: recent, shared: shared)
     }
 
     public static let empty = MemoryBootstrap(records: [], omittedCount: 0, totalBytes: 0)
@@ -369,7 +385,6 @@ public enum MemoryError: Error, Equatable, CustomStringConvertible {
     }
 }
 
-
 /// What a guarded write did. Declared beside the protocol because every
 /// store answers in these terms, whether or not it can enforce anything.
 public enum GuardedWrite: Sendable, Equatable {
@@ -392,19 +407,23 @@ public enum GuardedDelete: Sendable, Equatable {
     case heldByGuard
 }
 
-public extension MemoryStore {
+extension MemoryStore {
     /// A store with no provenance cannot enforce precedence, and pretending
     /// otherwise would be worse than not having the guard: it would report
     /// protection that is not there. So it writes, and says plainly that it
     /// only wrote.
-    func set(_ record: MemoryRecord, in scope: MemoryScope,
-             guarding: Bool) async throws -> GuardedWrite {
+    public func set(
+        _ record: MemoryRecord, in scope: MemoryScope,
+        guarding: Bool
+    ) async throws -> GuardedWrite {
         try await set(record, in: scope)
         return .stored
     }
 
-    func delete(_ key: MemoryKey, in scope: MemoryScope,
-                guarding: Bool) async throws -> GuardedDelete {
+    public func delete(
+        _ key: MemoryKey, in scope: MemoryScope,
+        guarding: Bool
+    ) async throws -> GuardedDelete {
         try await delete(key, in: scope) ? .deleted : .absent
     }
 }

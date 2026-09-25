@@ -20,24 +20,28 @@ import Testing
             layout: PreadExpertStreamerTests.makeLayout(path: url.path),
             device: context.device,
             slotCount: 2)
-        let moe = try MoE(context: context,
-                          siluActivation: true,
-                          specializedD: 2048,
-                          specializedF: 512,
-                          specializedNumExperts: 4)
+        let moe = try MoE(
+            context: context,
+            siluActivation: true,
+            specializedD: 2048,
+            specializedF: 512,
+            specializedNumExperts: 4)
 
         let loading = try streamer.planExpertsCached(experts: [0])
-        #expect(streamer.residencyEntry(expert: 0).state
+        #expect(
+            streamer.residencyEntry(expert: 0).state
                 == ExpertResidencyEntry.loading)
-        var result = try classify([0, 1, 2, 3], streamer: streamer,
-                                  moe: moe, context: context)
+        var result = try classify(
+            [0, 1, 2, 3], streamer: streamer,
+            moe: moe, context: context)
         #expect(result.hits.isEmpty)
         #expect(result.misses == [0, 1, 2, 3])
 
         _ = try streamer.executeExpertCachePlan(loading)
         _ = try streamer.loadExpertsCached(experts: [2])
-        result = try classify([0, 1, 2, 3], streamer: streamer,
-                              moe: moe, context: context)
+        result = try classify(
+            [0, 1, 2, 3], streamer: streamer,
+            moe: moe, context: context)
         #expect(result.hits == [0, 2])
         #expect(result.misses == [1, 3])
         #expect(result.missExperts == [1, 3])
@@ -46,25 +50,30 @@ import Testing
         #expect(result.generations[0] > 0)
 
         _ = try streamer.loadExpertsCached(experts: [1, 3])
-        result = try classify([0, 1, 2, 3], streamer: streamer,
-                              moe: moe, context: context)
+        result = try classify(
+            [0, 1, 2, 3], streamer: streamer,
+            moe: moe, context: context)
         #expect(result.hits == [1, 3])
         #expect(result.misses == [0, 2])
-        #expect(streamer.residencyEntry(expert: 0).state
+        #expect(
+            streamer.residencyEntry(expert: 0).state
                 == ExpertResidencyEntry.empty)
     }
 
-    private func classify(_ experts: [UInt32],
-                          streamer: PreadExpertStreamer,
-                          moe: MoE,
-                          context: MetalContext) throws -> Classification {
+    private func classify(
+        _ experts: [UInt32],
+        streamer: PreadExpertStreamer,
+        moe: MoE,
+        context: MetalContext
+    ) throws -> Classification {
         func buffer<T>(_ values: [T]) throws -> MTLBuffer {
             try values.withUnsafeBytes { bytes in
                 let base = try #require(bytes.baseAddress)
-                return try #require(context.device.makeBuffer(
-                    bytes: base,
-                    length: max(1, bytes.count),
-                    options: .storageModeShared))
+                return try #require(
+                    context.device.makeBuffer(
+                        bytes: base,
+                        length: max(1, bytes.count),
+                        options: .storageModeShared))
             }
         }
         let topK = try buffer(experts)
@@ -95,9 +104,10 @@ import Testing
         if let error = commandBuffer.error { throw error }
 
         func values<T>(_ buffer: MTLBuffer, count: Int, as: T.Type) -> [T] {
-            Array(UnsafeBufferPointer(
-                start: buffer.contents().bindMemory(to: T.self, capacity: count),
-                count: count))
+            Array(
+                UnsafeBufferPointer(
+                    start: buffer.contents().bindMemory(to: T.self, capacity: count),
+                    count: count))
         }
         let hitN = Int(hitCount.contents().load(as: UInt32.self))
         let missN = Int(missCount.contents().load(as: UInt32.self))

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 /// A manifest's per-tensor widths, and the two limits the runtime puts on them.
@@ -19,16 +20,20 @@ import Testing
 
     @Test func aUniformRoleOverrideIsAccepted() throws {
         try Model.validateRoleUniformity(
-            overrides: ["\(layer).self_attn.q_proj": 8,
-                        "\(layer).self_attn.o_proj": 8],
+            overrides: [
+                "\(layer).self_attn.q_proj": 8,
+                "\(layer).self_attn.o_proj": 8,
+            ],
             family: .qwen36, attentionBits: 4)
     }
 
     @Test func aRoleThatDisagreesWithItselfIsRefused() {
         #expect(throws: ModelError.self) {
             try Model.validateRoleUniformity(
-                overrides: ["\(layer).self_attn.k_proj": 8,
-                            "\(layer).self_attn.v_proj": 4],
+                overrides: [
+                    "\(layer).self_attn.k_proj": 8,
+                    "\(layer).self_attn.v_proj": 4,
+                ],
                 family: .qwen36, attentionBits: 4)
         }
     }
@@ -57,8 +62,10 @@ import Testing
     /// already reads the pair at that width.
     @Test func anOverrideAtTheAttentionSlotWidthIsAccepted() throws {
         try Model.validateRoleUniformity(
-            overrides: ["\(layer).linear_attn.in_proj_a": 4,
-                        "\(layer).linear_attn.in_proj_b": 4],
+            overrides: [
+                "\(layer).linear_attn.in_proj_a": 4,
+                "\(layer).linear_attn.in_proj_b": 4,
+            ],
             family: .qwen38flash, attentionBits: 4)
     }
 
@@ -85,8 +92,9 @@ import Testing
     }
 
     @Test func anEmptyOverrideMapIsFine() throws {
-        try Model.validateRoleUniformity(overrides: [:], family: .qwen36,
-                                         attentionBits: 4)
+        try Model.validateRoleUniformity(
+            overrides: [:], family: .qwen36,
+            attentionBits: 4)
     }
 
     @Test func theThreeSlotReadingFamiliesHaveRoles() throws {
@@ -96,19 +104,23 @@ import Testing
         // override across the family is what makes promoting the ~10 MB
         // possible without taking the whole attention block to 8 bits.
         try Model.validateRoleUniformity(
-            overrides: ["\(layer).attn_hyper_connection.block_inject_weight": 8,
-                        "\(layer).mlp_hyper_connection.block_inject_weight": 8,
-                        "\(layer).ple.key_proj": 8,
-                        "\(layer).self_attn.indexer.index_q_proj": 8,
-                        "\(layer).self_attn.indexer.index_k_proj": 8],
+            overrides: [
+                "\(layer).attn_hyper_connection.block_inject_weight": 8,
+                "\(layer).mlp_hyper_connection.block_inject_weight": 8,
+                "\(layer).ple.key_proj": 8,
+                "\(layer).self_attn.indexer.index_q_proj": 8,
+                "\(layer).self_attn.indexer.index_k_proj": 8,
+            ],
             family: .qwen38flash, attentionBits: 4)
     }
 
     @Test func aHyperGateThatDiffersBetweenSublayersIsRefused() {
         #expect(throws: ModelError.self) {
             try Model.validateRoleUniformity(
-                overrides: ["\(layer).attn_hyper_connection.block_inject_weight": 8,
-                            "\(layer).mlp_hyper_connection.block_inject_weight": 4],
+                overrides: [
+                    "\(layer).attn_hyper_connection.block_inject_weight": 8,
+                    "\(layer).mlp_hyper_connection.block_inject_weight": 4,
+                ],
                 family: .qwen38flash, attentionBits: 4)
         }
     }
@@ -116,8 +128,10 @@ import Testing
     @Test func anIndexerWhoseKeysDisagreeIsRefused() {
         #expect(throws: ModelError.self) {
             try Model.validateRoleUniformity(
-                overrides: ["\(layer).self_attn.indexer.index_q_proj": 8,
-                            "\(layer).self_attn.indexer.index_k_proj": 4],
+                overrides: [
+                    "\(layer).self_attn.indexer.index_q_proj": 8,
+                    "\(layer).self_attn.indexer.index_k_proj": 4,
+                ],
                 family: .qwen38flash, attentionBits: 4)
         }
     }

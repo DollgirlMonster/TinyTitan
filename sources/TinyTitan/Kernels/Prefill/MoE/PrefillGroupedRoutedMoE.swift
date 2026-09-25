@@ -1,6 +1,6 @@
+import Darwin
 import Foundation
 import Metal
-import Darwin
 
 enum PrefillGroupedRoutedMoEBufferIndex {
     static let hidden = 0
@@ -29,13 +29,15 @@ public struct PrefillStreamedTileFetchResult {
     public let plannedAssignedSlots: [Int]
     public let plannedMissSlots: [Int]
 
-    public init(expertIDs: [Int],
-                binding: PrefillStreamedTileBinding,
-                usedPlannedFetch: Bool,
-                plannedHits: Int,
-                plannedMissIndices: [Int],
-                plannedAssignedSlots: [Int],
-                plannedMissSlots: [Int]) {
+    public init(
+        expertIDs: [Int],
+        binding: PrefillStreamedTileBinding,
+        usedPlannedFetch: Bool,
+        plannedHits: Int,
+        plannedMissIndices: [Int],
+        plannedAssignedSlots: [Int],
+        plannedMissSlots: [Int]
+    ) {
         self.expertIDs = expertIDs
         self.binding = binding
         self.usedPlannedFetch = usedPlannedFetch
@@ -56,7 +58,8 @@ enum PrefillStreamedTileLifetimeError: Error, Equatable, CustomStringConvertible
         case .duplicateSlots(let tileIndex, let slots):
             return "prefill streamed tile \(tileIndex) has duplicate planned slots \(slots)"
         case .slotReuseBeforeCompletion(let tileIndex, let conflictingTileIndex, let slots):
-            return "prefill streamed tile \(tileIndex) would reuse planned slots \(slots) while tile \(conflictingTileIndex) is in flight"
+            return
+                "prefill streamed tile \(tileIndex) would reuse planned slots \(slots) while tile \(conflictingTileIndex) is in flight"
         case .completeWithoutInFlightTile(let tileIndex):
             return "prefill streamed tile \(tileIndex) completed without a matching in-flight tile"
         }
@@ -135,14 +138,16 @@ struct PrefillGroupedRoutedMoEStreamedParams: Equatable, Sendable {
     var downSOff: UInt32
     var downBOff: UInt32
 
-    init(pairStart: UInt32,
-                pairCount: UInt32,
-                d: UInt32,
-                routedIntermediate: UInt32,
-                topK: UInt32,
-                hiddenStrideElements: UInt32,
-                binding: PrefillStreamedTileBinding,
-                offsets: MoEExpertOffsets) {
+    init(
+        pairStart: UInt32,
+        pairCount: UInt32,
+        d: UInt32,
+        routedIntermediate: UInt32,
+        topK: UInt32,
+        hiddenStrideElements: UInt32,
+        binding: PrefillStreamedTileBinding,
+        offsets: MoEExpertOffsets
+    ) {
         var ids = Array(repeating: UInt32.max, count: 16)
         for (index, expert) in binding.expertIDs.enumerated() {
             ids[index] = UInt32(expert)
@@ -188,7 +193,8 @@ public struct PrefillStreamedTileBinding: Sendable, Equatable {
 
     public init(expertIDs: [Int], views: [TensorView]) throws {
         guard !expertIDs.isEmpty else {
-            throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding("tile binding must include at least one expert")
+            throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding(
+                "tile binding must include at least one expert")
         }
         guard expertIDs.count <= 16 else {
             throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding(
@@ -217,8 +223,10 @@ public struct PrefillStreamedTileBinding: Sendable, Equatable {
         expertIDs.firstIndex(of: Int(expert))
     }
 
-    public static func expertIDs(forTile tileIndex: Int,
-                                 routes: PrefillMoEGroupedRoutes) throws -> [Int] {
+    public static func expertIDs(
+        forTile tileIndex: Int,
+        routes: PrefillMoEGroupedRoutes
+    ) throws -> [Int] {
         guard routes.tiles.indices.contains(tileIndex) else {
             throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding(
                 "tile index \(tileIndex) is out of range")
@@ -232,22 +240,29 @@ public struct PrefillStreamedTileBinding: Sendable, Equatable {
         }
         guard groupStart >= 0, groupStart + groupCount <= routes.groups.count else {
             throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding(
-                "tile group range \(groupStart)..<\(groupStart + groupCount) exceeds \(routes.groups.count)")
+                "tile group range \(groupStart)..<\(groupStart + groupCount) exceeds \(routes.groups.count)"
+            )
         }
         return routes.groups[groupStart..<(groupStart + groupCount)].map { Int($0.expert) }
     }
 
-    public static func fetchBindingForTile(model: Model,
-                                           layer: Int,
-                                           tileIndex: Int,
-                                           routes: PrefillMoEGroupedRoutes,
-                                           plannedFetch: RoutedExpertFetchPlan? = nil,
-                                           avoidingSlots: Set<Int> = []) async throws
-        -> PrefillStreamedTileFetchResult {
+    public static func fetchBindingForTile(
+        model: Model,
+        layer: Int,
+        tileIndex: Int,
+        routes: PrefillMoEGroupedRoutes,
+        plannedFetch: RoutedExpertFetchPlan? = nil,
+        avoidingSlots: Set<Int> = []
+    ) async throws
+        -> PrefillStreamedTileFetchResult
+    {
         let expertIDs = try expertIDs(forTile: tileIndex, routes: routes)
-        let plan = try plannedFetch ?? model.planRoutedExperts(layer: layer,
-                                                               experts: expertIDs,
-                                                               avoidingSlots: avoidingSlots)
+        let plan =
+            try plannedFetch
+            ?? model.planRoutedExperts(
+                layer: layer,
+                experts: expertIDs,
+                avoidingSlots: avoidingSlots)
         let views: [TensorView]
         let usedPlannedFetch: Bool
         let plannedHits: Int
@@ -274,18 +289,21 @@ public struct PrefillStreamedTileBinding: Sendable, Equatable {
             plannedMissSlots = []
         }
         let binding = try PrefillStreamedTileBinding(expertIDs: expertIDs, views: views)
-        return PrefillStreamedTileFetchResult(expertIDs: expertIDs,
-                                             binding: binding,
-                                             usedPlannedFetch: usedPlannedFetch,
-                                             plannedHits: plannedHits,
-                                             plannedMissIndices: plannedMissIndices,
-                                             plannedAssignedSlots: plannedAssignedSlots,
-                                             plannedMissSlots: plannedMissSlots)
+        return PrefillStreamedTileFetchResult(
+            expertIDs: expertIDs,
+            binding: binding,
+            usedPlannedFetch: usedPlannedFetch,
+            plannedHits: plannedHits,
+            plannedMissIndices: plannedMissIndices,
+            plannedAssignedSlots: plannedAssignedSlots,
+            plannedMissSlots: plannedMissSlots)
     }
 
-    public func validateCoversPairs(_ pairs: [PrefillTokenExpertPair],
-                                    pairStart: Int,
-                                    pairCount: Int) throws {
+    public func validateCoversPairs(
+        _ pairs: [PrefillTokenExpertPair],
+        pairStart: Int,
+        pairCount: Int
+    ) throws {
         guard pairStart >= 0, pairCount >= 0, pairStart + pairCount <= pairs.count else {
             throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding(
                 "pair range \(pairStart)..<\(pairStart + pairCount) exceeds \(pairs.count)")
@@ -298,8 +316,10 @@ public struct PrefillStreamedTileBinding: Sendable, Equatable {
         }
     }
 
-    public static func == (lhs: PrefillStreamedTileBinding,
-                           rhs: PrefillStreamedTileBinding) -> Bool {
+    public static func == (
+        lhs: PrefillStreamedTileBinding,
+        rhs: PrefillStreamedTileBinding
+    ) -> Bool {
         guard lhs.expertIDs == rhs.expertIDs, lhs.views.count == rhs.views.count else {
             return false
         }
@@ -307,14 +327,15 @@ public struct PrefillStreamedTileBinding: Sendable, Equatable {
             let l = lhs.views[index]
             let r = rhs.views[index]
             guard l.buffer === r.buffer,
-                  l.offset == r.offset,
-                  l.length == r.length,
-                  l.scaleOffset == r.scaleOffset,
-                  l.scaleLength == r.scaleLength,
-                  l.biasOffset == r.biasOffset,
-                  l.biasLength == r.biasLength,
-                  l.shape == r.shape,
-                  l.dtype == r.dtype else {
+                l.offset == r.offset,
+                l.length == r.length,
+                l.scaleOffset == r.scaleOffset,
+                l.scaleLength == r.scaleLength,
+                l.biasOffset == r.biasOffset,
+                l.biasLength == r.biasLength,
+                l.shape == r.shape,
+                l.dtype == r.dtype
+            else {
                 return false
             }
         }
@@ -341,11 +362,17 @@ final class PrefillGroupedRoutedMoE {
     private let batchedDownPSO: MTLComputePipelineState
     private let streamedArgEncoder: MTLArgumentEncoder
 
-    func makeStreamedArgumentBuffer(device: MTLDevice,
-                                           binding: PrefillStreamedTileBinding) throws -> PrefillStreamedTileArgumentBuffer {
-        guard let buffer = device.makeBuffer(length: streamedArgEncoder.encodedLength,
-                                             options: .storageModeShared) else {
-            throw PrefillGroupedRoutedMoEError.allocationFailed("prefill streamed expert argument buffer")
+    func makeStreamedArgumentBuffer(
+        device: MTLDevice,
+        binding: PrefillStreamedTileBinding
+    ) throws -> PrefillStreamedTileArgumentBuffer {
+        guard
+            let buffer = device.makeBuffer(
+                length: streamedArgEncoder.encodedLength,
+                options: .storageModeShared)
+        else {
+            throw PrefillGroupedRoutedMoEError.allocationFailed(
+                "prefill streamed expert argument buffer")
         }
         buffer.label = "prefill.groupedMoe.streamedArgumentBuffer"
 
@@ -358,13 +385,16 @@ final class PrefillGroupedRoutedMoE {
         return PrefillStreamedTileArgumentBuffer(buffer: buffer)
     }
 
-    init(context: MetalContext,
-         siluActivation: Bool = false,
-         weightBits: Int = 4) throws {
+    init(
+        context: MetalContext,
+        siluActivation: Bool = false,
+        weightBits: Int = 4
+    ) throws {
         precondition([4, 8].contains(weightBits))
         var activationConstants: [MetalFunctionConstant] = [
-            MetalFunctionConstant(index: 78,
-                                  value: .uint32(UInt32(weightBits)))
+            MetalFunctionConstant(
+                index: 78,
+                value: .uint32(UInt32(weightBits)))
         ]
         if siluActivation {
             activationConstants.append(
@@ -375,9 +405,15 @@ final class PrefillGroupedRoutedMoE {
             constants: activationConstants)
         self.batchedDownPSO = try context.pipeline(
             "prefill_grouped_routed_moe_batched_down",
-            constants: [MetalFunctionConstant(index: 78,
-                                               value: .uint32(UInt32(weightBits)))])
-        guard let streamedFn = context.library.makeFunction(name: "prefill_grouped_routed_moe_batched_phase1") else {
+            constants: [
+                MetalFunctionConstant(
+                    index: 78,
+                    value: .uint32(UInt32(weightBits)))
+            ])
+        guard
+            let streamedFn = context.library.makeFunction(
+                name: "prefill_grouped_routed_moe_batched_phase1")
+        else {
             throw MetalError.missingFunction("prefill_grouped_routed_moe_batched_phase1")
         }
         self.streamedArgEncoder = streamedFn.makeArgumentEncoder(
@@ -399,34 +435,39 @@ final class PrefillGroupedRoutedMoE {
             }
             return PrefillGroupedRoutedMoEStreamedMetadataBuffers(sortedPairs: empty)
         }
-        guard let sortedPairs = routes.sortedPairs.withUnsafeBufferPointer({ ptr -> MTLBuffer? in
-            guard let base = ptr.baseAddress else { return nil }
-            return device.makeBuffer(bytes: base, length: bytes, options: .storageModeShared)
-        }) else {
+        guard
+            let sortedPairs = routes.sortedPairs.withUnsafeBufferPointer({ ptr -> MTLBuffer? in
+                guard let base = ptr.baseAddress else { return nil }
+                return device.makeBuffer(bytes: base, length: bytes, options: .storageModeShared)
+            })
+        else {
             throw PrefillGroupedRoutedMoEError.allocationFailed("prefill sorted route pairs")
         }
         return PrefillGroupedRoutedMoEStreamedMetadataBuffers(sortedPairs: sortedPairs)
     }
 
     @discardableResult
-    func encodeStreamedBatched(commandBuffer: MTLCommandBuffer,
-                                      hidden: MTLBuffer,
-                                      hiddenOffset: Int = 0,
-                                      sortedPairs: MTLBuffer,
-                                      sortedPairsOffset: Int = 0,
-                                      routePartials: MTLBuffer,
-                                      routePartialsOffset: Int = 0,
-                                      gateUpActScratch: MTLBuffer,
-                                      gateUpActScratchOffset: Int = 0,
-                                      downScratch: MTLBuffer,
-                                      downScratchOffset: Int = 0,
-                                      argumentBuffer: PrefillStreamedTileArgumentBuffer,
-                                      binding: PrefillStreamedTileBinding,
-                                      params: PrefillGroupedRoutedMoEStreamedParams,
-                                      pairMicrobatchRows: Int = 32) throws -> Int {
+    func encodeStreamedBatched(
+        commandBuffer: MTLCommandBuffer,
+        hidden: MTLBuffer,
+        hiddenOffset: Int = 0,
+        sortedPairs: MTLBuffer,
+        sortedPairsOffset: Int = 0,
+        routePartials: MTLBuffer,
+        routePartialsOffset: Int = 0,
+        gateUpActScratch: MTLBuffer,
+        gateUpActScratchOffset: Int = 0,
+        downScratch: MTLBuffer,
+        downScratchOffset: Int = 0,
+        argumentBuffer: PrefillStreamedTileArgumentBuffer,
+        binding: PrefillStreamedTileBinding,
+        params: PrefillGroupedRoutedMoEStreamedParams,
+        pairMicrobatchRows: Int = 32
+    ) throws -> Int {
         guard params.pairCount > 0,
-              params.liveExpertCount == UInt32(binding.views.count),
-              pairMicrobatchRows > 0 else { return 0 }
+            params.liveExpertCount == UInt32(binding.views.count),
+            pairMicrobatchRows > 0
+        else { return 0 }
         var consumed: UInt32 = 0
         var microbatchCount = 0
         while consumed < params.pairCount {
@@ -438,47 +479,64 @@ final class PrefillGroupedRoutedMoE {
                 throw MetalError.commandEncoderFailed
             }
             enc1.setComputePipelineState(batchedPhase1PSO)
-            enc1.setBuffer(hidden, offset: hiddenOffset, index: PrefillGroupedRoutedMoEBufferIndex.hidden)
-            enc1.setBuffer(sortedPairs, offset: sortedPairsOffset, index: PrefillGroupedRoutedMoEBufferIndex.sortedPairs)
-            enc1.setBuffer(gateUpActScratch, offset: gateUpActScratchOffset,
-                          index: PrefillGroupedRoutedMoEBufferIndex.gateUpActScratch)
-            enc1.setBuffer(argumentBuffer.buffer, offset: 0,
-                          index: PrefillGroupedRoutedMoEBufferIndex.expertArgumentState)
-            enc1.setBytes(&p,
-                         length: MemoryLayout<PrefillGroupedRoutedMoEStreamedParams>.stride,
-                         index: PrefillGroupedRoutedMoEBufferIndex.params)
+            enc1.setBuffer(
+                hidden, offset: hiddenOffset, index: PrefillGroupedRoutedMoEBufferIndex.hidden)
+            enc1.setBuffer(
+                sortedPairs, offset: sortedPairsOffset,
+                index: PrefillGroupedRoutedMoEBufferIndex.sortedPairs)
+            enc1.setBuffer(
+                gateUpActScratch, offset: gateUpActScratchOffset,
+                index: PrefillGroupedRoutedMoEBufferIndex.gateUpActScratch)
+            enc1.setBuffer(
+                argumentBuffer.buffer, offset: 0,
+                index: PrefillGroupedRoutedMoEBufferIndex.expertArgumentState)
+            enc1.setBytes(
+                &p,
+                length: MemoryLayout<PrefillGroupedRoutedMoEStreamedParams>.stride,
+                index: PrefillGroupedRoutedMoEBufferIndex.params)
             for view in binding.views {
                 enc1.useResource(view.buffer, usage: .read)
             }
-            enc1.dispatchThreads(MTLSize(width: Int(p.routedIntermediate),
-                                        height: Int(p.pairCount),
-                                        depth: 1),
-                                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+            enc1.dispatchThreads(
+                MTLSize(
+                    width: Int(p.routedIntermediate),
+                    height: Int(p.pairCount),
+                    depth: 1),
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
             enc1.endEncoding()
 
             guard let enc2 = commandBuffer.makeComputeCommandEncoder() else {
                 throw MetalError.commandEncoderFailed
             }
             enc2.setComputePipelineState(batchedDownPSO)
-            enc2.setBuffer(sortedPairs, offset: sortedPairsOffset, index: PrefillGroupedRoutedMoEBufferIndex.sortedPairs)
-            enc2.setBuffer(routePartials, offset: routePartialsOffset,
-                          index: PrefillGroupedRoutedMoEBufferIndex.routePartials)
-            enc2.setBuffer(gateUpActScratch, offset: gateUpActScratchOffset,
-                          index: PrefillGroupedRoutedMoEBufferIndex.gateUpActScratch)
-            enc2.setBuffer(downScratch, offset: downScratchOffset,
-                          index: PrefillGroupedRoutedMoEBufferIndex.downScratch)
-            enc2.setBuffer(argumentBuffer.buffer, offset: 0,
-                          index: PrefillGroupedRoutedMoEBufferIndex.expertArgumentState)
-            enc2.setBytes(&p,
-                         length: MemoryLayout<PrefillGroupedRoutedMoEStreamedParams>.stride,
-                         index: PrefillGroupedRoutedMoEBufferIndex.params)
+            enc2.setBuffer(
+                sortedPairs, offset: sortedPairsOffset,
+                index: PrefillGroupedRoutedMoEBufferIndex.sortedPairs)
+            enc2.setBuffer(
+                routePartials, offset: routePartialsOffset,
+                index: PrefillGroupedRoutedMoEBufferIndex.routePartials)
+            enc2.setBuffer(
+                gateUpActScratch, offset: gateUpActScratchOffset,
+                index: PrefillGroupedRoutedMoEBufferIndex.gateUpActScratch)
+            enc2.setBuffer(
+                downScratch, offset: downScratchOffset,
+                index: PrefillGroupedRoutedMoEBufferIndex.downScratch)
+            enc2.setBuffer(
+                argumentBuffer.buffer, offset: 0,
+                index: PrefillGroupedRoutedMoEBufferIndex.expertArgumentState)
+            enc2.setBytes(
+                &p,
+                length: MemoryLayout<PrefillGroupedRoutedMoEStreamedParams>.stride,
+                index: PrefillGroupedRoutedMoEBufferIndex.params)
             for view in binding.views {
                 enc2.useResource(view.buffer, usage: .read)
             }
-            enc2.dispatchThreads(MTLSize(width: Int(p.d),
-                                        height: Int(p.pairCount),
-                                        depth: 1),
-                                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+            enc2.dispatchThreads(
+                MTLSize(
+                    width: Int(p.d),
+                    height: Int(p.pairCount),
+                    depth: 1),
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
             enc2.endEncoding()
 
             consumed += p.pairCount

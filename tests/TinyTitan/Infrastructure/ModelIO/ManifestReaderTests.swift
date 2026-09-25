@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanRepackCore
 
@@ -13,19 +14,25 @@ import Foundation
     /// adequate: a manifest one accepts must be one the other can read.
     @Test func runtimeAndRepackerAgreeOnTheManifestCeiling() {
         #expect(ManifestReader.defaultMaxBytes == VerifiedInstallTool.metadataMaxBytes)
-        #expect(VerifiedInstallReceiptReader.defaultMaxBytes == VerifiedInstallTool.metadataMaxBytes)
+        #expect(
+            VerifiedInstallReceiptReader.defaultMaxBytes == VerifiedInstallTool.metadataMaxBytes)
     }
 
     /// Build a manifest dictionary for a 2-layer toy ArchConfig and write it
     /// into a temp directory. Returns the directory URL and the toy config.
-    static func writeToyManifest(_ overrides: [String: Any] = [:],
-                                 flags: [String: Bool] = ["streamingPresent": true,
-                                                          "turboQuantKV": false,
-                                                          "aneSharedExpert": false],
-                                 archOverrides: [String: Any] = [:],
-                                 filesOverride: [String: [String: Any]]? = nil,
-                                 config: ArchConfig = .qwenToy()) throws
-                                 -> (URL, ArchConfig) {
+    static func writeToyManifest(
+        _ overrides: [String: Any] = [:],
+        flags: [String: Bool] = [
+            "streamingPresent": true,
+            "turboQuantKV": false,
+            "aneSharedExpert": false,
+        ],
+        archOverrides: [String: Any] = [:],
+        filesOverride: [String: [String: Any]]? = nil,
+        config: ArchConfig = .qwenToy()
+    ) throws
+        -> (URL, ArchConfig)
+    {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("gturbo-manifest-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -65,10 +72,14 @@ import Foundation
         } else {
             files = [
                 "model_weights.bin": ["size": 1024, "sha256": String(repeating: "0", count: 64)],
-                "packed_experts/layout.json": ["size": 1024, "sha256": String(repeating: "0", count: 64)],
+                "packed_experts/layout.json": [
+                    "size": 1024, "sha256": String(repeating: "0", count: 64),
+                ],
             ]
             for L in 0..<toy.numLayers {
-                files["packed_experts/layer_\(L).bin"] = ["size": 16384, "sha256": String(repeating: "0", count: 64)]
+                files["packed_experts/layer_\(L).bin"] = [
+                    "size": 16384, "sha256": String(repeating: "0", count: 64),
+                ]
             }
         }
 
@@ -86,14 +97,17 @@ import Foundation
         ]
         for (k, v) in overrides { root[k] = v }
 
-        let data = try JSONSerialization.data(withJSONObject: root,
+        let data = try JSONSerialization.data(
+            withJSONObject: root,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try data.write(to: dir.appendingPathComponent("manifest.json"))
         return (dir, toy)
     }
 
-    static func quant(sharedExpertBits: Int = 4,
-                      routerBits: Int = 8) -> [String: Any] {
+    static func quant(
+        sharedExpertBits: Int = 4,
+        routerBits: Int = 8
+    ) -> [String: Any] {
         func slot(_ bits: Int) -> [String: Any] {
             [
                 "weightBits": bits,
@@ -146,16 +160,25 @@ import Foundation
         let quant = try Self.decodedQuant()
         let stem = "language_model.model.layers.0.self_attn.indexer.index_q_proj"
 
-        #expect(quant.slot(forTensorNamed: "\(stem).weight",
-                          overrides: [stem: 8],
-                          fallback: quant.attention).weightBits == 8)
-        #expect(quant.slot(forTensorNamed: "\(stem).weight",
-                          overrides: [:],
-                          fallback: quant.attention).weightBits == 4)
+        #expect(
+            quant.slot(
+                forTensorNamed: "\(stem).weight",
+                overrides: [stem: 8],
+                fallback: quant.attention
+            ).weightBits == 8)
+        #expect(
+            quant.slot(
+                forTensorNamed: "\(stem).weight",
+                overrides: [:],
+                fallback: quant.attention
+            ).weightBits == 4)
         // Restating the slot's width is not an override.
-        #expect(quant.slot(forTensorNamed: "\(stem).weight",
-                          overrides: [stem: 4],
-                          fallback: quant.attention).weightBits == 4)
+        #expect(
+            quant.slot(
+                forTensorNamed: "\(stem).weight",
+                overrides: [stem: 4],
+                fallback: quant.attention
+            ).weightBits == 4)
     }
 
     /// The three families whose weights read the attention slot until a
@@ -168,22 +191,28 @@ import Foundation
             "language_model.model.layers.0.self_attn.indexer.index_q_proj": 8,
         ]
         let fallback = quant.attention.weightBits
-        #expect(ManifestQuant.roleWeightBits(
-            roleSuffix: "hyper_connection.block_inject_weight",
-            overrides: overrides, fallback: fallback) == 8)
-        #expect(ManifestQuant.roleWeightBits(
-            roleSuffix: ".ple.key_proj", overrides: overrides, fallback: fallback) == 8)
-        #expect(ManifestQuant.roleWeightBits(
-            roleSuffix: ".self_attn.indexer.index_q_proj",
-            overrides: overrides, fallback: fallback) == 8)
+        #expect(
+            ManifestQuant.roleWeightBits(
+                roleSuffix: "hyper_connection.block_inject_weight",
+                overrides: overrides, fallback: fallback) == 8)
+        #expect(
+            ManifestQuant.roleWeightBits(
+                roleSuffix: ".ple.key_proj", overrides: overrides, fallback: fallback) == 8)
+        #expect(
+            ManifestQuant.roleWeightBits(
+                roleSuffix: ".self_attn.indexer.index_q_proj",
+                overrides: overrides, fallback: fallback) == 8)
         // A family with no override keeps the attention slot.
-        #expect(ManifestQuant.roleWeightBits(
-            roleSuffix: ".mlp.gate_proj", overrides: overrides, fallback: fallback) == 4)
+        #expect(
+            ManifestQuant.roleWeightBits(
+                roleSuffix: ".mlp.gate_proj", overrides: overrides, fallback: fallback) == 4)
     }
 
     static func quantSlot(_ bits: Int) -> [String: Any] {
-        ["weightBits": bits, "scheme": "affine", "scaleType": "bf16",
-         "biasType": "bf16", "groupSize": Quantization.groupSize]
+        [
+            "weightBits": bits, "scheme": "affine", "scaleType": "bf16",
+            "biasType": "bf16", "groupSize": Quantization.groupSize,
+        ]
     }
 
     private static func decodedQuant() throws -> ManifestQuant {
@@ -285,8 +314,12 @@ import Foundation
             ],
             filesOverride: [
                 "model_weights.bin": ["size": 1, "sha256": String(repeating: "0", count: 64)],
-                "packed_experts/layout.json": ["size": 2, "sha256": String(repeating: "0", count: 64)],
-                "packed_experts/layer_0.bin": ["size": 1, "sha256": String(repeating: "0", count: 64)],
+                "packed_experts/layout.json": [
+                    "size": 2, "sha256": String(repeating: "0", count: 64),
+                ],
+                "packed_experts/layer_0.bin": [
+                    "size": 1, "sha256": String(repeating: "0", count: 64),
+                ],
             ],
             config: arch)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -313,9 +346,10 @@ import Foundation
         try Data(repeating: 0x20, count: 64).write(to: manifestURL)
 
         #expect {
-            _ = try ManifestReader.load(directoryURL: dir,
-                                        expecting: toy,
-                                        maxBytes: 16)
+            _ = try ManifestReader.load(
+                directoryURL: dir,
+                expecting: toy,
+                maxBytes: 16)
         } throws: { error in
             if case ModelError.indexCorrupt(let detail) = error {
                 return detail.contains("metadata cap")
@@ -344,8 +378,10 @@ import Foundation
     }
 
     @Test func unknownFlagThrowsUnknownFlag() throws {
-        let (dir, toy) = try Self.writeToyManifest(flags: ["streamingPresent": true,
-                                                           "newFangledOption": true])
+        let (dir, toy) = try Self.writeToyManifest(flags: [
+            "streamingPresent": true,
+            "newFangledOption": true,
+        ])
         defer { try? FileManager.default.removeItem(at: dir) }
         #expect {
             _ = try ManifestReader.load(directoryURL: dir, expecting: toy)
@@ -356,9 +392,11 @@ import Foundation
     }
 
     @Test func removedTurboQuantFlagIsRejected() throws {
-        let (dir, toy) = try Self.writeToyManifest(flags: ["streamingPresent": true,
-                                                           "turboQuantKV": true,
-                                                           "aneSharedExpert": false])
+        let (dir, toy) = try Self.writeToyManifest(flags: [
+            "streamingPresent": true,
+            "turboQuantKV": true,
+            "aneSharedExpert": false,
+        ])
         defer { try? FileManager.default.removeItem(at: dir) }
         #expect {
             _ = try ManifestReader.load(directoryURL: dir, expecting: toy)
@@ -416,7 +454,7 @@ import Foundation
         #expect {
             _ = try ManifestReader.load(directoryURL: dir, expecting: toy)
         } throws: { error in
-            guard case let ModelError.archMismatch(field, _, _) = error else { return false }
+            guard case ModelError.archMismatch(let field, _, _) = error else { return false }
             return field == "hiddenSize"
         }
     }
@@ -435,7 +473,9 @@ import Foundation
     @Test func missingLayerFileThrowsMissingFile() throws {
         let files: [String: [String: Any]] = [
             "model_weights.bin": ["size": 1024, "sha256": String(repeating: "0", count: 64)],
-            "packed_experts/layout.json": ["size": 1024, "sha256": String(repeating: "0", count: 64)],
+            "packed_experts/layout.json": [
+                "size": 1024, "sha256": String(repeating: "0", count: 64),
+            ],
             // intentionally do not list layer_0.bin or layer_1.bin
         ]
         let (dir, toy) = try Self.writeToyManifest(filesOverride: files)
@@ -452,11 +492,21 @@ import Foundation
         // Writer emits packed_experts/layer_%02d.bin; loader should accept either form.
         let files: [String: [String: Any]] = [
             "model_weights.bin": ["size": 1024, "sha256": String(repeating: "0", count: 64)],
-            "packed_experts/layout.json": ["size": 1024, "sha256": String(repeating: "0", count: 64)],
-            "packed_experts/layer_00.bin": ["size": 16384, "sha256": String(repeating: "0", count: 64)],
-            "packed_experts/layer_01.bin": ["size": 16384, "sha256": String(repeating: "0", count: 64)],
-            "packed_experts/layer_02.bin": ["size": 16384, "sha256": String(repeating: "0", count: 64)],
-            "packed_experts/layer_03.bin": ["size": 16384, "sha256": String(repeating: "0", count: 64)],
+            "packed_experts/layout.json": [
+                "size": 1024, "sha256": String(repeating: "0", count: 64),
+            ],
+            "packed_experts/layer_00.bin": [
+                "size": 16384, "sha256": String(repeating: "0", count: 64),
+            ],
+            "packed_experts/layer_01.bin": [
+                "size": 16384, "sha256": String(repeating: "0", count: 64),
+            ],
+            "packed_experts/layer_02.bin": [
+                "size": 16384, "sha256": String(repeating: "0", count: 64),
+            ],
+            "packed_experts/layer_03.bin": [
+                "size": 16384, "sha256": String(repeating: "0", count: 64),
+            ],
         ]
         let (dir, toy) = try Self.writeToyManifest(filesOverride: files)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -496,7 +546,7 @@ extension ArchConfig {
             hiddenActivation: "silu",
             family: .qwen36,
             attnOutputGate: true,
-            attentionScale: 0.125,   // 32^-0.5
+            attentionScale: 0.125,  // 32^-0.5
             embeddingScaledBySqrtHidden: false,
             routerScaled: false,
             ffnSandwichNorms: false,
@@ -544,13 +594,15 @@ struct ManifestExtensionGeometryTests {
             ropeNeoxSubdim: base.ropeNeoxSubdim,
             linearAttention: base.linearAttention,
             hyperConnections: HyperConnectionConfig(count: 4, lowRank: 320),
-            sparseIndexer: SparseIndexerConfig(numHeads: 4, numKVHeads: 1,
-                                               headDim: 128, budget: 2048,
-                                               compressRatio: 4),
-            ple: PLEConfig(layerIndices: [1], embedDim: 2560,
-                           convKernelSize: 4, ngramSize: 3,
-                           vocabSizeBase: 20_000_000, headsPerNgram: 8,
-                           vocabDivisor: 128, seed: 1234),
+            sparseIndexer: SparseIndexerConfig(
+                numHeads: 4, numKVHeads: 1,
+                headDim: 128, budget: 2048,
+                compressRatio: 4),
+            ple: PLEConfig(
+                layerIndices: [1], embedDim: 2560,
+                convKernelSize: 4, ngramSize: 3,
+                vocabSizeBase: 20_000_000, headsPerNgram: 8,
+                vocabDivisor: 128, seed: 1234),
             routerNormTopK: true, quantGroupSize: 64)
         return base
     }
@@ -567,9 +619,11 @@ struct ManifestExtensionGeometryTests {
     func matchingFieldsAccepted() throws {
         let cfg = Self.toyWithExtensions()
         let (dir, _) = try ManifestReaderTests.writeToyManifest(
-            archOverrides: ["hcCount": 4, "hcLowRank": 320,
-                            "indexerBudget": 2048, "quantGroupSize": 64,
-                            "pleLayerIndices": [1]],
+            archOverrides: [
+                "hcCount": 4, "hcLowRank": 320,
+                "indexerBudget": 2048, "quantGroupSize": 64,
+                "pleLayerIndices": [1],
+            ],
             config: cfg)
         defer { try? FileManager.default.removeItem(at: dir) }
         _ = try ManifestReader.load(directoryURL: dir, expecting: cfg)

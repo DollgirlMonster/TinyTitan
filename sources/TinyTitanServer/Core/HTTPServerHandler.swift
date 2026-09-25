@@ -33,9 +33,10 @@ final class ServerHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     /// it fails the stream instead of growing the pending queue without bound.
     static let maximumPendingStreamChunks = 512
 
-    static let minimalErrorData = Data(#"""
-    {"error":{"message":"internal server error","type":"server_error","code":"internal_error"}}
-    """#.utf8)
+    static let minimalErrorData = Data(
+        #"""
+        {"error":{"message":"internal server error","type":"server_error","code":"internal_error"}}
+        """#.utf8)
 
     let modelID: String
     let backend: any ServerInferenceBackend
@@ -81,14 +82,16 @@ final class ServerHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     var inFlightRequests = 0
     var idleCloseTask: Scheduled<Void>?
 
-    init(modelID: String,
-         backend: any ServerInferenceBackend,
-         coordinator: ServerCoordinator,
-         heartbeatInterval: TimeAmount,
-         reasoningProfile: ServerReasoningProfile,
-         router: (any ModelRouting)?,
-         childChannels: ChildChannelRegistry,
-         responseStore: ResponseStore) {
+    init(
+        modelID: String,
+        backend: any ServerInferenceBackend,
+        coordinator: ServerCoordinator,
+        heartbeatInterval: TimeAmount,
+        reasoningProfile: ServerReasoningProfile,
+        router: (any ModelRouting)?,
+        childChannels: ChildChannelRegistry,
+        responseStore: ResponseStore
+    ) {
         self.modelID = modelID
         self._responseModelID = modelID
         self.router = router
@@ -131,10 +134,11 @@ final class ServerHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             // in order rather than mid-upload.
             if Self.headerBlockExceedsLimits(head.headers) {
                 rejected = true
-                writeError(context, status: .requestHeaderFieldsTooLarge,
-                           OpenAIErrorEnvelope(
-                               message: "request headers are too large",
-                               code: "request_headers_too_large"))
+                writeError(
+                    context, status: .requestHeaderFieldsTooLarge,
+                    OpenAIErrorEnvelope(
+                        message: "request headers are too large",
+                        code: "request_headers_too_large"))
                 return
             }
             // S10/S25: reset per-request phase state and drop the reference to
@@ -158,9 +162,11 @@ final class ServerHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
                 // discarding the whole body first, so a client could make the
                 // server consume an arbitrary number of bytes and as much time
                 // as it liked before learning the request was refused.
-                writeError(context, status: .payloadTooLarge,
-                           OpenAIErrorEnvelope(message: "request body is too large",
-                                               code: "request_too_large"))
+                writeError(
+                    context, status: .payloadTooLarge,
+                    OpenAIErrorEnvelope(
+                        message: "request body is too large",
+                        code: "request_too_large"))
             } else {
                 body.writeBuffer(&part)
             }
@@ -206,8 +212,10 @@ final class ServerHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     /// Discards what is left of a refused request's body, up to
     /// `maximumDrainedBytesAfterReject`, then closes the connection. Returns
     /// false once the connection has been closed.
-    func drainAfterReject(_ context: ChannelHandlerContext,
-                                  bytes: Int) -> Bool {
+    func drainAfterReject(
+        _ context: ChannelHandlerContext,
+        bytes: Int
+    ) -> Bool {
         drainedSinceReject += bytes
         guard drainedSinceReject <= TinyTitanHTTPServer.maximumDrainedBytesAfterReject else {
             closeAfterPendingWrites(context)

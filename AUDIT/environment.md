@@ -20,7 +20,7 @@ remote host.
 | --- | --- | --- | --- | --- |
 | Swift | swift (swift-driver 1.168.6) | Apple Swift 6.4 (swiftlang-6.4.0.34.1) | Xcode 27.0 (27A266a) at /Applications/Xcode.app | compiler |
 | Swift | xcodebuild | Xcode 27.0, build 27A266a | — | verified `xcode-select -p` = /Applications/Xcode.app/Contents/Developer |
-| Swift | swift-format | 603.0.0 | Homebrew (`/opt/homebrew/bin/swift-format`) | formatter |
+| Swift | swift-format | Xcode 27 toolchain build (reports `main`); a Homebrew copy 603.0.0 also exists and agrees on this tree | bundled with the pinned Xcode 27 / Swift 6.4 toolchain, invoked as `xcrun swift-format` | formatter, enforced as the eleventh gate under the committed `.swift-format` |
 | Swift | swiftlint | 0.65.1 | Homebrew locally; the pinned `portable_swiftlint.zip` release binary in CI | linter, run with `--strict` under the committed `.swiftlint.yml` (`tools/lint.sh swiftlint`, SWIFTLINT_PIN) |
 | Swift/C | clang (Apple) | Xcode 27.0 toolchain | — | C compiler for the strict-C99 gate |
 | Python | python3 | 3.14.7 locally; **CI pinned to 3.13** (`actions/setup-python@v5`); the code floor is 3.13 | system locally, GitHub action in CI | the scripts; `tools/lint.sh python` parses every file at the floor so a 3.14-only construct cannot land (AUD-017) |
@@ -52,7 +52,7 @@ and wired them as the `javascript` gate.
 | Swift | complete strict concurrency | yes | probe: non-Sendable capture in a `@Sendable` closure fails `swift build` with `[#SendableClosureCaptures]` (AUDIT/tool-coverage.md) |
 | Swift | warnings-as-errors | yes | `-warnings-as-errors` in `tinytitanLanguageStandard` (AUD-002); a probe with an unused-value warning fails `swift build` |
 | Swift | SwiftLint `--strict` under the committed config | yes | `.swiftlint.yml` committed (AUD-005/019/020/021); `tools/lint.sh swiftlint` runs it with SWIFTLINT_PIN 0.65.1 and the tree is at 0 findings |
-| Swift | swift-format config | **no** | no config committed (AUD-004) |
+| Swift | swift-format config | yes | `.swift-format` committed (4-space indentation; `AlwaysUseLowerCamelCase` off with the AUD-018 numerical-vocabulary reason, everything else default); `tools/lint.sh swift-format` runs `xcrun swift-format lint --strict` over sources/tests/benchmark/Package.swift and the tree is at 0 findings (AUD-004) |
 | C | strict C99 + hardening warnings + -Werror | yes | `cSettings` carries `-std=c99 -pedantic-errors` plus the hardening set with `-Werror` (AUD-003); a probe with an implicit declaration fails the build |
 | Python | Ruff with B/E722/S101/PT, formatter | yes | `pyproject.toml` pins the rule families and target; `tools/lint.sh python` runs `ruff check .` + `ruff format --check .` with RUFF_PIN 0.16.7 and FAILS if ruff is missing or a different version; CI installs that exact version. PT009/PT027 are excluded with the reason in the config (unittest suite) (AUD-006/017) |
 | JavaScript | eslint + prettier over the plugin packages | yes | each package pins eslint 10.11.0 / prettier 3.9.9 exactly and locks them in `package-lock.json`; `tools/lint.sh javascript` runs both and FAILS when the installed version differs or the package has no toolchain (AUD-012) |

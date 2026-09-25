@@ -1,5 +1,5 @@
-import Testing
 import Foundation
+import Testing
 import TinyTitanValidationSupport
 
 @Suite struct AttentionReferenceTests {
@@ -45,12 +45,14 @@ import TinyTitanValidationSupport
         return out
     }
 
-    @Test("vDSP ref matches scalar", arguments: [
-        (Int(64), 4, 2, 128, Int?(64),  UInt64(0x161)),
-        (Int(64), 4, 2,  32, Int?(128), UInt64(0x162)),
-        (Int(64), 8, 1, 128, Int?(nil), UInt64(0x163)),
-        (Int(128), 8, 4, 64, Int?(nil), UInt64(0x164)),
-    ])
+    @Test(
+        "vDSP ref matches scalar",
+        arguments: [
+            (Int(64), 4, 2, 128, Int?(64), UInt64(0x161)),
+            (Int(64), 4, 2, 32, Int?(128), UInt64(0x162)),
+            (Int(64), 8, 1, 128, Int?(nil), UInt64(0x163)),
+            (Int(128), 8, 4, 64, Int?(nil), UInt64(0x164)),
+        ])
     func vDSPMatchesScalar(
         headDim: Int, numQHeads: Int, numKVHeads: Int,
         seqLen: Int, window: Int?, seed: UInt64

@@ -10,10 +10,12 @@ enum GTurboBinary {
     static let indexEntryBytes: Int = 72
 
     /// Write `IndexHeader { indexSize, residentSize, entryCount }` (24 bytes, LE).
-    static func writeIndexHeader(into buf: UnsafeMutableRawPointer,
-                                        indexSize: UInt64,
-                                        residentSize: UInt64,
-                                        entryCount: UInt64) {
+    static func writeIndexHeader(
+        into buf: UnsafeMutableRawPointer,
+        indexSize: UInt64,
+        residentSize: UInt64,
+        entryCount: UInt64
+    ) {
         var off = 0
         writeU64LE(buf, &off, indexSize)
         writeU64LE(buf, &off, residentSize)
@@ -21,19 +23,22 @@ enum GTurboBinary {
     }
 
     /// Write one `IndexEntry` (72 bytes, LE) at `dst`. See gturbo-format.md.
-    static func writeIndexEntry(into dst: UnsafeMutableRawPointer,
-                                       entry: ResidentEntry,
-                                       nameOffset: UInt32) {
+    static func writeIndexEntry(
+        into dst: UnsafeMutableRawPointer,
+        entry: ResidentEntry,
+        nameOffset: UInt32
+    ) {
         var off = 0
         writeU32LE(dst, &off, nameOffset)
         // An invariant, not a caller contract: `ResidentWriter.encodeIndex` -- the
         // only caller -- refuses an over-long name with a thrown error naming the
         // tensor, because the name comes from the source manifest.
-        precondition(entry.name.utf8.count <= Int(UInt16.max),
-                     "resident tensor name exceeds UInt16 length")
+        precondition(
+            entry.name.utf8.count <= Int(UInt16.max),
+            "resident tensor name exceeds UInt16 length")
         writeU16LE(dst, &off, UInt16(entry.name.utf8.count))
         writeU8(dst, &off, entry.dtype)
-        writeU8(dst, &off, 0) // reserved
+        writeU8(dst, &off, 0)  // reserved
         writeU64LE(dst, &off, entry.fileOffset)
         writeU64LE(dst, &off, entry.sizeBytes)
         writeU32LE(dst, &off, entry.logicalShape4[0])

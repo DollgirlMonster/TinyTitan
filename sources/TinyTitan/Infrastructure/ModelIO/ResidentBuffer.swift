@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 import Metal
 
 /// `mmap`'d view of `model_weights.bin`'s tensor data region, wrapped in
@@ -12,14 +12,17 @@ final class ResidentBuffer {
     /// inside the file at `fileURL`. The wrapped `MTLBuffer` starts at the
     /// (sub-page) offset within the mapping so the resident bytes start at
     /// byte 0 of the buffer.
-    init(fileURL: URL,
-                fileOffset: UInt64,
-                residentSize: UInt64,
-                device: MTLDevice,
-                fileDescriptor: Int32? = nil) throws {
+    init(
+        fileURL: URL,
+        fileOffset: UInt64,
+        residentSize: UInt64,
+        device: MTLDevice,
+        fileDescriptor: Int32? = nil
+    ) throws {
         let pageSize = Int(getpagesize())
 
-        let fd = fileDescriptor.map { fcntl($0, F_DUPFD_CLOEXEC, 0) }
+        let fd =
+            fileDescriptor.map { fcntl($0, F_DUPFD_CLOEXEC, 0) }
             ?? open(fileURL.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else {
             throw ModelError.posixFailed(call: "open(\(fileURL.path))", errno: errno)
@@ -35,7 +38,8 @@ final class ResidentBuffer {
         }
         let (fileEnd, endOverflow) = fileOffset.addingReportingOverflow(residentSize)
         guard residentSize > 0, !endOverflow, fileEnd <= UInt64(info.st_size),
-              fileOffset <= UInt64(Int64.max) else {
+            fileOffset <= UInt64(Int64.max)
+        else {
             throw ModelError.indexCorrupt(detail: "resident mapping exceeds the weights file")
         }
 
@@ -45,8 +49,9 @@ final class ResidentBuffer {
             throw ModelError.indexCorrupt(detail: "resident mapping exceeds addressable memory")
         }
         let mappedLen = sliceShift + Int(residentSize)
-        let mapped = mmap(nil, mappedLen, PROT_READ, MAP_PRIVATE,
-                          fd, off_t(alignedOffset))
+        let mapped = mmap(
+            nil, mappedLen, PROT_READ, MAP_PRIVATE,
+            fd, off_t(alignedOffset))
         if mapped == MAP_FAILED {
             throw ModelError.posixFailed(call: "mmap", errno: errno)
         }
@@ -76,14 +81,16 @@ final class ResidentBuffer {
         // here — that would create a retain cycle through the MTLBuffer.
         nonisolated(unsafe) let captureBase = base
         let captureLen = mappedLen
-        guard let buf = device.makeBuffer(
-            bytesNoCopy: sliceStart,
-            length: Int(residentSize),
-            options: .storageModeShared,
-            deallocator: { _, _ in
-                munmap(captureBase, captureLen)
-            }
-        ) else {
+        guard
+            let buf = device.makeBuffer(
+                bytesNoCopy: sliceStart,
+                length: Int(residentSize),
+                options: .storageModeShared,
+                deallocator: { _, _ in
+                    munmap(captureBase, captureLen)
+                }
+            )
+        else {
             munmap(base, mappedLen)
             throw ModelError.residentBufferWrapFailed
         }

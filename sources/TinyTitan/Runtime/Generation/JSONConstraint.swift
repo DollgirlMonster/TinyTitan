@@ -101,7 +101,8 @@ public final class JSONConstraint: @unchecked Sendable {
                     // Nor is a second whitespace-only token in a row, which
                     // would let the model pad the whole response.
                     if accepted, probe.canComplete,
-                       !(lastTokenWasWhitespace && isWhitespaceOnly(id)) {
+                        !(lastTokenWasWhitespace && isWhitespaceOnly(id))
+                    {
                         mask.insert(id)
                     }
                 }
@@ -128,7 +129,10 @@ public final class JSONConstraint: @unchecked Sendable {
         guard !bytes.isEmpty else {
             // A special token adds nothing to the document; it is only legal
             // once the document is complete, and the loop stops there anyway.
-            if !grammar.isComplete { violations += 1; return false }
+            if !grammar.isComplete {
+                violations += 1
+                return false
+            }
             return true
         }
         for byte in bytes {

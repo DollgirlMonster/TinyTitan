@@ -52,9 +52,11 @@ public final class MetalExpertReader: @unchecked Sendable {
     private let ioService: MetalExpertIOService
     private let fileHandle: MTLIOFileHandle
 
-    public convenience init(path: String,
-                            device: MTLDevice,
-                            maximumCommandsInFlight: Int = 4) throws {
+    public convenience init(
+        path: String,
+        device: MTLDevice,
+        maximumCommandsInFlight: Int = 4
+    ) throws {
         let service = try MetalExpertIOService(
             device: device, maximumCommandsInFlight: maximumCommandsInFlight)
         try self.init(path: path, device: device, service: service)
@@ -92,8 +94,9 @@ public final class MetalExpertReader: @unchecked Sendable {
             let buffer = buffers[index]
             let destinationOffset = destinationOffsets?[index] ?? 0
             guard destinationOffset >= 0,
-                  buffer.length - destinationOffset >= byteCount,
-                  offset <= UInt64(Int.max) else {
+                buffer.length - destinationOffset >= byteCount,
+                offset <= UInt64(Int.max)
+            else {
                 throw Failure.load("source or destination range is out of bounds")
             }
             commandBuffer.load(
@@ -111,14 +114,17 @@ public final class MetalExpertReader: @unchecked Sendable {
             commandBuffer.copyStatus(
                 buffer: completionToken.status,
                 offset: completionToken.statusOffset)
-            commandBuffer.signalEvent(completionToken.event,
-                                      value: completionToken.value)
+            commandBuffer.signalEvent(
+                completionToken.event,
+                value: completionToken.value)
         }
         commandBuffer.addCompletedHandler { commandBuffer in
             guard commandBuffer.status == .complete else {
-                completion(.failure(Failure.load(
-                    commandBuffer.error?.localizedDescription
-                        ?? "status \(commandBuffer.status.rawValue)")))
+                completion(
+                    .failure(
+                        Failure.load(
+                            commandBuffer.error?.localizedDescription
+                                ?? "status \(commandBuffer.status.rawValue)")))
                 return
             }
             completion(.success(()))
@@ -126,14 +132,18 @@ public final class MetalExpertReader: @unchecked Sendable {
         commandBuffer.commit()
     }
 
-    public func fetch(offsets: [UInt64],
-                      into buffers: [MTLBuffer],
-                      byteCount: Int,
-                      destinationOffsets: [Int]? = nil) throws {
+    public func fetch(
+        offsets: [UInt64],
+        into buffers: [MTLBuffer],
+        byteCount: Int,
+        destinationOffsets: [Int]? = nil
+    ) throws {
         let condition = NSCondition()
         nonisolated(unsafe) var result: Result<Void, any Error>?
-        try beginFetch(offsets: offsets, into: buffers, byteCount: byteCount,
-                       destinationOffsets: destinationOffsets) { outcome in
+        try beginFetch(
+            offsets: offsets, into: buffers, byteCount: byteCount,
+            destinationOffsets: destinationOffsets
+        ) { outcome in
             condition.lock()
             result = outcome
             condition.signal()

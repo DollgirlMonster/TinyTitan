@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanRepackCore
 
 @Suite struct LocalSnapshotRepackerTests {
@@ -20,18 +21,25 @@ import Testing
         #expect(result.outputDir == output)
         #expect(result.rangeRequestCount == 0)
         #expect(result.downloadedThisRunBytes == result.remoteBytesToDownload)
-        let manifestData = try Data(contentsOf: URL(fileURLWithPath:
-            (output as NSString).appendingPathComponent("manifest.json")))
+        let manifestData = try Data(
+            contentsOf: URL(
+                fileURLWithPath: (output as NSString).appendingPathComponent("manifest.json")))
         let manifestObject = try JSONSerialization.jsonObject(with: manifestData)
         let manifest = try #require(manifestObject as? [String: Any])
-        #expect(manifest["modelID"] as? String
-            == "ornith-1.5-35b-a3b-mtp-4bit")
-        #expect((manifest["arch"] as? [String: Any])?["family"] as? String
-            == "qwen36_mtp")
-        #expect(try Posix.entryKind((output as NSString)
-            .appendingPathComponent("verified-install.json")) == .regular)
-        #expect(try Posix.entryKind((output as NSString)
-            .appendingPathComponent("packed_experts/layer_00.bin")) == .regular)
+        #expect(
+            manifest["modelID"] as? String
+                == "ornith-1.5-35b-a3b-mtp-4bit")
+        #expect(
+            (manifest["arch"] as? [String: Any])?["family"] as? String
+                == "qwen36_mtp")
+        #expect(
+            try Posix.entryKind(
+                (output as NSString)
+                    .appendingPathComponent("verified-install.json")) == .regular)
+        #expect(
+            try Posix.entryKind(
+                (output as NSString)
+                    .appendingPathComponent("packed_experts/layer_00.bin")) == .regular)
     }
 
     @Test func rejectsUnsafeShardPathBeforeCopying() throws {
@@ -64,8 +72,9 @@ import Testing
             atPath: base, withIntermediateDirectories: true)
         let path = (base as NSString)
             .appendingPathComponent("\(tag)-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(atPath: path,
-                                                 withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            atPath: path,
+            withIntermediateDirectories: true)
         return path
     }
 }
@@ -91,12 +100,14 @@ import Testing
         let size = try Self.inflateIndex(at: indexPath, extraEntries: injected)
         // The bound this file used to carry, and the reason the test exists:
         // KAT-Coder-V2.5-Dev's index is 9.7 MiB and was refused by it.
-        #expect(size > 4 * 1024 * 1024,
-                "the fixture must exceed the old 4 MiB bound, was \(size) bytes")
+        #expect(
+            size > 4 * 1024 * 1024,
+            "the fixture must exceed the old 4 MiB bound, was \(size) bytes")
 
         let loaded = try LocalSnapshotLoader.load(directory: snapshot)
-        #expect(loaded.metadata.weightMap.count == baseline + injected,
-                "every injected entry survives the read")
+        #expect(
+            loaded.metadata.weightMap.count == baseline + injected,
+            "every injected entry survives the read")
         #expect(loaded.metadata.shardFilenames.count == 1)
     }
 
@@ -117,25 +128,30 @@ import Testing
         let extra = Int(smallBound) * 12 / 39
         let size = try Self.inflateIndex(at: indexPath, extraEntries: extra)
         #expect(size > smallBound, "the fixture must exceed the test bound")
-        #expect(size < IndexLoader.maximumIndexBytes,
-                "the fixture must stay under the real bound")
+        #expect(
+            size < IndexLoader.maximumIndexBytes,
+            "the fixture must stay under the real bound")
 
         #expect(throws: RepackError.self) {
             _ = try Posix.readBoundedData(indexPath, maximumBytes: smallBound)
         }
         // The real bound accepts what the old one refused.
-        #expect(try Posix.readBoundedData(indexPath,
-                                          maximumBytes: IndexLoader.maximumIndexBytes).count
-            == Int(size))
+        #expect(
+            try Posix.readBoundedData(
+                indexPath,
+                maximumBytes: IndexLoader.maximumIndexBytes
+            ).count
+                == Int(size))
     }
 
     /// Keeps the declared bound above the largest index a shipped checkpoint
     /// legitimately produces. This is the half that would have caught the
     /// original bug before a 69 GB conversion ran into it.
     @Test func boundLeavesRoomForAShippedCheckpointsIndex() {
-        let katCoderObserved: UInt64 = 9_665_024     // KAT-Coder-V2.5-Dev 4-bit
-        #expect(IndexLoader.maximumIndexBytes >= 4 * katCoderObserved,
-                "bound \(IndexLoader.maximumIndexBytes) is too close to a real index")
+        let katCoderObserved: UInt64 = 9_665_024  // KAT-Coder-V2.5-Dev 4-bit
+        #expect(
+            IndexLoader.maximumIndexBytes >= 4 * katCoderObserved,
+            "bound \(IndexLoader.maximumIndexBytes) is too close to a real index")
     }
 
     /// Rewrite the index with `extraEntries` synthetic `weight_map` entries,
@@ -146,8 +162,10 @@ import Testing
     /// over the inflated dictionary) allocates several times the file size, and
     /// the fixtures here only need to be valid JSON with a large `weight_map`.
     @discardableResult
-    private static func inflateIndex(at path: String,
-                                     extraEntries: Int) throws -> UInt64 {
+    private static func inflateIndex(
+        at path: String,
+        extraEntries: Int
+    ) throws -> UInt64 {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let map = try #require(root["weight_map"] as? [String: String])

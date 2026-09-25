@@ -46,13 +46,15 @@ public final class StructuredAssistantDecoder: @unchecked Sendable {
     /// a prompt rendered without the tool template, where there is no tool to
     /// call; a `<tool_call>` the model writes anyway streams as text, exactly
     /// as it does when no decoder runs at all.
-    public init(tokenizer: GFTokenizer,
-                allowedTools: Set<String>,
-                startsInThought: Bool = false,
-                parsesToolCalls: Bool = true,
-                idGenerator: @escaping @Sendable () -> String = {
-                    "call_" + (0..<24).map { _ in String(format: "%x", UInt8.random(in: 0...15)) }.joined()
-                }) {
+    public init(
+        tokenizer: GFTokenizer,
+        allowedTools: Set<String>,
+        startsInThought: Bool = false,
+        parsesToolCalls: Bool = true,
+        idGenerator: @escaping @Sendable () -> String = {
+            "call_" + (0..<24).map { _ in String(format: "%x", UInt8.random(in: 0...15)) }.joined()
+        }
+    ) {
         self.tokenizer = tokenizer
         self.allowedTools = allowedTools
         self.parsesToolCalls = parsesToolCalls
@@ -86,19 +88,23 @@ public final class StructuredAssistantDecoder: @unchecked Sendable {
     /// missing -- so the old `nil` was reachable only through the thinking-off
     /// shortcut this corrects. `allowedTools` is nil when the prompt was
     /// rendered without the tool template.
-    public static func forGeneration(tokenizer: GFTokenizer,
-                                     promptIDs: [Int32],
-                                     allowedTools: Set<String>?) -> StructuredAssistantDecoder {
+    public static func forGeneration(
+        tokenizer: GFTokenizer,
+        promptIDs: [Int32],
+        allowedTools: Set<String>?
+    ) -> StructuredAssistantDecoder {
         let opensThought = promptLeavesThoughtOpen(promptIDs, tokenizer: tokenizer)
         if let allowedTools {
-            return StructuredAssistantDecoder(tokenizer: tokenizer,
-                                              allowedTools: allowedTools,
-                                              startsInThought: opensThought)
+            return StructuredAssistantDecoder(
+                tokenizer: tokenizer,
+                allowedTools: allowedTools,
+                startsInThought: opensThought)
         }
-        return StructuredAssistantDecoder(tokenizer: tokenizer,
-                                          allowedTools: [],
-                                          startsInThought: opensThought,
-                                          parsesToolCalls: false)
+        return StructuredAssistantDecoder(
+            tokenizer: tokenizer,
+            allowedTools: [],
+            startsInThought: opensThought,
+            parsesToolCalls: false)
     }
 
     /// Whether generation begins inside a thought.
@@ -110,12 +116,15 @@ public final class StructuredAssistantDecoder: @unchecked Sendable {
     /// `<|im_end|>` are read. That is the generation prompt, and an earlier
     /// turn's markers -- a replayed thought, a user quoting the tag -- say
     /// nothing about where this generation starts.
-    public static func promptLeavesThoughtOpen(_ promptIDs: [Int32],
-                                               tokenizer: GFTokenizer) -> Bool {
+    public static func promptLeavesThoughtOpen(
+        _ promptIDs: [Int32],
+        tokenizer: GFTokenizer
+    ) -> Bool {
         guard let start = tokenizer.thinkStartID, let end = tokenizer.thinkEndID else {
             return false
         }
-        let generationPrompt = promptIDs.lastIndex(of: tokenizer.endOfTurnID)
+        let generationPrompt =
+            promptIDs.lastIndex(of: tokenizer.endOfTurnID)
             .map { promptIDs[($0 + 1)...] } ?? promptIDs[...]
         var open = false
         for id in generationPrompt {
@@ -154,8 +163,10 @@ public final class StructuredAssistantDecoder: @unchecked Sendable {
     }
 
     /// A tool marker, or a token inside an open call; nil for anything else.
-    private func consumeToolToken(tokenID: Int32,
-                                  delta: String) throws -> [StructuredAssistantEvent]? {
+    private func consumeToolToken(
+        tokenID: Int32,
+        delta: String
+    ) throws -> [StructuredAssistantEvent]? {
         if tokenID == tokenizer.toolCallStartID {
             guard toolTokens == nil else {
                 failed = true

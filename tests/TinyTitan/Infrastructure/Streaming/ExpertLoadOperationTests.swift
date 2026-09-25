@@ -37,14 +37,17 @@ import Testing
         let coordinator = try #require(ExpertIOEventCoordinator(device: context.device))
         let firstToken = try coordinator.reserve()
         let secondToken = try coordinator.reserve()
-        let first = ExpertLoadOperation(completionToken: firstToken,
-                                        eventCoordinator: coordinator)
-        let second = ExpertLoadOperation(completionToken: secondToken,
-                                         eventCoordinator: coordinator)
+        let first = ExpertLoadOperation(
+            completionToken: firstToken,
+            eventCoordinator: coordinator)
+        let second = ExpertLoadOperation(
+            completionToken: secondToken,
+            eventCoordinator: coordinator)
 
         second.finish(.success(()))
-        #expect(secondToken.status.contents().advanced(by: secondToken.statusOffset)
-            .load(as: UInt32.self) == 1)
+        #expect(
+            secondToken.status.contents().advanced(by: secondToken.statusOffset)
+                .load(as: UInt32.self) == 1)
         #expect(secondToken.event.signaledValue == 0)
 
         first.finish(.success(()))
@@ -57,13 +60,15 @@ import Testing
         let context = try MetalContext()
         let coordinator = try #require(ExpertIOEventCoordinator(device: context.device))
         let token = try coordinator.reserve()
-        let operation = ExpertLoadOperation(completionToken: token,
-                                            eventCoordinator: coordinator)
+        let operation = ExpertLoadOperation(
+            completionToken: token,
+            eventCoordinator: coordinator)
 
         operation.finish(.failure(ExpectedFailure()))
 
-        #expect(token.status.contents().advanced(by: token.statusOffset)
-            .load(as: UInt32.self) == 2)
+        #expect(
+            token.status.contents().advanced(by: token.statusOffset)
+                .load(as: UInt32.self) == 2)
         #expect(token.event.signaledValue == token.value)
         #expect(throws: ExpectedFailure.self) { try operation.wait() }
     }

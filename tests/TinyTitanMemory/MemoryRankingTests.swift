@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanMemory
 
 /// What `memory_search` returns, and why.
@@ -16,8 +17,10 @@ import Testing
 /// remains needs a word the fact does not contain at all ("boat" against a
 /// ferry rule), which no term weighting reaches.
 @Suite struct MemoryRankingTests {
-    private func record(_ key: String, _ value: String,
-                        tags: [String] = []) throws -> MemoryRecord {
+    private func record(
+        _ key: String, _ value: String,
+        tags: [String] = []
+    ) throws -> MemoryRecord {
         MemoryRecord(key: try MemoryKey(validating: key), value: value, tags: tags)
     }
 
@@ -27,21 +30,26 @@ import Testing
     }
 
     private func rainStore() throws -> [MemoryRecord] {
-        [try record("setting/town", "Ashgrove"),
-         try record("characters/ines/role", "the town archivist"),
-         try record("rules/weather", "it never rains")]
+        [
+            try record("setting/town", "Ashgrove"),
+            try record("characters/ines/role", "the town archivist"),
+            try record("rules/weather", "it never rains"),
+        ]
     }
 
     @Test func aRareWordBeatsACommonOne() throws {
         // "ever" and "rain" each appear in one fact; "town" names one and sits
         // in another's value.
-        #expect(ranked(try rainStore(), "does it ever rain in this town").first
-            == "rules/weather")
+        #expect(
+            ranked(try rainStore(), "does it ever rain in this town").first
+                == "rules/weather")
     }
 
     @Test func theKeyStillOutranksTheValue() throws {
-        let store = [try record("rules/ferry", "runs only on Sundays"),
-                     try record("notes/boats", "the ferry is a boat")]
+        let store = [
+            try record("rules/ferry", "runs only on Sundays"),
+            try record("notes/boats", "the ferry is a boat"),
+        ]
         #expect(ranked(store, "ferry").first == "rules/ferry")
     }
 
@@ -60,14 +68,18 @@ import Testing
     }
 
     @Test func aTagMatchStillCounts() throws {
-        let store = [try record("plot/turn", "the brother returns", tags: ["pivot"]),
-                     try record("plot/open", "a storm")]
+        let store = [
+            try record("plot/turn", "the brother returns", tags: ["pivot"]),
+            try record("plot/open", "a storm"),
+        ]
         #expect(ranked(store, "pivot") == ["plot/turn"])
     }
 
     @Test func withoutTextTheImportanceOrderStands() throws {
-        let store = [try record("a/low", "x", tags: []),
-                     try record("b/high", "y")]
+        let store = [
+            try record("a/low", "x", tags: []),
+            try record("b/high", "y"),
+        ]
         var records = store
         records[1].importance = 0.9
         records[0].importance = 0.1

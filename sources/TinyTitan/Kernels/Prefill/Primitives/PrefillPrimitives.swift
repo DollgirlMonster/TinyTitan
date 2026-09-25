@@ -8,22 +8,28 @@ final class PrefillEmbedLookupInt4 {
         precondition([4, 8].contains(weightBits))
         self.pso = try context.pipeline(
             "prefill_embed_lookup_affine_block",
-            constants: [MetalFunctionConstant(index: 78,
-                                               value: .uint32(UInt32(weightBits)))])
+            constants: [
+                MetalFunctionConstant(
+                    index: 78,
+                    value: .uint32(UInt32(weightBits)))
+            ])
     }
 
-    func encode(commandBuffer: MTLCommandBuffer,
-                       table: MTLBuffer, tableOffset: Int = 0,
-                       scales: MTLBuffer, scalesOffset: Int = 0,
-                       biases: MTLBuffer, biasesOffset: Int = 0,
-                       tokens: MTLBuffer, tokensOffset: Int = 0,
-                       out: MTLBuffer, outOffset: Int = 0,
-                       t: UInt32,
-                       d: UInt32,
-                       outScale: Float,
-                       vocab: UInt32) throws {
-        precondition(d % UInt32(Quantization.groupSize) == 0,
-                     "D must be a multiple of \(Quantization.groupSize)")
+    func encode(
+        commandBuffer: MTLCommandBuffer,
+        table: MTLBuffer, tableOffset: Int = 0,
+        scales: MTLBuffer, scalesOffset: Int = 0,
+        biases: MTLBuffer, biasesOffset: Int = 0,
+        tokens: MTLBuffer, tokensOffset: Int = 0,
+        out: MTLBuffer, outOffset: Int = 0,
+        t: UInt32,
+        d: UInt32,
+        outScale: Float,
+        vocab: UInt32
+    ) throws {
+        precondition(
+            d % UInt32(Quantization.groupSize) == 0,
+            "D must be a multiple of \(Quantization.groupSize)")
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -41,8 +47,9 @@ final class PrefillEmbedLookupInt4 {
         enc.setBytes(&dVar, length: MemoryLayout<UInt32>.size, index: 6)
         enc.setBytes(&scaleVar, length: MemoryLayout<Float>.size, index: 7)
         enc.setBytes(&vocabVar, length: MemoryLayout<UInt32>.size, index: 8)
-        enc.dispatchThreads(MTLSize(width: Int(d), height: Int(t), depth: 1),
-                            threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
+        enc.dispatchThreads(
+            MTLSize(width: Int(d), height: Int(t), depth: 1),
+            threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
         enc.endEncoding()
     }
 }
@@ -54,13 +61,15 @@ final class PrefillRMSNorm {
         self.psoBF16W = try context.pipeline("prefill_rmsnorm_bf16w_block")
     }
 
-    func encodeBF16W(commandBuffer: MTLCommandBuffer,
-                            x: MTLBuffer, xOffset: Int = 0,
-                            weight: MTLBuffer, weightOffset: Int = 0,
-                            out: MTLBuffer, outOffset: Int = 0,
-                            t: UInt32,
-                            d: UInt32,
-                            eps: Float) throws {
+    func encodeBF16W(
+        commandBuffer: MTLCommandBuffer,
+        x: MTLBuffer, xOffset: Int = 0,
+        weight: MTLBuffer, weightOffset: Int = 0,
+        out: MTLBuffer, outOffset: Int = 0,
+        t: UInt32,
+        d: UInt32,
+        eps: Float
+    ) throws {
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -75,8 +84,9 @@ final class PrefillRMSNorm {
         enc.setBytes(&dVar, length: MemoryLayout<UInt32>.size, index: 4)
         enc.setBytes(&epsVar, length: MemoryLayout<Float>.size, index: 5)
         let threads = min(Int(psoBF16W.maxTotalThreadsPerThreadgroup), 256)
-        enc.dispatchThreadgroups(MTLSize(width: Int(t), height: 1, depth: 1),
-                                 threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
+        enc.dispatchThreadgroups(
+            MTLSize(width: Int(t), height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
         enc.endEncoding()
     }
 }
@@ -88,21 +98,27 @@ final class PrefillInt4QMM {
         precondition([4, 8].contains(weightBits))
         self.pso = try context.pipeline(
             "prefill_dequant_affine_qmm_f16_block",
-            constants: [MetalFunctionConstant(index: 78,
-                                               value: .uint32(UInt32(weightBits)))])
+            constants: [
+                MetalFunctionConstant(
+                    index: 78,
+                    value: .uint32(UInt32(weightBits)))
+            ])
     }
 
-    func encode(commandBuffer: MTLCommandBuffer,
-                       weights: MTLBuffer, weightsOffset: Int = 0,
-                       scales: MTLBuffer, scalesOffset: Int = 0,
-                       biases: MTLBuffer, biasesOffset: Int = 0,
-                       x: MTLBuffer, xOffset: Int = 0,
-                       y: MTLBuffer, yOffset: Int = 0,
-                       t: Int,
-                       n: Int,
-                       k: Int) throws {
-        precondition(k % Quantization.groupSize == 0,
-                     "K must be a multiple of \(Quantization.groupSize)")
+    func encode(
+        commandBuffer: MTLCommandBuffer,
+        weights: MTLBuffer, weightsOffset: Int = 0,
+        scales: MTLBuffer, scalesOffset: Int = 0,
+        biases: MTLBuffer, biasesOffset: Int = 0,
+        x: MTLBuffer, xOffset: Int = 0,
+        y: MTLBuffer, yOffset: Int = 0,
+        t: Int,
+        n: Int,
+        k: Int
+    ) throws {
+        precondition(
+            k % Quantization.groupSize == 0,
+            "K must be a multiple of \(Quantization.groupSize)")
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }

@@ -37,9 +37,11 @@ public final class RoutedExpertLoadOperation: @unchecked Sendable {
     public let storage: ExpertLoadOperation
     private let model: Model
 
-    init(model: Model,
-         plan: RoutedExpertFetchPlan,
-         storage: ExpertLoadOperation) {
+    init(
+        model: Model,
+        plan: RoutedExpertFetchPlan,
+        storage: ExpertLoadOperation
+    ) {
         self.model = model
         self.plan = plan
         self.storage = storage
@@ -85,41 +87,53 @@ extension Model {
         packedExpertsLayout.layers[layer].experts.map(\.offset)
     }
 
-    public func adviseRoutedExperts(layer: Int,
-                                    experts: [Int]) throws -> ExpertIOAdviceResult {
+    public func adviseRoutedExperts(
+        layer: Int,
+        experts: [Int]
+    ) throws -> ExpertIOAdviceResult {
         let streamer = try openStreamer(for: layer)
         return streamer.adviseExpertMisses(experts: experts)
     }
 
-    public func routedExpertAdviceByteEstimate(layer: Int,
-                                               missCount: Int) throws -> UInt64 {
+    public func routedExpertAdviceByteEstimate(
+        layer: Int,
+        missCount: Int
+    ) throws -> UInt64 {
         guard missCount > 0 else { return 0 }
         let streamer = try openStreamer(for: layer)
         return UInt64(missCount) * streamer.layout.expertStride
     }
 
-    public func planRoutedExperts(layer: Int,
-                                  experts: [Int],
-                                  avoidingSlots: Set<Int> = [],
-                                  prefetched: [Int: MTLBuffer] = [:]) throws
-        -> RoutedExpertFetchPlan? {
+    public func planRoutedExperts(
+        layer: Int,
+        experts: [Int],
+        avoidingSlots: Set<Int> = [],
+        prefetched: [Int: MTLBuffer] = [:]
+    ) throws
+        -> RoutedExpertFetchPlan?
+    {
         let streamer = try openStreamer(for: layer)
         let validSlots = Set(avoidingSlots.filter { $0 >= 0 && $0 < streamer.slotCount })
         let prefetchPointers = prefetched.mapValues { $0.contents() }
         return RoutedExpertFetchPlan(
-            layer: layer, cachePlan: try streamer.planExpertsCached(
+            layer: layer,
+            cachePlan: try streamer.planExpertsCached(
                 experts: experts, avoidingSlots: validSlots, prefetched: prefetchPointers))
     }
 
-    public func planRoutedExpertsIfPossible(layer: Int,
-                                            experts: [Int],
-                                            avoidingSlots: Set<Int> = []) throws
-        -> RoutedExpertFetchPlan? {
+    public func planRoutedExpertsIfPossible(
+        layer: Int,
+        experts: [Int],
+        avoidingSlots: Set<Int> = []
+    ) throws
+        -> RoutedExpertFetchPlan?
+    {
         let streamer = try openStreamer(for: layer)
         let validSlots = Set(avoidingSlots.filter { $0 >= 0 && $0 < streamer.slotCount })
-        guard let cachePlan = streamer.planExpertsCachedIfPossible(
-            experts: experts,
-            avoidingSlots: validSlots)
+        guard
+            let cachePlan = streamer.planExpertsCachedIfPossible(
+                experts: experts,
+                avoidingSlots: validSlots)
         else {
             return nil
         }
@@ -166,13 +180,17 @@ extension Model {
         return Int(streamer.layout.expertStride)
     }
 
-    public func beginRoutedExpertPrefetch(layer: Int,
-                                           experts: [Int],
-                                           into buffers: [MTLBuffer]) throws
-        -> ExpertLoadOperation {
+    public func beginRoutedExpertPrefetch(
+        layer: Int,
+        experts: [Int],
+        into buffers: [MTLBuffer]
+    ) throws
+        -> ExpertLoadOperation
+    {
         let streamer = try openStreamer(for: layer)
-        return try streamer.beginPrefetch(experts: experts,
-                                          destinations: buffers.map { $0.contents() })
+        return try streamer.beginPrefetch(
+            experts: experts,
+            destinations: buffers.map { $0.contents() })
     }
 
     func pinRoutedExperts(for plan: RoutedExpertFetchPlan) throws -> RoutedExpertLease {
@@ -228,10 +246,11 @@ extension Model {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     let buffers = try streamer.loadExpertsCached(experts: experts)
-                    continuation.resume(returning: Self.makeExpertViews(
-                        buffers,
-                        layer: layer,
-                        experts: experts))
+                    continuation.resume(
+                        returning: Self.makeExpertViews(
+                            buffers,
+                            layer: layer,
+                            experts: experts))
                 } catch {
                     continuation.resume(throwing: error)
                 }

@@ -29,20 +29,22 @@ public struct MemoryItem: Identifiable, Codable, Sendable, Equatable {
     /// constraint that produced it.
     public var dependencies: [String]
 
-    public init(id: UUID = UUID(),
-                taskID: UUID,
-                namespace: String,
-                key: String,
-                value: String,
-                version: Int = 1,
-                createdAt: Date = Date(),
-                updatedAt: Date = Date(),
-                provenance: Provenance? = nil,
-                status: MemoryStatus = .active,
-                importance: Double? = nil,
-                confidence: Double? = nil,
-                tags: [String] = [],
-                dependencies: [String] = []) {
+    public init(
+        id: UUID = UUID(),
+        taskID: UUID,
+        namespace: String,
+        key: String,
+        value: String,
+        version: Int = 1,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
+        provenance: Provenance? = nil,
+        status: MemoryStatus = .active,
+        importance: Double? = nil,
+        confidence: Double? = nil,
+        tags: [String] = [],
+        dependencies: [String] = []
+    ) {
         self.id = id
         self.taskID = taskID
         self.namespace = namespace
@@ -92,11 +94,11 @@ public struct MemoryItem: Identifiable, Codable, Sendable, Equatable {
     public static let overheadBytes = 160
 }
 
-public extension MemoryVersion {
+extension MemoryVersion {
     /// What a retained version occupies. Versions are charged to the same
     /// budget as live items: history that is never accounted for is history
     /// that grows until something else fails.
-    var storageBytes: Int {
+    public var storageBytes: Int {
         MemoryItem.overheadBytes + namespace.utf8.count + key.utf8.count + value.utf8.count
     }
 }
@@ -137,16 +139,18 @@ public struct MemoryVersion: Identifiable, Codable, Sendable, Equatable {
     /// What this version became when it stopped being current.
     public let status: MemoryStatus
 
-    public init(id: UUID = UUID(),
-                itemID: UUID,
-                taskID: UUID,
-                namespace: String,
-                key: String,
-                value: String,
-                version: Int,
-                recordedAt: Date = Date(),
-                provenance: Provenance? = nil,
-                status: MemoryStatus = .superseded) {
+    public init(
+        id: UUID = UUID(),
+        itemID: UUID,
+        taskID: UUID,
+        namespace: String,
+        key: String,
+        value: String,
+        version: Int,
+        recordedAt: Date = Date(),
+        provenance: Provenance? = nil,
+        status: MemoryStatus = .superseded
+    ) {
         self.id = id
         self.itemID = itemID
         self.taskID = taskID

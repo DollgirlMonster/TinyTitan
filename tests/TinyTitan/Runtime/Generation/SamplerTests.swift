@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// `Sampler` exercises: greedy=argmax, seeded determinism + per-position
 /// reproducibility, top-k / top-p truncation, repetition penalty, temperature
@@ -25,15 +26,22 @@ import TinyTitanValidationSupport
             self.ctx = try MetalContext()
             self.sampler = try Sampler(context: ctx, vocab: vocab)
             self.vocab = vocab
-            guard let l = ctx.device.makeBuffer(length: vocab * MemoryLayout<Float16>.size,
-                                                options: .storageModeShared),
-                  let p = ctx.device.makeBuffer(length: vocab * MemoryLayout<Float16>.size,
-                                                options: .storageModeShared),
-                  let o = ctx.device.makeBuffer(length: MemoryLayout<UInt32>.size,
-                                                options: .storageModeShared) else {
+            guard
+                let l = ctx.device.makeBuffer(
+                    length: vocab * MemoryLayout<Float16>.size,
+                    options: .storageModeShared),
+                let p = ctx.device.makeBuffer(
+                    length: vocab * MemoryLayout<Float16>.size,
+                    options: .storageModeShared),
+                let o = ctx.device.makeBuffer(
+                    length: MemoryLayout<UInt32>.size,
+                    options: .storageModeShared)
+            else {
                 throw MetalError.noDevice
             }
-            self.logits = l; self.probs = p; self.outToken = o
+            self.logits = l
+            self.probs = p
+            self.outToken = o
         }
 
         func writeLogits(_ values: [Float]) {
@@ -42,14 +50,18 @@ import TinyTitanValidationSupport
         }
 
         @discardableResult
-        func draw(_ values: [Float], config: GenerationConfig,
-                  position: Int = 0, history: [Int32] = []) throws -> (id: UInt32, path: SamplePath) {
+        func draw(
+            _ values: [Float], config: GenerationConfig,
+            position: Int = 0, history: [Int32] = []
+        ) throws -> (id: UInt32, path: SamplePath) {
             writeLogits(values)
             let cmd = try #require(ctx.queue.makeCommandBuffer())
-            let path = try sampler.sample(commandBuffer: cmd, logits: logits, probs: probs,
-                                          history: history, config: config,
-                                          position: position, outToken: outToken)
-            cmd.commit(); cmd.waitUntilCompleted()
+            let path = try sampler.sample(
+                commandBuffer: cmd, logits: logits, probs: probs,
+                history: history, config: config,
+                position: position, outToken: outToken)
+            cmd.commit()
+            cmd.waitUntilCompleted()
             return (outToken.contents().load(as: UInt32.self), path)
         }
     }
@@ -78,8 +90,10 @@ import TinyTitanValidationSupport
             for seed in UInt64(1)...8 {
                 let cfg = GenerationConfig(temperature: 1.0, topK: v, seed: seed)
                 let id = try rig.draw(logits, config: cfg, position: Int(seed)).id
-                #expect(id < UInt32(v),
-                        "sampler returned \(id) (0x\(String(id, radix: 16))) for a distribution with no finite mass; vocab=\(v)")
+                #expect(
+                    id < UInt32(v),
+                    "sampler returned \(id) (0x\(String(id, radix: 16))) for a distribution with no finite mass; vocab=\(v)"
+                )
             }
         }
     }
@@ -93,23 +107,28 @@ import TinyTitanValidationSupport
     @Test func anEmptyRowIsReportedWhileAHealthyRowIsNot() throws {
         let v = 64
         let rig = try Rig(vocab: v)
-        _ = try rig.draw([Float](repeating: .nan, count: v),
-                         config: GenerationConfig(temperature: 1.0, topK: v, seed: 1))
-        #expect(rig.sampler.lastRowHadFiniteLogit == false,
-                "an all-NaN row must report as empty")
+        _ = try rig.draw(
+            [Float](repeating: .nan, count: v),
+            config: GenerationConfig(temperature: 1.0, topK: v, seed: 1))
+        #expect(
+            rig.sampler.lastRowHadFiniteLogit == false,
+            "an all-NaN row must report as empty")
 
-        _ = try rig.draw([Float](repeating: 0.5, count: v),
-                         config: GenerationConfig(temperature: 1.0, topK: v, seed: 1))
+        _ = try rig.draw(
+            [Float](repeating: 0.5, count: v),
+            config: GenerationConfig(temperature: 1.0, topK: v, seed: 1))
         #expect(rig.sampler.lastRowHadFiniteLogit)
 
         // One NaN logit among finite ones must *not* empty the row; the fold in
         // `softcap_value` is what keeps this true.
         var oneNaN = [Float](repeating: -30, count: v)
         oneNaN[0] = .nan
-        _ = try rig.draw(oneNaN,
-                         config: GenerationConfig(temperature: 1.0, topK: v, seed: 1))
-        #expect(rig.sampler.lastRowHadFiniteLogit,
-                "a single NaN logit must not empty the row")
+        _ = try rig.draw(
+            oneNaN,
+            config: GenerationConfig(temperature: 1.0, topK: v, seed: 1))
+        #expect(
+            rig.sampler.lastRowHadFiniteLogit,
+            "a single NaN logit must not empty the row")
     }
 
     @Test func greedy_picksArgmax() throws {
@@ -155,7 +174,10 @@ import TinyTitanValidationSupport
         let rig = try Rig(vocab: v)
         var logits = [Float](repeating: -8.0, count: v)
         let top: [Int] = [10, 200, 500, 900]
-        logits[top[0]] = 4.0; logits[top[1]] = 3.0; logits[top[2]] = 2.0; logits[top[3]] = 1.0
+        logits[top[0]] = 4.0
+        logits[top[1]] = 3.0
+        logits[top[2]] = 2.0
+        logits[top[3]] = 1.0
         let topSet = Set(top.map { UInt32($0) })
         for t in 0..<32 {
             let cfg = GenerationConfig(temperature: 1.0, topK: 4, seed: UInt64(t) &+ 1)
@@ -191,7 +213,8 @@ import TinyTitanValidationSupport
         var count5 = 0
         let trials = 200
         for t in 0..<trials {
-            let cfg = GenerationConfig(temperature: 1.0, repetitionPenalty: 2.0, seed: UInt64(t) &+ 1)
+            let cfg = GenerationConfig(
+                temperature: 1.0, repetitionPenalty: 2.0, seed: UInt64(t) &+ 1)
             let (id, path) = try rig.draw(logits, config: cfg, position: t, history: history)
             #expect(path == .hostPenalty)
             if id == 5 { count5 += 1 }
@@ -199,7 +222,9 @@ import TinyTitanValidationSupport
         // Uniform would pick 5 about trials/v times; suppression should push it
         // well below that. Generous bound to avoid flakiness.
         let uniformExpect = Double(trials) / Double(v)
-        #expect(Double(count5) < 0.5 * uniformExpect, "id 5 chosen \(count5) times (uniform≈\(uniformExpect))")
+        #expect(
+            Double(count5) < 0.5 * uniformExpect,
+            "id 5 chosen \(count5) times (uniform≈\(uniformExpect))")
     }
 
     /// Every id appended since the last sample is folded in, not only the last.
@@ -223,11 +248,14 @@ import TinyTitanValidationSupport
         _ = try rig.draw(flat, config: cfg, position: 1, history: [7, 7, 7, 42, 9])
 
         let ptr = rig.logits.contents().bindMemory(to: Float16.self, capacity: v)
-        let untouched = Float(ptr[3])          // never in any history
+        let untouched = Float(ptr[3])  // never in any history
         #expect(Float(ptr[7]) < untouched * 0.9, "the seeded id is penalized")
         #expect(Float(ptr[9]) < untouched * 0.9, "the last appended id is penalized")
-        #expect(Float(ptr[42]) < untouched * 0.9, Comment(rawValue:
-                "id 42 was appended before 9, so it is penalized only if every "
+        #expect(
+            Float(ptr[42]) < untouched * 0.9,
+            Comment(
+                rawValue:
+                    "id 42 was appended before 9, so it is penalized only if every "
                     + "appended id is folded and not just the last"))
     }
 
@@ -247,7 +275,8 @@ import TinyTitanValidationSupport
         var count5 = 0
         let trials = 64
         for t in 0..<trials {
-            let cfg = GenerationConfig(temperature: 1.0, repetitionPenalty: 1.3, seed: UInt64(t) &+ 1)
+            let cfg = GenerationConfig(
+                temperature: 1.0, repetitionPenalty: 1.3, seed: UInt64(t) &+ 1)
             let (id, path) = try rig.draw(logits, config: cfg, position: t, history: history)
             #expect(path == .hostPenalty)
             if id == 5 { count5 += 1 }
@@ -271,11 +300,15 @@ import TinyTitanValidationSupport
         var counts = [Int](repeating: 0, count: v)
         let trials = 1600
         for t in 0..<trials {
-            let cfg = GenerationConfig(temperature: 2.0, topK: v, topP: 1,
-                                       seed: UInt64(t) &+ 1)
+            let cfg = GenerationConfig(
+                temperature: 2.0, topK: v, topP: 1,
+                seed: UInt64(t) &+ 1)
             let raw = try rig.draw(logits, config: cfg, position: t).id
             let id = Int(raw)
-            guard id >= 0 && id < v else { Issue.record("id \(raw) (0x\(String(raw, radix: 16))) out of range v=\(v)"); continue }
+            guard id >= 0 && id < v else {
+                Issue.record("id \(raw) (0x\(String(raw, radix: 16))) out of range v=\(v)")
+                continue
+            }
             counts[id] += 1
         }
         let maxShare = Double(counts.max() ?? trials) / Double(trials)

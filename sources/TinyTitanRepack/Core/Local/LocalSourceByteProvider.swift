@@ -9,8 +9,10 @@ final class LocalSourceByteProvider: SourceByteProvider {
     private let snapshotDirectory: String
     private let writeTileBytes: Int
 
-    init(snapshotDirectory: String,
-         writeTileBytes: Int = WriterCore.tileBytes) {
+    init(
+        snapshotDirectory: String,
+        writeTileBytes: Int = WriterCore.tileBytes
+    ) {
         self.snapshotDirectory = snapshotDirectory
         self.writeTileBytes = writeTileBytes
     }
@@ -31,7 +33,9 @@ final class LocalSourceByteProvider: SourceByteProvider {
         audit.largestScratchBytes = max(audit.largestScratchBytes, scratch.count)
 
         var outputDescriptors: [String: Int32] = [:]
-        defer { outputDescriptors.values.forEach { close($0) } }
+        defer {
+            for descriptor in outputDescriptors.values { close(descriptor) }
+        }
         var copiedBytes: UInt64 = 0
 
         for copy in copies where !completedRangeIDs.contains(copy.id) {
@@ -42,7 +46,8 @@ final class LocalSourceByteProvider: SourceByteProvider {
             do {
                 let sourceSize = try Posix.fileSize(fd: sourceDescriptor, path: sourcePath)
                 guard copy.sourceOffset <= sourceSize,
-                      copy.size <= sourceSize - copy.sourceOffset else {
+                    copy.size <= sourceSize - copy.sourceOffset
+                else {
                     throw RepackError.safetensorsTensorOutOfRange(
                         path: sourcePath,
                         name: copy.id,
@@ -79,11 +84,12 @@ final class LocalSourceByteProvider: SourceByteProvider {
                 copy,
                 partialDirectory: partialDirectory,
                 scratch: scratch)
-            try commit(RemoteCompletedRange(
-                id: copy.id,
-                destinationDigest: digest,
-                sourceBytes: copy.size,
-                destinationBytes: copy.destinations.reduce(0) { $0 + $1.size }))
+            try commit(
+                RemoteCompletedRange(
+                    id: copy.id,
+                    destinationDigest: digest,
+                    sourceBytes: copy.size,
+                    destinationBytes: copy.destinations.reduce(0) { $0 + $1.size }))
             copiedBytes += copy.size
             progress(copiedBytes)
         }
@@ -91,16 +97,20 @@ final class LocalSourceByteProvider: SourceByteProvider {
 
     private func resolvedSourcePath(_ shard: String) throws -> String {
         guard !shard.isEmpty,
-              !shard.hasPrefix("/"),
-              !shard.contains(".."),
-              !shard.contains("/"),
-              !shard.contains("\\") else {
+            !shard.hasPrefix("/"),
+            !shard.contains(".."),
+            !shard.contains("/"),
+            !shard.contains("\\")
+        else {
             throw RepackError.configurationInvalid(
                 detail: "unsafe local snapshot shard path \(shard)")
         }
         let root = URL(fileURLWithPath: snapshotDirectory).standardizedFileURL.path
-        let path = URL(fileURLWithPath: shard, relativeTo:
-            URL(fileURLWithPath: root, isDirectory: true)).standardizedFileURL.path
+        let path = URL(
+            fileURLWithPath: shard,
+            relativeTo:
+                URL(fileURLWithPath: root, isDirectory: true)
+        ).standardizedFileURL.path
         guard path.hasPrefix(root + "/") else {
             throw RepackError.configurationInvalid(
                 detail: "local snapshot shard escapes its directory: \(shard)")
@@ -108,10 +118,13 @@ final class LocalSourceByteProvider: SourceByteProvider {
         return path
     }
 
-    private func outputDescriptor(path: String,
-                                  cache: inout [String: Int32]) throws -> Int32 {
+    private func outputDescriptor(
+        path: String,
+        cache: inout [String: Int32]
+    ) throws -> Int32 {
         if let existing = cache[path],
-           try Posix.descriptorMatchesPath(existing, path: path) {
+            try Posix.descriptorMatchesPath(existing, path: path)
+        {
             return existing
         }
         if let existing = cache.removeValue(forKey: path) {
@@ -122,15 +135,17 @@ final class LocalSourceByteProvider: SourceByteProvider {
         return descriptor
     }
 
-    private func copyBytes(sourceDescriptor: Int32,
-                           sourcePath: String,
-                           destinationDescriptor: Int32,
-                           destinationPath: String,
-                           sourceOffset: UInt64,
-                           destinationOffset: UInt64,
-                           size: UInt64,
-                           scratch: UnsafeMutableRawBufferPointer,
-                           audit: RepackAudit) throws {
+    private func copyBytes(
+        sourceDescriptor: Int32,
+        sourcePath: String,
+        destinationDescriptor: Int32,
+        destinationPath: String,
+        sourceOffset: UInt64,
+        destinationOffset: UInt64,
+        size: UInt64,
+        scratch: UnsafeMutableRawBufferPointer,
+        audit: RepackAudit
+    ) throws {
         // `scratch` is the caller's tile buffer; without storage there is no
         // destination for a read, so this is refused rather than trapping.
         guard let scratchBase = scratch.baseAddress else {
@@ -143,16 +158,18 @@ final class LocalSourceByteProvider: SourceByteProvider {
         while remaining > 0 {
             try Task.checkCancellation()
             let count = min(Int(remaining), scratch.count)
-            try Posix.preadAll(fd: sourceDescriptor,
-                               path: sourcePath,
-                               buf: scratchBase,
-                               count: count,
-                               offset: source)
-            try Posix.pwriteAll(fd: destinationDescriptor,
-                                path: destinationPath,
-                                buf: scratchBase,
-                                count: count,
-                                offset: destination)
+            try Posix.preadAll(
+                fd: sourceDescriptor,
+                path: sourcePath,
+                buf: scratchBase,
+                count: count,
+                offset: source)
+            try Posix.pwriteAll(
+                fd: destinationDescriptor,
+                path: destinationPath,
+                buf: scratchBase,
+                count: count,
+                offset: destination)
             audit.recordTile(bytes: count)
             audit.recordRead(bytes: count)
             audit.recordWrite(bytes: count)

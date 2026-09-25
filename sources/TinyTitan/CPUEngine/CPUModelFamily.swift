@@ -61,7 +61,8 @@ public enum CPUModelFamily: String, Sendable, CaseIterable {
     /// Runtime settings for a level; throws for a level the family does not
     /// support.
     public func runtimeReasoning(for level: ReasoningLevel) throws
-        -> (thinking: ModelThinkingMode, effort: ModelReasoningEffort?) {
+        -> (thinking: ModelThinkingMode, effort: ModelReasoningEffort?)
+    {
         try reasoningControl.runtimeReasoning(for: level, family: rawValue)
     }
 

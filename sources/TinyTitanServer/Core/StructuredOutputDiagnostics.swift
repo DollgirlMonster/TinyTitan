@@ -151,12 +151,14 @@ struct StructuredOutputFailureDiagnostics: Equatable, Sendable {
         self.lastToolResponseOffset = lastToolResponseOffset
         self.lastToolResponseEndOffset = lastToolResponseEndOffset
         self.effectiveCountMatchesResult = effectivePromptIDs.count == result.prefillTokens
-        self.effectivePrefixMatchesKV = result.kvBackedTokenIDs.count >= effectivePromptIDs.count
+        self.effectivePrefixMatchesKV =
+            result.kvBackedTokenIDs.count >= effectivePromptIDs.count
             && result.kvBackedTokenIDs.prefix(effectivePromptIDs.count)
                 .elementsEqual(effectivePromptIDs)
         self.kvPositionMatchesHistory = result.kvPosition == result.kvBackedTokenIDs.count
         self.completionCountMatchesHistory = offset == result.newTokens
-        self.prefillAccountingMatches = !prefillOverflow
+        self.prefillAccountingMatches =
+            !prefillOverflow
             && prefillAccounted == result.prefillTokens
         self.renderedPromptHash = Self.i32leSHA256([renderedPromptIDs[...]])
         self.effectivePromptHash = Self.i32leSHA256([effectivePromptIDs[...]])
@@ -242,4 +244,3 @@ struct StructuredOutputFailure: Error, CustomDebugStringConvertible, Sendable {
             + "cause=\(cause.rawValue) \(diagnostics.logDescription)"
     }
 }
-

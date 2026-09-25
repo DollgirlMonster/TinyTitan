@@ -6,10 +6,12 @@ public struct ParsedToolCall: Equatable, Sendable {
     public let arguments: JSONValue
     public let argumentsJSON: String
 
-    public init(id: String,
-                name: String,
-                arguments: JSONValue,
-                argumentsJSON: String) {
+    public init(
+        id: String,
+        name: String,
+        arguments: JSONValue,
+        argumentsJSON: String
+    ) {
         self.id = id
         self.name = name
         self.arguments = arguments
@@ -42,9 +44,11 @@ public struct QwenToolCallParser: Sendable {
 
     public init() {}
 
-    public func parse(_ text: String,
-                      allowedTools: Set<String>,
-                      id: String) throws -> ParsedToolCall {
+    public func parse(
+        _ text: String,
+        allowedTools: Set<String>,
+        id: String
+    ) throws -> ParsedToolCall {
         guard text.utf8.count <= Self.maximumBytes else {
             throw ToolCallParserError.oversized
         }
@@ -69,10 +73,11 @@ public struct QwenToolCallParser: Sendable {
         guard body.isEmpty else { throw ToolCallParserError.malformed }
 
         let argumentsValue = JSONValue.object(arguments)
-        return ParsedToolCall(id: id,
-                              name: name,
-                              arguments: argumentsValue,
-                              argumentsJSON: try argumentsValue.encoded())
+        return ParsedToolCall(
+            id: id,
+            name: name,
+            arguments: argumentsValue,
+            argumentsJSON: try argumentsValue.encoded())
     }
 
     private func trimOuterWhitespace(_ body: inout Substring) {
@@ -124,8 +129,10 @@ public struct QwenToolCallParser: Sendable {
         //     `</parameter>`, and a value whose text happens to contain that
         //     sequence is inherently ambiguous. Taking the first occurrence is
         //     the safe, template-faithful choice (R12).
-        guard let closeRange = body.range(of: "\n</parameter>\n")
-                ?? emptyValueCloseRange(body) else {
+        guard
+            let closeRange = body.range(of: "\n</parameter>\n")
+                ?? emptyValueCloseRange(body)
+        else {
             throw ToolCallParserError.malformed
         }
         let value = String(body[..<closeRange.lowerBound])
@@ -137,8 +144,10 @@ public struct QwenToolCallParser: Sendable {
     /// opens the value and precedes the close tag (empty value, no blank line).
     private func emptyValueCloseRange(_ body: Substring) -> Range<Substring.Index>? {
         guard body.hasPrefix("</parameter>\n") else { return nil }
-        return body.startIndex..<body.index(body.startIndex,
-                                            offsetBy: "</parameter>\n".count)
+        return body
+            .startIndex..<body.index(
+                body.startIndex,
+                offsetBy: "</parameter>\n".count)
     }
 
     private func isValidFunctionName(_ name: String) -> Bool {
@@ -148,9 +157,11 @@ public struct QwenToolCallParser: Sendable {
     private func parsedValue(_ raw: String) -> JSONValue {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let first = trimmed.first,
-              "{[-0123456789tfn".contains(first),
-              let value = try? JSONDecoder().decode(JSONValue.self,
-                                                    from: Data(trimmed.utf8)) else {
+            "{[-0123456789tfn".contains(first),
+            let value = try? JSONDecoder().decode(
+                JSONValue.self,
+                from: Data(trimmed.utf8))
+        else {
             return .string(raw)
         }
         // Quoted strings stay raw text: the template writes string arguments

@@ -38,12 +38,14 @@ public struct StreamLayout: Sendable {
     public let expertStride: UInt64
     public let expertOffsets: [UInt64]?
 
-    public init(path: String,
-                streamOffset: UInt64,
-                streamSize: UInt64,
-                expertsPerLayer: Int,
-                expertStride: UInt64,
-                expertOffsets: [UInt64]? = nil) {
+    public init(
+        path: String,
+        streamOffset: UInt64,
+        streamSize: UInt64,
+        expertsPerLayer: Int,
+        expertStride: UInt64,
+        expertOffsets: [UInt64]? = nil
+    ) {
         self.path = path
         self.streamOffset = streamOffset
         self.streamSize = streamSize

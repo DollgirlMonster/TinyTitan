@@ -1,8 +1,9 @@
 import Foundation
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 // MPP (matrix-product pipeline) TensorOps is a runtime/hardware capability:
 // it is unavailable on some Apple Silicon configurations. These tests are
@@ -25,11 +26,13 @@ private let mppTensorOpsAvailable: Bool = {
         let x: [Float16]
     }
 
-    private static func makeInputs(m: Int,
-                                   n: Int,
-                                   k: Int,
-                                   bits: Int = 4,
-                                   adversarialAffine: Bool = false) -> Inputs {
+    private static func makeInputs(
+        m: Int,
+        n: Int,
+        k: Int,
+        bits: Int = 4,
+        adversarialAffine: Bool = false
+    ) -> Inputs {
         let groups = k / Quantization.groupSize
         var packed = [UInt8](repeating: 0, count: n * k * bits / 8)
         for index in packed.indices {
@@ -70,12 +73,17 @@ private let mppTensorOpsAvailable: Bool = {
         return Inputs(bits: bits, packed: packed, scales: scales, biases: biases, x: x)
     }
 
-    private static func makeBuffer<T>(device: MTLDevice,
-                                      values: [T],
-                                      prefixBytes: Int = 0) -> MTLBuffer? {
+    private static func makeBuffer<T>(
+        device: MTLDevice,
+        values: [T],
+        prefixBytes: Int = 0
+    ) -> MTLBuffer? {
         let byteCount = values.count * MemoryLayout<T>.stride
-        guard let buffer = device.makeBuffer(length: prefixBytes + byteCount,
-                                             options: .storageModeShared) else {
+        guard
+            let buffer = device.makeBuffer(
+                length: prefixBytes + byteCount,
+                options: .storageModeShared)
+        else {
             return nil
         }
         values.withUnsafeBytes { bytes in
@@ -86,10 +94,12 @@ private let mppTensorOpsAvailable: Bool = {
         return buffer
     }
 
-    private static func cpuReference(_ inputs: Inputs,
-                                     m: Int,
-                                     n: Int,
-                                     k: Int) -> [Float] {
+    private static func cpuReference(
+        _ inputs: Inputs,
+        m: Int,
+        n: Int,
+        k: Int
+    ) -> [Float] {
         let groups = k / Quantization.groupSize
         let rowBytes = k * inputs.bits / 8
         let mask = UInt32((1 << inputs.bits) - 1)
@@ -121,62 +131,73 @@ private let mppTensorOpsAvailable: Bool = {
     }
 
     @discardableResult
-    private static func runShape(context: MetalContext,
-                                 candidate: MPPPrefillInt4QMM,
-                                 baseline: PrefillInt4QMM,
-                                 m: Int,
-                                 n: Int,
-                                 k: Int,
-                                 bits: Int = 4,
-                                 adversarialAffine: Bool = false,
-                                 weightOffset: Int = 0,
-                                 scaleOffset: Int = 0,
-                                 biasOffset: Int = 0,
-                                 compareCPUReference: Bool = false) throws
-        -> MPPPrefillInt4QMM.Path {
-        let inputs = makeInputs(m: m, n: n, k: k, bits: bits,
-                                adversarialAffine: adversarialAffine)
-        guard let weights = makeBuffer(device: context.device,
-                                       values: inputs.packed,
-                                       prefixBytes: weightOffset),
-              let scaleBuffer = makeBuffer(device: context.device,
-                                           values: inputs.scales,
-                                           prefixBytes: scaleOffset),
-              let biasBuffer = makeBuffer(device: context.device,
-                                          values: inputs.biases,
-                                          prefixBytes: biasOffset),
-              let input = Fp16Buffer.make(context.device, halves: inputs.x),
-              let expectedBuffer = Fp16Buffer.make(context.device, count: m * n),
-              let actualBuffer = Fp16Buffer.make(context.device, count: m * n),
-              let commandBuffer = context.queue.makeCommandBuffer() else {
+    private static func runShape(
+        context: MetalContext,
+        candidate: MPPPrefillInt4QMM,
+        baseline: PrefillInt4QMM,
+        m: Int,
+        n: Int,
+        k: Int,
+        bits: Int = 4,
+        adversarialAffine: Bool = false,
+        weightOffset: Int = 0,
+        scaleOffset: Int = 0,
+        biasOffset: Int = 0,
+        compareCPUReference: Bool = false
+    ) throws
+        -> MPPPrefillInt4QMM.Path
+    {
+        let inputs = makeInputs(
+            m: m, n: n, k: k, bits: bits,
+            adversarialAffine: adversarialAffine)
+        guard
+            let weights = makeBuffer(
+                device: context.device,
+                values: inputs.packed,
+                prefixBytes: weightOffset),
+            let scaleBuffer = makeBuffer(
+                device: context.device,
+                values: inputs.scales,
+                prefixBytes: scaleOffset),
+            let biasBuffer = makeBuffer(
+                device: context.device,
+                values: inputs.biases,
+                prefixBytes: biasOffset),
+            let input = Fp16Buffer.make(context.device, halves: inputs.x),
+            let expectedBuffer = Fp16Buffer.make(context.device, count: m * n),
+            let actualBuffer = Fp16Buffer.make(context.device, count: m * n),
+            let commandBuffer = context.queue.makeCommandBuffer()
+        else {
             Issue.record("buffer allocation failed")
             throw CocoaError(.fileReadUnknown)
         }
 
-        try baseline.encode(commandBuffer: commandBuffer,
-                        weights: weights,
-                        weightsOffset: weightOffset,
-                        scales: scaleBuffer,
-                        scalesOffset: scaleOffset,
-                        biases: biasBuffer,
-                        biasesOffset: biasOffset,
-                        x: input,
-                        y: expectedBuffer,
-                        t: m,
-                        n: n,
-                        k: k)
-        let path = try candidate.encode(commandBuffer: commandBuffer,
-                                    weights: weights,
-                                    weightsOffset: weightOffset,
-                                    scales: scaleBuffer,
-                                    scalesOffset: scaleOffset,
-                                    biases: biasBuffer,
-                                    biasesOffset: biasOffset,
-                                    x: input,
-                                    y: actualBuffer,
-                                    m: m,
-                                    n: n,
-                                    k: k)
+        try baseline.encode(
+            commandBuffer: commandBuffer,
+            weights: weights,
+            weightsOffset: weightOffset,
+            scales: scaleBuffer,
+            scalesOffset: scaleOffset,
+            biases: biasBuffer,
+            biasesOffset: biasOffset,
+            x: input,
+            y: expectedBuffer,
+            t: m,
+            n: n,
+            k: k)
+        let path = try candidate.encode(
+            commandBuffer: commandBuffer,
+            weights: weights,
+            weightsOffset: weightOffset,
+            scales: scaleBuffer,
+            scalesOffset: scaleOffset,
+            biases: biasBuffer,
+            biasesOffset: biasOffset,
+            x: input,
+            y: actualBuffer,
+            m: m,
+            n: n,
+            k: k)
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         #expect(commandBuffer.error == nil)
@@ -187,37 +208,48 @@ private let mppTensorOpsAvailable: Bool = {
         let baselineMaxAbs = RelError.maxAbsDiff(actual, baselineOutput)
         let baselineRelative = RelError.compute(actual: actual, reference: baselineOutput)
         let byteExact = actual == baselineOutput
-        #expect(baselineMaxAbs <= 0.03,
-                "shape M=\(m) N=\(n) K=\(k) maxAbs=\(baselineMaxAbs) rel=\(baselineRelative) byteExact=\(byteExact)")
-        #expect(baselineRelative <= 1e-3 || baselineMaxAbs <= 0.01,
-                "shape M=\(m) N=\(n) K=\(k) maxAbs=\(baselineMaxAbs) rel=\(baselineRelative) byteExact=\(byteExact)")
+        #expect(
+            baselineMaxAbs <= 0.03,
+            "shape M=\(m) N=\(n) K=\(k) maxAbs=\(baselineMaxAbs) rel=\(baselineRelative) byteExact=\(byteExact)"
+        )
+        #expect(
+            baselineRelative <= 1e-3 || baselineMaxAbs <= 0.01,
+            "shape M=\(m) N=\(n) K=\(k) maxAbs=\(baselineMaxAbs) rel=\(baselineRelative) byteExact=\(byteExact)"
+        )
 
         if compareCPUReference {
             let reference = cpuReference(inputs, m: m, n: n, k: k)
             let maxAbs = RelError.maxAbsDiff(actual, reference)
             let relative = RelError.compute(actual: actual, reference: reference)
-            #expect(maxAbs <= 0.03,
-                    "CPU reference M=\(m) N=\(n) K=\(k) maxAbs=\(maxAbs) rel=\(relative)")
-            #expect(relative <= 1e-3,
-                    "CPU reference M=\(m) N=\(n) K=\(k) maxAbs=\(maxAbs) rel=\(relative)")
+            #expect(
+                maxAbs <= 0.03,
+                "CPU reference M=\(m) N=\(n) K=\(k) maxAbs=\(maxAbs) rel=\(relative)")
+            #expect(
+                relative <= 1e-3,
+                "CPU reference M=\(m) N=\(n) K=\(k) maxAbs=\(maxAbs) rel=\(relative)")
         }
         return path
     }
 
-    @Test(.enabled(if: mppTensorOpsAvailable,
-                   "Requires runtime MPP TensorOps support"))
+    @Test(
+        .enabled(
+            if: mppTensorOpsAvailable,
+            "Requires runtime MPP TensorOps support"))
     func affineThreadgroupCandidateMatchesFP32AffineReference() throws {
         let context = try MetalContext()
         let candidate = MPPPrefillInt4QMM(context: context)
         let baseline = try PrefillInt4QMM(context: context)
 
-        try Self.runShape(context: context, candidate: candidate, baseline: baseline,
-                          m: 64, n: 32, k: 64, compareCPUReference: true)
-        try Self.runShape(context: context, candidate: candidate, baseline: baseline,
-                          m: 64, n: 32, k: 128, adversarialAffine: true,
-                          compareCPUReference: true)
-        try Self.runShape(context: context, candidate: candidate, baseline: baseline,
-                          m: 17, n: 35, k: 64, compareCPUReference: true)
+        try Self.runShape(
+            context: context, candidate: candidate, baseline: baseline,
+            m: 64, n: 32, k: 64, compareCPUReference: true)
+        try Self.runShape(
+            context: context, candidate: candidate, baseline: baseline,
+            m: 64, n: 32, k: 128, adversarialAffine: true,
+            compareCPUReference: true)
+        try Self.runShape(
+            context: context, candidate: candidate, baseline: baseline,
+            m: 17, n: 35, k: 64, compareCPUReference: true)
         try Self.runShape(
             context: context, candidate: candidate, baseline: baseline,
             m: 17, n: 35, k: 128, adversarialAffine: true,
@@ -225,27 +257,32 @@ private let mppTensorOpsAvailable: Bool = {
             compareCPUReference: true)
     }
 
-    @Test(.enabled(if: mppTensorOpsAvailable,
-                   "Requires runtime MPP TensorOps support"),
-          arguments: [8])
+    @Test(
+        .enabled(
+            if: mppTensorOpsAvailable,
+            "Requires runtime MPP TensorOps support"),
+        arguments: [8])
     func affineThreadgroupSupportsHigherBitWeights(bits: Int) throws {
         let context = try MetalContext()
         let candidate = MPPPrefillInt4QMM(context: context, weightBits: bits)
         let baseline = try PrefillInt4QMM(context: context, weightBits: bits)
         #expect(candidate.isAvailable)
-        try Self.runShape(context: context,
-                          candidate: candidate,
-                          baseline: baseline,
-                          m: 33,
-                          n: 35,
-                          k: 128,
-                          bits: bits,
-                          adversarialAffine: true,
-                          compareCPUReference: true)
+        try Self.runShape(
+            context: context,
+            candidate: candidate,
+            baseline: baseline,
+            m: 33,
+            n: 35,
+            k: 128,
+            bits: bits,
+            adversarialAffine: true,
+            compareCPUReference: true)
     }
 
-    @Test(.enabled(if: mppTensorOpsAvailable,
-                   "Requires runtime MPP TensorOps support"))
+    @Test(
+        .enabled(
+            if: mppTensorOpsAvailable,
+            "Requires runtime MPP TensorOps support"))
     func selectedProductionAttentionShapesMatchCurrentPolicy() throws {
         let context = try MetalContext()
         let candidate = MPPPrefillInt4QMM(context: context)
@@ -267,14 +304,17 @@ private let mppTensorOpsAvailable: Bool = {
                 let path = try Self.runShape(
                     context: context, candidate: candidate, baseline: baseline,
                     m: m, n: shape.n, k: shape.k)
-                #expect(path == .affineThreadgroupF16,
-                        "\(shape.name) M=\(m) unexpectedly fell back")
+                #expect(
+                    path == .affineThreadgroupF16,
+                    "\(shape.name) M=\(m) unexpectedly fell back")
             }
         }
     }
 
-    @Test(.enabled(if: mppTensorOpsAvailable,
-                   "Requires runtime MPP TensorOps support"))
+    @Test(
+        .enabled(
+            if: mppTensorOpsAvailable,
+            "Requires runtime MPP TensorOps support"))
     func fullProductionShapeIsByteStableAcross32Dispatches() throws {
         let m = 32
         let n = 2816
@@ -285,26 +325,29 @@ private let mppTensorOpsAvailable: Bool = {
         let context = try MetalContext()
         let candidate = MPPPrefillInt4QMM(context: context)
         guard let weights = Self.makeBuffer(device: context.device, values: inputs.packed),
-              let scales = Self.makeBuffer(device: context.device, values: inputs.scales),
-              let biases = Self.makeBuffer(device: context.device, values: inputs.biases),
-              let input = Fp16Buffer.make(context.device, halves: inputs.x),
-              let outputs = context.device.makeBuffer(length: outputBytes * 32,
-                                                      options: .storageModeShared),
-              let commandBuffer = context.queue.makeCommandBuffer() else {
+            let scales = Self.makeBuffer(device: context.device, values: inputs.scales),
+            let biases = Self.makeBuffer(device: context.device, values: inputs.biases),
+            let input = Fp16Buffer.make(context.device, halves: inputs.x),
+            let outputs = context.device.makeBuffer(
+                length: outputBytes * 32,
+                options: .storageModeShared),
+            let commandBuffer = context.queue.makeCommandBuffer()
+        else {
             Issue.record("buffer allocation failed")
             return
         }
         for run in 0..<32 {
-            let path = try candidate.encode(commandBuffer: commandBuffer,
-                                        weights: weights,
-                                        scales: scales,
-                                        biases: biases,
-                                        x: input,
-                                        y: outputs,
-                                        yOffset: run * outputBytes,
-                                        m: m,
-                                        n: n,
-                                        k: k)
+            let path = try candidate.encode(
+                commandBuffer: commandBuffer,
+                weights: weights,
+                scales: scales,
+                biases: biases,
+                x: input,
+                y: outputs,
+                yOffset: run * outputBytes,
+                m: m,
+                n: n,
+                k: k)
             #expect(path == .affineThreadgroupF16)
         }
         commandBuffer.commit()
@@ -328,32 +371,37 @@ private let mppTensorOpsAvailable: Bool = {
     @Test func unsupportedOrUnalignedInputsReportFallback() throws {
         let context = try MetalContext()
         let candidate = MPPPrefillInt4QMM(context: context)
-        guard let buffer = context.device.makeBuffer(length: 4096,
-                                                     options: .storageModeShared),
-              let commandBuffer = context.queue.makeCommandBuffer() else {
+        guard
+            let buffer = context.device.makeBuffer(
+                length: 4096,
+                options: .storageModeShared),
+            let commandBuffer = context.queue.makeCommandBuffer()
+        else {
             Issue.record("buffer allocation failed")
             return
         }
-        let unsupportedShape = try candidate.encode(commandBuffer: commandBuffer,
-                                                weights: buffer,
-                                                scales: buffer,
-                                                biases: buffer,
-                                                x: buffer,
-                                                y: buffer,
-                                                m: 1,
-                                                n: 1,
-                                                k: 65)
-        let unalignedScale = try candidate.encode(commandBuffer: commandBuffer,
-                                              weights: buffer,
-                                              weightsOffset: 1,
-                                              scales: buffer,
-                                              scalesOffset: 1,
-                                              biases: buffer,
-                                              x: buffer,
-                                              y: buffer,
-                                              m: 1,
-                                              n: 1,
-                                              k: 64)
+        let unsupportedShape = try candidate.encode(
+            commandBuffer: commandBuffer,
+            weights: buffer,
+            scales: buffer,
+            biases: buffer,
+            x: buffer,
+            y: buffer,
+            m: 1,
+            n: 1,
+            k: 65)
+        let unalignedScale = try candidate.encode(
+            commandBuffer: commandBuffer,
+            weights: buffer,
+            weightsOffset: 1,
+            scales: buffer,
+            scalesOffset: 1,
+            biases: buffer,
+            x: buffer,
+            y: buffer,
+            m: 1,
+            n: 1,
+            k: 64)
         #expect(unsupportedShape == .unavailable)
         #expect(unalignedScale == .unavailable)
     }

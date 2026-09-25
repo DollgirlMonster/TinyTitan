@@ -15,10 +15,12 @@ public struct ModelSessionFacts: Sendable, Equatable {
     /// may not have passed.
     public let expertCacheSlots: Int
 
-    public init(modelID: String,
-                prefillChunkTokens: Int,
-                promptCacheMode: ServerPromptCacheMode,
-                expertCacheSlots: Int = 0) {
+    public init(
+        modelID: String,
+        prefillChunkTokens: Int,
+        promptCacheMode: ServerPromptCacheMode,
+        expertCacheSlots: Int = 0
+    ) {
         self.modelID = modelID
         self.prefillChunkTokens = prefillChunkTokens
         self.promptCacheMode = promptCacheMode
@@ -34,17 +36,21 @@ enum ServerModelIdentity {
     /// is loaded makes `/v1/models` useless for telling them apart. The width
     /// comes from the manifest's routed-expert slot rather than from parsing
     /// the id, so it is right even when the id says nothing.
-    static func apiModelID(manifestModelID: String,
-                           family: ModelFamily,
-                           weightBits: Int) -> String {
+    static func apiModelID(
+        manifestModelID: String,
+        family: ModelFamily,
+        weightBits: Int
+    ) -> String {
         base(manifestModelID: manifestModelID, family: family)
             + "_\(weightBits)-Bit"
     }
 
     /// The id with any quantization the manifest already spelled removed, so
     /// the suffix is added exactly once. The catalog names installs by it.
-    static func base(manifestModelID: String,
-                             family: ModelFamily) -> String {
+    static func base(
+        manifestModelID: String,
+        family: ModelFamily
+    ) -> String {
         for suffix in ["-4bit", "-8bit", "-6bit"]
         where manifestModelID.hasSuffix(suffix) {
             return String(manifestModelID.dropLast(suffix.count))
@@ -94,23 +100,25 @@ public struct ModelSessionPlan: Sendable {
     public let mtpModelDirectory: URL?
     public let mtpMemoryMiB: Int
 
-    public init(modelDirectory: URL,
-                maxContext: Int,
-                slots: Int = 1,
-                promptCacheMode: ServerPromptCacheMode,
-                promptCacheMaximumEntries: Int,
-                promptCacheMemoryLimitBytes: Int,
-                promptCacheDiskDirectory: URL?,
-                promptCacheDiskLimitBytes: Int,
-                prefillChunkTokens: Int?,
-                kvCachePrecision: KVCachePrecision = .int8,
-                ropeScalingMode: RuntimeRoPEScalingMode = .none,
-                thinkingMode: ModelThinkingMode = .off,
-                reasoningEffort: ModelReasoningEffort? = nil,
-                expertCacheSlots: Int?,
-                expertCacheBudgetBytes: Int? = nil,
-                mtpModelDirectory: URL?,
-                mtpMemoryMiB: Int) {
+    public init(
+        modelDirectory: URL,
+        maxContext: Int,
+        slots: Int = 1,
+        promptCacheMode: ServerPromptCacheMode,
+        promptCacheMaximumEntries: Int,
+        promptCacheMemoryLimitBytes: Int,
+        promptCacheDiskDirectory: URL?,
+        promptCacheDiskLimitBytes: Int,
+        prefillChunkTokens: Int?,
+        kvCachePrecision: KVCachePrecision = .int8,
+        ropeScalingMode: RuntimeRoPEScalingMode = .none,
+        thinkingMode: ModelThinkingMode = .off,
+        reasoningEffort: ModelReasoningEffort? = nil,
+        expertCacheSlots: Int?,
+        expertCacheBudgetBytes: Int? = nil,
+        mtpModelDirectory: URL?,
+        mtpMemoryMiB: Int
+    ) {
         self.modelDirectory = modelDirectory
         self.maxContext = maxContext
         self.slots = slots
@@ -137,11 +145,13 @@ public struct ModelSessionPlan: Sendable {
     /// hypothetical: the catalog loader once built its own plan and dropped
     /// `slots`, so `--models-dir` sessions ran one sequence while the
     /// coordinator admitted four, and the four silently serialized.
-    public static func from(arguments: ServerArguments,
-                            modelDirectory: URL,
-                            thinking: ModelThinkingMode,
-                            reasoningEffort: ModelReasoningEffort?,
-                            mtpModelDirectory: URL?) -> ModelSessionPlan {
+    public static func from(
+        arguments: ServerArguments,
+        modelDirectory: URL,
+        thinking: ModelThinkingMode,
+        reasoningEffort: ModelReasoningEffort?,
+        mtpModelDirectory: URL?
+    ) -> ModelSessionPlan {
         ModelSessionPlan(
             modelDirectory: modelDirectory,
             maxContext: arguments.maxContext,
@@ -198,9 +208,10 @@ public struct ModelSessionPlan: Sendable {
     /// against. Reads `manifest.json` only.
     public func reasoningProfile() throws -> ServerReasoningProfile {
         let family = try ManifestReader.peekIdentity(directoryURL: modelDirectory).family
-        return ServerReasoningProfile(family: family,
-                                      thinkingMode: thinkingMode,
-                                      reasoningEffort: reasoningEffort)
+        return ServerReasoningProfile(
+            family: family,
+            thinkingMode: thinkingMode,
+            reasoningEffort: reasoningEffort)
     }
 
     public func previewFacts(modelIDOverride: String? = nil) throws -> ModelSessionFacts {
@@ -208,8 +219,9 @@ public struct ModelSessionPlan: Sendable {
         let family = identity.family
         // Fail a lazy-load server at launch, not on the first request, when
         // the installed family's template defines no effort levels.
-        try family.validateReasoning(thinkingMode: thinkingMode,
-                                     effort: reasoningEffort)
+        try family.validateReasoning(
+            thinkingMode: thinkingMode,
+            effort: reasoningEffort)
         let defaultModelID = ServerModelIdentity.apiModelID(
             manifestModelID: identity.modelID,
             family: family,
@@ -218,7 +230,8 @@ public struct ModelSessionPlan: Sendable {
         // --prefill-chunk wins, otherwise qwen36 takes the long-prefill chunk
         // and anything else takes the runtime default. Family is the only
         // input, and family comes from the manifest.
-        let resolvedChunk = prefillChunkTokens
+        let resolvedChunk =
+            prefillChunkTokens
             ?? ModelProfile.resolve(identity: identity).prefillChunkTokens
             ?? (family == .qwen36
                 ? RuntimeConfiguration.qwenLongPrefillChunkTokens

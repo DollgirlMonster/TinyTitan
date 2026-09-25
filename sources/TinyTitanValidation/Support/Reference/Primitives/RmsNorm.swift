@@ -1,5 +1,5 @@
-import Foundation
 import Accelerate
+import Foundation
 
 /// FP32 RMSNorm reference computed with Accelerate vectorized primitives.
 ///
@@ -30,8 +30,9 @@ public enum RmsNormRef {
             weight.withUnsafeBufferPointer { pwBuffer in
                 y.withUnsafeMutableBufferPointer { pyBuffer in
                     guard let px = pxBuffer.baseAddress,
-                          let pw = pwBuffer.baseAddress,
-                          let py = pyBuffer.baseAddress else { return }
+                        let pw = pwBuffer.baseAddress,
+                        let py = pyBuffer.baseAddress
+                    else { return }
                     vDSP_vmul(px, 1, pw, 1, py, 1, vDSP_Length(d))
                     var s = invRms
                     vDSP_vsmul(py, 1, &s, py, 1, vDSP_Length(d))

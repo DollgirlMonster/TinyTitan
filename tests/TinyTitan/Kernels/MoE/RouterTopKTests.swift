@@ -1,8 +1,9 @@
 import Foundation
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct RouterTopKTests {
     private static let experts = 16
@@ -28,16 +29,19 @@ import TinyTitanValidationSupport
         }
         let expertScale = (0..<Self.experts).map { _ in rng.uniform(0.6, 1.4) }
 
-        let expected = Self.reference(weights: weights,
-                                      hidden: hidden,
-                                      effectiveScale: effectiveScale,
-                                      expertScale: expertScale)
-        let actual = try Self.run(weights: weights,
-                                  hidden: hidden,
-                                  effectiveScale: effectiveScale,
-                                  expertScale: expertScale)
+        let expected = Self.reference(
+            weights: weights,
+            hidden: hidden,
+            effectiveScale: effectiveScale,
+            expertScale: expertScale)
+        let actual = try Self.run(
+            weights: weights,
+            hidden: hidden,
+            effectiveScale: effectiveScale,
+            expertScale: expertScale)
         #expect(actual.indices == expected.indices)
-        let maxError = zip(actual.weights, expected.weights)
+        let maxError =
+            zip(actual.weights, expected.weights)
             .map { abs($0 - $1) }
             .max() ?? 0
         #expect(maxError < 5e-3)
@@ -58,26 +62,31 @@ import TinyTitanValidationSupport
         let effectiveScale = [Float](repeating: 1.0, count: Self.dimension)
         let expertScale = [Float](repeating: 1.0, count: Self.experts)
 
-        let expected = Self.reference(weights: weights,
-                                      hidden: hidden,
-                                      effectiveScale: effectiveScale,
-                                      expertScale: expertScale)
-        let actual = try Self.run(weights: weights,
-                                  hidden: hidden,
-                                  effectiveScale: effectiveScale,
-                                  expertScale: expertScale)
+        let expected = Self.reference(
+            weights: weights,
+            hidden: hidden,
+            effectiveScale: effectiveScale,
+            expertScale: expertScale)
+        let actual = try Self.run(
+            weights: weights,
+            hidden: hidden,
+            effectiveScale: effectiveScale,
+            expertScale: expertScale)
         #expect(actual.indices == expected.indices)
     }
 
-    private static func reference(weights: [[Float]],
-                                  hidden: [Float],
-                                  effectiveScale: [Float],
-                                  expertScale: [Float]) -> Result {
+    private static func reference(
+        weights: [[Float]],
+        hidden: [Float],
+        effectiveScale: [Float],
+        expertScale: [Float]
+    ) -> Result {
         let scaled = zip(hidden, effectiveScale).map { $0 * $1 }
         let rows = weights.map { Quantization.quantizeInt8Affine($0) }
-        let logits = DequantInt8GemvRef.apply(weightRows: rows,
-                                              x: scaled,
-                                              n: Self.dimension)
+        let logits = DequantInt8GemvRef.apply(
+            weightRows: rows,
+            x: scaled,
+            n: Self.dimension)
         var paired: [(Float, UInt32)] = []
         paired.reserveCapacity(Self.experts)
         for expert in 0..<Self.experts {
@@ -96,10 +105,12 @@ import TinyTitanValidationSupport
         return Result(indices: selected.map { $0.1 }, weights: outputWeights)
     }
 
-    private static func run(weights: [[Float]],
-                            hidden: [Float],
-                            effectiveScale: [Float],
-                            expertScale: [Float]) throws -> Result {
+    private static func run(
+        weights: [[Float]],
+        hidden: [Float],
+        effectiveScale: [Float],
+        expertScale: [Float]
+    ) throws -> Result {
         let packedRows = weights.map { Quantization.quantizeInt8Affine($0) }
         let groupsPerRow = Self.dimension / Quantization.groupSize
         let packed = packedRows.flatMap(\.packed)
@@ -109,30 +120,32 @@ import TinyTitanValidationSupport
 
         let context = try MetalContext()
         let kernel = try MoE(context: context)
-        guard let weightBuffer = context.device.makeBuffer(
-                  bytes: packed, length: packed.count, options: .storageModeShared),
-              let scaleBuffer = context.device.makeBuffer(
-                  bytes: scales,
-                  length: scales.count * MemoryLayout<UInt16>.stride,
-                  options: .storageModeShared),
-              let biasBuffer = context.device.makeBuffer(
-                  bytes: biases,
-                  length: biases.count * MemoryLayout<UInt16>.stride,
-                  options: .storageModeShared),
-              let hiddenBuffer = Fp16Buffer.make(context.device, values: hidden),
-              let effectiveBuffer = context.device.makeBuffer(
-                  bytes: effectiveScale.map(Quantization.bf16Bits),
-                  length: effectiveScale.count * MemoryLayout<UInt16>.stride,
-                  options: .storageModeShared),
-              let expertScaleBuffer = context.device.makeBuffer(
-                  bytes: expertScale.map(Quantization.bf16Bits),
-                  length: expertScale.count * MemoryLayout<UInt16>.stride,
-                  options: .storageModeShared),
-              let indexBuffer = context.device.makeBuffer(
-                  length: Self.topK * MemoryLayout<UInt32>.stride,
-                  options: .storageModeShared),
-              let outputWeightBuffer = Fp16Buffer.make(context.device, count: Self.topK),
-              let commandBuffer = context.queue.makeCommandBuffer() else {
+        guard
+            let weightBuffer = context.device.makeBuffer(
+                bytes: packed, length: packed.count, options: .storageModeShared),
+            let scaleBuffer = context.device.makeBuffer(
+                bytes: scales,
+                length: scales.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared),
+            let biasBuffer = context.device.makeBuffer(
+                bytes: biases,
+                length: biases.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared),
+            let hiddenBuffer = Fp16Buffer.make(context.device, values: hidden),
+            let effectiveBuffer = context.device.makeBuffer(
+                bytes: effectiveScale.map(Quantization.bf16Bits),
+                length: effectiveScale.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared),
+            let expertScaleBuffer = context.device.makeBuffer(
+                bytes: expertScale.map(Quantization.bf16Bits),
+                length: expertScale.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared),
+            let indexBuffer = context.device.makeBuffer(
+                length: Self.topK * MemoryLayout<UInt32>.stride,
+                options: .storageModeShared),
+            let outputWeightBuffer = Fp16Buffer.make(context.device, count: Self.topK),
+            let commandBuffer = context.queue.makeCommandBuffer()
+        else {
             throw CocoaError(.fileReadUnknown)
         }
         try kernel.encodeRouter(
@@ -170,8 +183,10 @@ import TinyTitanValidationSupport
     /// Reference: softmax over the SELECTED top-k scores, lower index winning
     /// ties. That is `norm_topk_prob = true` -- renormalizing over the top-k
     /// equals softmax-over-all then renormalize.
-    private static func reference(logits: [Float], scale: [Float],
-                                  k: Int) -> (idx: [UInt32], w: [Float]) {
+    private static func reference(
+        logits: [Float], scale: [Float],
+        k: Int
+    ) -> (idx: [UInt32], w: [Float]) {
         let order = logits.enumerated().sorted {
             $0.element != $1.element ? $0.element > $1.element : $0.offset < $1.offset
         }.prefix(k)
@@ -179,8 +194,10 @@ import TinyTitanValidationSupport
         let maxS = scores.max() ?? 0
         let exps = scores.map { expf($0 - maxS) }
         let sum = exps.reduce(0, +)
-        return (order.map { UInt32($0.offset) },
-                zip(order, exps).map { $1 / sum * scale[$0.offset] })
+        return (
+            order.map { UInt32($0.offset) },
+            zip(order, exps).map { $1 / sum * scale[$0.offset] }
+        )
     }
 
     @Test("top-10 selection matches the reference")
@@ -214,7 +231,7 @@ import TinyTitanValidationSupport
         // anything larger is refused by a precondition, which traps rather
         // than throwing and so cannot be exercised from here.
         let context = try MetalContext()
-        _ = try MoE(context: context, topKExperts: 8)    // Qwen 3.6, Ornith
-        _ = try MoE(context: context, topKExperts: 16)   // the bound itself
+        _ = try MoE(context: context, topKExperts: 8)  // Qwen 3.6, Ornith
+        _ = try MoE(context: context, topKExperts: 16)  // the bound itself
     }
 }

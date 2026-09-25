@@ -50,7 +50,8 @@ public enum MemoryTools {
     /// Descriptions are part of the behaviour: they are where the model reads
     /// what a key should look like and when a write is worth making.
     public static func definitions(surface: MemoryToolSurface = .full)
-        -> [MemoryToolDefinition] {
+        -> [MemoryToolDefinition]
+    {
         let wanted = surface.toolNames
         return allDefinitions().filter { wanted.contains($0.name) }
     }
@@ -61,45 +62,50 @@ public enum MemoryTools {
                 name: "memory_search",
                 description: "Search durable project memory. Use before changing an unfamiliar "
                     + "area or when the user refers to an earlier decision.",
-                parameters: .object([
-                    "query": .string("What to look for, in plain words."),
-                    "prefix": .string("Optional key prefix, for example 'decisions/'."),
-                    "tags": .stringArray("Optional tags to require."),
-                    "limit": .integer("Maximum results, default 10."),
-                ], required: [])),
+                parameters: .object(
+                    [
+                        "query": .string("What to look for, in plain words."),
+                        "prefix": .string("Optional key prefix, for example 'decisions/'."),
+                        "tags": .stringArray("Optional tags to require."),
+                        "limit": .integer("Maximum results, default 10."),
+                    ], required: [])),
             MemoryToolDefinition(
                 name: "memory_get",
                 description: "Read one memory by exact key.",
-                parameters: .object(["key": .string("The key, for example 'decisions/sync'.")],
-                                    required: ["key"])),
+                parameters: .object(
+                    ["key": .string("The key, for example 'decisions/sync'.")],
+                    required: ["key"])),
             MemoryToolDefinition(
                 name: "memory_list",
                 description: "List memory keys, optionally under a prefix. Cheap way to see what "
                     + "is known before fetching anything.",
-                parameters: .object([
-                    "prefix": .string("Optional key prefix."),
-                    "limit": .integer("Maximum keys, default 50."),
-                ], required: [])),
+                parameters: .object(
+                    [
+                        "prefix": .string("Optional key prefix."),
+                        "limit": .integer("Maximum keys, default 50."),
+                    ], required: [])),
             MemoryToolDefinition(
                 name: "memory_set",
                 description: "Write or replace a durable memory. Use for decisions, conventions, "
                     + "constraints, failed approaches and project state. Not for conversation, "
                     + "reasoning, secrets or source code. Update an existing key rather than "
                     + "creating a near-duplicate.",
-                parameters: .object([
-                    "key": .string("Topic-shaped key, for example 'decisions/sync'."),
-                    "value": .string("The fact, stated so it is useful months from now."),
-                    "importance": .number("0 to 1; how much this should surface first later."),
-                    "confidence": .number("0 to 1; how sure you are."),
-                    "tags": .stringArray("Optional tags."),
-                ], required: ["key", "value"])),
+                parameters: .object(
+                    [
+                        "key": .string("Topic-shaped key, for example 'decisions/sync'."),
+                        "value": .string("The fact, stated so it is useful months from now."),
+                        "importance": .number("0 to 1; how much this should surface first later."),
+                        "confidence": .number("0 to 1; how sure you are."),
+                        "tags": .stringArray("Optional tags."),
+                    ], required: ["key", "value"])),
             MemoryToolDefinition(
                 name: "memory_append",
                 description: "Add a line to an existing memory, creating it if absent.",
-                parameters: .object([
-                    "key": .string("The key to extend."),
-                    "value": .string("The line to add."),
-                ], required: ["key", "value"])),
+                parameters: .object(
+                    [
+                        "key": .string("The key to extend."),
+                        "value": .string("The line to add."),
+                    ], required: ["key", "value"])),
             MemoryToolDefinition(
                 name: "memory_delete",
                 description: "Delete a memory that is wrong or obsolete. Prefer updating.",
@@ -113,15 +119,17 @@ public enum MemoryTools {
     /// store comes back as an error so the model does not record a fact it
     /// believes is saved. That is the difference between a memory system and
     /// one that lies.
-    public static func execute(name: String,
-                               arguments: [String: MemoryToolValue],
-                               store: any MemoryStore,
-                               scope: MemoryScope,
-                               session: MemorySession,
-                               limits: MemoryLimits,
-                               guarding: Bool = false,
-                               retrievalHint: MemoryRetrievalHint = .none,
-                               onSearch: (@Sendable (MemoryQuery) async -> Void)? = nil) async -> MemoryToolResult {
+    public static func execute(
+        name: String,
+        arguments: [String: MemoryToolValue],
+        store: any MemoryStore,
+        scope: MemoryScope,
+        session: MemorySession,
+        limits: MemoryLimits,
+        guarding: Bool = false,
+        retrievalHint: MemoryRetrievalHint = .none,
+        onSearch: (@Sendable (MemoryQuery) async -> Void)? = nil
+    ) async -> MemoryToolResult {
         do {
             switch name {
             case "memory_get":
@@ -152,11 +160,14 @@ public enum MemoryTools {
                 case .stored, .reverted:
                     return .ok(["stored": .bool(true), "key": .string(key.rawValue)])
                 case .heldByGuard(let existing):
-                    return .ok(["stored": .bool(false), "held": .bool(true),
-                                "key": .string(key.rawValue),
-                                "reason": .string("the user stated this; your value "
-                                    + "was not stored and the disagreement is recorded"),
-                                "current": .string(existing)])
+                    return .ok([
+                        "stored": .bool(false), "held": .bool(true),
+                        "key": .string(key.rawValue),
+                        "reason": .string(
+                            "the user stated this; your value "
+                                + "was not stored and the disagreement is recorded"),
+                        "current": .string(existing),
+                    ])
                 }
 
             case "memory_append":
@@ -165,8 +176,10 @@ public enum MemoryTools {
                     throw MemoryError.invalidKey(key.rawValue, "missing 'value'")
                 }
                 let record = try await store.append(value, to: key, in: scope)
-                return .ok(["stored": .bool(true), "key": .string(key.rawValue),
-                            "bytes": .int(record.value.utf8.count)])
+                return .ok([
+                    "stored": .bool(true), "key": .string(key.rawValue),
+                    "bytes": .int(record.value.utf8.count),
+                ])
 
             case "memory_delete":
                 let key = try key(from: arguments)
@@ -176,10 +189,13 @@ public enum MemoryTools {
                 case .absent:
                     return .ok(["deleted": .bool(false), "key": .string(key.rawValue)])
                 case .heldByGuard:
-                    return .ok(["deleted": .bool(false), "held": .bool(true),
-                                "key": .string(key.rawValue),
-                                "reason": .string("the user stated this; it was kept "
-                                    + "and the disagreement is recorded")])
+                    return .ok([
+                        "deleted": .bool(false), "held": .bool(true),
+                        "key": .string(key.rawValue),
+                        "reason": .string(
+                            "the user stated this; it was kept "
+                                + "and the disagreement is recorded"),
+                    ])
                 }
 
             case "memory_list":
@@ -204,10 +220,12 @@ public enum MemoryTools {
                 // unless a side-engine is wired.
                 await onSearch?(query)
                 let ranked = try await store.search(query, in: scope)
-                let records = retrievalHint.isEmpty
+                let records =
+                    retrievalHint.isEmpty
                     ? ranked
-                    : await retrievalHint.applied(to: ranked, query: query,
-                                                  store: store, scope: scope)
+                    : await retrievalHint.applied(
+                        to: ranked, query: query,
+                        store: store, scope: scope)
                 return .ok(["results": .records(records)])
 
             default:
@@ -344,10 +362,15 @@ public enum MemoryToolResult: Sendable, Equatable {
     private func jsonEncode(_ object: [String: Any]) -> String {
         // Slashes are not escaped: every memory key contains them, and
         // `decisions\/sync` in a tool result is what the model reads back.
-        guard let data = try? JSONSerialization.data(withJSONObject: object,
-                                                     options: [.sortedKeys,
-                                                               .withoutEscapingSlashes]),
-              let text = String(data: data, encoding: .utf8) else {
+        guard
+            let data = try? JSONSerialization.data(
+                withJSONObject: object,
+                options: [
+                    .sortedKeys,
+                    .withoutEscapingSlashes,
+                ]),
+            let text = String(data: data, encoding: .utf8)
+        else {
             return "{\"ok\":false,\"error\":\"result is not encodable\"}"
         }
         return text

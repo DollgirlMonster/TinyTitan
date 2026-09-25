@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// Compares the Metal `dequant_int8_gemv` kernel against
 /// `DequantInt8GemvRef`, which bulk-dequantizes each row to FP32 and dots
@@ -43,26 +44,31 @@ import TinyTitanValidationSupport
         let ctx = try MetalContext()
         let kernel = try DequantInt8GEMV(context: ctx)
 
-        guard let wBuf = ctx.device.makeBuffer(
+        guard
+            let wBuf = ctx.device.makeBuffer(
                 bytes: packed, length: packed.count,
                 options: .storageModeShared),
-              let sBuf = ctx.device.makeBuffer(
+            let sBuf = ctx.device.makeBuffer(
                 bytes: scales, length: scales.count * MemoryLayout<UInt16>.size,
                 options: .storageModeShared),
-              let bBuf = ctx.device.makeBuffer(
+            let bBuf = ctx.device.makeBuffer(
                 bytes: biases, length: biases.count * MemoryLayout<UInt16>.size,
                 options: .storageModeShared),
-              let xBuf = Fp16Buffer.make(ctx.device, halves: xFp16),
-              let yBuf = Fp16Buffer.make(ctx.device, count: m) else {
-            Issue.record("Failed to allocate buffers"); return .infinity
+            let xBuf = Fp16Buffer.make(ctx.device, halves: xFp16),
+            let yBuf = Fp16Buffer.make(ctx.device, count: m)
+        else {
+            Issue.record("Failed to allocate buffers")
+            return .infinity
         }
         guard let cmd = ctx.queue.makeCommandBuffer() else {
-            Issue.record("Failed to make command buffer"); return .infinity
+            Issue.record("Failed to make command buffer")
+            return .infinity
         }
-        try kernel.encode(commandBuffer: cmd,
-                      weights: wBuf, scales: sBuf, biases: bBuf,
-                      x: xBuf, y: yBuf,
-                      m: UInt32(m), n: UInt32(n))
+        try kernel.encode(
+            commandBuffer: cmd,
+            weights: wBuf, scales: sBuf, biases: bBuf,
+            x: xBuf, y: yBuf,
+            m: UInt32(m), n: UInt32(n))
         cmd.commit()
         cmd.waitUntilCompleted()
 
@@ -81,8 +87,9 @@ import TinyTitanValidationSupport
         #expect(rel < Tolerance.fp16Reduction, "lm_head sub-shape rel=\(rel)")
     }
 
-    @Test(arguments: [128, 256, 1024] as [Int],
-                     OffByMultiples.multiplesOfGroup.filter { $0 <= 512 })
+    @Test(
+        arguments: [128, 256, 1024] as [Int],
+        OffByMultiples.multiplesOfGroup.filter { $0 <= 512 })
     func gemv_sweep(m: Int, n: Int) throws {
         let rel = try Self.runAndCompare(m: m, n: n, seed: UInt64(m * 1000 + n))
         #expect(rel < Tolerance.fp16Reduction, "M=\(m) N=\(n) rel=\(rel)")

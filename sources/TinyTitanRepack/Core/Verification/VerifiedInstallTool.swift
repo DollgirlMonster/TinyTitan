@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 import TinyTitanFormat
 
 public struct VerifyInstallOptions: Sendable {
@@ -77,9 +77,11 @@ public enum VerifiedInstallTool {
                 throw RepackError.configurationInvalid(detail: "verified byte total overflows")
             }
             bytesVerified = verified
-            files.append(RepackAudit.OutputFile(relativePath: relativePath,
-                                                size: actualSize,
-                                                sha256: actualSha))
+            files.append(
+                RepackAudit.OutputFile(
+                    relativePath: relativePath,
+                    size: actualSize,
+                    sha256: actualSha))
         }
         let unexpectedEntries = try findUnexpectedEntries(access: access, manifest: manifest)
 
@@ -91,13 +93,15 @@ public enum VerifiedInstallTool {
             sourceRevision: manifest.sourceSnapshotHash,
             toolVersion: "TinyTitanRepack verify-install",
             files: files)
-        let receiptPath = access.rootPath
+        let receiptPath =
+            access.rootPath
             + "/" + VerifiedInstallReceiptWriter.fileName
         try receiptData.write(to: URL(fileURLWithPath: receiptPath), options: .atomic)
-        return VerifyInstallResult(receiptPath: receiptPath,
-                                   fileCount: files.count + 1,
-                                   bytesVerified: bytesVerified,
-                                   unexpectedEntries: unexpectedEntries)
+        return VerifyInstallResult(
+            receiptPath: receiptPath,
+            fileCount: files.count + 1,
+            bytesVerified: bytesVerified,
+            unexpectedEntries: unexpectedEntries)
     }
 
     static func validatePackedExpertLayout(inputGTurbo: String) throws {
@@ -111,8 +115,10 @@ public enum VerifiedInstallTool {
     /// The index is the head of `model_weights.bin`, and that file is the model
     /// itself, so this reads it in two bounded steps -- the 24-byte header, then
     /// exactly the index it names -- and never touches the payload.
-    private static func validateQuantAgainstResident(access: GTurboDirectoryAccess,
-                                                     manifest: Manifest) throws {
+    private static func validateQuantAgainstResident(
+        access: GTurboDirectoryAccess,
+        manifest: Manifest
+    ) throws {
         guard let quant = manifest.quant else {
             throw RepackError.configurationInvalid(detail: "manifest.json has no quant block")
         }
@@ -130,22 +136,25 @@ public enum VerifiedInstallTool {
             try GTurboResidentIndexCodec.decodeHeader($0)
         }
         guard header.indexSize <= UInt64(GTurboFormatV1.residentIndexMaxBytes) else {
-            throw RepackError.configurationInvalid(detail:
-                "\(relativePath) index \(header.indexSize) exceeds the "
-                + "\(GTurboFormatV1.residentIndexMaxBytes)-byte v1 cap")
+            throw RepackError.configurationInvalid(
+                detail:
+                    "\(relativePath) index \(header.indexSize) exceeds the "
+                    + "\(GTurboFormatV1.residentIndexMaxBytes)-byte v1 cap")
         }
         let indexBytes = try access.readPrefix(relativePath, maxBytes: header.indexSize)
         guard indexBytes.count == Int(header.indexSize) else {
-            throw RepackError.configurationInvalid(detail:
-                "\(relativePath) holds \(indexBytes.count) bytes but its header "
-                + "claims an index of \(header.indexSize)")
+            throw RepackError.configurationInvalid(
+                detail:
+                    "\(relativePath) holds \(indexBytes.count) bytes but its header "
+                    + "claims an index of \(header.indexSize)")
         }
         let entries = try indexBytes.withUnsafeBytes {
             try GTurboResidentIndexCodec.decodeRegion($0, header: header)
         }
-        try validateQuantAgainstResident(quant: quant,
-                                         expertsPerLayer: manifest.expertsPerLayer,
-                                         entries: entries)
+        try validateQuantAgainstResident(
+            quant: quant,
+            expertsPerLayer: manifest.expertsPerLayer,
+            entries: entries)
     }
 
     /// Cross-check the manifest's declared widths against the resident bytes.
@@ -177,9 +186,11 @@ public enum VerifiedInstallTool {
     /// below is deliberate: it is the contract being verified, and it is what
     /// makes the failure name the tensors that would be dequantized wrongly
     /// rather than every tensor the writer happened not to annotate.
-    static func validateQuantAgainstResident(quant: GTurboManifestQuantV1,
-                                             expertsPerLayer: Int,
-                                             entries: [GTurboResidentIndexEntryV1]) throws {
+    static func validateQuantAgainstResident(
+        quant: GTurboManifestQuantV1,
+        expertsPerLayer: Int,
+        entries: [GTurboResidentIndexEntryV1]
+    ) throws {
         // Every dtype-0 entry is a packed u32 `.weight`: the planner only marks a
         // tensor quantized when its source dtype is u32 and its name ends in
         // `.weight`, and everything else is stored bf16.
@@ -192,7 +203,8 @@ public enum VerifiedInstallTool {
             let implied = try impliedWidth(of: entry)
             impliedCounts[implied, default: 0] += 1
             // Overrides are keyed by stem, without the `.weight` suffix.
-            let stem = entry.name.hasSuffix(".weight")
+            let stem =
+                entry.name.hasSuffix(".weight")
                 ? String(entry.name.dropLast(".weight".count)) : entry.name
 
             let resolved: Int
@@ -201,7 +213,8 @@ public enum VerifiedInstallTool {
             } else if expertsPerLayer == 0 {
                 // `AffineSnapshot.init(gturbo:)`: the embedding slot covers the
                 // tied head as well, and the attention slot is the default.
-                resolved = stem.hasSuffix("embed_tokens") || stem.hasSuffix("lm_head")
+                resolved =
+                    stem.hasSuffix("embed_tokens") || stem.hasSuffix("lm_head")
                     ? embeddingSlot : attentionSlot
             } else {
                 // A packed-expert install keeps its routed-expert widths in
@@ -211,20 +224,22 @@ public enum VerifiedInstallTool {
             }
 
             if resolved != implied {
-                unreadable.append("\(entry.name) would be read as \(resolved)-bit but "
-                    + "is \(implied)-bit (\(entry.sizeBytes) bytes at "
-                    + "\(entry.shape[0])x\(entry.shape[1]))")
+                unreadable.append(
+                    "\(entry.name) would be read as \(resolved)-bit but "
+                        + "is \(implied)-bit (\(entry.sizeBytes) bytes at "
+                        + "\(entry.shape[0])x\(entry.shape[1]))")
             }
         }
 
         guard unreadable.isEmpty else {
             let shown = unreadable.prefix(3).joined(separator: "; ")
             let more = unreadable.count > 3 ? " and \(unreadable.count - 3) more" : ""
-            throw RepackError.configurationInvalid(detail:
-                "the manifest's widths disagree with the resident payload, so this "
-                + "install would dequantize wrongly: \(shown)\(more). Repack it "
-                + "from its source snapshot; the bytes are fine, the description "
-                + "of them is not")
+            throw RepackError.configurationInvalid(
+                detail:
+                    "the manifest's widths disagree with the resident payload, so this "
+                    + "install would dequantize wrongly: \(shown)\(more). Repack it "
+                    + "from its source snapshot; the bytes are fine, the description "
+                    + "of them is not")
         }
 
         // With no routed experts the slot describes no tensor, so it is not
@@ -243,16 +258,18 @@ public enum VerifiedInstallTool {
         let declared = quant.routedExpert.weightBits
         guard dominant.contains(declared) else {
             let total = impliedCounts.values.reduce(0, +)
-            let histogram = impliedCounts
+            let histogram =
+                impliedCounts
                 .sorted { $0.key < $1.key }
                 .map { "\($0.key)-bit x\($0.value)" }
                 .joined(separator: ", ")
-            throw RepackError.configurationInvalid(detail:
-                "the install has no routed experts, but declares a routed-expert "
-                + "width of \(declared) while its resident payload is "
-                + "\(histogram) over \(total) quantized tensors. That value names "
-                + "the model in /v1/models and decides which build the catalog "
-                + "thinks this is")
+            throw RepackError.configurationInvalid(
+                detail:
+                    "the install has no routed experts, but declares a routed-expert "
+                    + "width of \(declared) while its resident payload is "
+                    + "\(histogram) over \(total) quantized tensors. That value names "
+                    + "the model in /v1/models and decides which build the catalog "
+                    + "thinks this is")
         }
     }
 
@@ -266,14 +283,16 @@ public enum VerifiedInstallTool {
         let rows = UInt64(entry.shape[0])
         let columns = UInt64(entry.shape[1])
         guard rows > 0, columns > 0 else {
-            throw RepackError.configurationInvalid(detail:
-                "\(entry.name): packed weight with a zero dimension "
-                + "\(entry.shape[0])x\(entry.shape[1])")
+            throw RepackError.configurationInvalid(
+                detail:
+                    "\(entry.name): packed weight with a zero dimension "
+                    + "\(entry.shape[0])x\(entry.shape[1])")
         }
         guard entry.sizeBytes % 4 == 0 else {
-            throw RepackError.configurationInvalid(detail:
-                "\(entry.name): \(entry.sizeBytes) bytes is not a whole number "
-                + "of u32 words")
+            throw RepackError.configurationInvalid(
+                detail:
+                    "\(entry.name): \(entry.sizeBytes) bytes is not a whole number "
+                    + "of u32 words")
         }
         let (values, valuesOverflow) = (entry.sizeBytes / 4).multipliedReportingOverflow(by: 32)
         let (cells, cellsOverflow) = rows.multipliedReportingOverflow(by: columns)
@@ -282,16 +301,18 @@ public enum VerifiedInstallTool {
                 detail: "\(entry.name): dimensions overflow")
         }
         guard values % cells == 0 else {
-            throw RepackError.configurationInvalid(detail:
-                "\(entry.name): \(entry.sizeBytes) bytes at \(entry.shape[0])x"
-                + "\(entry.shape[1]) does not divide into a whole number of "
-                + "values per element")
+            throw RepackError.configurationInvalid(
+                detail:
+                    "\(entry.name): \(entry.sizeBytes) bytes at \(entry.shape[0])x"
+                    + "\(entry.shape[1]) does not divide into a whole number of "
+                    + "values per element")
         }
         let bits = values / cells
         guard bits == 4 || bits == 8 else {
-            throw RepackError.configurationInvalid(detail:
-                "\(entry.name): implied width \(bits) is not a supported "
-                + "4- or 8-bit packing")
+            throw RepackError.configurationInvalid(
+                detail:
+                    "\(entry.name): implied width \(bits) is not a supported "
+                    + "4- or 8-bit packing")
         }
         return Int(bits)
     }
@@ -361,23 +382,29 @@ public enum VerifiedInstallTool {
 
     private static func loadLayout(access: GTurboDirectoryAccess) throws -> PackedExpertsLayout {
         do {
-            let data = try loadMetadataJSON(access: access,
-                                            relativePath: "packed_experts/layout.json")
+            let data = try loadMetadataJSON(
+                access: access,
+                relativePath: "packed_experts/layout.json")
             return try JSONDecoder().decode(PackedExpertsLayout.self, from: data)
         } catch {
-            throw RepackError.configurationInvalid(detail: "packed_experts/layout.json invalid: \(error)")
+            throw RepackError.configurationInvalid(
+                detail: "packed_experts/layout.json invalid: \(error)")
         }
     }
 
-    private static func loadMetadataJSON(access: GTurboDirectoryAccess,
-                                         relativePath: String) throws -> Data {
+    private static func loadMetadataJSON(
+        access: GTurboDirectoryAccess,
+        relativePath: String
+    ) throws -> Data {
         try GTurboPathValidator.validateRelativePath(
             relativePath, field: "metadata.\(relativePath)")
         return try access.readMetadata(relativePath, maxBytes: metadataMaxBytes)
     }
 
-    private static func validatePackedExpertLayout(access: GTurboDirectoryAccess,
-                                                   manifest: Manifest) throws {
+    private static func validatePackedExpertLayout(
+        access: GTurboDirectoryAccess,
+        manifest: Manifest
+    ) throws {
         let layoutRelativePath = "packed_experts/layout.json"
         guard manifest.files[layoutRelativePath] != nil else {
             throw RepackError.configurationInvalid(detail: "manifest missing \(layoutRelativePath)")
@@ -385,21 +412,25 @@ public enum VerifiedInstallTool {
         let layout = try loadLayout(access: access)
         let alignment = GTurboFormatV1.alignmentBytes
         guard layout.expertStride == manifest.expertStride,
-              layout.numLayers == manifest.numLayers,
-              layout.expertsPerLayer == manifest.expertsPerLayer else {
-            throw RepackError.configurationInvalid(detail: "packed expert layout dimensions mismatch manifest")
+            layout.numLayers == manifest.numLayers,
+            layout.expertsPerLayer == manifest.expertsPerLayer
+        else {
+            throw RepackError.configurationInvalid(
+                detail: "packed expert layout dimensions mismatch manifest")
         }
         guard layout.expertStride % alignment == 0 else {
             throw RepackError.configurationInvalid(
                 detail: "expertStride \(layout.expertStride) is not aligned to \(alignment) bytes")
         }
         guard layout.layers.count == layout.numLayers else {
-            throw RepackError.configurationInvalid(detail: "packed expert layout layer count mismatch")
+            throw RepackError.configurationInvalid(
+                detail: "packed expert layout layer count mismatch")
         }
         let expectedLayerSize = UInt64(layout.expertsPerLayer) * layout.expertStride
         for layer in layout.layers {
             guard layer.layer >= 0 && layer.layer < layout.numLayers else {
-                throw RepackError.configurationInvalid(detail: "packed expert layer index out of range")
+                throw RepackError.configurationInvalid(
+                    detail: "packed expert layer index out of range")
             }
             guard layer.experts.count == layout.expertsPerLayer else {
                 throw RepackError.configurationInvalid(
@@ -424,7 +455,9 @@ public enum VerifiedInstallTool {
             }
             guard manifestEntry.size == expectedLayerSize else {
                 throw RepackError.configurationInvalid(
-                    detail: "\(relativePath) manifest size \(manifestEntry.size) != \(expectedLayerSize)")
+                    detail:
+                        "\(relativePath) manifest size \(manifestEntry.size) != \(expectedLayerSize)"
+                )
             }
             let actualSize = try access.fileSize(relativePath)
             guard actualSize == expectedLayerSize else {
@@ -448,10 +481,13 @@ public enum VerifiedInstallTool {
                 }
                 guard expert.offset % GTurboFormatV1.alignmentBytes == 0 else {
                     throw RepackError.configurationInvalid(
-                        detail: "\(relativePath) expert \(expertID) offset is not aligned to \(GTurboFormatV1.alignmentBytes) bytes")
+                        detail:
+                            "\(relativePath) expert \(expertID) offset is not aligned to \(GTurboFormatV1.alignmentBytes) bytes"
+                    )
                 }
                 guard expert.offset <= actualSize,
-                      expert.size <= actualSize - expert.offset else {
+                    expert.size <= actualSize - expert.offset
+                else {
                     throw RepackError.configurationInvalid(
                         detail: "\(relativePath) expert \(expertID) range exceeds file size")
                 }
@@ -459,8 +495,10 @@ public enum VerifiedInstallTool {
         }
     }
 
-    private static func findUnexpectedEntries(access: GTurboDirectoryAccess,
-                                              manifest: Manifest) throws -> [String] {
+    private static func findUnexpectedEntries(
+        access: GTurboDirectoryAccess,
+        manifest: Manifest
+    ) throws -> [String] {
         let declaredFiles = Set(manifest.files.keys)
             .union(["manifest.json", VerifiedInstallReceiptWriter.fileName])
         var allowed = declaredFiles

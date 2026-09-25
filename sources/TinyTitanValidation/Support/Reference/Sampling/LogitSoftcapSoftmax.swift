@@ -1,5 +1,5 @@
-import Foundation
 import Accelerate
+import Foundation
 
 /// FP32 reference for `softmax(softcap * tanh(x / softcap))`.
 ///

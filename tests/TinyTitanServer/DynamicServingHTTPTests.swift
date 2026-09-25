@@ -5,8 +5,10 @@ import Testing
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
-private func send(_ port: Int, _ method: String, _ path: String, json: String? = nil,
-                  headers: [String: String] = [:]) async throws -> (Data, HTTPURLResponse) {
+private func send(
+    _ port: Int, _ method: String, _ path: String, json: String? = nil,
+    headers: [String: String] = [:]
+) async throws -> (Data, HTTPURLResponse) {
     var request = URLRequest(url: try #require(URL(string: "http://127.0.0.1:\(port)\(path)")))
     request.httpMethod = method
     if let json {
@@ -26,14 +28,17 @@ private func chat(_ model: String, extra: String = "") -> String {
     #"{"model":"\#(model)","messages":[{"role":"user","content":"hi"}]\#(extra)}"#
 }
 
-private func withServer<T>(backend: any ServerInferenceBackend,
-                           router: (any ModelRouting)? = nil,
-                           queueLimit: Int = 4,
-                           maxConcurrentSequences: Int = 1,
-                           _ body: (Int) async throws -> T) async throws -> T {
-    let server = TinyTitanHTTPServer(modelID: "test-model", queueLimit: queueLimit,
-                                 maxConcurrentSequences: maxConcurrentSequences,
-                                 backend: backend, router: router)
+private func withServer<T>(
+    backend: any ServerInferenceBackend,
+    router: (any ModelRouting)? = nil,
+    queueLimit: Int = 4,
+    maxConcurrentSequences: Int = 1,
+    _ body: (Int) async throws -> T
+) async throws -> T {
+    let server = TinyTitanHTTPServer(
+        modelID: "test-model", queueLimit: queueLimit,
+        maxConcurrentSequences: maxConcurrentSequences,
+        backend: backend, router: router)
     let channel = try await server.start(port: 0)
     let port = try #require(channel.localAddress?.port)
     do {
@@ -46,8 +51,10 @@ private func withServer<T>(backend: any ServerInferenceBackend,
     }
 }
 
-private func withRouter<T>(log: RoutingEventLog, delay: Duration? = nil,
-                           _ body: (Int, ModelRouter) async throws -> T) async throws -> T {
+private func withRouter<T>(
+    log: RoutingEventLog, delay: Duration? = nil,
+    _ body: (Int, ModelRouter) async throws -> T
+) async throws -> T {
     let router = try RoutingFixture.router(log: log, delay: delay)
     try await router.preload()
     return try await withServer(backend: router, router: router) { port in
@@ -103,9 +110,12 @@ struct DynamicServingHTTPTests {
             let models = try #require(list["data"] as? [[String: Any]])
             // The dense install is listed once with its alternative engine as
             // a real choice; a single-engine install is listed bare.
-            #expect(models.compactMap { $0["id"] as? String }
-                    == ["alpha_4-Bit", "flash_8-Bit", "small-2b",
-                        RoutingFixture.dense.id, "\(RoutingFixture.dense.id)@cpu"])
+            #expect(
+                models.compactMap { $0["id"] as? String }
+                    == [
+                        "alpha_4-Bit", "flash_8-Bit", "small-2b",
+                        RoutingFixture.dense.id, "\(RoutingFixture.dense.id)@cpu",
+                    ])
             #expect(models.allSatisfy { $0["object"] as? String == "model" })
             #expect(models.allSatisfy { $0["owned_by"] as? String == "tinytitan" })
         }
@@ -119,14 +129,18 @@ struct DynamicServingHTTPTests {
             #expect(list["first_id"] as? String == "alpha_4-Bit")
             #expect(list["last_id"] as? String == "\(RoutingFixture.dense.id)@cpu")
             let models = try #require(list["data"] as? [[String: Any]])
-            #expect(models.compactMap { $0["display_name"] as? String }
-                    == ["Alpha 35B", "Flash 125B", "Small 2B",
-                        "Dense 2B", "Dense 2B (CPU)"])
+            #expect(
+                models.compactMap { $0["display_name"] as? String }
+                    == [
+                        "Alpha 35B", "Flash 125B", "Small 2B",
+                        "Dense 2B", "Dense 2B (CPU)",
+                    ])
             #expect(models.allSatisfy { $0["type"] as? String == "model" })
             #expect(models.allSatisfy { $0["created_at"] is String })
             #expect(Set(models.flatMap(\.keys)) == ["type", "id", "display_name", "created_at"])
 
-            let (one, status) = try await send(port, "GET", "/v1/models/small-2b", headers: anthropic)
+            let (one, status) = try await send(
+                port, "GET", "/v1/models/small-2b", headers: anthropic)
             #expect(status.statusCode == 200)
             #expect(try object(one)["display_name"] as? String == "Small 2B")
             let (_, missing) = try await send(port, "GET", "/v1/models/nothing")
@@ -137,8 +151,9 @@ struct DynamicServingHTTPTests {
     @Test func requestsRunOnTheModelTheyNameAndSayWhichItWas() async throws {
         let log = RoutingEventLog()
         try await withRouter(log: log) { port, router in
-            let (data, response) = try await send(port, "POST", "/v1/chat/completions",
-                                                  json: chat("small-2b"))
+            let (data, response) = try await send(
+                port, "POST", "/v1/chat/completions",
+                json: chat("small-2b"))
             #expect(response.statusCode == 200)
             let completion = try object(data)
             #expect(completion["model"] as? String == "small-2b")
@@ -146,8 +161,9 @@ struct DynamicServingHTTPTests {
 
             // The "-fast" alias works for every catalog model and still
             // routes to (and reports) the base model.
-            let (fast, fastResponse) = try await send(port, "POST", "/v1/chat/completions",
-                                                      json: chat("flash_8-Bit-fast"))
+            let (fast, fastResponse) = try await send(
+                port, "POST", "/v1/chat/completions",
+                json: chat("flash_8-Bit-fast"))
             #expect(fastResponse.statusCode == 200)
             #expect(try object(fast)["model"] as? String == "flash_8-Bit")
             let last = try #require(log.requests.last)
@@ -156,29 +172,36 @@ struct DynamicServingHTTPTests {
 
             let (message, messageResponse) = try await send(
                 port, "POST", "/v1/messages",
-                json: #"{"model":"alpha_4-Bit","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}"#,
+                json:
+                    #"{"model":"alpha_4-Bit","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}"#,
                 headers: anthropic)
             #expect(messageResponse.statusCode == 200)
             #expect(try object(message)["model"] as? String == "alpha_4-Bit")
-            #expect(log.loads == ["load alpha_4-Bit", "load small-2b", "load flash_8-Bit", "load alpha_4-Bit"])
+            #expect(
+                log.loads == [
+                    "load alpha_4-Bit", "load small-2b", "load flash_8-Bit", "load alpha_4-Bit",
+                ])
         }
     }
 
     @Test func anUnknownModelIsRefusedOnEverySurface() async throws {
         let log = RoutingEventLog()
         try await withRouter(log: log) { port, _ in
-            let (chatData, chatResponse) = try await send(port, "POST", "/v1/chat/completions",
-                                                          json: chat("nothing"))
+            let (chatData, chatResponse) = try await send(
+                port, "POST", "/v1/chat/completions",
+                json: chat("nothing"))
             #expect(chatResponse.statusCode == 404)
             let error = try #require(try object(chatData)["error"] as? [String: Any])
             #expect(error["code"] as? String == "model_not_found")
 
-            let (_, responses) = try await send(port, "POST", "/v1/responses",
-                                                json: #"{"model":"nothing","input":"hi"}"#)
+            let (_, responses) = try await send(
+                port, "POST", "/v1/responses",
+                json: #"{"model":"nothing","input":"hi"}"#)
             #expect(responses.statusCode == 404)
             let (_, messages) = try await send(
                 port, "POST", "/v1/messages",
-                json: #"{"model":"nothing","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}"#,
+                json:
+                    #"{"model":"nothing","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}"#,
                 headers: anthropic)
             #expect(messages.statusCode == 404)
             #expect(log.loads == ["load alpha_4-Bit"])
@@ -191,12 +214,14 @@ struct DynamicServingHTTPTests {
         let log = RoutingEventLog()
         try await withRouter(log: log) { port, router in
             // Alpha is resident; the CPU model's context is 32768.
-            let (_, tooLong) = try await send(port, "POST", "/v1/chat/completions",
-                                              json: chat("small-2b", extra: #","max_tokens":40000"#))
+            let (_, tooLong) = try await send(
+                port, "POST", "/v1/chat/completions",
+                json: chat("small-2b", extra: #","max_tokens":40000"#))
             #expect(tooLong.statusCode == 400)
             #expect(await router.residentModelID == "alpha_4-Bit")
-            let (_, fits) = try await send(port, "POST", "/v1/chat/completions",
-                                           json: chat("alpha_4-Bit", extra: #","max_tokens":40000"#))
+            let (_, fits) = try await send(
+                port, "POST", "/v1/chat/completions",
+                json: chat("alpha_4-Bit", extra: #","max_tokens":40000"#))
             #expect(fits.statusCode == 200)
 
             _ = try await send(port, "POST", "/v1/chat/completions", json: chat("flash_8-Bit"))
@@ -222,16 +247,21 @@ struct DynamicServingHTTPTests {
     /// test cannot disagree about what "default" means.
     @Test func fourConcurrentRequestsAllComplete() async throws {
         let log = RoutingEventLog()
-        let backend = RoutedStubModel(id: "test-model", log: log, gate: nil,
-                                      delay: .milliseconds(150))
+        let backend = RoutedStubModel(
+            id: "test-model", log: log, gate: nil,
+            delay: .milliseconds(150))
         let defaults = try ServerArguments.parse(["--model", "/m"], environment: [:])
-        try await withServer(backend: backend, queueLimit: defaults.queueLimit,
-                             maxConcurrentSequences: defaults.maxConcurrentSequences) { port in
+        try await withServer(
+            backend: backend, queueLimit: defaults.queueLimit,
+            maxConcurrentSequences: defaults.maxConcurrentSequences
+        ) { port in
             let statuses = try await withThrowingTaskGroup(of: Int.self) { group in
                 for _ in 0..<4 {
                     group.addTask {
-                        try await send(port, "POST", "/v1/chat/completions",
-                                       json: chat("test-model")).1.statusCode
+                        try await send(
+                            port, "POST", "/v1/chat/completions",
+                            json: chat("test-model")
+                        ).1.statusCode
                     }
                 }
                 return try await group.reduce(into: []) { $0.append($1) }
@@ -250,16 +280,19 @@ struct DynamicServingHTTPTests {
     /// connections per host: a wider fan-out would never reach the server.
     @Test func fourGenerationsRunAtOnceAndTheSixthIsShed() async throws {
         let probe = ConcurrencyProbe()
-        let server = TinyTitanHTTPServer(modelID: "test-model", queueLimit: 1,
-                                         maxConcurrentSequences: 4, backend: probe)
+        let server = TinyTitanHTTPServer(
+            modelID: "test-model", queueLimit: 1,
+            maxConcurrentSequences: 4, backend: probe)
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
         do {
             let statuses = try await withThrowingTaskGroup(of: Int.self) { group in
                 for _ in 0..<5 {
                     group.addTask {
-                        try await send(port, "POST", "/v1/chat/completions",
-                                       json: chat("test-model")).1.statusCode
+                        try await send(
+                            port, "POST", "/v1/chat/completions",
+                            json: chat("test-model")
+                        ).1.statusCode
                     }
                 }
                 // Wait until all five are admitted: four running (held by the
@@ -273,8 +306,10 @@ struct DynamicServingHTTPTests {
                 }
                 // Sent while all five are still admitted and held, so it cannot
                 // be admitted whatever the scheduling order.
-                let sixth = try await send(port, "POST", "/v1/chat/completions",
-                                           json: chat("test-model")).1.statusCode
+                let sixth = try await send(
+                    port, "POST", "/v1/chat/completions",
+                    json: chat("test-model")
+                ).1.statusCode
                 #expect(sixth == 429)
                 await probe.releaseAll()
                 var out: [Int] = []
@@ -282,8 +317,9 @@ struct DynamicServingHTTPTests {
                 return out
             }
             #expect(statuses == Array(repeating: 200, count: 5))
-            #expect(await probe.peakConcurrency() == 4,
-                    "exactly the configured width ran at once")
+            #expect(
+                await probe.peakConcurrency() == 4,
+                "exactly the configured width ran at once")
             try await server.shutdown()
         } catch {
             try await server.shutdown()
@@ -295,11 +331,13 @@ struct DynamicServingHTTPTests {
         let log = RoutingEventLog()
         let names = ["alpha_4-Bit", "small-2b", "alpha_4-Bit", "flash_8-Bit"]
         try await withRouter(log: log, delay: .milliseconds(50)) { port, _ in
-            let answered = try await withThrowingTaskGroup(of: (String, Int, String?).self) { group in
+            let answered = try await withThrowingTaskGroup(of: (String, Int, String?).self) {
+                group in
                 for name in names {
                     group.addTask {
-                        let (data, response) = try await send(port, "POST", "/v1/chat/completions",
-                                                              json: chat(name))
+                        let (data, response) = try await send(
+                            port, "POST", "/v1/chat/completions",
+                            json: chat(name))
                         return (name, response.statusCode, try object(data)["model"] as? String)
                     }
                 }
@@ -325,9 +363,11 @@ struct DynamicServingHTTPTests {
                 .compactMap { $0["id"] as? String }
             #expect(ids == ["test-model", "test-model-fast"])
 
-            let (_, other) = try await send(port, "POST", "/v1/chat/completions", json: chat("small-2b"))
+            let (_, other) = try await send(
+                port, "POST", "/v1/chat/completions", json: chat("small-2b"))
             #expect(other.statusCode == 404)
-            let (reply, ok) = try await send(port, "POST", "/v1/chat/completions", json: chat("test-model"))
+            let (reply, ok) = try await send(
+                port, "POST", "/v1/chat/completions", json: chat("test-model"))
             #expect(ok.statusCode == 200)
             #expect(try object(reply)["model"] as? String == "test-model")
         }
@@ -362,18 +402,24 @@ struct DynamicServingArgumentTests {
     }
 
     @Test func reasoningReplacesTheOlderFlags() throws {
-        #expect(try parse(["--model", "/m", "--reasoning", "high"]).requestedReasoningLevel == .high)
+        #expect(
+            try parse(["--model", "/m", "--reasoning", "high"]).requestedReasoningLevel == .high)
         #expect(try parse(["--model", "/m", "--thinking", "on"]).requestedReasoningLevel == .on)
-        #expect(try parse(["--model", "/m", "--thinking", "on", "--reasoning-effort", "xhigh"])
+        #expect(
+            try parse(["--model", "/m", "--thinking", "on", "--reasoning-effort", "xhigh"])
                 .requestedReasoningLevel == .xhigh)
         #expect(throws: ServerArgumentError.self) {
             try parse(["--model", "/m", "--reasoning", "high", "--thinking", "on"])
         }
-        #expect(throws: ServerArgumentError.self) { try parse(["--model", "/m", "--reasoning", "loud"]) }
+        #expect(throws: ServerArgumentError.self) {
+            try parse(["--model", "/m", "--reasoning", "loud"])
+        }
     }
 
     @Test func singleModelFlagsAreRefusedWithACatalog() {
-        for flags in [["--model-id", "x"], ["--cpu"], ["--mtp-model", "/d"], ["--idle-unload-seconds", "60"]] {
+        for flags in [
+            ["--model-id", "x"], ["--cpu"], ["--mtp-model", "/d"], ["--idle-unload-seconds", "60"],
+        ] {
             #expect(throws: ServerArgumentError.self) {
                 try parse(["--models-dir", "/models", "--model", "a"] + flags)
             }
@@ -392,8 +438,9 @@ struct DynamicServingArgumentTests {
     @Test func concurrentSequenceCountIsAPowerOfTwoUpToTheEngineCeiling() throws {
         #expect(try parse(["--model", "/m"]).maxConcurrentSequences == 1)
         for good in ["1", "2", "4", "8", "16", "256"] {
-            #expect(try parse(["--model", "/m", "--max-concurrent-sequences", good])
-                        .maxConcurrentSequences == Int(good))
+            #expect(
+                try parse(["--model", "/m", "--max-concurrent-sequences", good])
+                    .maxConcurrentSequences == Int(good))
         }
         for bad in ["0", "3", "5", "6", "7", "-1", "512", "abc"] {
             #expect(throws: ServerArgumentError.self) {
@@ -408,14 +455,18 @@ struct DynamicServingArgumentTests {
     /// More than one slot turns the single-sequence prompt cache off rather
     /// than risk restoring a prefix into the wrong slot; MTP does the same.
     @Test func batchingDisablesTheSessionWidePromptCache() {
-        #expect(ServerModelSession.effectivePromptCacheMode(
-            requested: .multiPrefix, mtpEnabled: false, slots: 1) == .multiPrefix)
-        #expect(ServerModelSession.effectivePromptCacheMode(
-            requested: .multiPrefix, mtpEnabled: false, slots: 4) == .off)
-        #expect(ServerModelSession.effectivePromptCacheMode(
-            requested: .singlePrefix, mtpEnabled: false, slots: 2) == .off)
-        #expect(ServerModelSession.effectivePromptCacheMode(
-            requested: .multiPrefix, mtpEnabled: true, slots: 1) == .off)
+        #expect(
+            ServerModelSession.effectivePromptCacheMode(
+                requested: .multiPrefix, mtpEnabled: false, slots: 1) == .multiPrefix)
+        #expect(
+            ServerModelSession.effectivePromptCacheMode(
+                requested: .multiPrefix, mtpEnabled: false, slots: 4) == .off)
+        #expect(
+            ServerModelSession.effectivePromptCacheMode(
+                requested: .singlePrefix, mtpEnabled: false, slots: 2) == .off)
+        #expect(
+            ServerModelSession.effectivePromptCacheMode(
+                requested: .multiPrefix, mtpEnabled: true, slots: 1) == .off)
     }
 
     /// The routing banner states the initial model's cache mode, and that
@@ -424,16 +475,20 @@ struct DynamicServingArgumentTests {
     /// raised width turns a GPU entry's session-wide cache off.
     @Test func theInitialModelsPromptCacheFollowsItsEngineAndTheWidth() {
         for slots in [1, 2, 4] {
-            #expect(ServerModelSession.initialPromptCacheMode(
-                backend: .cpu, requested: .multiPrefix,
-                maxConcurrentSequences: slots) == .off)
+            #expect(
+                ServerModelSession.initialPromptCacheMode(
+                    backend: .cpu, requested: .multiPrefix,
+                    maxConcurrentSequences: slots) == .off)
         }
-        #expect(ServerModelSession.initialPromptCacheMode(
-            backend: .gpu, requested: .multiPrefix, maxConcurrentSequences: 1) == .multiPrefix)
-        #expect(ServerModelSession.initialPromptCacheMode(
-            backend: .gpu, requested: .multiPrefix, maxConcurrentSequences: 4) == .off)
-        #expect(ServerModelSession.initialPromptCacheMode(
-            backend: .gpu, requested: .singlePrefix, maxConcurrentSequences: 2) == .off)
+        #expect(
+            ServerModelSession.initialPromptCacheMode(
+                backend: .gpu, requested: .multiPrefix, maxConcurrentSequences: 1) == .multiPrefix)
+        #expect(
+            ServerModelSession.initialPromptCacheMode(
+                backend: .gpu, requested: .multiPrefix, maxConcurrentSequences: 4) == .off)
+        #expect(
+            ServerModelSession.initialPromptCacheMode(
+                backend: .gpu, requested: .singlePrefix, maxConcurrentSequences: 2) == .off)
     }
 
     /// Every plan is built through `ModelSessionPlan.from`, which carries the

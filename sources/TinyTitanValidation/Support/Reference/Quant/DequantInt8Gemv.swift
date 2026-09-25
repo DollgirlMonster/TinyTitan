@@ -1,5 +1,5 @@
-import Foundation
 import Accelerate
+import Foundation
 import TinyTitan
 
 /// FP32 reference for the INT8-affine groupwise GEMV `y = W * x`.
@@ -27,7 +27,8 @@ public enum DequantInt8GemvRef {
             wRow.withUnsafeBufferPointer { pwBuffer in
                 x.withUnsafeBufferPointer { pxBuffer in
                     guard let pw = pwBuffer.baseAddress,
-                          let px = pxBuffer.baseAddress else { return }
+                        let px = pxBuffer.baseAddress
+                    else { return }
                     vDSP_dotpr(pw, 1, px, 1, &dot, vDSP_Length(n))
                 }
             }

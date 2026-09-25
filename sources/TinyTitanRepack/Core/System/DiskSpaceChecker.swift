@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 
 public struct DiskSpaceRequirement: Equatable, Sendable {
     public let path: String
@@ -20,35 +20,44 @@ public struct DiskSpaceRequirement: Equatable, Sendable {
 }
 
 public enum DiskSpaceChecker {
-    public static func assess(path: String,
-                              bytes: UInt64,
-                              reserveBytes: UInt64 = 1 * 1024 * 1024 * 1024) throws
-        -> DiskSpaceRequirement {
+    public static func assess(
+        path: String,
+        bytes: UInt64,
+        reserveBytes: UInt64 = 1 * 1024 * 1024 * 1024
+    ) throws
+        -> DiskSpaceRequirement
+    {
         // Probe the actual install location: the path itself is the volume we
         // will write to, extension or not. `assess` walks up to the nearest
         // existing directory (it never creates anything).
         let probeDirectory = nearestExistingDirectory(path)
-        return try requirement(path: probeDirectory,
-                               bytes: bytes,
-                               reserveBytes: reserveBytes)
+        return try requirement(
+            path: probeDirectory,
+            bytes: bytes,
+            reserveBytes: reserveBytes)
     }
 
-    public static func requireAvailable(path: String,
-                                        bytes: UInt64,
-                                        reserveBytes: UInt64 = 1 * 1024 * 1024 * 1024) throws -> DiskSpaceRequirement {
+    public static func requireAvailable(
+        path: String,
+        bytes: UInt64,
+        reserveBytes: UInt64 = 1 * 1024 * 1024 * 1024
+    ) throws -> DiskSpaceRequirement {
         try Posix.mkdirP(path)
         let result = try requirement(path: path, bytes: bytes, reserveBytes: reserveBytes)
         guard result.canInstall else {
-            throw RepackError.diskSpaceInsufficient(path: path,
-                                                    required: result.requiredBytes,
-                                                    available: result.availableBytes)
+            throw RepackError.diskSpaceInsufficient(
+                path: path,
+                required: result.requiredBytes,
+                available: result.availableBytes)
         }
         return result
     }
 
-    private static func requirement(path: String,
-                                    bytes: UInt64,
-                                    reserveBytes: UInt64) throws -> DiskSpaceRequirement {
+    private static func requirement(
+        path: String,
+        bytes: UInt64,
+        reserveBytes: UInt64
+    ) throws -> DiskSpaceRequirement {
         var st = statfs()
         if statfs(path, &st) != 0 {
             throw RepackError.fileStatFailed(path: path, errno: errno)
@@ -60,9 +69,10 @@ public enum DiskSpaceChecker {
                 detail: "disk-space requirement overflows UInt64")
         }
         let required = sum.partialValue
-        return DiskSpaceRequirement(path: path,
-                                    requiredBytes: required,
-                                    availableBytes: available)
+        return DiskSpaceRequirement(
+            path: path,
+            requiredBytes: required,
+            availableBytes: available)
     }
 
     private static func nearestExistingDirectory(_ path: String) -> String {

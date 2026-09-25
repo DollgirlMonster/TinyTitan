@@ -17,8 +17,10 @@ public actor ServerTerminationSignals {
     /// this register carried as unexplained.
     private let forceExit: @Sendable () -> Void
 
-    public init(_ signals: [Int32] = [SIGINT, SIGTERM],
-                forceExit: @escaping @Sendable () -> Void = { exit(1) }) {
+    public init(
+        _ signals: [Int32] = [SIGINT, SIGTERM],
+        forceExit: @escaping @Sendable () -> Void = { exit(1) }
+    ) {
         // `makeStream` returns the continuation directly, so there is no
         // captured-optional to force unwrap.
         let (stream, continuation) = AsyncStream<Int32>.makeStream(
@@ -30,8 +32,9 @@ public actor ServerTerminationSignals {
         self.forceExit = forceExit
         self.sources = signals.map {
             Darwin.signal($0, SIG_IGN)
-            return Self.makeSource(signal: $0, continuation: continuation, state: shared,
-                                   forceExit: forceExit)
+            return Self.makeSource(
+                signal: $0, continuation: continuation, state: shared,
+                forceExit: forceExit)
         }
         for source in sources {
             source.resume()

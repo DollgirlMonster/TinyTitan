@@ -152,21 +152,29 @@ public struct GFTokenizer: @unchecked Sendable {
             .local(folder.standardizedFileURL.path, thinkingMode, reasoningEffort))
     }
 
-    public static func load(forModelDirectory modelDirectory: URL,
-                            thinkingMode: ModelThinkingMode = .off,
-                            reasoningEffort: ModelReasoningEffort? = nil,
-                            environment: [String: String] = ProcessInfo.processInfo.environment) async throws -> GFTokenizer {
-        guard let folder = tokenizerFolder(forModelDirectory: modelDirectory, environment: environment) else {
+    public static func load(
+        forModelDirectory modelDirectory: URL,
+        thinkingMode: ModelThinkingMode = .off,
+        reasoningEffort: ModelReasoningEffort? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) async throws -> GFTokenizer {
+        guard
+            let folder = tokenizerFolder(
+                forModelDirectory: modelDirectory, environment: environment)
+        else {
             throw GFTokenizerError.missingToolTemplate
         }
-        return try await load(from: folder,
-                              thinkingMode: thinkingMode,
-                              reasoningEffort: reasoningEffort)
+        return try await load(
+            from: folder,
+            thinkingMode: thinkingMode,
+            reasoningEffort: reasoningEffort)
     }
 
-    public static func tokenizerFolder(forModelDirectory modelDirectory: URL,
-                                       environment: [String: String] = ProcessInfo.processInfo.environment,
-                                       fileManager: FileManager = .default) -> URL? {
+    public static func tokenizerFolder(
+        forModelDirectory modelDirectory: URL,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> URL? {
         let sidecar = modelDirectory
             .standardizedFileURL
             .appendingPathComponent("tokenizer", isDirectory: true)
@@ -200,9 +208,10 @@ public struct GFTokenizer: @unchecked Sendable {
         if hasTokenizerJSON(in: root, fileManager: fileManager) {
             return root
         }
-        return tokenizerFolder(forModelDirectory: root,
-                               environment: environment,
-                               fileManager: fileManager)
+        return tokenizerFolder(
+            forModelDirectory: root,
+            environment: environment,
+            fileManager: fileManager)
     }
 
     static func loadUncached(
@@ -214,10 +223,11 @@ public struct GFTokenizer: @unchecked Sendable {
         let decoder = try GFByteLevelDecoderConfiguration.load(
             from: folder.appendingPathComponent("tokenizer.json"),
             tokenizer: underlying)
-        return try GFTokenizer(tokenizer: underlying,
-                               byteLevelDecoderConfiguration: decoder,
-                               thinkingMode: thinkingMode,
-                               reasoningEffort: reasoningEffort)
+        return try GFTokenizer(
+            tokenizer: underlying,
+            byteLevelDecoderConfiguration: decoder,
+            thinkingMode: thinkingMode,
+            reasoningEffort: reasoningEffort)
     }
 
     private static func hasTokenizerJSON(in folder: URL, fileManager: FileManager) -> Bool {
@@ -236,17 +246,20 @@ public struct GFTokenizer: @unchecked Sendable {
             reasoningEffort: reasoningEffort)
     }
 
-    init(tokenizer: any Tokenizer,
-         byteLevelDecoderConfiguration: GFByteLevelDecoderConfiguration,
-         thinkingMode: ModelThinkingMode = .off,
-         reasoningEffort: ModelReasoningEffort? = nil) throws {
+    init(
+        tokenizer: any Tokenizer,
+        byteLevelDecoderConfiguration: GFByteLevelDecoderConfiguration,
+        thinkingMode: ModelThinkingMode = .off,
+        reasoningEffort: ModelReasoningEffort? = nil
+    ) throws {
         self.tokenizer = tokenizer
         self.byteLevelDecoderConfiguration = byteLevelDecoderConfiguration
 
         let resolved = try Self.resolveChatMLTokens(tokenizer)
-        try Self.validateStreamingDecoder(byteLevelDecoderConfiguration,
-                                          tokenizer: tokenizer,
-                                          resolved: resolved)
+        try Self.validateStreamingDecoder(
+            byteLevelDecoderConfiguration,
+            tokenizer: tokenizer,
+            resolved: resolved)
         self.bosID = resolved.bosID
         self.eosID = resolved.eosID
         self.padID = resolved.padID
@@ -266,11 +279,13 @@ public struct GFTokenizer: @unchecked Sendable {
         // an off-mode tokenizer stores none rather than an inert value.
         let activeEffort = thinkingMode.isEnabled ? reasoningEffort : nil
         self.reasoningEffort = activeEffort
-        let context = Self.templateContext(thinkingEnabled: thinkingMode.isEnabled,
-                                           reasoningEffort: activeEffort)
+        let context = Self.templateContext(
+            thinkingEnabled: thinkingMode.isEnabled,
+            reasoningEffort: activeEffort)
         self.generationSuffix = Self.deriveGenerationSuffix(
             tokenizer, thinkingEnabled: thinkingMode.isEnabled, context: context)
-        self.effortSystemInstruction = thinkingMode.isEnabled
+        self.effortSystemInstruction =
+            thinkingMode.isEnabled
             ? Self.deriveEffortSystemInstruction(tokenizer, context: context)
             : nil
     }
@@ -290,8 +305,9 @@ public struct GFTokenizer: @unchecked Sendable {
     }
 
     private var templateContext: [String: any Sendable] {
-        Self.templateContext(thinkingEnabled: thinkingMode.isEnabled,
-                             reasoningEffort: reasoningEffort)
+        Self.templateContext(
+            thinkingEnabled: thinkingMode.isEnabled,
+            reasoningEffort: reasoningEffort)
     }
 
     private struct ResolvedSpecialTokens {
@@ -326,7 +342,8 @@ public struct GFTokenizer: @unchecked Sendable {
         ]
         for (id, content) in literalMarkers {
             guard let added = decoder.addedTokens[id],
-                  added.content == content, !added.special else {
+                added.content == content, !added.special
+            else {
                 throw GFTokenizerError.unsupportedForDialect(
                     "ChatML control token \(content) must be a literal ByteLevel barrier")
             }
@@ -346,7 +363,8 @@ public struct GFTokenizer: @unchecked Sendable {
     /// some tokenizers substitute for out-of-vocabulary strings.
     private static func specialTokenID(_ tokenizer: any Tokenizer, _ token: String) -> Int? {
         guard let id = tokenizer.convertTokenToId(token),
-              tokenizer.convertIdToToken(id) == token else { return nil }
+            tokenizer.convertIdToToken(id) == token
+        else { return nil }
         return id
     }
 
@@ -406,8 +424,9 @@ public struct GFTokenizer: @unchecked Sendable {
             // At least the model's padded embedding/lm_head rows; larger when
             // the tokenizer's own vocab (derived from `convertIdToToken`)
             // exceeds them.
-            vocabSize: max(Self.derivedVocabSize(tokenizer) ?? 0,
-                           Self.paddedLogitsVocabSize))
+            vocabSize: max(
+                Self.derivedVocabSize(tokenizer) ?? 0,
+                Self.paddedLogitsVocabSize))
     }
 
     /// Encode UTF-8 text to token IDs.
@@ -480,11 +499,13 @@ public struct GFTokenizer: @unchecked Sendable {
             self.name = nil
         }
 
-        public init(role: Role,
-                    content: String?,
-                    toolCalls: [HistoricalToolCall] = [],
-                    toolCallID: String? = nil,
-                    name: String? = nil) {
+        public init(
+            role: Role,
+            content: String?,
+            toolCalls: [HistoricalToolCall] = [],
+            toolCallID: String? = nil,
+            name: String? = nil
+        ) {
             self.role = role
             self.content = content
             self.toolCalls = toolCalls
@@ -497,7 +518,7 @@ public struct GFTokenizer: @unchecked Sendable {
     /// `chat_template.jinja`, with thinking disabled. Keeping this narrow makes
     /// unsupported tool/media behavior explicit instead of approximating it.
     private static let imStartMark = "<|im_start|>"
-    private static let imEndMark   = "<|im_end|>"
+    private static let imEndMark = "<|im_end|>"
     /// Generation prompt with thinking disabled, matching the Jinja template's
     /// `add_generation_prompt` + `enable_thinking=false` branch. Used only
     /// when the tokenizer has no chat template or template rendering fails
@@ -517,10 +538,13 @@ public struct GFTokenizer: @unchecked Sendable {
     /// user turn both with and without the generation prompt; the generation
     /// prompt is appended after the message loop, so the suffix is the
     /// token-level difference between the two renders.
-    private static func deriveGenerationSuffix(_ tokenizer: any Tokenizer,
-                                               thinkingEnabled: Bool,
-                                               context: [String: any Sendable]) -> String {
-        let fallback = thinkingEnabled
+    private static func deriveGenerationSuffix(
+        _ tokenizer: any Tokenizer,
+        thinkingEnabled: Bool,
+        context: [String: any Sendable]
+    ) -> String {
+        let fallback =
+            thinkingEnabled
             ? Self.fallbackChatMLGenerationSuffixThinking
             : Self.fallbackChatMLGenerationSuffix
         guard tokenizer.hasChatTemplate else {
@@ -567,23 +591,25 @@ public struct GFTokenizer: @unchecked Sendable {
     ) -> String? {
         guard tokenizer.hasChatTemplate else { return nil }
         let probe: [Tokenizers.Message] = [["role": "user", "content": "x"]]
-        guard let ids = try? tokenizer.applyChatTemplate(
-            messages: probe,
-            chatTemplate: nil,
-            addGenerationPrompt: false,
-            truncation: false,
-            maxLength: nil,
-            tools: [],
-            additionalContext: context) else { return nil }
+        guard
+            let ids = try? tokenizer.applyChatTemplate(
+                messages: probe,
+                chatTemplate: nil,
+                addGenerationPrompt: false,
+                truncation: false,
+                maxLength: nil,
+                tools: [],
+                additionalContext: context)
+        else { return nil }
         let text = tokenizer.decode(tokens: ids, skipSpecialTokens: false)
         let blockStart = Self.imStartMark + "system\n"
         guard text.hasPrefix(blockStart),
-              let blockEnd = text.range(of: Self.imEndMark) else { return nil }
+            let blockEnd = text.range(of: Self.imEndMark)
+        else { return nil }
         let instruction = String(
             text[text.index(text.startIndex, offsetBy: blockStart.count)..<blockEnd.lowerBound])
         return instruction.isEmpty ? nil : instruction
     }
-
 
     /// The bundled template's assistant split:
     /// `content.split('</think>')[0] … split('<think>')[-1]` for the reasoning
@@ -592,7 +618,8 @@ public struct GFTokenizer: @unchecked Sendable {
     static func splitThinking(_ content: String) -> (reasoning: String, answer: String) {
         guard let firstClose = content.range(of: "</think>") else { return ("", content) }
         let beforeFirst = String(content[content.startIndex..<firstClose.lowerBound])
-        let afterLast = content.range(of: "</think>", options: .backwards)
+        let afterLast =
+            content.range(of: "</think>", options: .backwards)
             .map { String(content[$0.upperBound...]) } ?? content
         let reasoning = (beforeFirst.components(separatedBy: "<think>").last ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -612,9 +639,10 @@ public struct GFTokenizer: @unchecked Sendable {
         // otherwise as a synthetic system block of its own. A leading
         // `developer` message *is* that system block (`Role.templateRole`), so
         // it must not also get a synthetic one in front of it.
-        let opensWithGuidance = messages.first.map {
-            $0.role == .system || $0.role == .developer
-        } ?? false
+        let opensWithGuidance =
+            messages.first.map {
+                $0.role == .system || $0.role == .developer
+            } ?? false
         if let instruction = effortSystemInstruction, !opensWithGuidance {
             s += Self.imStartMark + "system\n" + instruction + Self.imEndMark + "\n"
         }
@@ -650,7 +678,8 @@ public struct GFTokenizer: @unchecked Sendable {
                 throw GFTokenizerError.invalidChatTemplate("system message must be first")
             }
             if index == 0, isGuidance,
-               let instruction = effortSystemInstruction {
+                let instruction = effortSystemInstruction
+            {
                 content = content.isEmpty ? instruction : instruction + "\n\n" + content
             }
             if message.role == .assistant {
@@ -664,18 +693,23 @@ public struct GFTokenizer: @unchecked Sendable {
                 // the model was not trained on. `preserve_thinking`, which the
                 // template also honours, has no equivalent here.
                 let (reasoning, answer) = Self.splitThinking(content)
-                content = index > lastQueryIndex
+                content =
+                    index > lastQueryIndex
                     ? "<think>\n" + reasoning + "\n</think>\n\n" + answer
                     : answer
             }
-            s += Self.imStartMark + message.role.templateRole + "\n" + content + Self.imEndMark + "\n"
+            s +=
+                Self.imStartMark + message.role.templateRole + "\n" + content + Self.imEndMark
+                + "\n"
         }
         s += generationSuffix
         return s
     }
 
-    public func encodeToolChat(messages: [Message],
-                               tools: [FunctionDefinition]) throws -> [Int32] {
+    public func encodeToolChat(
+        messages: [Message],
+        tools: [FunctionDefinition]
+    ) throws -> [Int32] {
         guard tokenizer.hasChatTemplate else {
             throw GFTokenizerError.missingToolTemplate
         }
@@ -725,10 +759,11 @@ public struct GFTokenizer: @unchecked Sendable {
         // The template trims user content (`render_content(...)|trim`), so the
         // continuation bridge mirrors it; see `chatMLChatTemplate`.
         let content = userContent.trimmingCharacters(in: .whitespacesAndNewlines)
-        return [endOfTurnID] + encode(
-            "\n\(Self.imStartMark)user\n\(content)\(Self.imEndMark)\n"
-                + generationSuffix,
-            addBOS: false)
+        return [endOfTurnID]
+            + encode(
+                "\n\(Self.imStartMark)user\n\(content)\(Self.imEndMark)\n"
+                    + generationSuffix,
+                addBOS: false)
     }
 
     public func encodeToolResultContinuation(

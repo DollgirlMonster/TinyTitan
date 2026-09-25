@@ -8,7 +8,8 @@ public struct FleetRequest: Sendable {
     public let token: String
     public let body: Data?
 
-    public init(method: String, target: FleetTarget, path: String, token: String, body: Data? = nil) {
+    public init(method: String, target: FleetTarget, path: String, token: String, body: Data? = nil)
+    {
         self.method = method
         self.target = target
         self.path = path
@@ -74,7 +75,8 @@ public struct URLSessionTransport: FleetTransport {
     public func send(_ request: FleetRequest) async throws -> FleetResponse {
         // An IPv6 literal must be bracketed inside a URL, and a v6 host is the
         // one case where a colon in `host` is not a port.
-        let host = request.target.host.contains(":") ? "[\(request.target.host)]" : request.target.host
+        let host =
+            request.target.host.contains(":") ? "[\(request.target.host)]" : request.target.host
         guard let url = URL(string: "http://\(host):\(request.target.port)\(request.path)") else {
             throw FleetError.badURL("\(request.target)\(request.path)")
         }
@@ -91,7 +93,8 @@ public struct URLSessionTransport: FleetTransport {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             return FleetResponse(status: status, body: data)
         } catch {
-            throw FleetError.unreachable(target: "\(request.target)", reason: error.localizedDescription)
+            throw FleetError.unreachable(
+                target: "\(request.target)", reason: error.localizedDescription)
         }
     }
 }
@@ -118,7 +121,10 @@ public struct FleetClient: Sendable {
     public let basePath: String
     private let transport: any FleetTransport
 
-    public init(token: String, basePath: String = "/dsh-lan", transport: any FleetTransport = URLSessionTransport()) {
+    public init(
+        token: String, basePath: String = "/dsh-lan",
+        transport: any FleetTransport = URLSessionTransport()
+    ) {
         self.token = token
         self.basePath = basePath
         self.transport = transport
@@ -133,9 +139,13 @@ public struct FleetClient: Sendable {
         return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
-    private func decode<T: Decodable>(_ type: T.Type, from response: FleetResponse, target: FleetTarget) throws -> T {
+    private func decode<T: Decodable>(
+        _ type: T.Type, from response: FleetResponse, target: FleetTarget
+    ) throws -> T {
         guard (200...299).contains(response.status) else {
-            throw FleetError.http(target: "\(target)", status: response.status, message: Self.message(in: response.body))
+            throw FleetError.http(
+                target: "\(target)", status: response.status,
+                message: Self.message(in: response.body))
         }
         do {
             return try JSONDecoder().decode(T.self, from: response.body)
@@ -149,14 +159,15 @@ public struct FleetClient: Sendable {
         guard
             let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
         else {
-            return String(data: body, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "no body"
+            return String(data: body, encoding: .utf8)?.trimmingCharacters(
+                in: .whitespacesAndNewlines) ?? "no body"
         }
         let error = object["error"] as? String
         let message = object["message"] as? String
         switch (error, message) {
-        case let (error?, message?): return "\(error): \(message)"
-        case let (error?, nil): return error
-        case let (nil, message?): return message
+        case (let error?, let message?): return "\(error): \(message)"
+        case (let error?, nil): return error
+        case (nil, let message?): return message
         default: return "no message"
         }
     }
@@ -164,13 +175,18 @@ public struct FleetClient: Sendable {
     private func ack(_ response: FleetResponse, target: FleetTarget) throws -> FleetAck {
         let text = String(data: response.body, encoding: .utf8) ?? ""
         if !(200...299).contains(response.status) {
-            throw FleetError.http(target: "\(target)", status: response.status, message: Self.message(in: response.body))
+            throw FleetError.http(
+                target: "\(target)", status: response.status,
+                message: Self.message(in: response.body))
         }
         let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]
-        return FleetAck(ok: (object?["ok"] as? Bool) ?? true, message: object?["message"] as? String, raw: text)
+        return FleetAck(
+            ok: (object?["ok"] as? Bool) ?? true, message: object?["message"] as? String, raw: text)
     }
 
-    private func post(_ path: String, to target: FleetTarget, body: [String: Any]? = nil) async throws -> FleetResponse {
+    private func post(_ path: String, to target: FleetTarget, body: [String: Any]? = nil)
+        async throws -> FleetResponse
+    {
         let data: Data?
         if let body {
             data = try? JSONSerialization.data(withJSONObject: body)
@@ -178,7 +194,9 @@ public struct FleetClient: Sendable {
             data = nil
         }
         return try await transport.send(
-            FleetRequest(method: "POST", target: target, path: "\(basePath)\(path)", token: token, body: data)
+            FleetRequest(
+                method: "POST", target: target, path: "\(basePath)\(path)", token: token, body: data
+            )
         )
     }
 
@@ -188,7 +206,9 @@ public struct FleetClient: Sendable {
             FleetRequest(method: "GET", target: target, path: "\(basePath)/inventory", token: token)
         )
         guard (200...299).contains(response.status) else {
-            throw FleetError.http(target: "\(target)", status: response.status, message: Self.message(in: response.body))
+            throw FleetError.http(
+                target: "\(target)", status: response.status,
+                message: Self.message(in: response.body))
         }
         return response.body
     }
@@ -204,13 +224,18 @@ public struct FleetClient: Sendable {
     }
 
     /// Send one prompt to one session, on the member that owns it.
-    public func prompt(to target: FleetTarget, sessionId: String, text: String) async throws -> FleetAck {
-        let response = try await post("/prompt", to: target, body: ["sessionId": sessionId, "prompt": text])
+    public func prompt(to target: FleetTarget, sessionId: String, text: String) async throws
+        -> FleetAck
+    {
+        let response = try await post(
+            "/prompt", to: target, body: ["sessionId": sessionId, "prompt": text])
         return try ack(response, target: target)
     }
 
     /// Register an existing folder as a workspace on one member.
-    public func createWorkspace(on target: FleetTarget, path: String, title: String?) async throws -> FleetAck {
+    public func createWorkspace(on target: FleetTarget, path: String, title: String?) async throws
+        -> FleetAck
+    {
         var body: [String: Any] = ["path": path]
         if let title { body["title"] = title }
         let response = try await post("/workspaces", to: target, body: body)
@@ -226,7 +251,9 @@ public struct FleetClient: Sendable {
 
     /// Delete a workspace from one member's registry, archiving its sessions by
     /// default — the plugin's own rule, passed through rather than second-guessed.
-    public func deleteWorkspace(on target: FleetTarget, workspaceId: String, archiveSessions: Bool) async throws -> FleetAck {
+    public func deleteWorkspace(on target: FleetTarget, workspaceId: String, archiveSessions: Bool)
+        async throws -> FleetAck
+    {
         let path = "/workspaces/\(Self.encodePathComponent(workspaceId))/delete"
         let response = try await post(path, to: target, body: ["archiveSessions": archiveSessions])
         return try ack(response, target: target)

@@ -76,9 +76,11 @@ final class QSAIndexer {
     /// Cells a query keeps: the budget plus the tail block's extra members.
     var selectionWidth: Int { budget + compressRatio - 1 }
 
-    init(context: MetalContext, config: SparseIndexerConfig,
-         budget: Int? = nil,
-         ropeTheta: Float, capacity: Int, weightBits: Int = 4) throws {
+    init(
+        context: MetalContext, config: SparseIndexerConfig,
+        budget: Int? = nil,
+        ropeTheta: Float, capacity: Int, weightBits: Int = 4
+    ) throws {
         precondition(config.enabled, "QSAIndexer requires a configured indexer")
         precondition(capacity > 0)
         self.ctx = context
@@ -97,16 +99,18 @@ final class QSAIndexer {
         self.rope = try RoPE(context: context)
         self.gemv = try SlotGEMV(context: context, weightBits: weightBits)
         let f16 = MemoryLayout<Float16>.stride
-        guard let query = context.device.makeBuffer(
-                  length: heads * headDim * f16, options: .storageModeShared),
-              let key = context.device.makeBuffer(
-                  length: headDim * f16, options: .storageModeShared),
-              let scores = context.device.makeBuffer(
-                  length: max(1, capacity / compressRatio + 1)
-                      * MemoryLayout<Float>.stride,
-                  options: .storageModeShared),
-              let keep = context.device.makeBuffer(
-                  length: capacity, options: .storageModeShared) else {
+        guard
+            let query = context.device.makeBuffer(
+                length: heads * headDim * f16, options: .storageModeShared),
+            let key = context.device.makeBuffer(
+                length: headDim * f16, options: .storageModeShared),
+            let scores = context.device.makeBuffer(
+                length: max(1, capacity / compressRatio + 1)
+                    * MemoryLayout<Float>.stride,
+                options: .storageModeShared),
+            let keep = context.device.makeBuffer(
+                length: capacity, options: .storageModeShared)
+        else {
             throw MetalError.bufferAllocationFailed("QSA indexer scratch")
         }
         self.queryBuf = query
@@ -120,16 +124,18 @@ final class QSAIndexer {
     /// The pooled block cache for one layer, post-norm and post-rope.
     func debugPooled(layer: Int, blocks: Int) -> [Float]? {
         guard let pool = pooled[layer] else { return nil }
-        let ptr = pool.contents().bindMemory(to: Float16.self,
-                                             capacity: blocks * headDim)
+        let ptr = pool.contents().bindMemory(
+            to: Float16.self,
+            capacity: blocks * headDim)
         return (0..<blocks * headDim).map { Float(ptr[$0]) }
     }
 
     /// The raw indexer keys for one layer, before norm and rope.
     func debugRawKeys(layer: Int, count: Int) -> [Float]? {
         guard let raw = rawKeys[layer] else { return nil }
-        let ptr = raw.contents().bindMemory(to: Float16.self,
-                                            capacity: count * headDim)
+        let ptr = raw.contents().bindMemory(
+            to: Float16.self,
+            capacity: count * headDim)
         return (0..<count * headDim).map { Float(ptr[$0]) }
     }
 
@@ -162,11 +168,13 @@ final class QSAIndexer {
         // model's full 262,144 -- so growing on demand is worth doing if long
         // contexts become routine, and is not worth the bookkeeping yet.
         let f16 = MemoryLayout<Float16>.stride
-        guard let raw = ctx.device.makeBuffer(
-                  length: capacity * headDim * f16, options: .storageModeShared),
-              let pool = ctx.device.makeBuffer(
-                  length: (capacity / compressRatio + 1) * headDim * f16,
-                  options: .storageModeShared) else {
+        guard
+            let raw = ctx.device.makeBuffer(
+                length: capacity * headDim * f16, options: .storageModeShared),
+            let pool = ctx.device.makeBuffer(
+                length: (capacity / compressRatio + 1) * headDim * f16,
+                options: .storageModeShared)
+        else {
             throw MetalError.bufferAllocationFailed("QSA indexer layer \(layer)")
         }
         raw.label = "qsa.rawKeys.L\(layer)"
@@ -178,45 +186,52 @@ final class QSAIndexer {
 
     /// Appends this token's raw indexer key and repools the block it lands
     /// in. `position` is the token's absolute position.
-    func encodeAppendKey(commandBuffer: MTLCommandBuffer,
-                         hidden: MTLBuffer, hiddenOffset: Int = 0,
-                         weights: Weights, layer: Int, position: Int,
-                         eps: Float) throws {
-        precondition(position < capacity,
-                     "QSA indexer capacity \(capacity) exceeded at \(position)")
+    func encodeAppendKey(
+        commandBuffer: MTLCommandBuffer,
+        hidden: MTLBuffer, hiddenOffset: Int = 0,
+        weights: Weights, layer: Int, position: Int,
+        eps: Float
+    ) throws {
+        precondition(
+            position < capacity,
+            "QSA indexer capacity \(capacity) exceeded at \(position)")
         let buffers = try layerBuffers(layer)
         let key = weights.keyProjection
-        try gemv.encode(commandBuffer: commandBuffer,
-                        weights: key.buffer, weightsOffset: Int(key.offset),
-                        scales: key.buffer, scalesOffset: Int(key.scaleOffset),
-                        biases: key.buffer, biasesOffset: Int(key.biasOffset),
-                        x: hidden, xOffset: hiddenOffset,
-                        y: buffers.raw,
-                        yOffset: position * headDim * MemoryLayout<Float16>.stride,
-                        m: UInt32(headDim), n: UInt32(hiddenColumns(key)),
-                        isBF16: key.dtype == 1)
+        try gemv.encode(
+            commandBuffer: commandBuffer,
+            weights: key.buffer, weightsOffset: Int(key.offset),
+            scales: key.buffer, scalesOffset: Int(key.scaleOffset),
+            biases: key.buffer, biasesOffset: Int(key.biasOffset),
+            x: hidden, xOffset: hiddenOffset,
+            y: buffers.raw,
+            yOffset: position * headDim * MemoryLayout<Float16>.stride,
+            m: UInt32(headDim), n: UInt32(hiddenColumns(key)),
+            isBF16: key.dtype == 1)
 
         // Repool the block this token joined. Members present is what the
         // mean divides by, so a tail block is not diluted by absent members.
         let block = position / compressRatio
         let first = block * compressRatio
         let count = position - first + 1
-        try encodePool(commandBuffer: commandBuffer, buffers: buffers,
-                       block: block, first: first, count: count)
-        try rms.encodeBF16W(commandBuffer: commandBuffer,
-                            x: buffers.pooled,
-                            xOffset: block * headDim * MemoryLayout<Float16>.stride,
-                            weight: weights.keyNorm.buffer,
-                            weightOffset: Int(weights.keyNorm.offset),
-                            out: buffers.pooled,
-                            outOffset: block * headDim * MemoryLayout<Float16>.stride,
-                            d: UInt32(headDim), eps: eps)
-        try rope.encodeNeoxSubdim(commandBuffer: commandBuffer,
-                              data: buffers.pooled,
-                              dataOffset: block * headDim * MemoryLayout<Float16>.stride,
-                              position: UInt32(first),
-                              headDim: UInt32(headDim), numHeads: UInt32(1),
-                              rotaryDim: UInt32(headDim), theta: ropeTheta)
+        try encodePool(
+            commandBuffer: commandBuffer, buffers: buffers,
+            block: block, first: first, count: count)
+        try rms.encodeBF16W(
+            commandBuffer: commandBuffer,
+            x: buffers.pooled,
+            xOffset: block * headDim * MemoryLayout<Float16>.stride,
+            weight: weights.keyNorm.buffer,
+            weightOffset: Int(weights.keyNorm.offset),
+            out: buffers.pooled,
+            outOffset: block * headDim * MemoryLayout<Float16>.stride,
+            d: UInt32(headDim), eps: eps)
+        try rope.encodeNeoxSubdim(
+            commandBuffer: commandBuffer,
+            data: buffers.pooled,
+            dataOffset: block * headDim * MemoryLayout<Float16>.stride,
+            position: UInt32(first),
+            headDim: UInt32(headDim), numHeads: UInt32(1),
+            rotaryDim: UInt32(headDim), theta: ropeTheta)
     }
 
     /// Columns of a `[rows, columns]` projection, from the recorded shape.
@@ -224,24 +239,29 @@ final class QSAIndexer {
         Int(view.shape.1)
     }
 
-    private func encodePool(commandBuffer: MTLCommandBuffer,
-                            buffers: (raw: MTLBuffer, pooled: MTLBuffer),
-                            block: Int, first: Int, count: Int) throws {
+    private func encodePool(
+        commandBuffer: MTLCommandBuffer,
+        buffers: (raw: MTLBuffer, pooled: MTLBuffer),
+        block: Int, first: Int, count: Int
+    ) throws {
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
         enc.setComputePipelineState(poolPSO)
         enc.setBuffer(buffers.raw, offset: 0, index: 0)
         enc.setBuffer(buffers.pooled, offset: 0, index: 1)
-        var d = UInt32(headDim), b = UInt32(block)
-        var f = UInt32(first), c = UInt32(count)
+        var d = UInt32(headDim)
+        var b = UInt32(block)
+        var f = UInt32(first)
+        var c = UInt32(count)
         enc.setBytes(&d, length: MemoryLayout<UInt32>.size, index: 2)
         enc.setBytes(&b, length: MemoryLayout<UInt32>.size, index: 3)
         enc.setBytes(&f, length: MemoryLayout<UInt32>.size, index: 4)
         enc.setBytes(&c, length: MemoryLayout<UInt32>.size, index: 5)
         let w = min(poolPSO.maxTotalThreadsPerThreadgroup, 256)
-        enc.dispatchThreads(MTLSize(width: headDim, height: 1, depth: 1),
-                            threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
+        enc.dispatchThreads(
+            MTLSize(width: headDim, height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
         enc.endEncoding()
     }
 
@@ -252,31 +272,36 @@ final class QSAIndexer {
     /// Repools every block a prefill chunk touched. The caller has already
     /// projected the chunk's raw keys into the cache at
     /// `rawKeyDestination(layer:startPosition:)`.
-    func encodePoolPrefill(commandBuffer: MTLCommandBuffer,
-                           weights: Weights, layer: Int,
-                           startPosition: Int, tokens: Int,
-                           eps: Float) throws {
-        precondition(startPosition + tokens <= capacity,
-                     "QSA indexer capacity \(capacity) exceeded at "
-                         + "\(startPosition + tokens)")
+    func encodePoolPrefill(
+        commandBuffer: MTLCommandBuffer,
+        weights: Weights, layer: Int,
+        startPosition: Int, tokens: Int,
+        eps: Float
+    ) throws {
+        precondition(
+            startPosition + tokens <= capacity,
+            "QSA indexer capacity \(capacity) exceeded at "
+                + "\(startPosition + tokens)")
         let buffers = try layerBuffers(layer)
         let f16 = MemoryLayout<Float16>.stride
         let endPosition = startPosition + tokens
         let firstBlock = startPosition / compressRatio
         let lastBlock = (endPosition - 1) / compressRatio
         let blockCount = lastBlock - firstBlock + 1
-        try encodePoolRange(commandBuffer: commandBuffer, buffers: buffers,
-                            firstBlock: firstBlock, blockCount: blockCount,
-                            visibleKeys: endPosition)
-        try rms.encodeBF16WPerHead(commandBuffer: commandBuffer,
-                                   x: buffers.pooled,
-                                   xOffset: firstBlock * headDim * f16,
-                                   weight: weights.keyNorm.buffer,
-                                   weightOffset: Int(weights.keyNorm.offset),
-                                   out: buffers.pooled,
-                                   outOffset: firstBlock * headDim * f16,
-                                   headDim: UInt32(headDim),
-                                   numHeads: blockCount, eps: eps)
+        try encodePoolRange(
+            commandBuffer: commandBuffer, buffers: buffers,
+            firstBlock: firstBlock, blockCount: blockCount,
+            visibleKeys: endPosition)
+        try rms.encodeBF16WPerHead(
+            commandBuffer: commandBuffer,
+            x: buffers.pooled,
+            xOffset: firstBlock * headDim * f16,
+            weight: weights.keyNorm.buffer,
+            weightOffset: Int(weights.keyNorm.offset),
+            out: buffers.pooled,
+            outOffset: firstBlock * headDim * f16,
+            headDim: UInt32(headDim),
+            numHeads: blockCount, eps: eps)
         try rope.encodeNeoxSubdimStrided(
             commandBuffer: commandBuffer,
             data: buffers.pooled,
@@ -289,24 +314,31 @@ final class QSAIndexer {
 
     /// The raw-key cache slice a prefill chunk's projection should write into.
     func rawKeyDestination(layer: Int, startPosition: Int) throws
-        -> (buffer: MTLBuffer, offset: Int) {
+        -> (buffer: MTLBuffer, offset: Int)
+    {
         let buffers = try layerBuffers(layer)
-        return (buffers.raw,
-                startPosition * headDim * MemoryLayout<Float16>.stride)
+        return (
+            buffers.raw,
+            startPosition * headDim * MemoryLayout<Float16>.stride
+        )
     }
 
-    private func encodePoolRange(commandBuffer: MTLCommandBuffer,
-                                 buffers: (raw: MTLBuffer, pooled: MTLBuffer),
-                                 firstBlock: Int, blockCount: Int,
-                                 visibleKeys: Int) throws {
+    private func encodePoolRange(
+        commandBuffer: MTLCommandBuffer,
+        buffers: (raw: MTLBuffer, pooled: MTLBuffer),
+        firstBlock: Int, blockCount: Int,
+        visibleKeys: Int
+    ) throws {
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
         enc.setComputePipelineState(poolRangePSO)
         enc.setBuffer(buffers.raw, offset: 0, index: 0)
         enc.setBuffer(buffers.pooled, offset: 0, index: 1)
-        var d = UInt32(headDim), fb = UInt32(firstBlock)
-        var bc = UInt32(blockCount), r = UInt32(compressRatio)
+        var d = UInt32(headDim)
+        var fb = UInt32(firstBlock)
+        var bc = UInt32(blockCount)
+        var r = UInt32(compressRatio)
         var n = UInt32(visibleKeys)
         enc.setBytes(&d, length: MemoryLayout<UInt32>.size, index: 2)
         enc.setBytes(&fb, length: MemoryLayout<UInt32>.size, index: 3)
@@ -321,32 +353,37 @@ final class QSAIndexer {
     }
 
     /// Scores every block against this token's indexer query.
-    func encodeScores(commandBuffer: MTLCommandBuffer,
-                      hidden: MTLBuffer, hiddenOffset: Int = 0,
-                      weights: Weights, layer: Int, position: Int,
-                      eps: Float) throws {
+    func encodeScores(
+        commandBuffer: MTLCommandBuffer,
+        hidden: MTLBuffer, hiddenOffset: Int = 0,
+        weights: Weights, layer: Int, position: Int,
+        eps: Float
+    ) throws {
         let buffers = try layerBuffers(layer)
         let query = weights.queryProjection
-        try gemv.encode(commandBuffer: commandBuffer,
-                        weights: query.buffer, weightsOffset: Int(query.offset),
-                        scales: query.buffer, scalesOffset: Int(query.scaleOffset),
-                        biases: query.buffer, biasesOffset: Int(query.biasOffset),
-                        x: hidden, xOffset: hiddenOffset,
-                        y: queryBuf,
-                        m: UInt32(heads * headDim), n: UInt32(hiddenColumns(query)),
-                        isBF16: query.dtype == 1)
-        try rms.encodeBF16WPerHead(commandBuffer: commandBuffer,
-                                   x: queryBuf,
-                                   weight: weights.queryNorm.buffer,
-                                   weightOffset: Int(weights.queryNorm.offset),
-                                   out: queryBuf,
-                                   headDim: UInt32(headDim), numHeads: heads,
-                                   eps: eps)
-        try rope.encodeNeoxSubdim(commandBuffer: commandBuffer,
-                              data: queryBuf,
-                              position: UInt32(position),
-                              headDim: UInt32(headDim), numHeads: UInt32(heads),
-                              rotaryDim: UInt32(headDim), theta: ropeTheta)
+        try gemv.encode(
+            commandBuffer: commandBuffer,
+            weights: query.buffer, weightsOffset: Int(query.offset),
+            scales: query.buffer, scalesOffset: Int(query.scaleOffset),
+            biases: query.buffer, biasesOffset: Int(query.biasOffset),
+            x: hidden, xOffset: hiddenOffset,
+            y: queryBuf,
+            m: UInt32(heads * headDim), n: UInt32(hiddenColumns(query)),
+            isBF16: query.dtype == 1)
+        try rms.encodeBF16WPerHead(
+            commandBuffer: commandBuffer,
+            x: queryBuf,
+            weight: weights.queryNorm.buffer,
+            weightOffset: Int(weights.queryNorm.offset),
+            out: queryBuf,
+            headDim: UInt32(headDim), numHeads: heads,
+            eps: eps)
+        try rope.encodeNeoxSubdim(
+            commandBuffer: commandBuffer,
+            data: queryBuf,
+            position: UInt32(position),
+            headDim: UInt32(headDim), numHeads: UInt32(heads),
+            rotaryDim: UInt32(headDim), theta: ropeTheta)
 
         let blocks = position / compressRatio + 1
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
@@ -356,13 +393,16 @@ final class QSAIndexer {
         enc.setBuffer(queryBuf, offset: 0, index: 0)
         enc.setBuffer(buffers.pooled, offset: 0, index: 1)
         enc.setBuffer(scoresBuf, offset: 0, index: 2)
-        var d = UInt32(headDim), h = UInt32(heads), b = UInt32(blocks)
+        var d = UInt32(headDim)
+        var h = UInt32(heads)
+        var b = UInt32(blocks)
         enc.setBytes(&d, length: MemoryLayout<UInt32>.size, index: 3)
         enc.setBytes(&h, length: MemoryLayout<UInt32>.size, index: 4)
         enc.setBytes(&b, length: MemoryLayout<UInt32>.size, index: 5)
         let w = min(scorePSO.maxTotalThreadsPerThreadgroup, 256)
-        enc.dispatchThreads(MTLSize(width: blocks, height: 1, depth: 1),
-                            threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
+        enc.dispatchThreads(
+            MTLSize(width: blocks, height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
         enc.endEncoding()
     }
 
@@ -371,28 +411,34 @@ final class QSAIndexer {
     /// `blockInput` is the chunk's `[tokens, hidden]` block input; the query
     /// projection, its norm and its rope all run over the whole chunk, with
     /// the rope advancing one position per row.
-    func encodeScoresPrefill(commandBuffer: MTLCommandBuffer,
-                             blockInput: MTLBuffer,
-                             weights: Weights, layer: Int,
-                             startPosition: Int, tokens: Int,
-                             eps: Float,
-                             project: (MTLCommandBuffer, TensorView, MTLBuffer,
-                                       MTLBuffer, Int, Int, Int) throws -> Void) throws {
+    func encodeScoresPrefill(
+        commandBuffer: MTLCommandBuffer,
+        blockInput: MTLBuffer,
+        weights: Weights, layer: Int,
+        startPosition: Int, tokens: Int,
+        eps: Float,
+        project: (
+            MTLCommandBuffer, TensorView, MTLBuffer,
+            MTLBuffer, Int, Int, Int
+        ) throws -> Void
+    ) throws {
         let buffers = try layerBuffers(layer)
         let query = weights.queryProjection
         try growQueryScratch(rows: tokens)
         guard let queryRows = queryRowsBuf else {
             throw MetalError.bufferAllocationFailed("QSA query scratch")
         }
-        try project(commandBuffer, query, blockInput, queryRows,
-                    heads * headDim, hiddenColumns(query), tokens)
-        try rms.encodeBF16WPerHead(commandBuffer: commandBuffer,
-                                   x: queryRows,
-                                   weight: weights.queryNorm.buffer,
-                                   weightOffset: Int(weights.queryNorm.offset),
-                                   out: queryRows,
-                                   headDim: UInt32(headDim),
-                                   numHeads: heads * tokens, eps: eps)
+        try project(
+            commandBuffer, query, blockInput, queryRows,
+            heads * headDim, hiddenColumns(query), tokens)
+        try rms.encodeBF16WPerHead(
+            commandBuffer: commandBuffer,
+            x: queryRows,
+            weight: weights.queryNorm.buffer,
+            weightOffset: Int(weights.queryNorm.offset),
+            out: queryRows,
+            headDim: UInt32(headDim),
+            numHeads: heads * tokens, eps: eps)
         try rope.encodeNeoxSubdimStrided(
             commandBuffer: commandBuffer, data: queryRows,
             position: UInt32(startPosition),
@@ -409,15 +455,18 @@ final class QSAIndexer {
         enc.setBuffer(queryRows, offset: 0, index: 0)
         enc.setBuffer(buffers.pooled, offset: 0, index: 1)
         enc.setBuffer(scoresBuf, offset: 0, index: 2)
-        var d = UInt32(headDim), h = UInt32(heads)
-        var b = UInt32(blocks), t = UInt32(tokens)
+        var d = UInt32(headDim)
+        var h = UInt32(heads)
+        var b = UInt32(blocks)
+        var t = UInt32(tokens)
         enc.setBytes(&d, length: MemoryLayout<UInt32>.size, index: 3)
         enc.setBytes(&h, length: MemoryLayout<UInt32>.size, index: 4)
         enc.setBytes(&b, length: MemoryLayout<UInt32>.size, index: 5)
         enc.setBytes(&t, length: MemoryLayout<UInt32>.size, index: 6)
         let w = min(scoreRowsPSO.maxTotalThreadsPerThreadgroup, 256)
-        enc.dispatchThreads(MTLSize(width: blocks * tokens, height: 1, depth: 1),
-                            threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
+        enc.dispatchThreads(
+            MTLSize(width: blocks * tokens, height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
         enc.endEncoding()
         lastScoredBlocks = blocks
     }
@@ -430,16 +479,23 @@ final class QSAIndexer {
     /// Every query gets the same treatment the decode path gives one: its own
     /// ragged tail forced in, then complete blocks by score until the cell
     /// budget runs out. A query inside the window keeps everything it can see.
-    func selectKeysPrefill(startPosition: Int, tokens: Int,
-                           layer: Int = -1) -> QSASelection? {
-        let traceStart = ProcessInfo.processInfo.environment["TINYTITAN_QSA_SELECT_TRACE"] == "1"
+    func selectKeysPrefill(
+        startPosition: Int, tokens: Int,
+        layer: Int = -1
+    ) -> QSASelection? {
+        let traceStart =
+            ProcessInfo.processInfo.environment["TINYTITAN_QSA_SELECT_TRACE"] == "1"
             ? clock_gettime_nsec_np(CLOCK_UPTIME_RAW) : 0
         defer {
             if traceStart != 0 {
                 let hostMillis = Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) &- traceStart) / 1e6
-                FileHandle.standardError.write(Data(String(format:
-                    "[qsa-select] layer=%d start=%d tokens=%d host_ms=%.3f\n",
-                    layer, startPosition, tokens, hostMillis).utf8))
+                FileHandle.standardError.write(
+                    Data(
+                        String(
+                            format:
+                                "[qsa-select] layer=%d start=%d tokens=%d host_ms=%.3f\n",
+                            layer, startPosition, tokens, hostMillis
+                        ).utf8))
             }
         }
         let lastVisible = startPosition + tokens
@@ -451,12 +507,14 @@ final class QSAIndexer {
         // above, so this width covers both branches.
         let indexWidth = selectionWidth
         guard (try? growCompactScratch(rows: tokens, width: indexWidth)) != nil,
-              let indexBuf = keepIndexBuf, let countBuf = keepCountBuf
+            let indexBuf = keepIndexBuf, let countBuf = keepCountBuf
         else { return nil }
-        let keep = keepBuf.contents().bindMemory(to: UInt8.self,
-                                                 capacity: stride * tokens)
-        let indices = indexBuf.contents().bindMemory(to: UInt32.self,
-                                                     capacity: tokens * indexWidth)
+        let keep = keepBuf.contents().bindMemory(
+            to: UInt8.self,
+            capacity: stride * tokens)
+        let indices = indexBuf.contents().bindMemory(
+            to: UInt32.self,
+            capacity: tokens * indexWidth)
         let counts = countBuf.contents().bindMemory(to: UInt32.self, capacity: tokens)
         let scores = scoresBuf.contents().bindMemory(
             to: Float.self, capacity: lastScoredBlocks * tokens)
@@ -501,16 +559,20 @@ final class QSAIndexer {
             }
             counts[row] = UInt32(written)
         }
-        return QSASelection(mask: keepBuf, maskStride: stride,
-                            indices: indexBuf, indexStride: indexWidth,
-                            counts: countBuf)
+        return QSASelection(
+            mask: keepBuf, maskStride: stride,
+            indices: indexBuf, indexStride: indexWidth,
+            counts: countBuf)
     }
 
     private func growQueryScratch(rows: Int) throws {
         let needed = rows * heads * headDim * MemoryLayout<Float16>.stride
         if let existing = queryRowsBuf, existing.length >= needed { return }
-        guard let made = ctx.device.makeBuffer(length: needed,
-                                               options: .storageModeShared) else {
+        guard
+            let made = ctx.device.makeBuffer(
+                length: needed,
+                options: .storageModeShared)
+        else {
             throw MetalError.bufferAllocationFailed("QSA indexer chunk queries")
         }
         made.label = "qsa.chunkQueries"
@@ -520,8 +582,11 @@ final class QSAIndexer {
     private func growScoreScratch(count: Int) throws {
         let needed = count * MemoryLayout<Float>.stride
         if scoresBuf.length >= needed { return }
-        guard let made = ctx.device.makeBuffer(length: needed,
-                                               options: .storageModeShared) else {
+        guard
+            let made = ctx.device.makeBuffer(
+                length: needed,
+                options: .storageModeShared)
+        else {
             throw MetalError.bufferAllocationFailed("QSA indexer chunk scores")
         }
         made.label = "qsa.scores"
@@ -532,16 +597,22 @@ final class QSAIndexer {
         let idxBytes = rows * width * MemoryLayout<UInt32>.stride
         let cntBytes = rows * MemoryLayout<UInt32>.stride
         if (keepIndexBuf?.length ?? 0) < idxBytes {
-            guard let made = ctx.device.makeBuffer(length: idxBytes,
-                                                   options: .storageModeShared) else {
+            guard
+                let made = ctx.device.makeBuffer(
+                    length: idxBytes,
+                    options: .storageModeShared)
+            else {
                 throw MetalError.bufferAllocationFailed("QSA selection indices")
             }
             made.label = "qsa.keep.indices"
             keepIndexBuf = made
         }
         if (keepCountBuf?.length ?? 0) < cntBytes {
-            guard let made = ctx.device.makeBuffer(length: cntBytes,
-                                                   options: .storageModeShared) else {
+            guard
+                let made = ctx.device.makeBuffer(
+                    length: cntBytes,
+                    options: .storageModeShared)
+            else {
                 throw MetalError.bufferAllocationFailed("QSA selection counts")
             }
             made.label = "qsa.keep.counts"
@@ -551,8 +622,11 @@ final class QSAIndexer {
 
     private func growKeepScratch(count: Int) throws {
         if keepBuf.length >= count { return }
-        guard let made = ctx.device.makeBuffer(length: count,
-                                               options: .storageModeShared) else {
+        guard
+            let made = ctx.device.makeBuffer(
+                length: count,
+                options: .storageModeShared)
+        else {
             throw MetalError.bufferAllocationFailed("QSA indexer chunk selection")
         }
         made.label = "qsa.keep"
@@ -582,8 +656,9 @@ final class QSAIndexer {
         guard remaining > 0 else { return keepBuf }
 
         let blocks = completeCells / compressRatio
-        let scores = scoresBuf.contents().bindMemory(to: Float.self,
-                                                     capacity: blocks + 1)
+        let scores = scoresBuf.contents().bindMemory(
+            to: Float.self,
+            capacity: blocks + 1)
         // Descending score, ties to the lower block index -- which is what
         // the reference's stable cell ordering reduces to, because every cell
         // in a block carries the same score.
@@ -614,13 +689,16 @@ final class QSAIndexer {
         enc.setComputePipelineState(pso)
         enc.setBuffer(scoresBuf, offset: 0, index: 0)
         enc.setBuffer(keepBuf, offset: 0, index: 1)
-        var v = UInt32(visibleKeys), r = UInt32(compressRatio), w = UInt32(selectionWidth)
+        var v = UInt32(visibleKeys)
+        var r = UInt32(compressRatio)
+        var w = UInt32(selectionWidth)
         enc.setBytes(&v, length: 4, index: 2)
         enc.setBytes(&r, length: 4, index: 3)
         enc.setBytes(&w, length: 4, index: 4)
         let threads = min(pso.maxTotalThreadsPerThreadgroup, 1024)
-        enc.dispatchThreadgroups(MTLSize(width: 1, height: 1, depth: 1),
-                                 threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
+        enc.dispatchThreadgroups(
+            MTLSize(width: 1, height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
         enc.endEncoding()
         return keepBuf
     }

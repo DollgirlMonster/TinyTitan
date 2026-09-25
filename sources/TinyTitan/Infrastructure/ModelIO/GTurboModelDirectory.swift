@@ -20,8 +20,9 @@ package final class GTurboModelDirectory {
 
     package func openFile(_ relativePath: String) throws -> Int32 {
         do {
-            try GTurboPathValidator.validateRelativePath(relativePath,
-                                                         field: "path.\(relativePath)")
+            try GTurboPathValidator.validateRelativePath(
+                relativePath,
+                field: "path.\(relativePath)")
         } catch {
             throw ModelError.indexCorrupt(detail: "unsafe path \(relativePath): \(error)")
         }
@@ -31,8 +32,9 @@ package final class GTurboModelDirectory {
             throw ModelError.posixFailed(call: "fcntl(F_DUPFD_CLOEXEC, model root)", errno: errno)
         }
         for component in components.dropLast() {
-            let next = openat(directoryFD, component,
-                              O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            let next = openat(
+                directoryFD, component,
+                O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             let savedErrno = errno
             close(directoryFD)
             guard next >= 0 else {
@@ -43,8 +45,9 @@ package final class GTurboModelDirectory {
         guard let lastComponent = components.last, !lastComponent.isEmpty else {
             throw ModelError.indexCorrupt(detail: "empty relative path \(relativePath)")
         }
-        let fd = openat(directoryFD, lastComponent,
-                        O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        let fd = openat(
+            directoryFD, lastComponent,
+            O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
         let savedErrno = errno
         close(directoryFD)
         guard fd >= 0 else { throw openError(relativePath: relativePath, errno: savedErrno) }
@@ -57,17 +60,22 @@ package final class GTurboModelDirectory {
         return fd
     }
 
-    package func readMetadata(_ relativePath: String,
-                              maxBytes: UInt64) throws -> Data {
+    package func readMetadata(
+        _ relativePath: String,
+        maxBytes: UInt64
+    ) throws -> Data {
         let fd = try openFile(relativePath)
         defer { close(fd) }
-        return try readMetadata(fileDescriptor: fd, relativePath: relativePath,
-                                maxBytes: maxBytes)
+        return try readMetadata(
+            fileDescriptor: fd, relativePath: relativePath,
+            maxBytes: maxBytes)
     }
 
-    package func readMetadata(fileDescriptor fd: Int32,
-                              relativePath: String,
-                              maxBytes: UInt64) throws -> Data {
+    package func readMetadata(
+        fileDescriptor fd: Int32,
+        relativePath: String,
+        maxBytes: UInt64
+    ) throws -> Data {
         let size = try fileSize(fileDescriptor: fd, relativePath: relativePath)
         guard size <= maxBytes, size <= UInt64(Int.max) else {
             throw ModelError.indexCorrupt(
@@ -83,8 +91,9 @@ package final class GTurboModelDirectory {
             }
             if got < 0, errno == EINTR { continue }
             guard got > 0 else {
-                throw ModelError.posixFailed(call: "pread(\(relativePath))",
-                                             errno: got < 0 ? errno : EIO)
+                throw ModelError.posixFailed(
+                    call: "pread(\(relativePath))",
+                    errno: got < 0 ? errno : EIO)
             }
             total += got
         }
@@ -97,8 +106,10 @@ package final class GTurboModelDirectory {
         return try fileSize(fileDescriptor: fd, relativePath: relativePath)
     }
 
-    package func fileSize(fileDescriptor fd: Int32,
-                          relativePath: String) throws -> UInt64 {
+    package func fileSize(
+        fileDescriptor fd: Int32,
+        relativePath: String
+    ) throws -> UInt64 {
         var st = stat()
         guard fstat(fd, &st) == 0, st.st_size >= 0 else {
             throw ModelError.posixFailed(call: "fstat(\(relativePath))", errno: errno)

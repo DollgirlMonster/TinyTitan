@@ -1,5 +1,5 @@
-import Foundation
 import Accelerate
+import Foundation
 
 /// FP32 RoPE reference. Precomputes `(cos, sin)` tables for every rotation
 /// pair via `vForce.cos`/`vForce.sin`, then applies the rotation per
@@ -22,8 +22,9 @@ public enum RopeRef {
         position: Int,
         theta: Float
     ) -> [Float] {
-        precondition(input.count == numTokens * numHeads * headDim,
-                     "input must be numTokens * numHeads * headDim")
+        precondition(
+            input.count == numTokens * numHeads * headDim,
+            "input must be numTokens * numHeads * headDim")
         precondition(rotaryDim % 2 == 0, "rotaryDim must be even")
         precondition(rotaryDim <= headDim, "rotaryDim cannot exceed headDim")
 
@@ -75,8 +76,9 @@ public enum RopeRef {
         position: Int,
         theta: Float
     ) -> [Float] {
-        precondition(input.count == numTokens * numHeads * headDim,
-                     "input size mismatch")
+        precondition(
+            input.count == numTokens * numHeads * headDim,
+            "input size mismatch")
         precondition(rotatedPairs * 2 <= headDim, "rotatedPairs * 2 must not exceed headDim")
         let halfDim = headDim / 2
         var angles = [Float](repeating: 0, count: rotatedPairs)

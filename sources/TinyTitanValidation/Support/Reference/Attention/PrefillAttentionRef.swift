@@ -23,20 +23,22 @@ public enum PrefillAttentionRef {
         public var window: Int
         public var scale: Float
 
-        public init(q: [Float],
-                    k: [Float],
-                    v: [Float],
-                    qStride: Int,
-                    kvStride: Int,
-                    oStride: Int,
-                    headDim: Int,
-                    qHeads: Int,
-                    kvHeads: Int,
-                    start: Int,
-                    chunk: Int,
-                    kvValid: Int,
-                    window: Int,
-                    scale: Float) {
+        public init(
+            q: [Float],
+            k: [Float],
+            v: [Float],
+            qStride: Int,
+            kvStride: Int,
+            oStride: Int,
+            headDim: Int,
+            qHeads: Int,
+            kvHeads: Int,
+            start: Int,
+            chunk: Int,
+            kvValid: Int,
+            window: Int,
+            scale: Float
+        ) {
             self.q = q
             self.k = k
             self.v = v
@@ -90,7 +92,8 @@ public enum PrefillAttentionRef {
                         let w = Foundation.exp(scores[i] - maxScore)
                         acc += w * fixture.v[key * fixture.kvStride + kvh * fixture.headDim + d]
                     }
-                    out[(t * fixture.qHeads + qh) * fixture.headDim + d] = denom > 0 ? acc / denom : 0
+                    out[(t * fixture.qHeads + qh) * fixture.headDim + d] =
+                        denom > 0 ? acc / denom : 0
                 }
             }
         }

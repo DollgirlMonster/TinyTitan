@@ -1,6 +1,7 @@
-import Testing
 import Foundation
 import Metal
+import Testing
+
 @testable import TinyTitan
 
 /// `Model.load(streamingMode:)` integration for the bounded pread cache.
@@ -15,9 +16,10 @@ import Metal
         let dir = try ModelLoaderTests.writeToySynthetic()
         defer { try? FileManager.default.removeItem(at: dir) }
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let model = try Model.load(directoryURL: dir, device: device,
-                                   expecting: .qwenToy(),
-                                   streamingMode: .pread(slotCount: 2))
+        let model = try Model.load(
+            directoryURL: dir, device: device,
+            expecting: .qwenToy(),
+            streamingMode: .pread(slotCount: 2))
 
         #expect(model.openLayerFileCount() == 0)
         let view = try model.routedExpert(layer: 1, expert: 4)
@@ -28,8 +30,8 @@ import Metal
 
         // Same tagged-byte contract as ModelLoaderTests.routedExpertBytesRoundTrip.
         let b = Self.readBytes(view)
-        #expect(b[0] == 1)       // layer 1
-        #expect(b[1] == 4)       // expert 4
+        #expect(b[0] == 1)  // layer 1
+        #expect(b[1] == 4)  // expert 4
         #expect(b[2] == 0xC1)
         #expect(b[3] == 0xC2)
     }
@@ -38,9 +40,10 @@ import Metal
         let dir = try ModelLoaderTests.writeToySynthetic()
         defer { try? FileManager.default.removeItem(at: dir) }
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let model = try Model.load(directoryURL: dir, device: device,
-                                   expecting: .qwenToy(),
-                                   streamingMode: .pread(slotCount: 2))
+        let model = try Model.load(
+            directoryURL: dir, device: device,
+            expecting: .qwenToy(),
+            streamingMode: .pread(slotCount: 2))
 
         #expect(model.openLayerFileCount() == 0)
         #expect(model.routedExpertCacheSlotCount() == 2)
@@ -51,9 +54,10 @@ import Metal
         let dir = try ModelLoaderTests.writeToySynthetic()
         defer { try? FileManager.default.removeItem(at: dir) }
         let device = try #require(MTLCreateSystemDefaultDevice())
-        let model = try Model.load(directoryURL: dir, device: device,
-                                   expecting: .qwenToy(),
-                                   streamingMode: .pread(slotCount: 2))
+        let model = try Model.load(
+            directoryURL: dir, device: device,
+            expecting: .qwenToy(),
+            streamingMode: .pread(slotCount: 2))
 
         model.beginOpeningRoutedExpertStreamer(layer: 1)
         let view = try model.routedExpert(layer: 1, expert: 4)

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
@@ -8,18 +9,19 @@ struct CLIStripTests {
     // MARK: - reminder block scraping
 
     @Test func stripsSingleReminderBlockKeepingPrompt() {
-        let input = "<system-reminder>\nskills list\n</system-reminder>\nWhat is the capital of France?"
+        let input =
+            "<system-reminder>\nskills list\n</system-reminder>\nWhat is the capital of France?"
         let out = CLIStrip.stripReminderBlocks(input, tags: ["system-reminder"])
         #expect(out == "\nWhat is the capital of France?")
     }
 
     @Test func stripsMultipleReminderBlocks() {
         let input = """
-        <system-reminder>skills</system-reminder>
-        <system-reminder>context</system-reminder>
-        <system-reminder>date</system-reminder>
-        What is the capital of France?
-        """
+            <system-reminder>skills</system-reminder>
+            <system-reminder>context</system-reminder>
+            <system-reminder>date</system-reminder>
+            What is the capital of France?
+            """
         let out = CLIStrip.stripReminderBlocks(input, tags: ["system-reminder"])
         #expect(out.contains("What is the capital of France?"))
         #expect(!out.contains("skills"))
@@ -53,15 +55,16 @@ struct CLIStripTests {
     /// whose content is mostly <system-reminder> scaffolding plus the real
     /// prompt, and 59 tool definitions.
     @Test func syntheticQwenRequestStripsToRealConversation() throws {
-        let system = GFTokenizer.Message(role: .system, content: "You are Qwen Code, a non-interactive CLI agent.")
+        let system = GFTokenizer.Message(
+            role: .system, content: "You are Qwen Code, a non-interactive CLI agent.")
         let user = GFTokenizer.Message(
             role: .user,
             content: """
-            <system-reminder>skills list</system-reminder>
-            <system-reminder>workspace snapshot</system-reminder>
-            <system-reminder>current date</system-reminder>
-            What is the capital of France?
-            """)
+                <system-reminder>skills list</system-reminder>
+                <system-reminder>workspace snapshot</system-reminder>
+                <system-reminder>current date</system-reminder>
+                What is the capital of France?
+                """)
         let tools = (0..<59).map { i in
             GFTokenizer.FunctionDefinition(
                 name: "tool_\(i)",
@@ -89,7 +92,7 @@ struct CLIStripTests {
                 GFTokenizer.HistoricalToolCall(
                     id: "call_1",
                     name: "read_file",
-                    arguments: JSONValue.object(["path": .string("a.txt")])),
+                    arguments: JSONValue.object(["path": .string("a.txt")]))
             ])
         let toolResult = GFTokenizer.Message(
             role: .tool,

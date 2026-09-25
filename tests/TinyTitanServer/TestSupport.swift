@@ -25,8 +25,9 @@ func requireFixture<T>(_ value: T?, _ what: String) throws -> T {
 
 /// A URL to the local test server, or a thrown error naming the path.
 func localURL(port: Int, _ path: String) throws -> URL {
-    try requireFixture(URL(string: "http://127.0.0.1:\(port)\(path)"),
-                       "a URL for \(path) on port \(port)")
+    try requireFixture(
+        URL(string: "http://127.0.0.1:\(port)\(path)"),
+        "a URL for \(path) on port \(port)")
 }
 
 /// A request to the local test server.

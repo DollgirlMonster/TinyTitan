@@ -154,16 +154,19 @@ final class ANEPrefillAttention: @unchecked Sendable {
     /// reach the band below it at all. The configured chunk picks the
     /// directory; `init` then insists the sidecar found there was built for
     /// exactly that chunk, so a nearer width is refused rather than run.
-    static func sidecarDirectory(modelDirectory: URL,
-                                 configChunkTokens: Int) -> URL {
+    static func sidecarDirectory(
+        modelDirectory: URL,
+        configChunkTokens: Int
+    ) -> URL {
         let specific = modelDirectory.appendingPathComponent(
             "ane_prefill-\(configChunkTokens)", isDirectory: true)
         let meta = specific.appendingPathComponent("ane_prefill.json")
         if FileManager.default.fileExists(atPath: meta.path) {
             return specific
         }
-        return modelDirectory.appendingPathComponent("ane_prefill",
-                                                     isDirectory: true)
+        return modelDirectory.appendingPathComponent(
+            "ane_prefill",
+            isDirectory: true)
     }
 
     let chunkTokens: Int
@@ -244,27 +247,31 @@ final class ANEPrefillAttention: @unchecked Sendable {
     ///   contract with the graph's fixed shapes, so a nearer one is not usable.
     /// - Parameter maskMode: `.folded` everywhere except a verification run;
     ///   nil reads `TINYTITAN_ANE_MASK` (the tests pass it explicitly).
-    init(modelDirectory: URL, device: MTLDevice,
-         hiddenSize: Int, kvDim: Int, weightsSha256: String?,
-         family: ModelFamily, fullAttentionLayerMask: [UInt8],
-         sparseIndexer: SparseIndexerConfig,
-         configChunkTokens: Int,
-         maskMode: MaskMode? = nil) throws {
+    init(
+        modelDirectory: URL, device: MTLDevice,
+        hiddenSize: Int, kvDim: Int, weightsSha256: String?,
+        family: ModelFamily, fullAttentionLayerMask: [UInt8],
+        sparseIndexer: SparseIndexerConfig,
+        configChunkTokens: Int,
+        maskMode: MaskMode? = nil
+    ) throws {
         self.maskMode = try maskMode ?? MaskMode.environmentValue()
-        let dir = Self.sidecarDirectory(modelDirectory: modelDirectory,
-                                        configChunkTokens: configChunkTokens)
+        let dir = Self.sidecarDirectory(
+            modelDirectory: modelDirectory,
+            configChunkTokens: configChunkTokens)
         let metaURL = dir.appendingPathComponent("ane_prefill.json")
         guard FileManager.default.fileExists(atPath: metaURL.path) else {
             throw PrefillError.chunkedUnsupported(
                 "TINYTITAN_PREFILL_ANE=on but \(metaURL.path) is missing; run "
-                + "tools/export_ane_prefill.py --model \(modelDirectory.path) "
-                + "--chunk \(configChunkTokens) for this model first")
+                    + "tools/export_ane_prefill.py --model \(modelDirectory.path) "
+                    + "--chunk \(configChunkTokens) for this model first")
         }
         let meta = try JSONDecoder().decode(
             SidecarMetadata.self, from: Data(contentsOf: metaURL))
         guard meta.version == Self.expectedVersion else {
             throw PrefillError.chunkedUnsupported(
-                "ANE prefill sidecar version \(meta.version) != supported \(Self.expectedVersion); re-export")
+                "ANE prefill sidecar version \(meta.version) != supported \(Self.expectedVersion); re-export"
+            )
         }
         // The graph's shapes are fixed by its chunk, so only a sidecar built
         // for the configured chunk can be fed. This is also what makes a
@@ -274,10 +281,10 @@ final class ANEPrefillAttention: @unchecked Sendable {
         guard meta.chunkTokens == configChunkTokens else {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill sidecar in \(dir.lastPathComponent) is built for a "
-                + "\(meta.chunkTokens)-token chunk but the runtime's prefill "
-                + "chunk is \(configChunkTokens); export one for this width "
-                + "(tools/export_ane_prefill.py --chunk \(configChunkTokens)) "
-                + "or configure --prefill-chunk \(meta.chunkTokens)")
+                    + "\(meta.chunkTokens)-token chunk but the runtime's prefill "
+                    + "chunk is \(configChunkTokens); export one for this width "
+                    + "(tools/export_ane_prefill.py --chunk \(configChunkTokens)) "
+                    + "or configure --prefill-chunk \(meta.chunkTokens)")
         }
         // A sparse-indexed model is served by folding its indexer's selection
         // into the mask the sidecar is fed (`fillSelectionMask`): the graph's
@@ -290,16 +297,17 @@ final class ANEPrefillAttention: @unchecked Sendable {
         // already past it. A sidecar that does not record the contract is
         // refused rather than trusted, because a causal-only mask attends to
         // keys the model drops, silently and with plausible output.
-        let exactVisibleKeys = sparseIndexer.enabled
+        let exactVisibleKeys =
+            sparseIndexer.enabled
             ? QSAExactness(sparseIndexer).maximumExactVisibleKeys : nil
         if sparseIndexer.enabled {
             guard meta.selectionFolded == true else {
                 throw PrefillError.chunkedUnsupported(
                     "ANE prefill sidecar does not record a folded sparse "
-                    + "selection (selectionFolded is missing or false); with a "
-                    + "causal-only mask the sidecar would attend to keys this "
-                    + "model's indexer drops past \(exactVisibleKeys ?? 0) visible "
-                    + "keys. Re-export with tools/export_ane_prefill.py.")
+                        + "selection (selectionFolded is missing or false); with a "
+                        + "causal-only mask the sidecar would attend to keys this "
+                        + "model's indexer drops past \(exactVisibleKeys ?? 0) visible "
+                        + "keys. Re-export with tools/export_ane_prefill.py.")
             }
         }
         // One geometry per sidecar. The graph's weights, head split, rope and
@@ -309,29 +317,32 @@ final class ANEPrefillAttention: @unchecked Sendable {
         guard let geometry = meta.geometry else {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill sidecar records no geometry (it predates the "
-                + "generalized exporter); re-export it for this model")
+                    + "generalized exporter); re-export it for this model")
         }
         guard geometry.family == family.rawValue,
-              meta.family == family.rawValue else {
+            meta.family == family.rawValue
+        else {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill sidecar is for family '\(geometry.family)' but this "
-                + "model is '\(family.rawValue)'; re-export it for this model")
+                    + "model is '\(family.rawValue)'; re-export it for this model")
         }
         guard geometry.hiddenSize == hiddenSize,
-              geometry.numKVHeads * geometry.headDim == kvDim,
-              geometry.chunkTokens == meta.chunkTokens else {
+            geometry.numKVHeads * geometry.headDim == kvDim,
+            geometry.chunkTokens == meta.chunkTokens
+        else {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill sidecar geometry (hidden \(geometry.hiddenSize), "
-                + "\(geometry.numKVHeads)x\(geometry.headDim) kv, chunk "
-                + "\(geometry.chunkTokens)) does not match this model (hidden "
-                + "\(hiddenSize), kvDim \(kvDim), chunk \(meta.chunkTokens))")
+                    + "\(geometry.numKVHeads)x\(geometry.headDim) kv, chunk "
+                    + "\(geometry.chunkTokens)) does not match this model (hidden "
+                    + "\(hiddenSize), kvDim \(kvDim), chunk \(meta.chunkTokens))")
         }
         for layer in meta.layers {
             guard layer >= 0, layer < fullAttentionLayerMask.count,
-                  fullAttentionLayerMask[layer] == 1 else {
+                fullAttentionLayerMask[layer] == 1
+            else {
                 throw PrefillError.chunkedUnsupported(
                     "ANE prefill sidecar covers layer \(layer), which is not a "
-                    + "full-attention layer of this model")
+                        + "full-attention layer of this model")
             }
         }
         // Issue #7: a sidecar whose variants the ANE refused to compile loads
@@ -342,24 +353,25 @@ final class ANEPrefillAttention: @unchecked Sendable {
         guard meta.aneCompileVerified == true else {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill sidecar does not record a verified ANE compilation "
-                + "(aneCompileVerified is missing or false); the Neural Engine "
-                + "may have refused it and prefill would run on the CPU at ~38x "
-                + "the GPU cost. Re-export with tools/export_ane_prefill.py.")
+                    + "(aneCompileVerified is missing or false); the Neural Engine "
+                    + "may have refused it and prefill would run on the CPU at ~38x "
+                    + "the GPU cost. Re-export with tools/export_ane_prefill.py.")
         }
         if let weightsSha256, let exported = meta.weightsSha256 {
             guard exported.lowercased() == weightsSha256.lowercased() else {
                 throw PrefillError.chunkedUnsupported(
                     "ANE prefill sidecar was exported from different weights "
-                    + "(sidecar \(exported.prefix(12))..., model "
-                    + "\(weightsSha256.prefix(12))...); re-export it for this model")
+                        + "(sidecar \(exported.prefix(12))..., model "
+                        + "\(weightsSha256.prefix(12))...); re-export it for this model")
             }
         } else {
             // stderr for the same reason as the fallback notice below:
             // stdout is the generated text.
-            FileHandle.standardError.write(Data(
-                ("TinyTitan ane-prefill: sidecar/weights binding unverified "
-                 + "(no receipt digest available); a stale sidecar would not "
-                 + "be detected\n").utf8))
+            FileHandle.standardError.write(
+                Data(
+                    ("TinyTitan ane-prefill: sidecar/weights binding unverified "
+                        + "(no receipt digest available); a stale sidecar would not "
+                        + "be detected\n").utf8))
         }
         self.chunkTokens = meta.chunkTokens
         self.histories = Set(meta.histories)
@@ -376,17 +388,22 @@ final class ANEPrefillAttention: @unchecked Sendable {
 
         let halfBytes = MemoryLayout<Float16>.stride
         func staging(_ elements: Int, _ label: String) throws -> MTLBuffer {
-            guard let made = device.makeBuffer(length: elements * halfBytes,
-                                               options: .storageModeShared) else {
+            guard
+                let made = device.makeBuffer(
+                    length: elements * halfBytes,
+                    options: .storageModeShared)
+            else {
                 throw ModelError.residentBufferWrapFailed
             }
             made.label = label
             return made
         }
-        self.stagingNormed = try staging(meta.chunkTokens * hiddenSize,
-                                         "ane.staging.normed")
-        self.stagingOut = try staging(meta.chunkTokens * hiddenSize,
-                                      "ane.staging.out")
+        self.stagingNormed = try staging(
+            meta.chunkTokens * hiddenSize,
+            "ane.staging.normed")
+        self.stagingOut = try staging(
+            meta.chunkTokens * hiddenSize,
+            "ane.staging.out")
         self.stagingK = try staging(meta.chunkTokens * kvDim, "ane.staging.k")
         self.stagingV = try staging(meta.chunkTokens * kvDim, "ane.staging.v")
     }
@@ -403,18 +420,21 @@ final class ANEPrefillAttention: @unchecked Sendable {
     /// a nonzero start needs the shadow rows of every earlier chunk, so a
     /// resumed or partially GPU-processed prefill falls back for the rest of
     /// the request instead of attending to a hole.
-    func eligibleChunk(startPosition: Int, tokenCount: Int,
-                       configChunkTokens: Int) -> Bool {
+    func eligibleChunk(
+        startPosition: Int, tokenCount: Int,
+        configChunkTokens: Int
+    ) -> Bool {
         // A short prompt is one partial chunk; padding it to 4,096 costs
         // ~2 s of ANE work against under a second on the GPU, so the ANE
         // serves only full chunks and the continuation chunks of long
         // prompts — the workload it wins by 26x.
         let fullOrContinuation = tokenCount == chunkTokens || startPosition > 0
         guard configChunkTokens == chunkTokens,
-              fullOrContinuation,
-              tokenCount <= chunkTokens,
-              startPosition % chunkTokens == 0,
-              histories.contains(startPosition) else {
+            fullOrContinuation,
+            tokenCount <= chunkTokens,
+            startPosition % chunkTokens == 0,
+            histories.contains(startPosition)
+        else {
             if !loggedFallback {
                 loggedFallback = true
                 // stderr, not stdout: stdout carries generated tokens, and a
@@ -422,11 +442,12 @@ final class ANEPrefillAttention: @unchecked Sendable {
                 // output. Harmless while ANE prefill was opt-in and this
                 // never fired; corrupting once it became the default, which
                 // is how the golden baselines caught it.
-                FileHandle.standardError.write(Data(
-                    ("TinyTitan ane-prefill fallback: chunk at \(startPosition) "
-                     + "(+\(tokenCount)) outside sidecar coverage "
-                     + "(chunk \(chunkTokens), max prompt \(maxPromptTokens)); "
-                     + "using the GPU path\n").utf8))
+                FileHandle.standardError.write(
+                    Data(
+                        ("TinyTitan ane-prefill fallback: chunk at \(startPosition) "
+                            + "(+\(tokenCount)) outside sidecar coverage "
+                            + "(chunk \(chunkTokens), max prompt \(maxPromptTokens)); "
+                            + "using the GPU path\n").utf8))
             }
             return false
         }
@@ -439,11 +460,13 @@ final class ANEPrefillAttention: @unchecked Sendable {
 
     private func model(layer: Int, history: Int) async throws -> MLModel {
         if let cached = residentModel,
-           cached.layer == layer, cached.history == history {
+            cached.layer == layer, cached.history == history
+        {
             return cached.model
         }
         if let pending = preloaded, pending.layer == layer,
-           pending.history == history {
+            pending.history == history
+        {
             preloaded = nil
             // Drop the old arena only once the new model is in hand, then
             // adopt it — never two resident at once for longer than the
@@ -464,8 +487,9 @@ final class ANEPrefillAttention: @unchecked Sendable {
         let configuration = MLModelConfiguration()
         configuration.computeUnits = .cpuAndNeuralEngine
         configuration.functionName = "h\(history)"
-        let loaded = try MLModel(contentsOf: compiled,
-                                 configuration: configuration)
+        let loaded = try MLModel(
+            contentsOf: compiled,
+            configuration: configuration)
         residentModel = (layer, history, loaded)
         traceResident(layer: layer, history: history)
         return loaded
@@ -475,10 +499,16 @@ final class ANEPrefillAttention: @unchecked Sendable {
     /// resident, so it can be compared with the decode-start line and with a
     /// GPU-prefilled run — the arena's size is that difference.
     private func traceResident(layer: Int, history: Int) {
-        guard ProcessInfo.processInfo.environment["TINYTITAN_ANE_MEMORY_TRACE"] == "1" else { return }
-        FileHandle.standardError.write(Data(String(format:
-            "[ane-mem] resident layer=%d history=%d footprint=%.1f MiB\n",
-            layer, history, ProcessMemory.physFootprintMiB()).utf8))
+        guard ProcessInfo.processInfo.environment["TINYTITAN_ANE_MEMORY_TRACE"] == "1" else {
+            return
+        }
+        FileHandle.standardError.write(
+            Data(
+                String(
+                    format:
+                        "[ane-mem] resident layer=%d history=%d footprint=%.1f MiB\n",
+                    layer, history, ProcessMemory.physFootprintMiB()
+                ).utf8))
     }
 
     /// The on-disk compiled model for `layer`, compiling it from the package
@@ -489,10 +519,11 @@ final class ANEPrefillAttention: @unchecked Sendable {
         let fm = FileManager.default
         func modifiedDate(_ url: URL) -> Date {
             (try? fm.attributesOfItem(atPath: url.path)[.modificationDate]
-             as? Date) ?? .distantPast
+                as? Date) ?? .distantPast
         }
         if !fm.fileExists(atPath: compiled.path)
-            || modifiedDate(compiled) < modifiedDate(package) {
+            || modifiedDate(compiled) < modifiedDate(package)
+        {
             guard fm.fileExists(atPath: package.path) else {
                 throw PrefillError.chunkedUnsupported(
                     "ANE prefill sidecar is missing \(package.lastPathComponent)")
@@ -561,11 +592,15 @@ final class ANEPrefillAttention: @unchecked Sendable {
         shadowV.removeAll()
         shadowTokens = 0
         if trace {
-            FileHandle.standardError.write(Data(String(format:
-                "[ane-mem] release before=%.1f afterModelDrop=%.1f afterScratchFree=%.1f MiB "
-                + "(model held %.1f, scratch %.1f)\n",
-                before, afterModel, ProcessMemory.physFootprintMiB(),
-                before - afterModel, afterModel - ProcessMemory.physFootprintMiB()).utf8))
+            FileHandle.standardError.write(
+                Data(
+                    String(
+                        format:
+                            "[ane-mem] release before=%.1f afterModelDrop=%.1f afterScratchFree=%.1f MiB "
+                            + "(model held %.1f, scratch %.1f)\n",
+                        before, afterModel, ProcessMemory.physFootprintMiB(),
+                        before - afterModel, afterModel - ProcessMemory.physFootprintMiB()
+                    ).utf8))
         }
     }
 
@@ -575,14 +610,25 @@ final class ANEPrefillAttention: @unchecked Sendable {
     /// layer's MoE stage on the GPU.
     func preload(layer: Int, history: Int) {
         if let cached = residentModel,
-           cached.layer == layer, cached.history == history { return }
+            cached.layer == layer, cached.history == history
+        {
+            return
+        }
         if let pending = preloaded,
-           pending.layer == layer, pending.history == history { return }
+            pending.layer == layer, pending.history == history
+        {
+            return
+        }
         preloaded?.task.cancel()
-        preloaded = (layer, history, Task { [self] in
-            LoadedModelBox(model: try await loadModel(layer: layer,
-                                                      history: history))
-        })
+        preloaded = (
+            layer, history,
+            Task { [self] in
+                LoadedModelBox(
+                    model: try await loadModel(
+                        layer: layer,
+                        history: history))
+            }
+        )
     }
 
     private func mask(history: Int) throws -> MLMultiArray {
@@ -605,8 +651,10 @@ final class ANEPrefillAttention: @unchecked Sendable {
             dataPointer: storage,
             shape: [1, 1, NSNumber(value: chunkTokens), NSNumber(value: total)],
             dataType: .float16,
-            strides: [NSNumber(value: count), NSNumber(value: count),
-                      NSNumber(value: total), 1],
+            strides: [
+                NSNumber(value: count), NSNumber(value: count),
+                NSNumber(value: total), 1,
+            ],
             deallocator: nil)
         maskStorage[history] = storage
         masks[history] = array
@@ -636,8 +684,10 @@ final class ANEPrefillAttention: @unchecked Sendable {
     /// Internal rather than private: `ANEPrefillAttentionTests` checks the fold
     /// against a hand-built selection, and the fold is exactly the arithmetic a
     /// wrong mask would silently get wrong.
-    func selectionMask(history: Int, tokenCount: Int,
-                       selection: QSASelection) throws -> MLMultiArray {
+    func selectionMask(
+        history: Int, tokenCount: Int,
+        selection: QSASelection
+    ) throws -> MLMultiArray {
         let halfBytes = MemoryLayout<Float16>.stride
         let total = history + chunkTokens
         let count = chunkTokens * total
@@ -649,23 +699,27 @@ final class ANEPrefillAttention: @unchecked Sendable {
                 byteCount: count * halfBytes, alignment: 16_384)
             let negatives = UnsafeMutableRawPointer.allocate(
                 byteCount: total * halfBytes, alignment: 16_384)
-            let negativeValues = negatives.bindMemory(to: Float16.self,
-                                                      capacity: total)
+            let negativeValues = negatives.bindMemory(
+                to: Float16.self,
+                capacity: total)
             for column in 0..<total { negativeValues[column] = Self.maskNegative }
             array = try MLMultiArray(
                 dataPointer: storage,
                 shape: [1, 1, NSNumber(value: chunkTokens), NSNumber(value: total)],
                 dataType: .float16,
-                strides: [NSNumber(value: count), NSNumber(value: count),
-                          NSNumber(value: total), 1],
+                strides: [
+                    NSNumber(value: count), NSNumber(value: count),
+                    NSNumber(value: total), 1,
+                ],
                 deallocator: nil)
             selectionMaskStorage[history] = storage
             selectionNegativeRow[history] = negatives
             selectionMasks[history] = array
         }
         guard let storage = selectionMaskStorage[history],
-              let negativeRow = selectionNegativeRow[history]?.bindMemory(
-                  to: Float16.self, capacity: total) else {
+            let negativeRow = selectionNegativeRow[history]?.bindMemory(
+                to: Float16.self, capacity: total)
+        else {
             throw ModelError.internalInconsistency(
                 detail: "the ANE selection mask for history \(history) was not cached")
         }
@@ -676,8 +730,9 @@ final class ANEPrefillAttention: @unchecked Sendable {
             to: UInt32.self, capacity: max(1, tokenCount))
         for row in 0..<chunkTokens {
             let base = row * total
-            memcpy(UnsafeMutableRawPointer(values + base),
-                   UnsafeRawPointer(negativeRow), total * halfBytes)
+            memcpy(
+                UnsafeMutableRawPointer(values + base),
+                UnsafeRawPointer(negativeRow), total * halfBytes)
             guard row < tokenCount else { continue }
             // The compacted ascending selection the GPU's attention gathers:
             // the same keys, so the same softmax.
@@ -692,22 +747,28 @@ final class ANEPrefillAttention: @unchecked Sendable {
         return array
     }
 
-    private func wrap(_ buffer: MTLBuffer, rows: Int,
-                      columns: Int) throws -> MLMultiArray {
-        try MLMultiArray(dataPointer: buffer.contents(),
-                         shape: [NSNumber(value: rows), NSNumber(value: columns)],
-                         dataType: .float16,
-                         strides: [NSNumber(value: columns), 1],
-                         deallocator: nil)
+    private func wrap(
+        _ buffer: MTLBuffer, rows: Int,
+        columns: Int
+    ) throws -> MLMultiArray {
+        try MLMultiArray(
+            dataPointer: buffer.contents(),
+            shape: [NSNumber(value: rows), NSNumber(value: columns)],
+            dataType: .float16,
+            strides: [NSNumber(value: columns), 1],
+            deallocator: nil)
     }
 
-    private func wrapShadow(_ storage: UnsafeMutableRawPointer,
-                            rows: Int) throws -> MLMultiArray {
-        try MLMultiArray(dataPointer: storage,
-                         shape: [NSNumber(value: rows), NSNumber(value: kvDim)],
-                         dataType: .float16,
-                         strides: [NSNumber(value: kvDim), 1],
-                         deallocator: nil)
+    private func wrapShadow(
+        _ storage: UnsafeMutableRawPointer,
+        rows: Int
+    ) throws -> MLMultiArray {
+        try MLMultiArray(
+            dataPointer: storage,
+            shape: [NSNumber(value: rows), NSNumber(value: kvDim)],
+            dataType: .float16,
+            strides: [NSNumber(value: kvDim), 1],
+            deallocator: nil)
     }
 
     /// Runs one layer's attention block. `stagingNormed` must already hold
@@ -719,8 +780,10 @@ final class ANEPrefillAttention: @unchecked Sendable {
     ///   sparse-indexed model past its dense-exact window must supply one: the
     ///   causal mask would otherwise attend to keys the model drops, so a
     ///   missing selection there is refused rather than run.
-    func predict(layer: Int, history: Int, tokenCount: Int,
-                 selection: QSASelection?) async throws {
+    func predict(
+        layer: Int, history: Int, tokenCount: Int,
+        selection: QSASelection?
+    ) async throws {
         let halfBytes = MemoryLayout<Float16>.stride
         if tokenCount < chunkTokens {
             // Padded rows must be zeros: zero queries attend uniformly and
@@ -732,38 +795,43 @@ final class ANEPrefillAttention: @unchecked Sendable {
         }
         let maskFeature: MLMultiArray
         if let selection, maskMode == .folded {
-            maskFeature = try selectionMask(history: history,
-                                            tokenCount: tokenCount,
-                                            selection: selection)
+            maskFeature = try selectionMask(
+                history: history,
+                tokenCount: tokenCount,
+                selection: selection)
         } else {
             if requiresSelection, maskMode == .causal, let exact = exactVisibleKeys,
-               history + tokenCount > exact, !loggedCausalMask {
+                history + tokenCount > exact, !loggedCausalMask
+            {
                 loggedCausalMask = true
                 // stderr for the same reason as the fallback notice: stdout is
                 // the generated text.
-                FileHandle.standardError.write(Data(
-                    ("TinyTitan ane-prefill: TINYTITAN_ANE_MASK=causal feeds the "
-                     + "causal-only mask, which is WRONG for this sparse-indexed "
-                     + "model past \(exact) visible keys; verification control "
-                     + "only\n").utf8))
+                FileHandle.standardError.write(
+                    Data(
+                        ("TinyTitan ane-prefill: TINYTITAN_ANE_MASK=causal feeds the "
+                            + "causal-only mask, which is WRONG for this sparse-indexed "
+                            + "model past \(exact) visible keys; verification control "
+                            + "only\n").utf8))
             }
             // No selection is only correct while every visible key is kept.
             // Past that the GPU path gathers the indexer's choice and the ANE
             // has to be fed the same one; a missing selection there is a caller
             // bug, not permission to attend densely.
             if requiresSelection, maskMode == .folded, let exact = exactVisibleKeys,
-               history + tokenCount > exact {
+                history + tokenCount > exact
+            {
                 throw PrefillError.chunkedUnsupported(
                     "ANE prefill has no QSA selection for the chunk at "
-                    + "\(history)+\(tokenCount) tokens, where this model's "
-                    + "indexer drops keys past \(exact) visible ones; refusing to "
-                    + "attend densely")
+                        + "\(history)+\(tokenCount) tokens, where this model's "
+                        + "indexer drops keys past \(exact) visible ones; refusing to "
+                        + "attend densely")
             }
             maskFeature = try mask(history: history)
         }
         var features: [String: MLMultiArray] = [
-            "normed": try wrap(stagingNormed, rows: chunkTokens,
-                               columns: hiddenSize),
+            "normed": try wrap(
+                stagingNormed, rows: chunkTokens,
+                columns: hiddenSize),
             "mask": maskFeature,
         ]
         if history > 0 {
@@ -786,25 +854,32 @@ final class ANEPrefillAttention: @unchecked Sendable {
         let result = try await model.prediction(from: provider, options: options)
         // Output backings are best-effort; copy back any output Core ML chose
         // to allocate elsewhere.
-        try copyIfNotBacked(result, name: "out", buffer: stagingOut,
-                            elements: chunkTokens * hiddenSize)
-        try copyIfNotBacked(result, name: "k_new", buffer: stagingK,
-                            elements: chunkTokens * kvDim)
-        try copyIfNotBacked(result, name: "v_new", buffer: stagingV,
-                            elements: chunkTokens * kvDim)
+        try copyIfNotBacked(
+            result, name: "out", buffer: stagingOut,
+            elements: chunkTokens * hiddenSize)
+        try copyIfNotBacked(
+            result, name: "k_new", buffer: stagingK,
+            elements: chunkTokens * kvDim)
+        try copyIfNotBacked(
+            result, name: "v_new", buffer: stagingV,
+            elements: chunkTokens * kvDim)
     }
 
-    private func copyIfNotBacked(_ result: MLFeatureProvider, name: String,
-                                 buffer: MTLBuffer, elements: Int) throws {
+    private func copyIfNotBacked(
+        _ result: MLFeatureProvider, name: String,
+        buffer: MTLBuffer, elements: Int
+    ) throws {
         guard let array = result.featureValue(for: name)?.multiArrayValue else {
             throw PrefillError.chunkedUnsupported(
                 "ANE prefill output '\(name)' missing from prediction")
         }
         array.withUnsafeBytes { bytes in
             guard let base = bytes.baseAddress,
-                  base != buffer.contents() else { return }
-            memcpy(buffer.contents(), base,
-                   elements * MemoryLayout<Float16>.stride)
+                base != buffer.contents()
+            else { return }
+            memcpy(
+                buffer.contents(), base,
+                elements * MemoryLayout<Float16>.stride)
         }
     }
 
@@ -833,7 +908,8 @@ final class ANEPrefillAttention: @unchecked Sendable {
     /// `shadowTokens` behind `startPosition` and the next attempt falls back
     /// to the GPU instead of attending to partial history.
     func finishChunk(startPosition: Int, tokenCount: Int) {
-        shadowTokens = tokenCount == chunkTokens
+        shadowTokens =
+            tokenCount == chunkTokens
             ? startPosition + tokenCount : 0
         if tokenCount < chunkTokens {
             // A partial chunk is the prompt's last: decode is next.

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContinuityCore
 
 @Suite struct ContinuityEngineTests {
@@ -23,17 +24,20 @@ import Testing
         // Opened before the permissions change: the failure under test is the
         // replay, not the open.
         let reopened = ContinuityEngine(journal: try FileJournal(url: url))
-        try FileManager.default.setAttributes([.posixPermissions: 0o000],
-                                              ofItemAtPath: url.path)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o000],
+            ofItemAtPath: url.path)
         defer {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                                   ofItemAtPath: url.path)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: url.path)
         }
         await #expect(throws: JournalError.self) { try await reopened.start() }
         await reopened.shutDown()
 
-        try FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                              ofItemAtPath: url.path)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path)
         let records = try FileJournal.read(contentsOf: url)
         let titles = records.compactMap { record -> String? in
             guard case .task(let task) = record else { return nil }
@@ -49,11 +53,13 @@ import Testing
         let session = try await engine.beginSession(taskID: task.id, model: "qwen35b")
 
         try await engine.recordUserPrompt(sessionID: session.id, text: "write it in swift")
-        try await engine.remember(sessionID: session.id, namespace: "decision",
-                                  key: "language", value: "Swift first, then Python, then C99",
-                                  importance: 0.9)
-        try await engine.recordAssistantResponse(sessionID: session.id, text: "done",
-                                                 outputTokens: 1)
+        try await engine.remember(
+            sessionID: session.id, namespace: "decision",
+            key: "language", value: "Swift first, then Python, then C99",
+            importance: 0.9)
+        try await engine.recordAssistantResponse(
+            sessionID: session.id, text: "done",
+            outputTokens: 1)
         _ = try await engine.endSession(session.id)
 
         let stats = await engine.statistics()
@@ -85,20 +91,23 @@ import Testing
     @Test func contextComesBackWithWhatWentIntoIt() async throws {
         let engine = ContinuityEngine(
             configuration: ContinuityConfiguration(
-                defaultBudget: ContextBudget(maxTokens: 2000,
-                                             priorityNamespaces: ["decision"],
-                                             recentTurnCount: 2)))
+                defaultBudget: ContextBudget(
+                    maxTokens: 2000,
+                    priorityNamespaces: ["decision"],
+                    recentTurnCount: 2)))
         try await engine.start()
         let task = try await engine.createTask(title: "Pong", objective: "Two autoplayers")
         let session = try await engine.beginSession(taskID: task.id)
-        try await engine.remember(sessionID: session.id, namespace: "decision", key: "size",
-                                  value: "800 by 600")
+        try await engine.remember(
+            sessionID: session.id, namespace: "decision", key: "size",
+            value: "800 by 600")
         try await engine.recordUserPrompt(sessionID: session.id, text: "convert to python")
         try await engine.recordAssistantResponse(sessionID: session.id, text: "here it is")
 
-        let snapshot = try await engine.assembleContext(taskID: task.id,
-                                                        sessionID: session.id,
-                                                        focus: "python port")
+        let snapshot = try await engine.assembleContext(
+            taskID: task.id,
+            sessionID: session.id,
+            focus: "python port")
         #expect(snapshot.renderedContext.contains("800 by 600"))
         #expect(snapshot.renderedContext.contains("convert to python"))
         #expect(snapshot.memoryVersions["decision.size"] == 1)
@@ -129,10 +138,12 @@ import Testing
             let session = try await engine.beginSession(taskID: task.id, model: "qwen35b")
             try await engine.recordUserPrompt(sessionID: session.id, text: "chapter one")
             try await engine.recordAssistantResponse(sessionID: session.id, text: "a storm")
-            try await engine.remember(sessionID: session.id, namespace: "plot",
-                                      key: "brother", value: "missing")
-            try await engine.remember(sessionID: session.id, namespace: "plot",
-                                      key: "brother", value: "found in act three")
+            try await engine.remember(
+                sessionID: session.id, namespace: "plot",
+                key: "brother", value: "missing")
+            try await engine.remember(
+                sessionID: session.id, namespace: "plot",
+                key: "brother", value: "found in act three")
             _ = try await engine.endSession(session.id)
             taskID = task.id
             sessionID = session.id
@@ -177,8 +188,9 @@ import Testing
             try await engine.start()
             let task = try await engine.createTask(title: "Interrupted")
             let session = try await engine.beginSession(taskID: task.id)
-            try await engine.remember(sessionID: session.id, namespace: "n", key: "k",
-                                      value: "survived")
+            try await engine.remember(
+                sessionID: session.id, namespace: "n", key: "k",
+                value: "survived")
             taskID = task.id
             await engine.shutDown()
         }
@@ -191,8 +203,9 @@ import Testing
         let reopened = ContinuityEngine(journal: try FileJournal(url: url))
         try await reopened.start()
         #expect(await reopened.task(taskID)?.title == "Interrupted")
-        #expect(await reopened.recall(taskID: taskID, namespace: "n", key: "k")?.value
-                    == "survived")
+        #expect(
+            await reopened.recall(taskID: taskID, namespace: "n", key: "k")?.value
+                == "survived")
     }
 
     @Test func compactionPreservesStateAndShrinksTheJournal() async throws {
@@ -204,8 +217,9 @@ import Testing
         let task = try await engine.createTask(title: "Long")
         let session = try await engine.beginSession(taskID: task.id)
         for index in 0..<50 {
-            try await engine.remember(sessionID: session.id, namespace: "n",
-                                      key: "k\(index)", value: "v\(index)")
+            try await engine.remember(
+                sessionID: session.id, namespace: "n",
+                key: "k\(index)", value: "v\(index)")
         }
         let before = try await journal.replay().count
         try await engine.compactJournal()
@@ -227,8 +241,9 @@ import Testing
         try await engine.start()
         let task = try await engine.createTask(title: "Private")
         let session = try await engine.beginSession(taskID: task.id)
-        try await engine.recordUserPrompt(sessionID: session.id,
-                                          text: "a sentence that must not survive")
+        try await engine.recordUserPrompt(
+            sessionID: session.id,
+            text: "a sentence that must not survive")
         try await engine.forget(taskID: task.id)
 
         let contents = String(data: try Data(contentsOf: url), encoding: .utf8) ?? ""
@@ -247,15 +262,17 @@ import Testing
         let url = temporaryURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let configuration = ContinuityConfiguration(journalsSessionContent: false)
-        let engine = ContinuityEngine(configuration: configuration,
-                                      journal: try FileJournal(url: url))
+        let engine = ContinuityEngine(
+            configuration: configuration,
+            journal: try FileJournal(url: url))
         try await engine.start()
         let task = try await engine.createTask(title: "Quiet")
         let session = try await engine.beginSession(taskID: task.id)
         try await engine.recordUserPrompt(sessionID: session.id, text: "a private sentence")
         try await engine.recordAssistantResponse(sessionID: session.id, text: "a private reply")
-        try await engine.remember(sessionID: session.id, namespace: "n", key: "k",
-                                  value: "a durable fact")
+        try await engine.remember(
+            sessionID: session.id, namespace: "n", key: "k",
+            value: "a durable fact")
 
         let contents = String(data: try Data(contentsOf: url), encoding: .utf8) ?? ""
         #expect(contents.contains("a private sentence") == false)
@@ -265,8 +282,9 @@ import Testing
 
         let reopened = ContinuityEngine(journal: try FileJournal(url: url))
         try await reopened.start()
-        #expect(await reopened.recall(taskID: task.id, namespace: "n", key: "k")?.value
-                    == "a durable fact")
+        #expect(
+            await reopened.recall(taskID: task.id, namespace: "n", key: "k")?.value
+                == "a durable fact")
         #expect(await reopened.turns(taskID: task.id).isEmpty)
     }
 
@@ -295,8 +313,9 @@ import Testing
                     guard let session = try? await engine.beginSession(taskID: taskID)
                     else { return }
                     for step in 0..<25 {
-                        _ = try? await engine.remember(sessionID: session.id, namespace: "n",
-                                                       key: "k\(step)", value: "task\(index)")
+                        _ = try? await engine.remember(
+                            sessionID: session.id, namespace: "n",
+                            key: "k\(step)", value: "task\(index)")
                     }
                     _ = try? await engine.endSession(session.id)
                 }
@@ -316,8 +335,9 @@ import Testing
         await withTaskGroup(of: Void.self) { group in
             for index in 0..<32 {
                 group.addTask {
-                    _ = try? await memory.write(taskID: taskID, namespace: "n", key: "k",
-                                            value: "v\(index)")
+                    _ = try? await memory.write(
+                        taskID: taskID, namespace: "n", key: "k",
+                        value: "v\(index)")
                 }
             }
         }

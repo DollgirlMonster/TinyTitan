@@ -18,13 +18,15 @@ public struct SessionEvent: Identifiable, Codable, Sendable, Equatable {
     /// the completion, so a reader can fold them without guessing from order.
     public let responseID: UUID?
 
-    public init(id: UUID = UUID(),
-                sessionID: UUID,
-                taskID: UUID,
-                timestamp: Date = Date(),
-                kind: SessionEventKind,
-                payload: SessionEventPayload,
-                responseID: UUID? = nil) {
+    public init(
+        id: UUID = UUID(),
+        sessionID: UUID,
+        taskID: UUID,
+        timestamp: Date = Date(),
+        kind: SessionEventKind,
+        payload: SessionEventPayload,
+        responseID: UUID? = nil
+    ) {
         self.id = id
         self.sessionID = sessionID
         self.taskID = taskID
@@ -125,14 +127,16 @@ public struct ResponseRecord: Codable, Sendable, Equatable {
     public var latencyMilliseconds: Int?
     public var finishReason: String?
 
-    public init(text: String,
-                model: String? = nil,
-                requestID: String? = nil,
-                responseID: String? = nil,
-                inputTokens: Int? = nil,
-                outputTokens: Int? = nil,
-                latencyMilliseconds: Int? = nil,
-                finishReason: String? = nil) {
+    public init(
+        text: String,
+        model: String? = nil,
+        requestID: String? = nil,
+        responseID: String? = nil,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        latencyMilliseconds: Int? = nil,
+        finishReason: String? = nil
+    ) {
         self.text = text
         self.model = model
         self.requestID = requestID

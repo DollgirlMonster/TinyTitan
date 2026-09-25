@@ -41,11 +41,13 @@ public struct ContinuityStorageConfiguration: Sendable, Equatable {
     /// facts refuse and the journal evicts, as before.
     public var maximumMemoryBytes: Int?
 
-    public init(directory: URL = ContinuityStorageConfiguration.defaultDirectory,
-                synchronizesEveryWrite: Bool = false,
-                maximumMemoryBytes: Int? = nil,
-                retentionDays: Int = 30,
-                maximumWorkspaces: Int = 100) {
+    public init(
+        directory: URL = ContinuityStorageConfiguration.defaultDirectory,
+        synchronizesEveryWrite: Bool = false,
+        maximumMemoryBytes: Int? = nil,
+        retentionDays: Int = 30,
+        maximumWorkspaces: Int = 100
+    ) {
         self.directory = directory
         self.synchronizesEveryWrite = synchronizesEveryWrite
         self.maximumMemoryBytes = maximumMemoryBytes
@@ -174,24 +176,26 @@ public struct MemoryConfiguration: Sendable, Equatable {
     /// and the model is told which one it is talking to.
     public var degradesToLocalStore: Bool
 
-    public init(isEnabled: Bool = false,
-                storage: ContinuityStorageConfiguration = .init(),
-                namespace: String = "tinytitan",
-                user: String = MemoryConfiguration.defaultUser,
-                workspace: String = "default",
-                allowsPerRequestWorkspace: Bool = true,
-                limits: MemoryLimits = .init(),
-                maximumIndexScan: Int = 2_000,
-                toolSurface: MemoryToolSurface = .off,
-                maximumToolRounds: Int = 4,
-                journalEnabled: Bool = true,
-                journalLimits: JournalLimits = .init(),
-                sessionConsolidation: Bool = true,
-                consolidationIdleSeconds: Double = 30,
-                consolidationMaximumTurns: Int = 40,
-                consolidationMinimumCharacters: Int = 150,
-                guardsUserFacts: Bool = true,
-                degradesToLocalStore: Bool = true) {
+    public init(
+        isEnabled: Bool = false,
+        storage: ContinuityStorageConfiguration = .init(),
+        namespace: String = "tinytitan",
+        user: String = MemoryConfiguration.defaultUser,
+        workspace: String = "default",
+        allowsPerRequestWorkspace: Bool = true,
+        limits: MemoryLimits = .init(),
+        maximumIndexScan: Int = 2_000,
+        toolSurface: MemoryToolSurface = .off,
+        maximumToolRounds: Int = 4,
+        journalEnabled: Bool = true,
+        journalLimits: JournalLimits = .init(),
+        sessionConsolidation: Bool = true,
+        consolidationIdleSeconds: Double = 30,
+        consolidationMaximumTurns: Int = 40,
+        consolidationMinimumCharacters: Int = 150,
+        guardsUserFacts: Bool = true,
+        degradesToLocalStore: Bool = true
+    ) {
         self.isEnabled = isEnabled
         self.storage = storage
         self.namespace = namespace
@@ -243,11 +247,14 @@ public struct MemoryConfiguration: Sendable, Equatable {
         if let value = environment["TINYTITAN_MEMORY_MAX_WORKSPACES"].flatMap(Int.init) {
             configuration.storage.maximumWorkspaces = max(0, value)
         }
-        if let cacheMiB = environment["TINYTITAN_MEMORY_CACHE_MIB"].flatMap(Int.init), cacheMiB > 0 {
+        if let cacheMiB = environment["TINYTITAN_MEMORY_CACHE_MIB"].flatMap(Int.init), cacheMiB > 0
+        {
             configuration.storage.maximumMemoryBytes = cacheMiB << 20
         }
 
-        if let namespace = environment["TINYTITAN_MEMORY_NAMESPACE"] { configuration.namespace = namespace }
+        if let namespace = environment["TINYTITAN_MEMORY_NAMESPACE"] {
+            configuration.namespace = namespace
+        }
         if let user = environment["TINYTITAN_MEMORY_USER"] { configuration.user = user }
         if let workspace = environment["TINYTITAN_MEMORY_WORKSPACE"] {
             configuration.workspace = workspace
@@ -256,7 +263,8 @@ public struct MemoryConfiguration: Sendable, Equatable {
             // and a reason that begins "TINYTITAN_MEMORY=1 but" must never be
             // logged for someone who never set it.
             if configuration.isEnabled,
-               let reason = junkDrawerReason(forPath: directory, environment: environment) {
+                let reason = junkDrawerReason(forPath: directory, environment: environment)
+            {
                 // A server launched from the home directory and used for
                 // everything would put a novel and a codebase in one fact
                 // store. Refusing is the only outcome that is visible.
@@ -283,8 +291,10 @@ public struct MemoryConfiguration: Sendable, Equatable {
             switch value.lowercased() {
             case "1", "full", "on": configuration.toolSurface = .full
             case "0", "off": configuration.toolSurface = .off
-            default: configuration.toolSurface = MemoryToolSurface(rawValue: value.lowercased())
-                ?? configuration.toolSurface
+            default:
+                configuration.toolSurface =
+                    MemoryToolSurface(rawValue: value.lowercased())
+                    ?? configuration.toolSurface
             }
         }
         if let value = environment["TINYTITAN_MEMORY_JOURNAL"] {
@@ -299,7 +309,9 @@ public struct MemoryConfiguration: Sendable, Equatable {
         if let value = environment["TINYTITAN_MEMORY_CONSOLIDATION"] {
             configuration.sessionConsolidation = value != "0"
         }
-        if let value = environment["TINYTITAN_MEMORY_CONSOLIDATION_IDLE_SECONDS"].flatMap(Double.init) {
+        if let value = environment["TINYTITAN_MEMORY_CONSOLIDATION_IDLE_SECONDS"].flatMap(
+            Double.init)
+        {
             configuration.consolidationIdleSeconds = max(0, value)
         }
         if let value = environment["TINYTITAN_MEMORY_GUARD"]?.lowercased() {
@@ -320,16 +332,21 @@ public struct MemoryConfiguration: Sendable, Equatable {
     /// are where someone happens to have a terminal open. A workspace named
     /// after one of them collects every project that person ever works on,
     /// and the bootstrap for a codebase then opens with the plot of a novel.
-    public static func junkDrawerReason(forPath path: String,
-                                        environment: [String: String]) -> String? {
+    public static func junkDrawerReason(
+        forPath path: String,
+        environment: [String: String]
+    ) -> String? {
         let candidate = URL(fileURLWithPath: path).standardizedFileURL.path
-        let home = (environment["HOME"]
-                    ?? FileManager.default.homeDirectoryForCurrentUser.path)
+        let home =
+            (environment["HOME"]
+                ?? FileManager.default.homeDirectoryForCurrentUser.path)
         let homePath = URL(fileURLWithPath: home).standardizedFileURL.path
         let refused: [(String, String)] = [
             (homePath, "the home directory"),
-            (URL(fileURLWithPath: homePath).deletingLastPathComponent().path,
-             "the parent of the home directory"),
+            (
+                URL(fileURLWithPath: homePath).deletingLastPathComponent().path,
+                "the parent of the home directory"
+            ),
             ("/", "the filesystem root"),
         ]
         for (refusedPath, label) in refused where candidate == refusedPath {
@@ -345,7 +362,9 @@ public struct MemoryConfiguration: Sendable, Equatable {
     /// repository do not share memory.
     public static func workspaceIdentifier(forPath path: String) -> String {
         let url = URL(fileURLWithPath: path).standardizedFileURL
-        let name = url.lastPathComponent.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        let name = url.lastPathComponent.filter {
+            $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_"
+        }
         let digest = String(format: "%08x", UInt32(truncatingIfNeeded: stableHash(url.path)))
         let base = name.isEmpty ? "workspace" : String(name.prefix(40))
         return "\(base)-\(digest)"

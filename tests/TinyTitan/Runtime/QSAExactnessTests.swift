@@ -1,4 +1,5 @@
 import Testing
+
 @testable import TinyTitan
 
 /// The dense-exactness window for Qwen Sparse Attention. This boundary decides
@@ -68,8 +69,9 @@ struct QSAExactnessTests {
     @Test("The window tracks the geometry rather than being hardcoded")
     func otherGeometries() {
         // compress 1: every block is complete, so the window is the budget.
-        #expect(QSAExactness(budget: 64, compressRatio: 1)
-            .maximumExactVisibleKeys == 64)
+        #expect(
+            QSAExactness(budget: 64, compressRatio: 1)
+                .maximumExactVisibleKeys == 64)
         // compress 8: seven tail keys ride along past 512 complete blocks.
         let wide = QSAExactness(budget: 512, compressRatio: 8)
         #expect(wide.keptBlocks == 64)

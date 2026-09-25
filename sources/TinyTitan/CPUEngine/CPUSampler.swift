@@ -20,8 +20,10 @@ public struct CPUSampler: Sendable {
     /// what makes a regression visible.
     public var seed: UInt64?
 
-    public init(temperature: Float = 0, topP: Float = 1, topK: Int = 0,
-                seed: UInt64? = nil) {
+    public init(
+        temperature: Float = 0, topP: Float = 1, topK: Int = 0,
+        seed: UInt64? = nil
+    ) {
         self.temperature = temperature
         self.topP = topP
         self.topK = topK
@@ -78,7 +80,10 @@ public struct CPUSampler: Sendable {
             var mass: Float = 0
             for position in weights.indices {
                 mass += weights[position] / total
-                if mass >= topP { cutoff = position + 1; break }
+                if mass >= topP {
+                    cutoff = position + 1
+                    break
+                }
             }
         }
         var remaining: Float = 0
@@ -109,14 +114,20 @@ public struct CPUSampler: Sendable {
         for index in logits.indices {
             let value = logits[index]
             if value > first {
-                second = first; secondID = firstID
-                first = value; firstID = index
+                second = first
+                secondID = firstID
+                first = value
+                firstID = index
             } else if value > second {
-                second = value; secondID = index
+                second = value
+                secondID = index
             }
         }
-        FileHandle.standardError.write(Data(String(
-            format: "[logit] chosen=%d top1=%d:%.4f top2=%d:%.4f margin=%.4f\n",
-            chosen, firstID, first, secondID, second, first - second).utf8))
+        FileHandle.standardError.write(
+            Data(
+                String(
+                    format: "[logit] chosen=%d top1=%d:%.4f top2=%d:%.4f margin=%.4f\n",
+                    chosen, firstID, first, secondID, second, first - second
+                ).utf8))
     }
 }

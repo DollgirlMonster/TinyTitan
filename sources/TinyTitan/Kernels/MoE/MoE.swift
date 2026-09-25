@@ -13,9 +13,11 @@ public struct MoEExpertOffsets {
     public var downSOff: UInt32
     public var downBOff: UInt32
 
-    public init(gateWOff: UInt32, gateSOff: UInt32, gateBOff: UInt32,
-                upWOff: UInt32, upSOff: UInt32, upBOff: UInt32,
-                downWOff: UInt32, downSOff: UInt32, downBOff: UInt32) {
+    public init(
+        gateWOff: UInt32, gateSOff: UInt32, gateBOff: UInt32,
+        upWOff: UInt32, upSOff: UInt32, upBOff: UInt32,
+        downWOff: UInt32, downSOff: UInt32, downBOff: UInt32
+    ) {
         self.gateWOff = gateWOff
         self.gateSOff = gateSOff
         self.gateBOff = gateBOff
@@ -95,16 +97,18 @@ final class MoE {
     /// defaults 2816/704/128 predate Qwen-only support; Qwen 3.6 passes
     /// 2048/512/256). `siluActivation` selects the expert FFN activation
     /// (false = gelu_pytorch_tanh, true = silu).
-    init(context: MetalContext,
-         routerTopKSimd: Bool = true,
-         siluActivation: Bool = false,
-         routedWeightBits: Int = 4,
-         routerWeightBits: Int = 8,
-         eventGatedIO: Bool = false,
-         specializedD: UInt32 = 2816,
-         specializedF: UInt32 = 704,
-         specializedNumExperts: UInt32 = 128,
-         topKExperts: Int = 8) throws {
+    init(
+        context: MetalContext,
+        routerTopKSimd: Bool = true,
+        siluActivation: Bool = false,
+        routedWeightBits: Int = 4,
+        routerWeightBits: Int = 8,
+        eventGatedIO: Bool = false,
+        specializedD: UInt32 = 2816,
+        specializedF: UInt32 = 704,
+        specializedNumExperts: UInt32 = 128,
+        topKExperts: Int = 8
+    ) throws {
         self.routerTopKSimd = routerTopKSimd
         self.realDecodeD = specializedD
         self.realDecodeF = specializedF
@@ -122,26 +126,32 @@ final class MoE {
         // dispatched. The shader's own arrays are sized by the fixed
         // `kMaxStreamedExperts` rather than by this constant, so a zero needs
         // no kernel variant.
-        precondition((0...16).contains(topKExperts),
-                     "top-\(topKExperts) exceeds the routed argument buffer's "
-                         + "expert slots (16)")
+        precondition(
+            (0...16).contains(topKExperts),
+            "top-\(topKExperts) exceeds the routed argument buffer's "
+                + "expert slots (16)")
         self.maxStreamedExperts = topKExperts
         precondition([4, 8].contains(routedWeightBits))
         // 16 means the router is unquantized bf16; the shader branches on it.
         precondition([4, 8, 16].contains(routerWeightBits))
-        let activationConstants: [MetalFunctionConstant] = siluActivation
+        let activationConstants: [MetalFunctionConstant] =
+            siluActivation
             ? [MetalFunctionConstant(index: 4, value: .bool(true))]
             : []
-        let weightConstants = routedWeightBits == 4 ? [] : [
-            MetalFunctionConstant(index: 5, value: .uint32(UInt32(routedWeightBits)))
-        ]
+        let weightConstants =
+            routedWeightBits == 4
+            ? []
+            : [
+                MetalFunctionConstant(index: 5, value: .uint32(UInt32(routedWeightBits)))
+            ]
         let ioConstants = [MetalFunctionConstant(index: 6, value: .bool(eventGatedIO))]
-        let moeConstants: [MetalFunctionConstant] = [
-            MetalFunctionConstant(index: 0, value: .uint32(specializedD)),
-            MetalFunctionConstant(index: 1, value: .uint32(specializedF)),
-            MetalFunctionConstant(index: 2, value: .uint32(realDecodeTopK)),
-            MetalFunctionConstant(index: 3, value: .bool(true)),
-        ] + activationConstants + weightConstants + ioConstants
+        let moeConstants: [MetalFunctionConstant] =
+            [
+                MetalFunctionConstant(index: 0, value: .uint32(specializedD)),
+                MetalFunctionConstant(index: 1, value: .uint32(specializedF)),
+                MetalFunctionConstant(index: 2, value: .uint32(realDecodeTopK)),
+                MetalFunctionConstant(index: 3, value: .bool(true)),
+            ] + activationConstants + weightConstants + ioConstants
         let routerConstants: [MetalFunctionConstant] = [
             MetalFunctionConstant(index: 40, value: .uint32(specializedNumExperts)),
             MetalFunctionConstant(index: 41, value: .uint32(specializedD)),
@@ -152,8 +162,11 @@ final class MoE {
         let routerName = "router_gemv_r4"
         self.routerGemvPSO = try context.pipeline(
             routerName,
-            constants: [MetalFunctionConstant(index: 44,
-                                              value: .uint32(UInt32(routerWeightBits)))],
+            constants: [
+                MetalFunctionConstant(
+                    index: 44,
+                    value: .uint32(UInt32(routerWeightBits)))
+            ],
             maxTotalThreadsPerThreadgroup: 512)
         self.routerGemvSpecializedPSO = try context.pipeline(
             routerName,
@@ -166,11 +179,14 @@ final class MoE {
         self.routerSelectKNPSO = try context.pipeline("router_topk_select_kn")
         self.routerSelectKNSimdPSO = try? context.pipeline("router_topk_select_kn_simd")
         self.residencyClassifyPSO = try context.pipeline("moe_classify_expert_residency")
-        let phase1Name = routedWeightBits == 4
+        let phase1Name =
+            routedWeightBits == 4
             ? "moe_phase1_gate_up_act_u16load" : "moe_affine_phase1_gate_up_act"
-        let phase1SubsetName = routedWeightBits == 4
+        let phase1SubsetName =
+            routedWeightBits == 4
             ? "moe_phase1_gate_up_act_subset_u16load" : "moe_affine_phase1_gate_up_act_subset"
-        let phase2Name = routedWeightBits == 4
+        let phase2Name =
+            routedWeightBits == 4
             ? "moe_phase2_down_reduce_k8" : "moe_affine_phase2_down_reduce_k8"
         self.phase1U16PSO = try context.pipeline(
             phase1Name, constants: activationConstants + weightConstants + ioConstants)
@@ -184,7 +200,8 @@ final class MoE {
             constants: moeConstants)
         self.phase2ReduceK8PSO = try context.pipeline(
             phase2Name, constants: weightConstants + ioConstants)
-        let phase2KNName = routedWeightBits == 4
+        let phase2KNName =
+            routedWeightBits == 4
             ? "moe_phase2_down_reduce_kn" : "moe_affine_phase2_down_reduce_kn"
         self.phase2ReduceKNPSO = try context.pipeline(
             phase2KNName, constants: weightConstants + ioConstants)
@@ -192,49 +209,59 @@ final class MoE {
             phase2Name,
             constants: moeConstants)
 
-        guard let logits = context.device.makeBuffer(
-            length: Int(Self.maxRouterExperts) * MemoryLayout<Float>.stride,
-            options: .storageModeShared),
-              let readyStatus = context.device.makeBuffer(
-            length: MemoryLayout<UInt32>.stride,
-            options: .storageModeShared),
-              let phase1Function = context.library.makeFunction(name: phase1Name) else {
+        guard
+            let logits = context.device.makeBuffer(
+                length: Int(Self.maxRouterExperts) * MemoryLayout<Float>.stride,
+                options: .storageModeShared),
+            let readyStatus = context.device.makeBuffer(
+                length: MemoryLayout<UInt32>.stride,
+                options: .storageModeShared),
+            let phase1Function = context.library.makeFunction(name: phase1Name)
+        else {
             throw MetalError.noDevice
         }
         self.routerLogits = logits
         readyStatus.contents().storeBytes(of: UInt32(1), as: UInt32.self)
         self.alwaysReadyIOStatus = readyStatus
         self.routedArgEncoder = phase1Function.makeArgumentEncoder(bufferIndex: 0)
-        guard let reusable = context.device.makeBuffer(
-            length: routedArgEncoder.encodedLength,
-            options: .storageModeShared) else {
+        guard
+            let reusable = context.device.makeBuffer(
+                length: routedArgEncoder.encodedLength,
+                options: .storageModeShared)
+        else {
             throw MetalError.noDevice
         }
         self.reusableRoutedArgBuffer = reusable
     }
 
-    func encodeRouter(commandBuffer: MTLCommandBuffer,
-                                   weights: MTLBuffer, weightsOffset: Int = 0,
-                                   scales: MTLBuffer, scalesOffset: Int = 0,
-                                   biases: MTLBuffer, biasesOffset: Int = 0,
-                                   hidden: MTLBuffer,
-                                   effectiveScale: MTLBuffer, effectiveScaleOffset: Int = 0,
-                                   perExpertScale: MTLBuffer, perExpertScaleOffset: Int = 0,
-                                   outIndices: MTLBuffer,
-                                   outWeights: MTLBuffer,
-                                   numExperts: UInt32,
-                                   d: UInt32,
-                                   topK: UInt32) throws {
+    func encodeRouter(
+        commandBuffer: MTLCommandBuffer,
+        weights: MTLBuffer, weightsOffset: Int = 0,
+        scales: MTLBuffer, scalesOffset: Int = 0,
+        biases: MTLBuffer, biasesOffset: Int = 0,
+        hidden: MTLBuffer,
+        effectiveScale: MTLBuffer, effectiveScaleOffset: Int = 0,
+        perExpertScale: MTLBuffer, perExpertScaleOffset: Int = 0,
+        outIndices: MTLBuffer,
+        outWeights: MTLBuffer,
+        numExperts: UInt32,
+        d: UInt32,
+        topK: UInt32
+    ) throws {
         precondition(d.isMultiple(of: UInt32(Quantization.groupSize)))
         // Expert ids are UInt32 end to end (ExpertResidencyTable) and the
         // kernels read num_experts dynamically, so the guard is a real width
         // limit on the scratch, not a conservative one: see `maxRouterExperts`.
-        precondition(numExperts <= Self.maxRouterExperts,
-                     "encodeRouter: numExperts \(numExperts) exceeds the router-logits scratch (\(Self.maxRouterExperts))")
+        precondition(
+            numExperts <= Self.maxRouterExperts,
+            "encodeRouter: numExperts \(numExperts) exceeds the router-logits scratch (\(Self.maxRouterExperts))"
+        )
         // The scratch is sized for the maximum above, but this is the check that
         // would have caught the two drifting apart in the first place.
-        precondition(routerLogits.length >= Int(numExperts) * MemoryLayout<Float>.stride,
-                     "encodeRouter: routerLogits must cover [numExperts] Float (allocated \(routerLogits.length) bytes, need \(Int(numExperts) * MemoryLayout<Float>.stride))")
+        precondition(
+            routerLogits.length >= Int(numExperts) * MemoryLayout<Float>.stride,
+            "encodeRouter: routerLogits must cover [numExperts] Float (allocated \(routerLogits.length) bytes, need \(Int(numExperts) * MemoryLayout<Float>.stride))"
+        )
         precondition(topK == UInt32(maxStreamedExperts))
         // K16: `router_gemv_r4` multiplies every hidden element by
         // `effective_scale[idx]` and `router_topk_select_k8` multiplies every
@@ -242,14 +269,19 @@ final class MoE {
         // tensors, so the runner synthesizes 1.0-filled buffers for both —
         // they must always be supplied with at least the addressed element
         // count, never nil/undersized, or the kernels read out of bounds.
-        precondition(effectiveScale.length >= Int(d) * MemoryLayout<UInt16>.stride,
-                     "encodeRouter: effectiveScale must cover [d] BF16 (runner synthesizes a 1.0 buffer for Qwen; the kernel always reads it)")
-        precondition(perExpertScale.length >= Int(numExperts) * MemoryLayout<UInt16>.stride,
-                     "encodeRouter: perExpertScale must cover [numExperts] BF16 (runner synthesizes a 1.0 buffer for Qwen; router_topk_select_k8 always dereferences it)")
+        precondition(
+            effectiveScale.length >= Int(d) * MemoryLayout<UInt16>.stride,
+            "encodeRouter: effectiveScale must cover [d] BF16 (runner synthesizes a 1.0 buffer for Qwen; the kernel always reads it)"
+        )
+        precondition(
+            perExpertScale.length >= Int(numExperts) * MemoryLayout<UInt16>.stride,
+            "encodeRouter: perExpertScale must cover [numExperts] BF16 (runner synthesizes a 1.0 buffer for Qwen; router_topk_select_k8 always dereferences it)"
+        )
 
         var expertCount = numExperts
         var dimension = d
-        let useSpecialized = numExperts == realDecodeNumExperts
+        let useSpecialized =
+            numExperts == realDecodeNumExperts
             && d == realDecodeD
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
@@ -301,17 +333,22 @@ final class MoE {
         selector.endEncoding()
     }
 
-    func makeRoutedArgumentBuffer(routedBlobs: [MTLBuffer],
-                                         topK: UInt32,
-                                         routedBufferOffsets: [Int]? = nil) -> MTLBuffer? {
+    func makeRoutedArgumentBuffer(
+        routedBlobs: [MTLBuffer],
+        topK: UInt32,
+        routedBufferOffsets: [Int]? = nil
+    ) -> MTLBuffer? {
         validate(routedBlobs: routedBlobs, topK: topK)
-        guard let buffer = routedBlobs.first?.device.makeBuffer(
-            length: routedArgEncoder.encodedLength,
-            options: .storageModeShared) else {
+        guard
+            let buffer = routedBlobs.first?.device.makeBuffer(
+                length: routedArgEncoder.encodedLength,
+                options: .storageModeShared)
+        else {
             return nil
         }
-        encodeRoutedArgumentBuffer(buffer, routedBlobs: routedBlobs,
-                                   routedBufferOffsets: routedBufferOffsets)
+        encodeRoutedArgumentBuffer(
+            buffer, routedBlobs: routedBlobs,
+            routedBufferOffsets: routedBufferOffsets)
         return buffer
     }
 
@@ -356,28 +393,35 @@ final class MoE {
     /// An argument buffer with no views encoded yet, for callers that
     /// re-encode per use via `writeRoutedArgumentBuffer`.
     func makeEmptyRoutedArgumentBuffer(device: MTLDevice) -> MTLBuffer? {
-        device.makeBuffer(length: routedArgEncoder.encodedLength,
-                          options: .storageModeShared)
+        device.makeBuffer(
+            length: routedArgEncoder.encodedLength,
+            options: .storageModeShared)
     }
 
     /// Re-encode the views of an argument buffer created by
     /// `makeRoutedArgumentBuffer`. The caller owns the hazard: the buffer must
     /// not be rewritten while a committed command still reads it.
-    func writeRoutedArgumentBuffer(_ buffer: MTLBuffer,
-                                   routedBlobs: [MTLBuffer],
-                                   topK: UInt32,
-                                   routedBufferOffsets: [Int]? = nil) {
+    func writeRoutedArgumentBuffer(
+        _ buffer: MTLBuffer,
+        routedBlobs: [MTLBuffer],
+        topK: UInt32,
+        routedBufferOffsets: [Int]? = nil
+    ) {
         validate(routedBlobs: routedBlobs, topK: topK)
-        encodeRoutedArgumentBuffer(buffer, routedBlobs: routedBlobs,
-                                   routedBufferOffsets: routedBufferOffsets)
+        encodeRoutedArgumentBuffer(
+            buffer, routedBlobs: routedBlobs,
+            routedBufferOffsets: routedBufferOffsets)
     }
 
-    func makeReusedRoutedArgumentBuffer(routedBlobs: [MTLBuffer],
-                                               topK: UInt32,
-                                               routedBufferOffsets: [Int]? = nil) -> MTLBuffer {
+    func makeReusedRoutedArgumentBuffer(
+        routedBlobs: [MTLBuffer],
+        topK: UInt32,
+        routedBufferOffsets: [Int]? = nil
+    ) -> MTLBuffer {
         validate(routedBlobs: routedBlobs, topK: topK)
-        encodeRoutedArgumentBuffer(reusableRoutedArgBuffer, routedBlobs: routedBlobs,
-                                   routedBufferOffsets: routedBufferOffsets)
+        encodeRoutedArgumentBuffer(
+            reusableRoutedArgBuffer, routedBlobs: routedBlobs,
+            routedBufferOffsets: routedBufferOffsets)
         return reusableRoutedArgBuffer
     }
 
@@ -416,9 +460,10 @@ final class MoE {
         encoder.setBytes(&dimension, length: MemoryLayout<UInt32>.stride, index: 4)
         encoder.setBytes(&intermediate, length: MemoryLayout<UInt32>.stride, index: 5)
         encoder.setBytes(&expertCount, length: MemoryLayout<UInt32>.stride, index: 6)
-        encoder.setBuffer(ioStatus ?? alwaysReadyIOStatus,
-                          offset: ioStatus == nil ? 0 : ioStatusOffset,
-                          index: 7)
+        encoder.setBuffer(
+            ioStatus ?? alwaysReadyIOStatus,
+            offset: ioStatus == nil ? 0 : ioStatusOffset,
+            index: 7)
         // Phase-1 uses 16 rows per threadgroup (threadgroup-staged x), so the
         // dispatch is (topK*f)/16 groups of 512 threads.
         encoder.dispatchThreadgroups(
@@ -470,9 +515,10 @@ final class MoE {
         encoder.setBytes(&expertCount, length: MemoryLayout<UInt32>.stride, index: 6)
         encoder.setBuffer(activeSlots, offset: 0, index: 7)
         encoder.setBytes(&active, length: MemoryLayout<UInt32>.stride, index: 8)
-        encoder.setBuffer(ioStatus ?? alwaysReadyIOStatus,
-                          offset: ioStatus == nil ? 0 : ioStatusOffset,
-                          index: 9)
+        encoder.setBuffer(
+            ioStatus ?? alwaysReadyIOStatus,
+            offset: ioStatus == nil ? 0 : ioStatusOffset,
+            index: 9)
         // Phase-1 uses 16 rows per threadgroup (threadgroup-staged x).
         encoder.dispatchThreadgroups(
             MTLSize(width: (Int(activeCount * f) + 15) / 16, height: 1, depth: 1),
@@ -521,9 +567,10 @@ final class MoE {
         encoder.setBuffer(y, offset: yOffset, index: 5)
         encoder.setBytes(&dimension, length: MemoryLayout<UInt32>.stride, index: 6)
         encoder.setBytes(&intermediate, length: MemoryLayout<UInt32>.stride, index: 7)
-        encoder.setBuffer(ioStatus ?? alwaysReadyIOStatus,
-                          offset: ioStatus == nil ? 0 : ioStatusOffset,
-                          index: 8)
+        encoder.setBuffer(
+            ioStatus ?? alwaysReadyIOStatus,
+            offset: ioStatus == nil ? 0 : ioStatusOffset,
+            index: 8)
         // One simdgroup per expert slot. The kn kernel has no sg >= k guard
         // precisely because the launch width says k, so this must stay in
         // step with it: 32 lanes x k.
@@ -533,8 +580,9 @@ final class MoE {
         }
         encoder.dispatchThreadgroups(
             MTLSize(width: Int(d), height: 1, depth: 1),
-            threadsPerThreadgroup: MTLSize(width: 32 * maxStreamedExperts,
-                                           height: 1, depth: 1))
+            threadsPerThreadgroup: MTLSize(
+                width: 32 * maxStreamedExperts,
+                height: 1, depth: 1))
         encoder.endEncoding()
     }
 
@@ -543,11 +591,14 @@ final class MoE {
         precondition(routedBlobs.count == Int(topK))
     }
 
-    private func encodeRoutedArgumentBuffer(_ buffer: MTLBuffer,
-                                            routedBlobs: [MTLBuffer],
-                                            routedBufferOffsets: [Int]?) {
-        precondition(routedBufferOffsets == nil
-                     || routedBufferOffsets?.count == routedBlobs.count)
+    private func encodeRoutedArgumentBuffer(
+        _ buffer: MTLBuffer,
+        routedBlobs: [MTLBuffer],
+        routedBufferOffsets: [Int]?
+    ) {
+        precondition(
+            routedBufferOffsets == nil
+                || routedBufferOffsets?.count == routedBlobs.count)
         routedArgEncoder.setArgumentBuffer(buffer, offset: 0)
         for (index, blob) in routedBlobs.enumerated() {
             routedArgEncoder.setBuffer(

@@ -28,8 +28,9 @@ private struct MessageJSON: Decodable {
             var out = ""
             for part in parts {
                 guard case .object(let dict) = part,
-                      case .string(let type)? = dict["type"], type == "input_text",
-                      case .string(let text)? = dict["text"] else { continue }
+                    case .string(let type)? = dict["type"], type == "input_text",
+                    case .string(let text)? = dict["text"]
+                else { continue }
                 out += text
             }
             return out
@@ -47,18 +48,22 @@ public struct RunResult: Equatable, Sendable {
 /// lint:allow-long the CLI driver: parse messages, load the model, run one
 /// completion, print the timing footer. It is the top-level script for a
 /// one-shot tool, and its steps have no other caller.
-public func run(args: Args,
-                stdout: FileHandle = .standardOutput,
-                stderr: FileHandle = .standardError) async -> RunResult {
+public func run(
+    args: Args,
+    stdout: FileHandle = .standardOutput,
+    stderr: FileHandle = .standardError
+) async -> RunResult {
     do {
         let modelURL = URL(fileURLWithPath: args.model)
         // Reasoning effort is defined per family; check it against the
         // installed manifest before any heavier work. An unreadable manifest
         // is left for the model load below, which reports it better.
         if args.reasoningEffort != nil,
-           let family = try? ManifestReader.peekFamily(directoryURL: modelURL) {
-            try family.validateReasoning(thinkingMode: args.thinkingMode,
-                                         effort: args.reasoningEffort)
+            let family = try? ManifestReader.peekFamily(directoryURL: modelURL)
+        {
+            try family.validateReasoning(
+                thinkingMode: args.thinkingMode,
+                effort: args.reasoningEffort)
         }
         let tokenizer = try await GFTokenizer.load(
             forModelDirectory: modelURL,
@@ -81,8 +86,9 @@ public func run(args: Args,
                 promptIds = tokenizer.encode(rawPrompt, addBOS: true)
             }
         } else if let messagesFile = args.messagesFile {
-            let data = try Data(contentsOf: URL(fileURLWithPath: messagesFile),
-                                options: [.mappedIfSafe])
+            let data = try Data(
+                contentsOf: URL(fileURLWithPath: messagesFile),
+                options: [.mappedIfSafe])
             let rows = try JSONDecoder().decode([MessageJSON].self, from: data)
             var messages = try rows.map { row -> GFTokenizer.Message in
                 guard let role = GFTokenizer.Role(rawValue: row.role) else {
@@ -110,7 +116,8 @@ public func run(args: Args,
         // where the manifest has been read. Anything the caller named on the
         // command line wins; this only fills what they left alone.
         let peekedIdentity = try? ManifestReader.peekIdentity(directoryURL: modelURL)
-        let profileSampling = peekedIdentity
+        let profileSampling =
+            peekedIdentity
             .map { ModelProfile.resolve(identity: $0).sampling }
             ?? GenerationDefaults.forFamily(.qwen36)
         // Qwen3.8 publishes two rows and the profile carries only the thinking
@@ -118,7 +125,8 @@ public func run(args: Args,
         // makes during validation.
         let familySampling: GenerationDefaults.Sampling
         if let family = peekedIdentity?.family,
-           family == .qwen38flash || family == .qwen38flashMTP {
+            family == .qwen38flash || family == .qwen38flashMTP
+        {
             familySampling = GenerationDefaults.forFamily(
                 family, thinking: args.thinkingMode == .on)
         } else {
@@ -157,8 +165,10 @@ public func run(args: Args,
         let resolvedSlots: Int
         if let requested = args.expertCacheSlots {
             resolvedSlots = requested
-        } else if let manifest = try? ManifestReader.load(directoryURL: modelURL,
-                                                          expecting: expectedArch) {
+        } else if let manifest = try? ManifestReader.load(
+            directoryURL: modelURL,
+            expecting: expectedArch)
+        {
             resolvedSlots = RuntimeConfiguration.expertCacheSlots(
                 expertStrideBytes: manifest.expertStride,
                 layers: manifest.arch.numLayers,
@@ -191,7 +201,8 @@ public func run(args: Args,
         case .fixed(let tokens):
             prefillChunkTokens = tokens
         case .auto:
-            prefillChunkTokens = RuntimeConfiguration.allowedPrefillChunkTokens
+            prefillChunkTokens =
+                RuntimeConfiguration.allowedPrefillChunkTokens
                 .first(where: { $0 >= promptIds.count })
                 ?? PrefillRuntimeConfig.maxChunkTokens
         case nil:
@@ -257,9 +268,10 @@ public func run(args: Args,
             context: context,
             maxContext: args.maxContext,
             runtimeConfiguration: runtime)
-        let scratch = try RawCompletionScratch(context: context,
-                                               vocab: model.config.vocabSize,
-                                               logitSoftcap: Float(model.config.finalLogitSoftcap))
+        let scratch = try RawCompletionScratch(
+            context: context,
+            vocab: model.config.vocabSize,
+            logitSoftcap: Float(model.config.finalLogitSoftcap))
         let stats = try await runRawCompletion(
             producer: runner,
             tokenizer: tokenizer,
@@ -267,16 +279,17 @@ public func run(args: Args,
             config: config,
             context: context,
             scratch: scratch,
-            prefillConfig: runtime.prefillConfig) { progress in
-                switch progress {
-                case .prefill:
-                    break
-                case .token(_, _, let delta):
-                    if !delta.isEmpty { stdout.write(Data(delta.utf8)) }
-                case .tail(let tail):
-                    stdout.write(Data(tail.utf8))
-                }
+            prefillConfig: runtime.prefillConfig
+        ) { progress in
+            switch progress {
+            case .prefill:
+                break
+            case .token(_, _, let delta):
+                if !delta.isEmpty { stdout.write(Data(delta.utf8)) }
+            case .tail(let tail):
+                stdout.write(Data(tail.utf8))
             }
+        }
 
         if ProcessInfo.processInfo.environment["TINYTITAN_KERNEL_STATS"] != nil {
             // Per-role GPU milliseconds, plus the occupancy that says whether
@@ -286,21 +299,25 @@ public func run(args: Args,
             let occupancy = runner.kernelGPUOccupancy()
             var lines = "\n[gpu by role over \(stats.newTokens) tokens]\n"
             for entry in summary.prefix(14) {
-                lines += String(format: "  %@ %8.1f ms  x%d\n",
-                                entry.role.padding(toLength: 24, withPad: " ", startingAt: 0),
-                                entry.millis, entry.count)
+                lines += String(
+                    format: "  %@ %8.1f ms  x%d\n",
+                    entry.role.padding(toLength: 24, withPad: " ", startingAt: 0),
+                    entry.millis, entry.count)
             }
-            lines += String(format: "  busy %.0f ms of %.0f ms span (%.0f%% occupied)\n",
-                            occupancy.busyMillis, occupancy.spanMillis,
-                            occupancy.spanMillis > 0
-                                ? 100 * occupancy.busyMillis / occupancy.spanMillis : 0)
+            lines += String(
+                format: "  busy %.0f ms of %.0f ms span (%.0f%% occupied)\n",
+                occupancy.busyMillis, occupancy.spanMillis,
+                occupancy.spanMillis > 0
+                    ? 100 * occupancy.busyMillis / occupancy.spanMillis : 0)
             stderr.write(Data(lines.utf8))
         }
         if ProcessInfo.processInfo.environment["TURBO_FIELDFARE_PHASES"] == "1" {
             let ms = { (n: UInt64) in String(format: "%.1f", Double(n) / 1e6) }
             let total = stats.decodeSeconds * 1000
-            let accounted = Double(runner.totalCb1Nanos + runner.totalIoNanos
-                                   + runner.totalCb2Nanos) / 1e6
+            let accounted =
+                Double(
+                    runner.totalCb1Nanos + runner.totalIoNanos
+                        + runner.totalCb2Nanos) / 1e6
             var lines = "\n[phases over \(stats.newTokens) tokens, decode "
             lines += String(format: "%.0f", total) + " ms]\n"
             lines += "  cb1 encode+commit: " + ms(runner.totalCb1Nanos) + " ms\n"
@@ -315,19 +332,23 @@ public func run(args: Args,
             let rate = total > 0 ? 100.0 * Double(io.hits) / Double(total) : 0
             var line = "\n[decode expert io] hits \(io.hits) misses \(io.misses)"
             line += String(format: " (%.1f%% hit)", rate)
-            line += String(format: " %.2f GiB",
-                           Double(io.bytes) / 1_073_741_824)
+            line += String(
+                format: " %.2f GiB",
+                Double(io.bytes) / 1_073_741_824)
             if stats.newTokens > 0 {
-                line += String(format: " = %.1f MiB/token",
-                               Double(io.bytes) / 1_048_576 / Double(stats.newTokens))
+                line += String(
+                    format: " = %.1f MiB/token",
+                    Double(io.bytes) / 1_048_576 / Double(stats.newTokens))
             }
             stderr.write(Data((line + "\n").utf8))
         }
         if !args.quiet {
-            let tokensPerSecond = stats.decodeSeconds > 0
+            let tokensPerSecond =
+                stats.decodeSeconds > 0
                 ? Double(stats.newTokens) / stats.decodeSeconds
                 : 0
-            let footer = "\n[stop=\(String(describing: stats.reason)) prefill=\(stats.prefillTokens)tok/\(String(format: "%.2f", stats.prefillSeconds))s new=\(stats.newTokens)tok decode=\(String(format: "%.2f", stats.decodeSeconds))s tok/s=\(String(format: "%.3f", tokensPerSecond))]\n"
+            let footer =
+                "\n[stop=\(String(describing: stats.reason)) prefill=\(stats.prefillTokens)tok/\(String(format: "%.2f", stats.prefillSeconds))s new=\(stats.newTokens)tok decode=\(String(format: "%.2f", stats.decodeSeconds))s tok/s=\(String(format: "%.3f", tokensPerSecond))]\n"
             stderr.write(Data(footer.utf8))
         }
         return RunResult(exitCode: 0)

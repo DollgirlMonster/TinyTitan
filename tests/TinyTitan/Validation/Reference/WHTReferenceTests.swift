@@ -1,5 +1,5 @@
-import Testing
 import Foundation
+import Testing
 import TinyTitanValidationSupport
 
 @Suite struct WHTReferenceTests {
@@ -15,7 +15,7 @@ import TinyTitanValidationSupport
                 for k in 0..<stride {
                     let a = y[i + k]
                     let b = y[i + k + stride]
-                    y[i + k]          = (a + b) * invSqrt2
+                    y[i + k] = (a + b) * invSqrt2
                     y[i + k + stride] = (a - b) * invSqrt2
                 }
                 i += stride * 2

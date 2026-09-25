@@ -24,9 +24,11 @@ import TinyTitan
 struct TinyTitanBench {
 
     static func main() throws {
-        let kernelName = CommandLine.arguments.count > 1
+        let kernelName =
+            CommandLine.arguments.count > 1
             ? CommandLine.arguments[1] : "baseline"
-        let iterations = CommandLine.arguments.count > 2
+        let iterations =
+            CommandLine.arguments.count > 2
             ? Int(CommandLine.arguments[2]) ?? 300 : 300
 
         // Before the Metal context: these measure the CPU and must not
@@ -61,14 +63,18 @@ struct TinyTitanBench {
         let groupCount = Int(n) / 64
 
         let pso = try context.pipeline(
-            kernelName == "baseline" ? "dequant_int4_qkv_gemv_simd"
+            kernelName == "baseline"
+                ? "dequant_int4_qkv_gemv_simd"
                 : "dequant_int4_qkv_gemv_simd_\(kernelName)",
             constants: [],
             maxTotalThreadsPerThreadgroup: 512)
 
         func makeBuffer(_ bytes: Int, _ value: UInt8) throws -> MTLBuffer {
-            guard let buf = device.makeBuffer(length: bytes,
-                                              options: .storageModeShared) else {
+            guard
+                let buf = device.makeBuffer(
+                    length: bytes,
+                    options: .storageModeShared)
+            else {
                 throw BenchHarnessError.metalObjectUnavailable("buffer of \(bytes) bytes")
             }
             memset(buf.contents(), Int32(value), bytes)
@@ -121,8 +127,9 @@ struct TinyTitanBench {
         for _ in 0..<iterations {
             enc.dispatchThreadgroups(
                 MTLSize(width: threadgroups, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: rowsPerThreadgroup * 32,
-                                               height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(
+                    width: rowsPerThreadgroup * 32,
+                    height: 1, depth: 1))
         }
         enc.endEncoding()
         cb.commit()
@@ -132,14 +139,15 @@ struct TinyTitanBench {
         let perIteration = totalSeconds / Double(iterations)
         let gbPerSec = Double(bytesPerLaunch) / perIteration / 1_000_000_000
         let theoretical = 100.0
-        print("kernel=\(kernelName) iterations=\(iterations) "
-            + "total=\(String(format: "%.4f", totalSeconds))s "
-            + "per_launch=\(String(format: "%.2f", perIteration * 1_000_000))us")
-        print("bytes/launch=\(bytesPerLaunch) "
-            + "achieved=\(String(format: "%.1f", gbPerSec)) GB/s "
-            + "efficiency=\(String(format: "%.0f", gbPerSec / theoretical * 100))% of ~100 GB/s peak")
+        print(
+            "kernel=\(kernelName) iterations=\(iterations) "
+                + "total=\(String(format: "%.4f", totalSeconds))s "
+                + "per_launch=\(String(format: "%.2f", perIteration * 1_000_000))us")
+        print(
+            "bytes/launch=\(bytesPerLaunch) "
+                + "achieved=\(String(format: "%.1f", gbPerSec)) GB/s "
+                + "efficiency=\(String(format: "%.0f", gbPerSec / theoretical * 100))% of ~100 GB/s peak"
+        )
     }
-
-
 
 }

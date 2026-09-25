@@ -1,14 +1,17 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// Shared raw-completion loop validation: stops, progress callbacks, tail
 /// flush, and cancellation, via `ScriptedLogitProducer` (kernel-independent).
 @Suite struct RawCompletionLoopTests {
 
-    func automaton(_ seq: [Int32], end: Int32) -> @Sendable (Int32, Int) -> ScriptedLogitProducer.Step {
+    func automaton(_ seq: [Int32], end: Int32)
+        -> @Sendable (Int32, Int) -> ScriptedLogitProducer.Step
+    {
         let next: [Int32: Int32] = {
             var n: [Int32: Int32] = [:]
             for i in 0..<max(0, seq.count - 1) { n[seq[i]] = seq[i + 1] }
@@ -33,9 +36,11 @@ import TinyTitanValidationSupport
         private(set) var resetCalls = 0
         private(set) var produceCalls = 0
 
-        init(vocabSize: Int,
-             maxContext: Int = Int.max,
-             step: @escaping @Sendable (Int32, Int) -> ScriptedLogitProducer.Step) {
+        init(
+            vocabSize: Int,
+            maxContext: Int = Int.max,
+            step: @escaping @Sendable (Int32, Int) -> ScriptedLogitProducer.Step
+        ) {
             self.vocabSize = vocabSize
             self.maxContext = maxContext
             self.step = step
@@ -77,9 +82,11 @@ import TinyTitanValidationSupport
         private(set) var lastOutputMode: PrefillOutputMode?
         private(set) var lastConfig: PrefillRuntimeConfig?
 
-        init(vocabSize: Int,
-             firstToken: Int32,
-             seed: PrefillSeed = .logitsWritten) {
+        init(
+            vocabSize: Int,
+            firstToken: Int32,
+            seed: PrefillSeed = .logitsWritten
+        ) {
             self.vocabSize = vocabSize
             self.firstToken = firstToken
             self.seed = seed
@@ -97,12 +104,14 @@ import TinyTitanValidationSupport
             produceCalls += 1
         }
 
-        func prefillChunked(tokens: ArraySlice<Int32>,
-                            startPosition: Int,
-                            outputMode: PrefillOutputMode,
-                            config: PrefillRuntimeConfig,
-                            into logits: MTLBuffer,
-                            onProgress: (Int) -> Void) async throws -> PrefillResult {
+        func prefillChunked(
+            tokens: ArraySlice<Int32>,
+            startPosition: Int,
+            outputMode: PrefillOutputMode,
+            config: PrefillRuntimeConfig,
+            into logits: MTLBuffer,
+            onProgress: (Int) -> Void
+        ) async throws -> PrefillResult {
             chunkedCalls += 1
             lastOutputMode = outputMode
             lastConfig = config
@@ -110,31 +119,38 @@ import TinyTitanValidationSupport
             for i in 0..<vocabSize { ptr[i] = Float16(-30.0) }
             ptr[Int(firstToken)] = Float16(30.0)
             onProgress(tokens.count)
-            return PrefillResult(newPosition: startPosition + tokens.count,
-                                 seed: seed)
+            return PrefillResult(
+                newPosition: startPosition + tokens.count,
+                seed: seed)
         }
     }
 
-    func runLoop(seq: [Int32], end: Int32, prompt: String = "go",
-                         config: GenerationConfig) async throws -> (Collected, RawDecodeResult) {
+    func runLoop(
+        seq: [Int32], end: Int32, prompt: String = "go",
+        config: GenerationConfig
+    ) async throws -> (Collected, RawDecodeResult) {
         try await runLoop(step: automaton(seq, end: end), prompt: prompt, config: config)
     }
 
     /// Same loop with the logit script supplied directly, for cases the
     /// token-keyed automaton cannot express (a NaN row, a single NaN logit).
-    func runLoop(step: @escaping @Sendable (Int32, Int) -> ScriptedLogitProducer.Step,
-                         prompt: String = "go",
-                         config: GenerationConfig) async throws -> (Collected, RawDecodeResult) {
+    func runLoop(
+        step: @escaping @Sendable (Int32, Int) -> ScriptedLogitProducer.Step,
+        prompt: String = "go",
+        config: GenerationConfig
+    ) async throws -> (Collected, RawDecodeResult) {
         let ctx = try MetalContext()
         let tok = try await GFTokenizer.load(from: ChatMLTemplateTests.fixtureFolder())
         let producer = ScriptedLogitProducer(vocabSize: tok.vocabSize, step: step)
         let promptIds = tok.encode(prompt, addBOS: true)
         let scratch = try RawCompletionScratch(context: ctx, vocab: tok.vocabSize)
         var collected = Collected()
-        let result = try await runRawCompletion(producer: producer, tokenizer: tok,
-                                                promptIds: promptIds, config: config,
-                                                context: ctx, scratch: scratch,
-                                                prefillConfig: .off) { progress in
+        let result = try await runRawCompletion(
+            producer: producer, tokenizer: tok,
+            promptIds: promptIds, config: config,
+            context: ctx, scratch: scratch,
+            prefillConfig: .off
+        ) { progress in
             switch progress {
             case .prefill(let done, let total): collected.prefills.append((done, total))
             case .token(let index, let id, let delta): collected.tokens.append((index, id, delta))

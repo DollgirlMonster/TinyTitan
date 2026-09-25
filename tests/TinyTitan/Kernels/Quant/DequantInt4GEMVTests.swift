@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// Compares the Metal `dequant_int4_gemv` kernel against `DequantInt4GemvRef`,
 /// which bulk-dequantizes each row to FP32 and dots with `vDSP_dotpr`. The
@@ -17,14 +18,14 @@ import TinyTitanValidationSupport
         -> (packed: [UInt8], scales: [UInt16], biases: [UInt16])
     {
         let m = rows.count
-        let n2 = rows[0].packed.count        // N/2
-        let s  = rows[0].scales.count        // N/groupSize
+        let n2 = rows[0].packed.count  // N/2
+        let s = rows[0].scales.count  // N/groupSize
         var packed = [UInt8](repeating: 0, count: m * n2)
         var scales = [UInt16](repeating: 0, count: m * s)
         var biases = [UInt16](repeating: 0, count: m * s)
         for row in 0..<m {
             for i in 0..<n2 { packed[row * n2 + i] = rows[row].packed[i] }
-            for i in 0..<s  {
+            for i in 0..<s {
                 scales[row * s + i] = rows[row].scales[i]
                 biases[row * s + i] = rows[row].biases[i]
             }
@@ -38,8 +39,10 @@ import TinyTitanValidationSupport
     /// leave a 2-aligned-but-not-4-aligned weight offset) — the exact alignment
     /// the vectorized `ushort` load depends on and the offset-0 parity tests
     /// never touch (R2).
-    private static func runAndCompare(m: Int, n: Int, seed: UInt64,
-                                      weightByteOffset: Int = 0) throws {
+    private static func runAndCompare(
+        m: Int, n: Int, seed: UInt64,
+        weightByteOffset: Int = 0
+    ) throws {
         precondition(n % Quantization.groupSize == 0)
         // Keep the offset-zero fixtures stable when adding non-zero offset cases.
         let baseKey = "int4-gemv-kernel-m\(m)-n\(n)"
@@ -56,9 +59,9 @@ import TinyTitanValidationSupport
 
         let xFp32 = (0..<n).map { _ in rng.uniform(-1.0, 1.0) }
         let xFp16 = xFp32.map { Float16($0) }
-        let xRef  = xFp16.map { Float($0) }
+        let xRef = xFp16.map { Float($0) }
 
-        let ctx    = try MetalContext()
+        let ctx = try MetalContext()
         let kernel = try DequantInt4GEMV(context: ctx)
 
         // Copy the packed rows at +weightByteOffset inside a padded buffer so the
@@ -66,27 +69,32 @@ import TinyTitanValidationSupport
         var paddedPacked = [UInt8](repeating: 0, count: packed.count + weightByteOffset)
         for i in 0..<packed.count { paddedPacked[weightByteOffset + i] = packed[i] }
 
-        guard let wBuf = ctx.device.makeBuffer(
+        guard
+            let wBuf = ctx.device.makeBuffer(
                 bytes: paddedPacked, length: paddedPacked.count, options: .storageModeShared),
-              let sBuf = ctx.device.makeBuffer(
+            let sBuf = ctx.device.makeBuffer(
                 bytes: scales, length: scales.count * MemoryLayout<UInt16>.size,
                 options: .storageModeShared),
-              let bBuf = ctx.device.makeBuffer(
+            let bBuf = ctx.device.makeBuffer(
                 bytes: biases, length: biases.count * MemoryLayout<UInt16>.size,
                 options: .storageModeShared),
-              let xBuf = Fp16Buffer.make(ctx.device, halves: xFp16),
-              let yBuf = Fp16Buffer.make(ctx.device, count: m) else {
-            Issue.record("Failed to allocate buffers"); return
+            let xBuf = Fp16Buffer.make(ctx.device, halves: xFp16),
+            let yBuf = Fp16Buffer.make(ctx.device, count: m)
+        else {
+            Issue.record("Failed to allocate buffers")
+            return
         }
 
         guard let cmd = ctx.queue.makeCommandBuffer() else {
-            Issue.record("Failed to make command buffer"); return
+            Issue.record("Failed to make command buffer")
+            return
         }
-        try kernel.encode(commandBuffer: cmd,
-                      weights: wBuf, weightsOffset: weightByteOffset,
-                      scales: sBuf, biases: bBuf,
-                      x: xBuf, y: yBuf,
-                      m: UInt32(m), n: UInt32(n))
+        try kernel.encode(
+            commandBuffer: cmd,
+            weights: wBuf, weightsOffset: weightByteOffset,
+            scales: sBuf, biases: bBuf,
+            x: xBuf, y: yBuf,
+            m: UInt32(m), n: UInt32(n))
         cmd.commit()
         cmd.waitUntilCompleted()
 
@@ -95,8 +103,9 @@ import TinyTitanValidationSupport
 
         let rel = RelError.compute(actual: actual, reference: ref)
         let maxAbs = RelError.maxAbsDiff(actual, ref)
-        #expect(rel < Tolerance.fp16Reduction,
-                "M=\(m) N=\(n): rel=\(rel) maxAbs=\(maxAbs)")
+        #expect(
+            rel < Tolerance.fp16Reduction,
+            "M=\(m) N=\(n): rel=\(rel) maxAbs=\(maxAbs)")
     }
 
     @Test func gemv_d128_n128() throws {
@@ -120,8 +129,9 @@ import TinyTitanValidationSupport
         try Self.runAndCompare(m: 128, n: 2816, seed: 0xC4, weightByteOffset: 2)
     }
 
-    @Test(arguments: [64, 65, 128, 129] as [Int],
-                     OffByMultiples.multiplesOfGroup.filter { $0 <= 512 })
+    @Test(
+        arguments: [64, 65, 128, 129] as [Int],
+        OffByMultiples.multiplesOfGroup.filter { $0 <= 512 })
     func gemv_sweep(m: Int, n: Int) throws {
         let seed: UInt64 = UInt64(m) &* 0x9E37 &+ UInt64(n)
         try Self.runAndCompare(m: m, n: n, seed: seed)

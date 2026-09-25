@@ -1,5 +1,5 @@
-import Foundation
 import Accelerate
+import Foundation
 
 /// Parallel fused int4-GEMV: dequantize in registers and dot with x in one
 /// pass over the int4 rows (no FP16 staging), spread over the 8 cores.
@@ -11,7 +11,7 @@ let groupSize = 64
 
 func makeInt4Buffer(_ bytes: Int) -> [UInt8] {
     var buf = [UInt8](repeating: 0, count: bytes)
-    for i in 0..<bytes { buf[i] = UInt8((i &* 2654435761) & 0xFF) }
+    for i in 0..<bytes { buf[i] = UInt8((i &* 2_654_435_761) & 0xFF) }
     return buf
 }
 
@@ -28,8 +28,10 @@ func makeX(_ n: Int) -> [Float16] {
 }
 
 /// One fused row GEMV: y[m] = sum_n dequant(W[m,n]) * x[n].
-func fusedRow(_ rowBase: UnsafeRawPointer, _ scaleBase: UnsafePointer<Float16>,
-              _ x: UnsafePointer<Float16>, _ row: Int) -> Float {
+func fusedRow(
+    _ rowBase: UnsafeRawPointer, _ scaleBase: UnsafePointer<Float16>,
+    _ x: UnsafePointer<Float16>, _ row: Int
+) -> Float {
     let bytesPerRow = D / 2
     let rowPtr = rowBase.advanced(by: row * bytesPerRow).assumingMemoryBound(to: UInt8.self)
     let groupsPerRow = D / groupSize
@@ -40,7 +42,7 @@ func fusedRow(_ rowBase: UnsafeRawPointer, _ scaleBase: UnsafePointer<Float16>,
     while g < groupsPerRow {
         let sc = Float(scales[g])
         var j = 0
-        while j < 32 {                    // 32 bytes of int4 = 64 elements
+        while j < 32 {  // 32 bytes of int4 = 64 elements
             let b = rowPtr[byteOff + j]
             acc += Float(b & 0x0F) * sc * Float(x[g * 64 + j * 2])
             acc += Float(b >> 4) * sc * Float(x[g * 64 + j * 2 + 1])
@@ -67,7 +69,8 @@ w.withUnsafeBytes { raw in
     scales.withUnsafeBufferPointer { sc in
         x.withUnsafeBufferPointer { xv in
             guard let wp = raw.baseAddress, let sp = sc.baseAddress,
-                  let xp = xv.baseAddress else {
+                let xp = xv.baseAddress
+            else {
                 print("cpu_draft_bench: benchmark buffers must not be empty")
                 exit(1)
             }
@@ -82,10 +85,14 @@ w.withUnsafeBytes { raw in
             let gbs = Double(headBytes) / Double(t1 - t0) * 1e9 / 1e9
             let perPass = Double(t1 - t0) / 1e6
             let sum = y.prefix(64).reduce(0, +)
-            print(String(format: "fused parallel GEMV: %.1f GB/s, %.2f ms/pass (sum %.1f)",
-                         gbs, perPass, sum))
-            print(String(format: "K=4: %.1f ms | K=8: %.1f ms | GPU window: 50 ms",
-                         perPass * 4, perPass * 8))
+            print(
+                String(
+                    format: "fused parallel GEMV: %.1f GB/s, %.2f ms/pass (sum %.1f)",
+                    gbs, perPass, sum))
+            print(
+                String(
+                    format: "K=4: %.1f ms | K=8: %.1f ms | GPU window: 50 ms",
+                    perPass * 4, perPass * 8))
         }
     }
 }

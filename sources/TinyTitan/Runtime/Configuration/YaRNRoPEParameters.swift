@@ -8,13 +8,15 @@ struct YaRNRoPEParameters: Sendable, Equatable {
     let attentionFactor: Float
     let inverseFrequencies: [Float]
 
-    init(headDim: Int,
-         partialRotaryFactor: Double,
-         theta: Double,
-         targetContextTokens: Int,
-         originalContextTokens: Int = RuntimeConfiguration.nativeMaximumContextTokens,
-         betaFast: Double = 32,
-         betaSlow: Double = 1) {
+    init(
+        headDim: Int,
+        partialRotaryFactor: Double,
+        theta: Double,
+        targetContextTokens: Int,
+        originalContextTokens: Int = RuntimeConfiguration.nativeMaximumContextTokens,
+        betaFast: Double = 32,
+        betaSlow: Double = 1
+    ) {
         precondition(headDim > 0)
         precondition(partialRotaryFactor > 0 && partialRotaryFactor <= 1)
         precondition(theta > 1)
@@ -39,8 +41,9 @@ struct YaRNRoPEParameters: Sendable, Equatable {
             let interpolated = 1.0 / (factor * positionFrequency)
             let ramp = min(max((Double(pair) - low) / rampDenominator, 0), 1)
             let extrapolationFactor = 1.0 - ramp
-            return Float(interpolated * (1.0 - extrapolationFactor)
-                + extrapolated * extrapolationFactor)
+            return Float(
+                interpolated * (1.0 - extrapolationFactor)
+                    + extrapolated * extrapolationFactor)
         }
     }
 }

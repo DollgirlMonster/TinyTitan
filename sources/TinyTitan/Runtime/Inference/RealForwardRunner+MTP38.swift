@@ -25,21 +25,25 @@ import Metal
 extension RealForwardRunner {
     /// Routes a draft step to the fusion its family uses. The two drafts share
     /// everything after the fusion, so this is the whole of the difference.
-    func advanceMTPForFamily(tokens: ArraySlice<Int32>,
-                             targetHiddenRows: Data,
-                             startPosition: Int,
-                             predictNext: Bool) async throws -> Int32? {
+    func advanceMTPForFamily(
+        tokens: ArraySlice<Int32>,
+        targetHiddenRows: Data,
+        startPosition: Int,
+        predictNext: Bool
+    ) async throws -> Int32? {
         switch cfg.family {
         case .qwen38flashMTP:
-            return try await advanceMTP38(tokens: tokens,
-                                          targetHiddenRows: targetHiddenRows,
-                                          startPosition: startPosition,
-                                          predictNext: predictNext)
+            return try await advanceMTP38(
+                tokens: tokens,
+                targetHiddenRows: targetHiddenRows,
+                startPosition: startPosition,
+                predictNext: predictNext)
         default:
-            return try await advanceMTP(tokens: tokens,
-                                        targetHiddenRows: targetHiddenRows,
-                                        startPosition: startPosition,
-                                        predictNext: predictNext)
+            return try await advanceMTP(
+                tokens: tokens,
+                targetHiddenRows: targetHiddenRows,
+                startPosition: startPosition,
+                predictNext: predictNext)
         }
     }
 
@@ -48,10 +52,12 @@ extension RealForwardRunner {
     ///
     /// Mirrors `advanceMTP`, which serves the Qwen 3.6 draft; the two differ
     /// only in the fusion, so the chunk execution below is shared.
-    func advanceMTP38(tokens: ArraySlice<Int32>,
-                      targetHiddenRows: Data,
-                      startPosition: Int,
-                      predictNext: Bool) async throws -> Int32? {
+    func advanceMTP38(
+        tokens: ArraySlice<Int32>,
+        targetHiddenRows: Data,
+        startPosition: Int,
+        predictNext: Bool
+    ) async throws -> Int32? {
         guard cfg.family == .qwen38flashMTP else {
             throw StreamingMTPError.sidecarMustBeQwen36MTP
         }
@@ -67,17 +73,19 @@ extension RealForwardRunner {
                     + "expected \(expectedBytes)")
         }
         guard let tokenBuffer = mtpTokenBlock,
-              let embeddingBlock = mtpEmbeddingBlock,
-              let normalizedEmbedding = mtpNormalizedEmbeddingBlock,
-              let collapsed = mtpNormalizedHiddenBlock,
-              let normalizedWide = mtpConcatBlock,
-              let projected = mtpProjectedBlock,
-              let targetHidden = mtpTargetHiddenBlock,
-              let elementwise else {
+            let embeddingBlock = mtpEmbeddingBlock,
+            let normalizedEmbedding = mtpNormalizedEmbeddingBlock,
+            let collapsed = mtpNormalizedHiddenBlock,
+            let normalizedWide = mtpConcatBlock,
+            let projected = mtpProjectedBlock,
+            let targetHidden = mtpTargetHiddenBlock,
+            let elementwise
+        else {
             throw StreamingMTPError.sidecarMustBeQwen36MTP
         }
-        targetHiddenRows.copyBytes(to: targetHidden.contents()
-            .assumingMemoryBound(to: UInt8.self), count: expectedBytes)
+        targetHiddenRows.copyBytes(
+            to: targetHidden.contents()
+                .assumingMemoryBound(to: UInt8.self), count: expectedBytes)
         let ids = tokens.map { UInt32(bitPattern: $0) }
         ids.withUnsafeBytes { bytes in
             guard let base = bytes.baseAddress else { return }
@@ -86,115 +94,129 @@ extension RealForwardRunner {
         guard let cb = ctx.queue.makeCommandBuffer() else {
             throw ModelError.residentBufferWrapFailed
         }
-        try encodeFusion(commandBuffer: cb, rows: tokens.count,
-                         targetHidden: targetHidden, collapsed: collapsed,
-                         normalizedWide: normalizedWide,
-                         tokenBuffer: tokenBuffer,
-                         embeddingBlock: embeddingBlock,
-                         normalizedEmbedding: normalizedEmbedding,
-                         projected: projected, elementwise: elementwise)
+        try encodeFusion(
+            commandBuffer: cb, rows: tokens.count,
+            targetHidden: targetHidden, collapsed: collapsed,
+            normalizedWide: normalizedWide,
+            tokenBuffer: tokenBuffer,
+            embeddingBlock: embeddingBlock,
+            normalizedEmbedding: normalizedEmbedding,
+            projected: projected, elementwise: elementwise)
         cb.commit()
         try waitForCompletion(cb)
-        return try await runDraftLayer(tokens: tokens,
-                                       startPosition: startPosition,
-                                       predictNext: predictNext,
-                                       fused: projected)
+        return try await runDraftLayer(
+            tokens: tokens,
+            startPosition: startPosition,
+            predictNext: predictNext,
+            fused: projected)
     }
 
     /// The two projection branches and their sum. Split out so the fusion --
     /// the only inferred part of this family's draft -- reads as one thing.
-    private func encodeFusion(commandBuffer cb: MTLCommandBuffer,
-                              rows: Int,
-                              targetHidden: MTLBuffer,
-                              collapsed: MTLBuffer,
-                              normalizedWide: MTLBuffer,
-                              tokenBuffer: MTLBuffer,
-                              embeddingBlock: MTLBuffer,
-                              normalizedEmbedding: MTLBuffer,
-                              projected: MTLBuffer,
-                              elementwise: Elementwise) throws {
+    private func encodeFusion(
+        commandBuffer cb: MTLCommandBuffer,
+        rows: Int,
+        targetHidden: MTLBuffer,
+        collapsed: MTLBuffer,
+        normalizedWide: MTLBuffer,
+        tokenBuffer: MTLBuffer,
+        embeddingBlock: MTLBuffer,
+        normalizedEmbedding: MTLBuffer,
+        projected: MTLBuffer,
+        elementwise: Elementwise
+    ) throws {
         let D = cfg.hiddenSize
         // Hidden branch: grouped norm across the streams, mean-collapse, project.
         let wideNorm = try model.mtpWideNorm()
-        try rms.encodeBF16WGrouped(commandBuffer: cb,
-                                   x: targetHidden,
-                                   weight: wideNorm.buffer,
-                                   weightOffset: Int(wideNorm.offset),
-                                   out: normalizedWide,
-                                   groupDim: UInt32(D),
-                                   numGroups: residualStreamCount,
-                                   eps: 1e-6, tokens: rows)
-        try elementwise.encodeHCMean(commandBuffer: cb,
-                                     streams: normalizedWide,
-                                     out: collapsed,
-                                     dim: D, streamCount: residualStreamCount,
-                                     tokens: rows)
+        try rms.encodeBF16WGrouped(
+            commandBuffer: cb,
+            x: targetHidden,
+            weight: wideNorm.buffer,
+            weightOffset: Int(wideNorm.offset),
+            out: normalizedWide,
+            groupDim: UInt32(D),
+            numGroups: residualStreamCount,
+            eps: 1e-6, tokens: rows)
+        try elementwise.encodeHCMean(
+            commandBuffer: cb,
+            streams: normalizedWide,
+            out: collapsed,
+            dim: D, streamCount: residualStreamCount,
+            tokens: rows)
         let hiddenProjection = try model.mtpHiddenProjection()
-        try prefillQMM.encode(commandBuffer: cb,
-                              weights: hiddenProjection.buffer,
-                              weightsOffset: Int(hiddenProjection.offset),
-                              scales: hiddenProjection.buffer,
-                              scalesOffset: Int(hiddenProjection.scaleOffset),
-                              biases: hiddenProjection.buffer,
-                              biasesOffset: Int(hiddenProjection.biasOffset),
-                              x: collapsed, y: projected,
-                              t: rows, n: D, k: D)
+        try prefillQMM.encode(
+            commandBuffer: cb,
+            weights: hiddenProjection.buffer,
+            weightsOffset: Int(hiddenProjection.offset),
+            scales: hiddenProjection.buffer,
+            scalesOffset: Int(hiddenProjection.scaleOffset),
+            biases: hiddenProjection.buffer,
+            biasesOffset: Int(hiddenProjection.biasOffset),
+            x: collapsed, y: projected,
+            t: rows, n: D, k: D)
 
         // Token branch: embed, plain norm, project.
         let emb = try model.embedding()
-        try prefillEmbed.encode(commandBuffer: cb,
-                                table: emb.buffer, tableOffset: Int(emb.offset),
-                                scales: emb.buffer,
-                                scalesOffset: Int(emb.scaleOffset),
-                                biases: emb.buffer,
-                                biasesOffset: Int(emb.biasOffset),
-                                tokens: tokenBuffer,
-                                out: embeddingBlock,
-                                t: UInt32(rows), d: UInt32(D),
-                                outScale: 1, vocab: UInt32(cfg.vocabSize))
+        try prefillEmbed.encode(
+            commandBuffer: cb,
+            table: emb.buffer, tableOffset: Int(emb.offset),
+            scales: emb.buffer,
+            scalesOffset: Int(emb.scaleOffset),
+            biases: emb.buffer,
+            biasesOffset: Int(emb.biasOffset),
+            tokens: tokenBuffer,
+            out: embeddingBlock,
+            t: UInt32(rows), d: UInt32(D),
+            outScale: 1, vocab: UInt32(cfg.vocabSize))
         let tokenNorm = try model.mtpTokenNorm()
-        try prefillRMS.encodeBF16W(commandBuffer: cb,
-                                   x: embeddingBlock,
-                                   weight: tokenNorm.buffer,
-                                   weightOffset: Int(tokenNorm.offset),
-                                   out: normalizedEmbedding,
-                                   t: UInt32(rows), d: UInt32(D), eps: 1e-6)
+        try prefillRMS.encodeBF16W(
+            commandBuffer: cb,
+            x: embeddingBlock,
+            weight: tokenNorm.buffer,
+            weightOffset: Int(tokenNorm.offset),
+            out: normalizedEmbedding,
+            t: UInt32(rows), d: UInt32(D), eps: 1e-6)
         let tokenProjection = try model.mtpEmbeddingProjection()
-        try prefillQMM.encode(commandBuffer: cb,
-                              weights: tokenProjection.buffer,
-                              weightsOffset: Int(tokenProjection.offset),
-                              scales: tokenProjection.buffer,
-                              scalesOffset: Int(tokenProjection.scaleOffset),
-                              biases: tokenProjection.buffer,
-                              biasesOffset: Int(tokenProjection.biasOffset),
-                              x: normalizedEmbedding, y: embeddingBlock,
-                              t: rows, n: D, k: D)
+        try prefillQMM.encode(
+            commandBuffer: cb,
+            weights: tokenProjection.buffer,
+            weightsOffset: Int(tokenProjection.offset),
+            scales: tokenProjection.buffer,
+            scalesOffset: Int(tokenProjection.scaleOffset),
+            biases: tokenProjection.buffer,
+            biasesOffset: Int(tokenProjection.biasOffset),
+            x: normalizedEmbedding, y: embeddingBlock,
+            t: rows, n: D, k: D)
         // Sum the branches in place: `projected` becomes the fused input the
         // draft layer starts from.
-        try elementwise.encodeResidualAdd(commandBuffer: cb,
-                                          hidden: projected,
-                                          delta: embeddingBlock,
-                                          count: rows * D)
+        try elementwise.encodeResidualAdd(
+            commandBuffer: cb,
+            hidden: projected,
+            delta: embeddingBlock,
+            count: rows * D)
     }
 
     /// Runs the draft's single decoder layer over the fused input and reads
     /// back its prediction. Identical in shape to the Qwen 3.6 draft's tail.
-    private func runDraftLayer(tokens: ArraySlice<Int32>,
-                               startPosition: Int,
-                               predictNext: Bool,
-                               fused: MTLBuffer) async throws -> Int32? {
+    private func runDraftLayer(
+        tokens: ArraySlice<Int32>,
+        startPosition: Int,
+        predictNext: Bool,
+        fused: MTLBuffer
+    ) async throws -> Int32? {
         let projected = fused
         let runtime = PrefillRuntimeConfig.production(chunkTokens: 32)
         let scratch = try ensurePrefillScratch(config: runtime)
         let mode: PrefillOutputMode = useFusedGreedyHead ? .greedyIfAvailable : .logits
-        try await executePrefillChunk(tokens: tokens,
-                                      startPosition: startPosition,
-                                      outputMode: mode,
-                                      logits: verificationLogits,
-                                      scratch: scratch,
-                                      config: runtime,
-                                      writeFinalHead: predictNext,
-                                      preparedHidden: projected)
+        try await executePrefillChunk(
+            tokens: tokens,
+            startPosition: startPosition,
+            outputMode: mode,
+            logits: verificationLogits,
+            scratch: scratch,
+            config: runtime,
+            writeFinalHead: predictNext,
+            preparedHidden: projected)
         guard predictNext else { return nil }
         if useFusedGreedyHead { return Int32(bitPattern: lastGreedyToken) }
         let values = verificationLogits.contents()

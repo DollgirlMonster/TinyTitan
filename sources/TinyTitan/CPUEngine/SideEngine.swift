@@ -62,7 +62,8 @@ public enum SideEngineAnswer: String, Sendable, CaseIterable, Equatable {
             }
         }
         guard let match = SideEngineAnswer(rawValue: word.uppercased()),
-              allowed.contains(match) else { return nil }
+            allowed.contains(match)
+        else { return nil }
         self = match
     }
 }
@@ -77,8 +78,9 @@ public enum SideEngineJudgement: Sendable, Equatable {
     /// know that from the two statements. A caller with a stored rule supplies
     /// it, and the prompt shows it as a `RULE:` line; without one the CONFLICT
     /// half is a guess.
-    case supersession(key: String, earlier: String, now: String,
-                      rule: String? = nil)
+    case supersession(
+        key: String, earlier: String, now: String,
+        rule: String? = nil)
     case duplication(aKey: String, aValue: String, bKey: String, bValue: String)
     case replyCheck(key: String, value: String, reply: String)
     case retrieval(question: String, key: String, value: String)
@@ -159,25 +161,25 @@ public enum SideEngineJudgement: Sendable, Equatable {
     /// as the value does, and withholding it halved accuracy when measured.
     public var userPrompt: String {
         switch self {
-        case let .clauseAttribution(personWrote, address, clause):
+        case .clauseAttribution(let personWrote, let address, let clause):
             return "WHAT THE PERSON WROTE:\n\(personWrote)\n\n"
                 + "STATEMENT: \(address) = \(clause)\n"
                 + "Did the person state this?"
-        case let .durability(key, value):
+        case .durability(let key, let value):
             return "FACT: \(key) = \(value)\nKeep it?"
-        case let .contradiction(aKey, aValue, bKey, bValue):
+        case .contradiction(let aKey, let aValue, let bKey, let bValue):
             return "A: \(aKey) = \(aValue)\nB: \(bKey) = \(bValue)\n"
                 + "Do A and B disagree?"
-        case let .supersession(key, earlier, now, rule):
+        case .supersession(let key, let earlier, let now, let rule):
             let prefix = rule.map { "RULE: \($0)\n" } ?? ""
             return prefix + "EARLIER: \(key) = \(earlier)\nNOW: \(key) = \(now)\n"
                 + "Which is it?"
-        case let .duplication(aKey, aValue, bKey, bValue):
+        case .duplication(let aKey, let aValue, let bKey, let bValue):
             return "A: \(aKey) = \(aValue)\nB: \(bKey) = \(bValue)\nSame fact?"
-        case let .replyCheck(key, value, reply):
+        case .replyCheck(let key, let value, let reply):
             return "KNOWN: \(key) = \(value)\nREPLY: \(reply)\n"
                 + "Does the reply contradict what is known?"
-        case let .retrieval(question, key, value):
+        case .retrieval(let question, let key, let value):
             return "QUESTION: \(question)\nFACT: \(key) = \(value)\n"
                 + "Could this fact answer it?"
         }
@@ -216,9 +218,9 @@ public enum SideEngineError: Error, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case let .missingTokenizer(path):
+        case .missingTokenizer(let path):
             "no tokenizer in \(path)"
-        case let .unparsableAnswer(task, completion):
+        case .unparsableAnswer(let task, let completion):
             "\(task.rawValue) answered \(completion.debugDescription), which is not one of "
                 + task.answers.map(\.rawValue).joined(separator: "/")
         case .shutDown:
@@ -262,8 +264,10 @@ public actor SideEngine {
     ///     alone, which is what a benchmark wants.
     ///   - load: constructs the model on first use. Async because a tokenizer
     ///     loads asynchronously.
-    public init(isClientGenerating: (@Sendable () -> Bool)? = nil,
-                load: @escaping Load) {
+    public init(
+        isClientGenerating: (@Sendable () -> Bool)? = nil,
+        load: @escaping Load
+    ) {
         self.isClientGenerating = isClientGenerating
         self.load = load
     }
@@ -273,21 +277,29 @@ public actor SideEngine {
     /// The width the resident model will use for its next token.
     public var currentThreads: Int? { model?.threads }
 
-    public func judge(_ judgement: SideEngineJudgement,
-                      maximumTokens: Int = 8) async throws -> SideEngineAnswer {
+    public func judge(
+        _ judgement: SideEngineJudgement,
+        maximumTokens: Int = 8
+    ) async throws -> SideEngineAnswer {
         guard !stopped else { throw SideEngineError.shutDown }
         let model = try await resident()
         model.reset()
-        let prompt = try model.encode(system: judgement.systemPrompt,
-                                      user: judgement.userPrompt)
-        let produced = try model.generate(prompt: prompt,
-                                          maximumTokens: maximumTokens,
-                                          stopping: [model.endOfSequence])
+        let prompt = try model.encode(
+            system: judgement.systemPrompt,
+            user: judgement.userPrompt)
+        let produced = try model.generate(
+            prompt: prompt,
+            maximumTokens: maximumTokens,
+            stopping: [model.endOfSequence])
         let completion = model.decode(produced)
-        guard let answer = SideEngineAnswer(firstWordOf: completion,
-                                            allowed: judgement.task.answers) else {
-            throw SideEngineError.unparsableAnswer(task: judgement.task,
-                                                   completion: completion)
+        guard
+            let answer = SideEngineAnswer(
+                firstWordOf: completion,
+                allowed: judgement.task.answers)
+        else {
+            throw SideEngineError.unparsableAnswer(
+                task: judgement.task,
+                completion: completion)
         }
         return answer
     }
@@ -345,13 +357,16 @@ public final class CPUQwen35SideEngineModel: SideEngineModel, @unchecked Sendabl
         // reached, the same rule the batch command uses.
         let snapshot: AffineSnapshot
         if FileManager.default.fileExists(
-            atPath: snapshotDirectory.appendingPathComponent("manifest.json").path) {
+            atPath: snapshotDirectory.appendingPathComponent("manifest.json").path)
+        {
             snapshot = try AffineSnapshot(gturbo: snapshotDirectory)
         } else {
             snapshot = try AffineSnapshot(directory: snapshotDirectory)
         }
-        guard let folder = GFTokenizer.resolvedTokenizerFolder(
-            forModelDirectory: snapshotDirectory) else {
+        guard
+            let folder = GFTokenizer.resolvedTokenizerFolder(
+                forModelDirectory: snapshotDirectory)
+        else {
             throw SideEngineError.missingTokenizer(snapshotDirectory.path)
         }
         self.engine = try CPUQwen35(snapshot: snapshot, threads: threads)
@@ -372,10 +387,13 @@ public final class CPUQwen35SideEngineModel: SideEngineModel, @unchecked Sendabl
         tokenizer.decode(tokens.map(Int32.init))
     }
 
-    public func generate(prompt: [Int], maximumTokens: Int,
-                         stopping: Set<Int>) throws -> [Int] {
-        try engine.generate(prompt: prompt, maximumTokens: maximumTokens,
-                            stopping: stopping)
+    public func generate(
+        prompt: [Int], maximumTokens: Int,
+        stopping: Set<Int>
+    ) throws -> [Int] {
+        try engine.generate(
+            prompt: prompt, maximumTokens: maximumTokens,
+            stopping: stopping)
     }
 
     public var endOfSequence: Int { Int(tokenizer.eosID) }

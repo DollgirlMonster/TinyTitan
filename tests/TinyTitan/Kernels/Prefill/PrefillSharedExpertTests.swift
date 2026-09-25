@@ -1,8 +1,9 @@
 import Foundation
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct PrefillSharedExpertTests {
     private static let rows = 4
@@ -29,11 +30,14 @@ import TinyTitanValidationSupport
         let yElements = Self.rows * Self.d
 
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: x),
-              let yRef = Fp16Buffer.make(ctx.device, halves: Array(repeating: Self.sentinel, count: yElements)),
-              let ySplit = Fp16Buffer.make(ctx.device, halves: Array(repeating: Self.sentinel, count: yElements)),
-              let scratchGate = Fp16Buffer.make(ctx.device, count: Self.f),
-              let scratchUp = Fp16Buffer.make(ctx.device, count: Self.f),
-              let scratchAct = Fp16Buffer.make(ctx.device, count: Self.rows * Self.f) else {
+            let yRef = Fp16Buffer.make(
+                ctx.device, halves: Array(repeating: Self.sentinel, count: yElements)),
+            let ySplit = Fp16Buffer.make(
+                ctx.device, halves: Array(repeating: Self.sentinel, count: yElements)),
+            let scratchGate = Fp16Buffer.make(ctx.device, count: Self.f),
+            let scratchUp = Fp16Buffer.make(ctx.device, count: Self.f),
+            let scratchAct = Fp16Buffer.make(ctx.device, count: Self.rows * Self.f)
+        else {
             Issue.record("buffer allocation failed")
             return
         }
@@ -44,41 +48,44 @@ import TinyTitanValidationSupport
         let halfBytes = MemoryLayout<Float16>.stride
 
         let refCB = try #require(ctx.queue.makeCommandBuffer())
-        try prefill.encodeBlock(commandBuffer: refCB,
-                                x: xBuf,
-                                y: yRef,
-                                gate: gateProj,
-                                up: upProj,
-                                down: downProj,
-                                scratchGate: scratchGate,
-                                scratchUp: scratchUp,
-                                scratchAct: scratchAct,
-                                queryCount: Self.rows,
-                                d: Self.d,
-                                intermediate: Self.f,
-                                xStrideElements: Self.xStride,
-                                yStrideElements: Self.d)
+        try prefill.encodeBlock(
+            commandBuffer: refCB,
+            x: xBuf,
+            y: yRef,
+            gate: gateProj,
+            up: upProj,
+            down: downProj,
+            scratchGate: scratchGate,
+            scratchUp: scratchUp,
+            scratchAct: scratchAct,
+            queryCount: Self.rows,
+            d: Self.d,
+            intermediate: Self.f,
+            xStrideElements: Self.xStride,
+            yStrideElements: Self.d)
         refCB.commit()
         refCB.waitUntilCompleted()
         #expect(refCB.error == nil)
 
         let splitCB = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<Self.rows {
-            try shared.encodePhase1(commandBuffer: splitCB,
-                                    x: xBuf,
-                                    xOffset: row * Self.xStride * halfBytes,
-                                    gate: gateProj,
-                                    up: upProj,
-                                    scratchAct: scratchAct,
-                                    scratchActOffset: row * Self.f * halfBytes)
+            try shared.encodePhase1(
+                commandBuffer: splitCB,
+                x: xBuf,
+                xOffset: row * Self.xStride * halfBytes,
+                gate: gateProj,
+                up: upProj,
+                scratchAct: scratchAct,
+                scratchActOffset: row * Self.f * halfBytes)
         }
         for row in 0..<Self.rows {
-            try shared.encodeDown(commandBuffer: splitCB,
-                                  down: downProj,
-                                  y: ySplit,
-                                  yOffset: row * Self.d * halfBytes,
-                                  scratchAct: scratchAct,
-                                  scratchActOffset: row * Self.f * halfBytes)
+            try shared.encodeDown(
+                commandBuffer: splitCB,
+                down: downProj,
+                y: ySplit,
+                yOffset: row * Self.d * halfBytes,
+                scratchAct: scratchAct,
+                scratchActOffset: row * Self.f * halfBytes)
         }
         splitCB.commit()
         splitCB.waitUntilCompleted()
@@ -105,14 +112,18 @@ import TinyTitanValidationSupport
         let yElements = Self.rows * Self.d
 
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: x),
-              let yRef = Fp16Buffer.make(ctx.device, halves: Array(repeating: Self.sentinel, count: yElements)),
-              let yGot = Fp16Buffer.make(ctx.device, halves: Array(repeating: Self.sentinel, count: yElements)),
-              let scratchGate = Fp16Buffer.make(ctx.device, count: Self.f),
-              let scratchUp = Fp16Buffer.make(ctx.device, count: Self.f),
-              let scratchAct = Fp16Buffer.make(ctx.device, count: Self.f),
-              let postF1Buf = ctx.device.makeBuffer(bytes: postF1,
-                                                     length: postF1.count * MemoryLayout<UInt16>.stride,
-                                                     options: .storageModeShared) else {
+            let yRef = Fp16Buffer.make(
+                ctx.device, halves: Array(repeating: Self.sentinel, count: yElements)),
+            let yGot = Fp16Buffer.make(
+                ctx.device, halves: Array(repeating: Self.sentinel, count: yElements)),
+            let scratchGate = Fp16Buffer.make(ctx.device, count: Self.f),
+            let scratchUp = Fp16Buffer.make(ctx.device, count: Self.f),
+            let scratchAct = Fp16Buffer.make(ctx.device, count: Self.f),
+            let postF1Buf = ctx.device.makeBuffer(
+                bytes: postF1,
+                length: postF1.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared)
+        else {
             Issue.record("buffer allocation failed")
             return
         }
@@ -124,50 +135,54 @@ import TinyTitanValidationSupport
         let halfBytes = MemoryLayout<Float16>.stride
         let refCB = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<Self.rows {
-            try scalar.encode(commandBuffer: refCB,
-                              x: xBuf,
-                              xOffset: row * Self.xStride * halfBytes,
-                              gate: gateProj,
-                              up: upProj,
-                              down: downProj,
-                              y: yRef,
-                              yOffset: row * Self.d * halfBytes,
-                              scratchAct: scratchAct)
-            try scalarRMS.encodeBF16W(commandBuffer: refCB,
-                                  x: yRef,
-                                  xOffset: row * Self.d * halfBytes,
-                                  weight: postF1Buf,
-                                  out: yRef,
-                                  outOffset: row * Self.d * halfBytes,
-                                  d: UInt32(Self.d),
-                                  eps: 1e-6)
+            try scalar.encode(
+                commandBuffer: refCB,
+                x: xBuf,
+                xOffset: row * Self.xStride * halfBytes,
+                gate: gateProj,
+                up: upProj,
+                down: downProj,
+                y: yRef,
+                yOffset: row * Self.d * halfBytes,
+                scratchAct: scratchAct)
+            try scalarRMS.encodeBF16W(
+                commandBuffer: refCB,
+                x: yRef,
+                xOffset: row * Self.d * halfBytes,
+                weight: postF1Buf,
+                out: yRef,
+                outOffset: row * Self.d * halfBytes,
+                d: UInt32(Self.d),
+                eps: 1e-6)
         }
         refCB.commit()
         refCB.waitUntilCompleted()
         #expect(refCB.error == nil)
 
         let gotCB = try #require(ctx.queue.makeCommandBuffer())
-        try prefill.encodeBlock(commandBuffer: gotCB,
-                                x: xBuf,
-                                y: yGot,
-                                gate: gateProj,
-                                up: upProj,
-                                down: downProj,
-                                scratchGate: scratchGate,
-                                scratchUp: scratchUp,
-                                scratchAct: scratchAct,
-                                queryCount: Self.rows,
-                                d: Self.d,
-                                intermediate: Self.f,
-                                xStrideElements: Self.xStride,
-                                yStrideElements: Self.d)
-        try prefillRMS.encodeBF16W(commandBuffer: gotCB,
-                               x: yGot,
-                               weight: postF1Buf,
-                               out: yGot,
-                               t: UInt32(Self.rows),
-                               d: UInt32(Self.d),
-                               eps: 1e-6)
+        try prefill.encodeBlock(
+            commandBuffer: gotCB,
+            x: xBuf,
+            y: yGot,
+            gate: gateProj,
+            up: upProj,
+            down: downProj,
+            scratchGate: scratchGate,
+            scratchUp: scratchUp,
+            scratchAct: scratchAct,
+            queryCount: Self.rows,
+            d: Self.d,
+            intermediate: Self.f,
+            xStrideElements: Self.xStride,
+            yStrideElements: Self.d)
+        try prefillRMS.encodeBF16W(
+            commandBuffer: gotCB,
+            x: yGot,
+            weight: postF1Buf,
+            out: yGot,
+            t: UInt32(Self.rows),
+            d: UInt32(Self.d),
+            eps: 1e-6)
         gotCB.commit()
         gotCB.waitUntilCompleted()
         #expect(gotCB.error == nil)
@@ -189,11 +204,14 @@ import TinyTitanValidationSupport
         let down = makeWeights(rows: d, cols: f, rng: &rng)
 
         guard let xBuf = Fp16Buffer.make(ctx.device, halves: x),
-              let yRef = Fp16Buffer.make(ctx.device, halves: Array(repeating: sentinel, count: rows * yStride)),
-              let yGot = Fp16Buffer.make(ctx.device, halves: Array(repeating: sentinel, count: rows * yStride)),
-              let scratchGate = Fp16Buffer.make(ctx.device, count: f),
-              let scratchUp = Fp16Buffer.make(ctx.device, count: f),
-              let scratchAct = Fp16Buffer.make(ctx.device, count: f) else {
+            let yRef = Fp16Buffer.make(
+                ctx.device, halves: Array(repeating: sentinel, count: rows * yStride)),
+            let yGot = Fp16Buffer.make(
+                ctx.device, halves: Array(repeating: sentinel, count: rows * yStride)),
+            let scratchGate = Fp16Buffer.make(ctx.device, count: f),
+            let scratchUp = Fp16Buffer.make(ctx.device, count: f),
+            let scratchAct = Fp16Buffer.make(ctx.device, count: f)
+        else {
             Issue.record("buffer allocation failed")
             return
         }
@@ -205,35 +223,37 @@ import TinyTitanValidationSupport
         let halfBytes = MemoryLayout<Float16>.stride
         let refCB = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<rows {
-            try scalar.encode(commandBuffer: refCB,
-                              x: xBuf,
-                              xOffset: row * xStride * halfBytes,
-                              gate: gateProj,
-                              up: upProj,
-                              down: downProj,
-                              y: yRef,
-                              yOffset: row * yStride * halfBytes,
-                              scratchAct: scratchAct)
+            try scalar.encode(
+                commandBuffer: refCB,
+                x: xBuf,
+                xOffset: row * xStride * halfBytes,
+                gate: gateProj,
+                up: upProj,
+                down: downProj,
+                y: yRef,
+                yOffset: row * yStride * halfBytes,
+                scratchAct: scratchAct)
         }
         refCB.commit()
         refCB.waitUntilCompleted()
         #expect(refCB.error == nil)
 
         let gotCB = try #require(ctx.queue.makeCommandBuffer())
-        try prefill.encodeBlock(commandBuffer: gotCB,
-                                x: xBuf,
-                                y: yGot,
-                                gate: gateProj,
-                                up: upProj,
-                                down: downProj,
-                                scratchGate: scratchGate,
-                                scratchUp: scratchUp,
-                                scratchAct: scratchAct,
-                                queryCount: rows,
-                                d: d,
-                                intermediate: f,
-                                xStrideElements: xStride,
-                                yStrideElements: yStride)
+        try prefill.encodeBlock(
+            commandBuffer: gotCB,
+            x: xBuf,
+            y: yGot,
+            gate: gateProj,
+            up: upProj,
+            down: downProj,
+            scratchGate: scratchGate,
+            scratchUp: scratchUp,
+            scratchAct: scratchAct,
+            queryCount: rows,
+            d: d,
+            intermediate: f,
+            xStrideElements: xStride,
+            yStrideElements: yStride)
         gotCB.commit()
         gotCB.waitUntilCompleted()
         #expect(gotCB.error == nil)
@@ -254,9 +274,11 @@ import TinyTitanValidationSupport
         return block
     }
 
-    private static func makeWeights(rows: Int,
-                                    cols: Int,
-                                    rng: inout SplitMix64)
+    private static func makeWeights(
+        rows: Int,
+        cols: Int,
+        rng: inout SplitMix64
+    )
         -> (packed: [UInt8], scales: [UInt16], biases: [UInt16])
     {
         let groupsPerRow = cols / Quantization.groupSize
@@ -287,20 +309,27 @@ import TinyTitanValidationSupport
         rows: Int,
         cols: Int
     ) throws -> SharedExpertInt8Proj {
-        let w = try #require(ctx.device.makeBuffer(bytes: packed.packed,
-                                                   length: packed.packed.count,
-                                                   options: .storageModeShared))
-        let s = try #require(ctx.device.makeBuffer(bytes: packed.scales,
-                                                   length: packed.scales.count * MemoryLayout<UInt16>.stride,
-                                                   options: .storageModeShared))
-        let b = try #require(ctx.device.makeBuffer(bytes: packed.biases,
-                                                   length: packed.biases.count * MemoryLayout<UInt16>.stride,
-                                                   options: .storageModeShared))
-        return SharedExpertInt8Proj(weights: w,
-                                    scales: s,
-                                    biases: b,
-                                    rows: UInt32(rows),
-                                    cols: UInt32(cols))
+        let w = try #require(
+            ctx.device.makeBuffer(
+                bytes: packed.packed,
+                length: packed.packed.count,
+                options: .storageModeShared))
+        let s = try #require(
+            ctx.device.makeBuffer(
+                bytes: packed.scales,
+                length: packed.scales.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared))
+        let b = try #require(
+            ctx.device.makeBuffer(
+                bytes: packed.biases,
+                length: packed.biases.count * MemoryLayout<UInt16>.stride,
+                options: .storageModeShared))
+        return SharedExpertInt8Proj(
+            weights: w,
+            scales: s,
+            biases: b,
+            rows: UInt32(rows),
+            cols: UInt32(cols))
     }
 
     private static func assertPaddingUnchanged(_ values: [Float16]) {

@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import TinyTitan
 
 @Suite struct StreamingMTPTests {
@@ -13,20 +14,23 @@ import Foundation
         #expect(plan.streamedExpertCacheBytes == slots * 1_769_472)
         #expect(plan.draftKVBytes == 128 * 1_048_576)
         // The default budget (384 MiB) must cover the sum of every component.
-        #expect(plan.requiredBytes == 43 * 1_048_576 + slots * 1_769_472
-            + 128 * 1_048_576 + 62 * 1_048_576 + 8 * 1_048_576)
+        #expect(
+            plan.requiredBytes == 43 * 1_048_576 + slots * 1_769_472
+                + 128 * 1_048_576 + 62 * 1_048_576 + 8 * 1_048_576)
         #expect(plan.requiredBytes < plan.budgetBytes)
     }
 
     @Test func expertSlotDefaultIsWithinTheAllowedSet() {
-        #expect(StreamingMTPMemoryPlan.allowedExpertSlots
-            .contains(StreamingMTPMemoryPlan.defaultExpertSlots))
+        #expect(
+            StreamingMTPMemoryPlan.allowedExpertSlots
+                .contains(StreamingMTPMemoryPlan.defaultExpertSlots))
         // The env override is read once into a `let`, so a test cannot flip it
         // in-process. What it can pin is that an unset/invalid override leaves
         // the default in force, which is the property callers depend on.
-        #expect(StreamingMTPMemoryPlan.expertSlots
-            == StreamingMTPMemoryPlan.defaultExpertSlots
-            || ProcessInfo.processInfo.environment["TINYTITAN_MTP_EXPERT_SLOTS"] != nil)
+        #expect(
+            StreamingMTPMemoryPlan.expertSlots
+                == StreamingMTPMemoryPlan.defaultExpertSlots
+                || ProcessInfo.processInfo.environment["TINYTITAN_MTP_EXPERT_SLOTS"] != nil)
     }
 
     @Test func draftKVAccountingUsesSelectedPrecision() throws {
@@ -37,7 +41,8 @@ import Foundation
                 draftKVTokens: 65_536,
                 kvCachePrecision: precision,
                 targetRollbackBytes: 0,
-                scratchBytes: 0).draftKVBytes
+                scratchBytes: 0
+            ).draftKVBytes
         }
         #expect(try bytes(.fp16) == 128 * 1_048_576)
         #expect(try bytes(.int8) == 68 * 1_048_576)
@@ -74,15 +79,18 @@ import Foundation
     }
 
     @Test func modelLineageRejectsCrossModelWeightSharing() {
-        #expect(Model.mtpLineagesAreCompatible(
-            sidecarID: "ornith-1.5-35b-a3b-mtp-4bit",
-            targetID: "ornith-1.5-35b-a3b-8bit"))
-        #expect(Model.mtpLineagesAreCompatible(
-            sidecarID: "qwen3.6-35b-a3b-mtp-4bit",
-            targetID: "qwen3.6-35b-a3b-4bit"))
-        #expect(!Model.mtpLineagesAreCompatible(
-            sidecarID: "ornith-1.5-35b-a3b-mtp-4bit",
-            targetID: "qwen3.6-35b-a3b-4bit"))
+        #expect(
+            Model.mtpLineagesAreCompatible(
+                sidecarID: "ornith-1.5-35b-a3b-mtp-4bit",
+                targetID: "ornith-1.5-35b-a3b-8bit"))
+        #expect(
+            Model.mtpLineagesAreCompatible(
+                sidecarID: "qwen3.6-35b-a3b-mtp-4bit",
+                targetID: "qwen3.6-35b-a3b-4bit"))
+        #expect(
+            !Model.mtpLineagesAreCompatible(
+                sidecarID: "ornith-1.5-35b-a3b-mtp-4bit",
+                targetID: "qwen3.6-35b-a3b-4bit"))
     }
 
     // MARK: - Toy sidecar integration (T27)
@@ -97,12 +105,14 @@ import Foundation
         let sidecarDir = try QwenToySynthetic.writeMTP()
         defer { try? FileManager.default.removeItem(at: sidecarDir) }
         let ctx = try MetalContext()
-        let target = try Model.load(directoryURL: targetDir,
-                                    device: ctx.device,
-                                    expecting: .qwenToy())
-        let sidecar = try Model.load(directoryURL: sidecarDir,
-                                     device: ctx.device,
-                                     expecting: .qwenToyMTP())
+        let target = try Model.load(
+            directoryURL: targetDir,
+            device: ctx.device,
+            expecting: .qwenToy())
+        let sidecar = try Model.load(
+            directoryURL: sidecarDir,
+            device: ctx.device,
+            expecting: .qwenToyMTP())
 
         #expect(target.config.family == .qwen36)
         #expect(sidecar.config.family == .qwen36MTP)
@@ -123,10 +133,12 @@ import Foundation
     /// emitted and the acceptance metrics are reported on the decoder.
     @Test func verifyScheduleControlDefaultsToPairAndFailsClosed() throws {
         #expect(try RuntimeMTPVerifySchedule.environmentValue([:]) == .pair)
-        #expect(try RuntimeMTPVerifySchedule.environmentValue(
-            ["TINYTITAN_MTP_VERIFY": "pair"]) == .pair)
-        #expect(try RuntimeMTPVerifySchedule.environmentValue(
-            ["TINYTITAN_MTP_VERIFY": "tile"]) == .tile)
+        #expect(
+            try RuntimeMTPVerifySchedule.environmentValue(
+                ["TINYTITAN_MTP_VERIFY": "pair"]) == .pair)
+        #expect(
+            try RuntimeMTPVerifySchedule.environmentValue(
+                ["TINYTITAN_MTP_VERIFY": "tile"]) == .tile)
         #expect(throws: StreamingMTPError.self) {
             try RuntimeMTPVerifySchedule.environmentValue(
                 ["TINYTITAN_MTP_VERIFY": "fast"])
@@ -145,19 +157,22 @@ import Foundation
         let ctx = try MetalContext()
         let tokenizer = try await GFTokenizer.load(
             from: ChatMLTemplateTests.fixtureFolder())
-        let target = try Model.load(directoryURL: targetDir,
-                                    device: ctx.device,
-                                    expecting: .qwenToy())
-        let sidecar = try Model.load(directoryURL: sidecarDir,
-                                     device: ctx.device,
-                                     expecting: .qwenToyMTP())
+        let target = try Model.load(
+            directoryURL: targetDir,
+            device: ctx.device,
+            expecting: .qwenToy())
+        let sidecar = try Model.load(
+            directoryURL: sidecarDir,
+            device: ctx.device,
+            expecting: .qwenToyMTP())
         let decoder = try StreamingMTPDecoder(
             targetModel: target,
             mtpSidecar: sidecar,
             context: ctx,
             maxContext: 64)
-        let scratch = try RawCompletionScratch(context: ctx,
-                                               vocab: tokenizer.vocabSize)
+        let scratch = try RawCompletionScratch(
+            context: ctx,
+            vocab: tokenizer.vocabSize)
 
         var emitted = 0
         let result = try await runRawCompletion(
@@ -175,8 +190,9 @@ import Foundation
         #expect(emitted > 0)
         // Greedy verification always runs at least one advance for a 4-token
         // budget, so the acceptance statistics are reported (drafted >= 1).
-        #expect(decoder.statistics.draftedTokens > 0,
-                "no draft/verify cycle ran; acceptance metrics were not reported")
+        #expect(
+            decoder.statistics.draftedTokens > 0,
+            "no draft/verify cycle ran; acceptance metrics were not reported")
         #expect(decoder.statistics.acceptedTokens >= 0)
         #expect(decoder.statistics.emittedTokens >= result.newTokens)
         #expect(decoder.targetPosition == decoder.target.continuationPosition)

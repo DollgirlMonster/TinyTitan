@@ -44,23 +44,26 @@ public actor TaskMemory {
     ///   otherwise overwrite each other with no trace, and the loser never
     ///   learns it lost.
     @discardableResult
-    public func write(taskID: UUID,
-                      namespace: String,
-                      key: String,
-                      value: String,
-                      provenance: Provenance? = nil,
-                      importance: Double? = nil,
-                      confidence: Double? = nil,
-                      tags: [String]? = nil,
-                      dependencies: [String]? = nil,
-                      expectedVersion: Int? = nil,
-                      now: Date = Date()) async throws -> MemoryWriteResult {
+    public func write(
+        taskID: UUID,
+        namespace: String,
+        key: String,
+        value: String,
+        provenance: Provenance? = nil,
+        importance: Double? = nil,
+        confidence: Double? = nil,
+        tags: [String]? = nil,
+        dependencies: [String]? = nil,
+        expectedVersion: Int? = nil,
+        now: Date = Date()
+    ) async throws -> MemoryWriteResult {
         try MemoryAddressValidator.validateNamespace(namespace, limits: limits)
         try MemoryAddressValidator.validateKey(key, limits: limits)
         let byteCount = value.utf8.count
         guard byteCount <= limits.maxValueBytes else {
-            throw ContinuityError.valueTooLarge(bytes: byteCount,
-                                                limit: limits.maxValueBytes)
+            throw ContinuityError.valueTooLarge(
+                bytes: byteCount,
+                limit: limits.maxValueBytes)
         }
 
         let address = "\(namespace).\(key)"
@@ -70,14 +73,16 @@ public actor TaskMemory {
         if let expected = expectedVersion {
             let actual = existing?.version ?? 0
             guard actual == expected else {
-                throw ContinuityError.versionConflict(namespace: namespace, key: key,
-                                                      expected: expected, actual: actual)
+                throw ContinuityError.versionConflict(
+                    namespace: namespace, key: key,
+                    expected: expected, actual: actual)
             }
         }
 
         if existing == nil && taskItems.count >= limits.maxItemsPerTask {
-            throw ContinuityError.tooManyItems(count: taskItems.count,
-                                               limit: limits.maxItemsPerTask)
+            throw ContinuityError.tooManyItems(
+                count: taskItems.count,
+                limit: limits.maxItemsPerTask)
         }
 
         // Build the new item first so the budget is checked against what the
@@ -97,19 +102,20 @@ public actor TaskMemory {
             if let dependencies { item.dependencies = dependencies }
             updated = item
         } else {
-            updated = MemoryItem(taskID: taskID,
-                                 namespace: namespace,
-                                 key: key,
-                                 value: value,
-                                 version: 1,
-                                 createdAt: now,
-                                 updatedAt: now,
-                                 provenance: provenance,
-                                 status: .active,
-                                 importance: importance,
-                                 confidence: confidence,
-                                 tags: tags ?? [],
-                                 dependencies: dependencies ?? [])
+            updated = MemoryItem(
+                taskID: taskID,
+                namespace: namespace,
+                key: key,
+                value: value,
+                version: 1,
+                createdAt: now,
+                updatedAt: now,
+                provenance: provenance,
+                status: .active,
+                importance: importance,
+                confidence: confidence,
+                tags: tags ?? [],
+                dependencies: dependencies ?? [])
         }
 
         // The old value does not leave: it becomes a retained version, so a
@@ -117,18 +123,20 @@ public actor TaskMemory {
         // The check does not predict the refund from a full version chain
         // dropping its oldest entry, so it errs high, which is the safe
         // direction for a budget.
-        let archivedCost = existing.map {
-            MemoryItem.overheadBytes + $0.namespace.utf8.count + $0.key.utf8.count
-                + $0.value.utf8.count
-        } ?? 0
+        let archivedCost =
+            existing.map {
+                MemoryItem.overheadBytes + $0.namespace.utf8.count + $0.key.utf8.count
+                    + $0.value.utf8.count
+            } ?? 0
         let delta = updated.storageBytes - (existing?.storageBytes ?? 0) + archivedCost
         let held = bytes[taskID] ?? 0
         // A budget of zero is no budget: measured, a hundred-chapter novel
         // held about 100 KB, and a ceiling sized for the machine was a
         // rounding error against one KV-cache block.
         if limits.maxBytesPerTask > 0, delta > 0, held + delta > limits.maxBytesPerTask {
-            throw ContinuityError.storeFull(bytes: held + delta,
-                                            limit: limits.maxBytesPerTask)
+            throw ContinuityError.storeFull(
+                bytes: held + delta,
+                limit: limits.maxBytesPerTask)
         }
 
         var archived: MemoryVersion?
@@ -137,10 +145,12 @@ public actor TaskMemory {
         }
         taskItems[address] = updated
         items[taskID] = taskItems
-        bytes[taskID] = (bytes[taskID] ?? 0) + updated.storageBytes
+        bytes[taskID] =
+            (bytes[taskID] ?? 0) + updated.storageBytes
             - (existing?.storageBytes ?? 0)
-        let result = MemoryWriteResult(item: updated,
-                                       previousVersion: existing.map { $0.version })
+        let result = MemoryWriteResult(
+            item: updated,
+            previousVersion: existing.map { $0.version })
         if let archived { try await notify(.versioned(archived)) }
         try await notify(.written(result))
         return result
@@ -155,12 +165,14 @@ public actor TaskMemory {
     /// reads as a second version that never happened. The transition is
     /// visible in `updatedAt` and in the session log instead.
     @discardableResult
-    public func setStatus(taskID: UUID,
-                          namespace: String,
-                          key: String,
-                          status: MemoryStatus,
-                          provenance: Provenance? = nil,
-                          now: Date = Date()) async throws -> MemoryItem {
+    public func setStatus(
+        taskID: UUID,
+        namespace: String,
+        key: String,
+        status: MemoryStatus,
+        provenance: Provenance? = nil,
+        now: Date = Date()
+    ) async throws -> MemoryItem {
         let address = "\(namespace).\(key)"
         guard var item = items[taskID]?[address] else {
             throw ContinuityError.unknownMemoryItem(namespace: namespace, key: key)
@@ -177,13 +189,16 @@ public actor TaskMemory {
     /// Retire an address. Not a delete: the value and its history stay, and
     /// the assembler stops offering it.
     @discardableResult
-    public func archive(taskID: UUID,
-                        namespace: String,
-                        key: String,
-                        provenance: Provenance? = nil,
-                        now: Date = Date()) async throws -> MemoryItem {
-        try await setStatus(taskID: taskID, namespace: namespace, key: key,
-                      status: .archived, provenance: provenance, now: now)
+    public func archive(
+        taskID: UUID,
+        namespace: String,
+        key: String,
+        provenance: Provenance? = nil,
+        now: Date = Date()
+    ) async throws -> MemoryItem {
+        try await setStatus(
+            taskID: taskID, namespace: namespace, key: key,
+            status: .archived, provenance: provenance, now: now)
     }
 
     // MARK: - Reading
@@ -226,15 +241,17 @@ public actor TaskMemory {
         var chain = versions[taskID]?[address] ?? []
         chain.sort { $0.version < $1.version }
         if let live = items[taskID]?[address] {
-            chain.append(MemoryVersion(itemID: live.id,
-                                       taskID: taskID,
-                                       namespace: live.namespace,
-                                       key: live.key,
-                                       value: live.value,
-                                       version: live.version,
-                                       recordedAt: live.updatedAt,
-                                       provenance: live.provenance,
-                                       status: live.status))
+            chain.append(
+                MemoryVersion(
+                    itemID: live.id,
+                    taskID: taskID,
+                    namespace: live.namespace,
+                    key: live.key,
+                    value: live.value,
+                    version: live.version,
+                    recordedAt: live.updatedAt,
+                    provenance: live.provenance,
+                    status: live.status))
         }
         return chain
     }
@@ -242,9 +259,11 @@ public actor TaskMemory {
     /// Items the given items depend on, transitively, excluding the ones
     /// already present. The assembler uses this so a decision never arrives
     /// without the constraint behind it.
-    public func dependencies(taskID: UUID,
-                             of seeds: [MemoryItem],
-                             maximumDepth: Int = 3) -> [MemoryItem] {
+    public func dependencies(
+        taskID: UUID,
+        of seeds: [MemoryItem],
+        maximumDepth: Int = 3
+    ) -> [MemoryItem] {
         guard let taskItems = items[taskID] else { return [] }
         var seen = Set(seeds.map(\.address))
         var frontier = seeds
@@ -256,7 +275,8 @@ public actor TaskMemory {
                 for address in item.dependencies where !seen.contains(address) {
                     seen.insert(address)
                     guard let resolved = taskItems[address],
-                          resolved.status.isEligibleForContext else { continue }
+                        resolved.status.isEligibleForContext
+                    else { continue }
                     collected.append(resolved)
                     next.append(resolved)
                 }
@@ -286,8 +306,9 @@ public actor TaskMemory {
     /// The whole store, for persistence. Values are already `Sendable` and
     /// `Codable`, so the journal never needs to know these types' internals.
     public func snapshot() -> MemorySnapshot {
-        MemorySnapshot(items: items.values.flatMap { Array($0.values) },
-                       versions: versions.values.flatMap { $0.values.flatMap { $0 } })
+        MemorySnapshot(
+            items: items.values.flatMap { Array($0.values) },
+            versions: versions.values.flatMap { $0.values.flatMap { $0 } })
     }
 
     /// Replace everything. Used on startup after a journal replay, never
@@ -331,17 +352,20 @@ public actor TaskMemory {
     // MARK: - Internals
 
     @discardableResult
-    private func archiveVersion(of item: MemoryItem, taskID: UUID,
-                                status: MemoryStatus) -> MemoryVersion {
-        let version = MemoryVersion(itemID: item.id,
-                                    taskID: taskID,
-                                    namespace: item.namespace,
-                                    key: item.key,
-                                    value: item.value,
-                                    version: item.version,
-                                    recordedAt: item.updatedAt,
-                                    provenance: item.provenance,
-                                    status: status)
+    private func archiveVersion(
+        of item: MemoryItem, taskID: UUID,
+        status: MemoryStatus
+    ) -> MemoryVersion {
+        let version = MemoryVersion(
+            itemID: item.id,
+            taskID: taskID,
+            namespace: item.namespace,
+            key: item.key,
+            value: item.value,
+            version: item.version,
+            recordedAt: item.updatedAt,
+            provenance: item.provenance,
+            status: status)
         var chain = versions[taskID]?[item.address] ?? []
         chain.append(version)
         var delta = version.storageBytes

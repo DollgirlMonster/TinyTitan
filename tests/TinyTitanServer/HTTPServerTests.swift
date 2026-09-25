@@ -3,6 +3,7 @@ import Foundation
 import NIOCore
 import Synchronization
 import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
@@ -203,20 +204,23 @@ struct HTTPServerTests {
         let port = try #require(channel.localAddress?.port)
 
         let health = try await URLSession.shared.data(
-            from: try localURL(port: port, "/health")).0
+            from: try localURL(port: port, "/health")
+        ).0
         #expect(health.lossyUTF8String.contains(#""status":"ok""#))
 
         let models = try await URLSession.shared.data(
-            from: try localURL(port: port, "/v1/models")).0
+            from: try localURL(port: port, "/v1/models")
+        ).0
         #expect(models.lossyUTF8String.contains("test-model"))
 
         var request = URLRequest(
             url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = Data(#"""
-        {"model":"test-model","messages":[{"role":"user","content":"hi"}]}
-        """#.utf8)
+        request.httpBody = Data(
+            #"""
+            {"model":"test-model","messages":[{"role":"user","content":"hi"}]}
+            """#.utf8)
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
         let object = try #require(
@@ -253,9 +257,10 @@ struct HTTPServerTests {
                 url: try localURL(port: port, "/v1/chat/completions"))
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "content-type")
-            request.httpBody = Data(#"""
-            {"model":"test-model","messages":[{"role":"user","content":"hi"}],"stream":true}
-            """#.utf8)
+            request.httpBody = Data(
+                #"""
+                {"model":"test-model","messages":[{"role":"user","content":"hi"}],"stream":true}
+                """#.utf8)
             return request
         }
 
@@ -268,8 +273,10 @@ struct HTTPServerTests {
 
         let (data, response) = try await URLSession.shared.data(for: streamingRequest())
         let status = (response as? HTTPURLResponse)?.statusCode
-        #expect(status == 429,
-                "a pre-admission rejection must carry a status line; got \(status.map(String.init) ?? "no HTTP response")")
+        #expect(
+            status == 429,
+            "a pre-admission rejection must carry a status line; got \(status.map(String.init) ?? "no HTTP response")"
+        )
         #expect(data.lossyUTF8String.contains("queue_full"))
 
         _ = try? await active.value
@@ -301,8 +308,9 @@ struct HTTPServerTests {
         }
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 431)
-        #expect(data.lossyUTF8String
-                    .contains("request_headers_too_large"))
+        #expect(
+            data.lossyUTF8String
+                .contains("request_headers_too_large"))
 
         try await server.shutdown()
     }
@@ -327,8 +335,9 @@ struct HTTPServerTests {
             url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = Data(repeating: 0x20,
-                                count: TinyTitanHTTPServer.maximumBodyBytes + 4096)
+        request.httpBody = Data(
+            repeating: 0x20,
+            count: TinyTitanHTTPServer.maximumBodyBytes + 4096)
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 413)
         #expect(data.lossyUTF8String.contains("request_too_large"))
@@ -347,10 +356,11 @@ struct HTTPServerTests {
             url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = Data(#"""
-        {"model":"test-model","messages":[{"role":"user","content":"hi"}],
-         "stream":true,"stream_options":{"include_usage":true}}
-        """#.utf8)
+        request.httpBody = Data(
+            #"""
+            {"model":"test-model","messages":[{"role":"user","content":"hi"}],
+             "stream":true,"stream_options":{"include_usage":true}}
+            """#.utf8)
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
         let text = data.lossyUTF8String
@@ -375,9 +385,10 @@ struct HTTPServerTests {
             url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = Data(#"""
-        {"model":"wrong","messages":[{"role":"user","content":"hi"}]}
-        """#.utf8)
+        request.httpBody = Data(
+            #"""
+            {"model":"wrong","messages":[{"role":"user","content":"hi"}]}
+            """#.utf8)
         let (data, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 404)
         #expect(data.lossyUTF8String.contains("model_not_found"))
@@ -397,9 +408,10 @@ struct HTTPServerTests {
             url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = Data(#"""
-        {"model":"test-model","messages":[{"role":"user","content":"hi"}],"stream":true}
-        """#.utf8)
+        request.httpBody = Data(
+            #"""
+            {"model":"test-model","messages":[{"role":"user","content":"hi"}],"stream":true}
+            """#.utf8)
         let data = try await URLSession.shared.data(for: request).0
         #expect(data.lossyUTF8String.contains(": ping\n\n"))
 
@@ -417,18 +429,20 @@ struct HTTPServerTests {
             url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = Data(#"""
-        {"model":"test-model","messages":[{"role":"user","content":"read both"}],
-         "stream":true}
-        """#.utf8)
+        request.httpBody = Data(
+            #"""
+            {"model":"test-model","messages":[{"role":"user","content":"read both"}],
+             "stream":true}
+            """#.utf8)
         let text = try await URLSession.shared.data(for: request).0.lossyUTF8String
         #expect(text.contains(#""index":0"#))
         #expect(text.contains(#""index":1"#))
         #expect(text.contains(#""finish_reason":"tool_calls""#))
 
-        request.httpBody = Data(#"""
-        {"model":"test-model","messages":[{"role":"user","content":"read both"}]}
-        """#.utf8)
+        request.httpBody = Data(
+            #"""
+            {"model":"test-model","messages":[{"role":"user","content":"read both"}]}
+            """#.utf8)
         let data = try await URLSession.shared.data(for: request).0
         let object = try #require(
             JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -451,9 +465,10 @@ struct HTTPServerTests {
             url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = Data(#"""
-        {"model":"test-model","messages":[{"role":"user","content":"read"}]}
-        """#.utf8)
+        request.httpBody = Data(
+            #"""
+            {"model":"test-model","messages":[{"role":"user","content":"read"}]}
+            """#.utf8)
 
         let data = try await URLSession.shared.data(for: request).0
         let object = try #require(
@@ -464,9 +479,10 @@ struct HTTPServerTests {
         #expect((message["tool_calls"] as? [[String: Any]])?.count == 1)
         #expect(choices[0]["finish_reason"] as? String == "tool_calls")
 
-        request.httpBody = Data(#"""
-        {"model":"test-model","messages":[{"role":"user","content":"read"}],"stream":true}
-        """#.utf8)
+        request.httpBody = Data(
+            #"""
+            {"model":"test-model","messages":[{"role":"user","content":"read"}],"stream":true}
+            """#.utf8)
         let stream = try await URLSession.shared.data(for: request).0.lossyUTF8String
         #expect(stream.contains(#""content":"I will read it.""#))
         #expect(stream.contains(#""tool_calls""#))
@@ -498,8 +514,9 @@ struct HTTPServerTests {
         while ContinuousClock.now < deadline, !settled.withLock({ $0 }) {
             try? await Task.sleep(for: .milliseconds(10))
         }
-        #expect(settled.withLock { $0 },
-                "next() parked after cancellation instead of resolving")
+        #expect(
+            settled.withLock { $0 },
+            "next() parked after cancellation instead of resolving")
         drainer.cancel()
     }
 
@@ -508,23 +525,27 @@ struct HTTPServerTests {
     /// not-found writer and came back with a JSON body, which a keep-alive client
     /// parses as the start of its next response.
     @Test func headRequestsNeverCarryABody() async throws {
-        let server = TinyTitanHTTPServer(modelID: "test-model", queueLimit: 1,
-                                     backend: ScriptedServerBackend())
+        let server = TinyTitanHTTPServer(
+            modelID: "test-model", queueLimit: 1,
+            backend: ScriptedServerBackend())
         let channel = try await server.start(port: 0)
         let port = try #require(channel.localAddress?.port)
         for path in ["/health", "/v1/models", "/v1/chat/completions", "/nope"] {
             let socket = try connectedSocket(port: port)
             defer { Darwin.close(socket) }
-            try writeAll(socket: socket,
-                         text: "HEAD \(path) HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            try writeAll(
+                socket: socket,
+                text: "HEAD \(path) HTTP/1.1\r\nHost: localhost\r\n\r\n")
             let reply = try readAvailable(socket: socket, timeoutMilliseconds: 2_000)
             #expect(reply.hasPrefix("HTTP/1.1 "), "\(path): no status line in \(reply)")
-            let separator = try #require(reply.range(of: "\r\n\r\n"),
-                                         "\(path): no head terminator")
+            let separator = try #require(
+                reply.range(of: "\r\n\r\n"),
+                "\(path): no head terminator")
             let body = reply[separator.upperBound...]
             #expect(body.isEmpty, "\(path): HEAD carried a body: \(body.prefix(80))")
-            #expect(reply.lowercased().contains("content-length: 0"),
-                    "\(path): HEAD did not declare an empty body: \(reply)")
+            #expect(
+                reply.lowercased().contains("content-length: 0"),
+                "\(path): HEAD did not declare an empty body: \(reply)")
         }
         try await server.shutdown()
     }
@@ -540,7 +561,8 @@ struct HTTPServerTests {
         let port = try #require(channel.localAddress?.port)
         let socket = try connectedSocket(port: port)
 
-        let body = #"{"model":"test-model","messages":[{"role":"user","content":"hi"}],"stream":true}"#
+        let body =
+            #"{"model":"test-model","messages":[{"role":"user","content":"hi"}],"stream":true}"#
         let firstRequest =
             "POST /v1/chat/completions HTTP/1.1\r\n"
             + "Host: 127.0.0.1:\(port)\r\n"
@@ -660,9 +682,10 @@ struct HTTPServerTests {
                 expertCacheSlots: nil,
                 mtpModelDirectory: nil,
                 mtpMemoryMiB: 0),
-            facts: ModelSessionFacts(modelID: "test-model",
-                                     prefillChunkTokens: 4_096,
-                                     promptCacheMode: .multiPrefix),
+            facts: ModelSessionFacts(
+                modelID: "test-model",
+                prefillChunkTokens: 4_096,
+                promptCacheMode: .multiPrefix),
             idleTimeout: nil,
             loader: { _, _ in
                 counter.increment()
@@ -680,9 +703,10 @@ struct HTTPServerTests {
             url: try localURL(port: port, "/v1/chat/completions"))
         completion.httpMethod = "POST"
         completion.setValue("application/json", forHTTPHeaderField: "content-type")
-        completion.httpBody = Data(#"""
-        {"model":"test-model","messages":[{"role":"user","content":"hi"}]}
-        """#.utf8)
+        completion.httpBody = Data(
+            #"""
+            {"model":"test-model","messages":[{"role":"user","content":"hi"}]}
+            """#.utf8)
         let (_, response) = try await URLSession.shared.data(for: completion)
         #expect((response as? HTTPURLResponse)?.statusCode == 200)
         #expect(counter.count == 1)
@@ -756,10 +780,11 @@ struct HTTPServerTests {
             url: try localURL(port: port, "/v1/chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = Data(#"""
-        {"model":"test-model","messages":[{"role":"user","content":"fail"}],
-         "stream":true}
-        """#.utf8)
+        request.httpBody = Data(
+            #"""
+            {"model":"test-model","messages":[{"role":"user","content":"fail"}],
+             "stream":true}
+            """#.utf8)
         let text = try await URLSession.shared.data(for: request).0.lossyUTF8String
 
         // The partial content arrived, then the error envelope...
@@ -818,8 +843,9 @@ struct HTTPServerTests {
         while await backend.cancellationCount != 1, ContinuousClock.now < cancelledDeadline {
             await Task.yield()
         }
-        #expect(await backend.cancellationCount == 1,
-                "mid-stream client disconnect did not cancel the generation")
+        #expect(
+            await backend.cancellationCount == 1,
+            "mid-stream client disconnect did not cancel the generation")
 
         try await server.shutdown()
     }
@@ -862,7 +888,8 @@ struct HTTPServerTests {
         // the header was wired at all.
         try await send(
             "/v1/messages",
-            body: #"{"model":"test-model","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}"#,
+            body:
+                #"{"model":"test-model","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}"#,
             workspace: "proj-gamma")
 
         #expect(backend.workspaces == ["proj-alpha", nil, "proj-beta", "proj-gamma"])
@@ -908,8 +935,9 @@ private func writeAll(socket: Int32, text: String) throws {
             // is present; -1 reports the impossible case through the error path
             // below rather than trapping inside the socket helper.
             guard let base = buffer.baseAddress else { return -1 }
-            return Darwin.send(socket, base.advanced(by: written),
-                               bytes.count - written, 0)
+            return Darwin.send(
+                socket, base.advanced(by: written),
+                bytes.count - written, 0)
         }
         guard count > 0 else {
             throw RawSocketError.systemCall("send", errno)

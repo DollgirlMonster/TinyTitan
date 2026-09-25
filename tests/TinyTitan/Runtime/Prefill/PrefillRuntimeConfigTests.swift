@@ -1,4 +1,5 @@
 import Testing
+
 @testable import TinyTitan
 
 @Suite struct PrefillRuntimeConfigTests {

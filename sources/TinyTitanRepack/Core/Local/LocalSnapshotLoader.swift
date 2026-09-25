@@ -20,15 +20,17 @@ public struct LocalSnapshotRepackOptions: Sendable {
     public let rangeChunkBytes: Int
     public let writeTileBytes: Int
 
-    public init(inputSnapshotDir: String,
-                outputDir: String,
-                modelID: String,
-                draftHead: Bool = false,
-                shareNgramTable: Bool = false,
-                overwrite: Bool = false,
-                minFreeReserveBytes: UInt64 = 1 * 1024 * 1024 * 1024,
-                rangeChunkBytes: Int = RemoteChunkPolicy.defaultBytes,
-                writeTileBytes: Int = WriterCore.tileBytes) {
+    public init(
+        inputSnapshotDir: String,
+        outputDir: String,
+        modelID: String,
+        draftHead: Bool = false,
+        shareNgramTable: Bool = false,
+        overwrite: Bool = false,
+        minFreeReserveBytes: UInt64 = 1 * 1024 * 1024 * 1024,
+        rangeChunkBytes: Int = RemoteChunkPolicy.defaultBytes,
+        writeTileBytes: Int = WriterCore.tileBytes
+    ) {
         self.inputSnapshotDir = inputSnapshotDir
         self.outputDir = outputDir
         self.modelID = modelID
@@ -57,24 +59,29 @@ enum LocalSnapshotLoader {
         let metadata = try IndexLoader.load(snapshotDir: root)
         var arch = try ArchInfo.load(configPath: metadata.configPath)
         if draftHead {
-            arch = try ArchInfo.qwen38FlashNextMTP(from: arch,
-                                                   configPath: metadata.configPath)
+            arch = try ArchInfo.qwen38FlashNextMTP(
+                from: arch,
+                configPath: metadata.configPath)
         }
         let headers = try metadata.shardFilenames.map { shard in
             try loadHeader(shard: shard, directory: root)
         }
-        return LocalSnapshot(metadata: metadata,
-                             arch: arch,
-                             shardHeaders: headers)
+        return LocalSnapshot(
+            metadata: metadata,
+            arch: arch,
+            shardHeaders: headers)
     }
 
-    private static func loadHeader(shard: String,
-                                   directory: String) throws -> Safetensors.Header {
+    private static func loadHeader(
+        shard: String,
+        directory: String
+    ) throws -> Safetensors.Header {
         guard !shard.isEmpty,
-              !shard.hasPrefix("/"),
-              !shard.contains(".."),
-              !shard.contains("/"),
-              !shard.contains("\\") else {
+            !shard.hasPrefix("/"),
+            !shard.contains(".."),
+            !shard.contains("/"),
+            !shard.contains("\\")
+        else {
             throw RepackError.configurationInvalid(
                 detail: "unsafe local snapshot shard path \(shard)")
         }
@@ -96,33 +103,38 @@ enum LocalSnapshotLoader {
         var prefix = [UInt8](repeating: 0, count: 8)
         try prefix.withUnsafeMutableBytes { bytes in
             guard let base = bytes.baseAddress else { return }
-            try Posix.preadAll(fd: descriptor,
-                               path: path,
-                               buf: base,
-                               count: 8,
-                               offset: 0)
+            try Posix.preadAll(
+                fd: descriptor,
+                path: path,
+                buf: base,
+                count: 8,
+                offset: 0)
         }
         var headerSize: UInt64 = 0
         for index in 0..<8 {
             headerSize |= UInt64(prefix[index]) << UInt64(index * 8)
         }
         guard headerSize <= Safetensors.maxHeaderBytes,
-              headerSize <= fileSize - 8,
-              headerSize <= UInt64(Int.max) else {
-            throw RepackError.safetensorsHeaderTooLarge(path: shard,
-                                                        size: headerSize)
+            headerSize <= fileSize - 8,
+            headerSize <= UInt64(Int.max)
+        else {
+            throw RepackError.safetensorsHeaderTooLarge(
+                path: shard,
+                size: headerSize)
         }
         var header = Data(count: Int(headerSize))
         try header.withUnsafeMutableBytes { bytes in
             guard let base = bytes.baseAddress else { return }
-            try Posix.preadAll(fd: descriptor,
-                               path: path,
-                               buf: base,
-                               count: Int(headerSize),
-                               offset: 8)
+            try Posix.preadAll(
+                fd: descriptor,
+                path: path,
+                buf: base,
+                count: Int(headerSize),
+                offset: 8)
         }
-        return try Safetensors.parseHeaderBytes(path: shard,
-                                                fileSize: fileSize,
-                                                headerBytes: header)
+        return try Safetensors.parseHeaderBytes(
+            path: shard,
+            fileSize: fileSize,
+            headerBytes: header)
     }
 }

@@ -1,13 +1,16 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
 
+@testable import TinyTitan
+
 @Suite struct PrefillAffineTests {
-    private static func packAffineValues(bits: Int,
-                                         rows: Int,
-                                         columns: Int) -> [UInt8] {
+    private static func packAffineValues(
+        bits: Int,
+        rows: Int,
+        columns: Int
+    ) -> [UInt8] {
         precondition([4, 8].contains(bits))
         let rowBytes = columns * bits / 8
         let mask = UInt32((1 << bits) - 1)
@@ -71,42 +74,49 @@ import TinyTitanValidationSupport
         let gemv = try DequantInt4GEMV(context: ctx)
         let qmm = try PrefillInt4QMM(context: ctx)
 
-        guard let wBuf = ctx.device.makeBuffer(bytes: packed, length: packed.count, options: .storageModeShared),
-              let sBuf = ctx.device.makeBuffer(bytes: scales,
-                                               length: scales.count * MemoryLayout<UInt16>.size,
-                                               options: .storageModeShared),
-              let bBuf = ctx.device.makeBuffer(bytes: biases,
-                                               length: biases.count * MemoryLayout<UInt16>.size,
-                                               options: .storageModeShared),
-              let xBuf = Fp16Buffer.make(ctx.device, halves: x),
-              let gemvOut = Fp16Buffer.make(ctx.device, count: t * n),
-              let qmmOut = Fp16Buffer.make(ctx.device, count: t * n) else {
+        guard
+            let wBuf = ctx.device.makeBuffer(
+                bytes: packed, length: packed.count, options: .storageModeShared),
+            let sBuf = ctx.device.makeBuffer(
+                bytes: scales,
+                length: scales.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared),
+            let bBuf = ctx.device.makeBuffer(
+                bytes: biases,
+                length: biases.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared),
+            let xBuf = Fp16Buffer.make(ctx.device, halves: x),
+            let gemvOut = Fp16Buffer.make(ctx.device, count: t * n),
+            let qmmOut = Fp16Buffer.make(ctx.device, count: t * n)
+        else {
             Issue.record("alloc failed")
             return
         }
 
         let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<t {
-            try gemv.encode(commandBuffer: cb,
-                        weights: wBuf,
-                        scales: sBuf,
-                        biases: bBuf,
-                        x: xBuf,
-                        xOffset: row * k * MemoryLayout<Float16>.size,
-                        y: gemvOut,
-                        yOffset: row * n * MemoryLayout<Float16>.size,
-                        m: UInt32(n),
-                        n: UInt32(k))
+            try gemv.encode(
+                commandBuffer: cb,
+                weights: wBuf,
+                scales: sBuf,
+                biases: bBuf,
+                x: xBuf,
+                xOffset: row * k * MemoryLayout<Float16>.size,
+                y: gemvOut,
+                yOffset: row * n * MemoryLayout<Float16>.size,
+                m: UInt32(n),
+                n: UInt32(k))
         }
-        try qmm.encode(commandBuffer: cb,
-                   weights: wBuf,
-                   scales: sBuf,
-                   biases: bBuf,
-                   x: xBuf,
-                   y: qmmOut,
-                   t: t,
-                   n: n,
-                   k: k)
+        try qmm.encode(
+            commandBuffer: cb,
+            weights: wBuf,
+            scales: sBuf,
+            biases: bBuf,
+            x: xBuf,
+            y: qmmOut,
+            t: t,
+            n: n,
+            k: k)
         cb.commit()
         cb.waitUntilCompleted()
 
@@ -118,12 +128,14 @@ import TinyTitanValidationSupport
         #expect(rel <= 1e-4, "shape T=\(t) N=\(n) K=\(k) rel=\(rel) maxAbs=\(maxAbs)")
     }
 
-    private static func runPatternQMMMatchesRepeatedGEMV(t: Int,
-                                                         n: Int,
-                                                         k: Int,
-                                                         seed: UInt64,
-                                                         maxAbsTolerance: Float = 2e-2,
-                                                         relTolerance: Float = 2e-4) throws {
+    private static func runPatternQMMMatchesRepeatedGEMV(
+        t: Int,
+        n: Int,
+        k: Int,
+        seed: UInt64,
+        maxAbsTolerance: Float = 2e-2,
+        relTolerance: Float = 2e-4
+    ) throws {
         precondition(k % Quantization.groupSize == 0)
         let groups = k / Quantization.groupSize
         var rng = SeedTree(seed).key("prefill-qmm-pattern-t\(t)-n\(n)-k\(k)")
@@ -151,42 +163,49 @@ import TinyTitanValidationSupport
         let gemv = try DequantInt4GEMV(context: ctx)
         let qmm = try PrefillInt4QMM(context: ctx)
 
-        guard let wBuf = ctx.device.makeBuffer(bytes: packed, length: packed.count, options: .storageModeShared),
-              let sBuf = ctx.device.makeBuffer(bytes: scales,
-                                               length: scales.count * MemoryLayout<UInt16>.size,
-                                               options: .storageModeShared),
-              let bBuf = ctx.device.makeBuffer(bytes: biases,
-                                               length: biases.count * MemoryLayout<UInt16>.size,
-                                               options: .storageModeShared),
-              let xBuf = Fp16Buffer.make(ctx.device, halves: x),
-              let gemvOut = Fp16Buffer.make(ctx.device, count: t * n),
-              let qmmOut = Fp16Buffer.make(ctx.device, count: t * n) else {
+        guard
+            let wBuf = ctx.device.makeBuffer(
+                bytes: packed, length: packed.count, options: .storageModeShared),
+            let sBuf = ctx.device.makeBuffer(
+                bytes: scales,
+                length: scales.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared),
+            let bBuf = ctx.device.makeBuffer(
+                bytes: biases,
+                length: biases.count * MemoryLayout<UInt16>.size,
+                options: .storageModeShared),
+            let xBuf = Fp16Buffer.make(ctx.device, halves: x),
+            let gemvOut = Fp16Buffer.make(ctx.device, count: t * n),
+            let qmmOut = Fp16Buffer.make(ctx.device, count: t * n)
+        else {
             Issue.record("alloc failed for shape T=\(t) N=\(n) K=\(k)")
             return
         }
 
         let cb = try #require(ctx.queue.makeCommandBuffer())
         for row in 0..<t {
-            try gemv.encode(commandBuffer: cb,
-                        weights: wBuf,
-                        scales: sBuf,
-                        biases: bBuf,
-                        x: xBuf,
-                        xOffset: row * k * MemoryLayout<Float16>.size,
-                        y: gemvOut,
-                        yOffset: row * n * MemoryLayout<Float16>.size,
-                        m: UInt32(n),
-                        n: UInt32(k))
+            try gemv.encode(
+                commandBuffer: cb,
+                weights: wBuf,
+                scales: sBuf,
+                biases: bBuf,
+                x: xBuf,
+                xOffset: row * k * MemoryLayout<Float16>.size,
+                y: gemvOut,
+                yOffset: row * n * MemoryLayout<Float16>.size,
+                m: UInt32(n),
+                n: UInt32(k))
         }
-        try qmm.encode(commandBuffer: cb,
-                   weights: wBuf,
-                   scales: sBuf,
-                   biases: bBuf,
-                   x: xBuf,
-                   y: qmmOut,
-                   t: t,
-                   n: n,
-                   k: k)
+        try qmm.encode(
+            commandBuffer: cb,
+            weights: wBuf,
+            scales: sBuf,
+            biases: bBuf,
+            x: xBuf,
+            y: qmmOut,
+            t: t,
+            n: n,
+            k: k)
         cb.commit()
         cb.waitUntilCompleted()
 
@@ -194,10 +213,12 @@ import TinyTitanValidationSupport
         let actual = Fp16Buffer.read(qmmOut, count: t * n)
         let maxAbs = RelError.maxAbsDiff(actual, reference)
         let rel = RelError.compute(actual: actual, reference: reference)
-        #expect(maxAbs <= maxAbsTolerance,
-                "shape T=\(t) N=\(n) K=\(k) maxAbs=\(maxAbs) rel=\(rel)")
-        #expect(rel <= relTolerance,
-                "shape T=\(t) N=\(n) K=\(k) rel=\(rel) maxAbs=\(maxAbs)")
+        #expect(
+            maxAbs <= maxAbsTolerance,
+            "shape T=\(t) N=\(n) K=\(k) maxAbs=\(maxAbs) rel=\(rel)")
+        #expect(
+            rel <= relTolerance,
+            "shape T=\(t) N=\(n) K=\(k) rel=\(rel) maxAbs=\(maxAbs)")
     }
 
     @Test func int4QMMMatchesRepeatedGEMV() throws {
@@ -210,15 +231,18 @@ import TinyTitanValidationSupport
         ]
 
         for (index, shape) in shapes.enumerated() {
-            try Self.runQMMMatchesRepeatedGEMV(t: shape.t,
-                                               n: shape.n,
-                                               k: shape.k,
-                                               seed: 0x6100 + UInt64(index))
+            try Self.runQMMMatchesRepeatedGEMV(
+                t: shape.t,
+                n: shape.n,
+                k: shape.k,
+                seed: 0x6100 + UInt64(index))
         }
     }
 
     @Test func int4TwoRowProjectionMatchesRepeatedGEMV() throws {
-        let t = 2, n = 129, k = 128
+        let t = 2
+        let n = 129
+        let k = 128
         var rng = SeedTree(0x6201).key("mtp-int4-two-row")
         let rows = (0..<n).map { _ in
             Quantization.quantizeInt4Affine(
@@ -229,28 +253,31 @@ import TinyTitanValidationSupport
         let ctx = try MetalContext()
         let gemv = try DequantInt4GEMV(context: ctx)
         guard let weights = ctx.device.makeBuffer(bytes: packed, length: packed.count),
-              let scaleBuffer = ctx.device.makeBuffer(
+            let scaleBuffer = ctx.device.makeBuffer(
                 bytes: scales, length: scales.count * MemoryLayout<UInt16>.stride),
-              let biasBuffer = ctx.device.makeBuffer(
+            let biasBuffer = ctx.device.makeBuffer(
                 bytes: biases, length: biases.count * MemoryLayout<UInt16>.stride),
-              let input = Fp16Buffer.make(ctx.device, halves: x),
-              let expected = Fp16Buffer.make(ctx.device, count: t * n),
-              let actual = Fp16Buffer.make(ctx.device, count: t * n),
-              let cb = ctx.queue.makeCommandBuffer() else {
+            let input = Fp16Buffer.make(ctx.device, halves: x),
+            let expected = Fp16Buffer.make(ctx.device, count: t * n),
+            let actual = Fp16Buffer.make(ctx.device, count: t * n),
+            let cb = ctx.queue.makeCommandBuffer()
+        else {
             Issue.record("allocation failed")
             return
         }
         for row in 0..<t {
-            try gemv.encode(commandBuffer: cb, weights: weights,
-                        scales: scaleBuffer, biases: biasBuffer,
-                        x: input, xOffset: row * k * MemoryLayout<Float16>.stride,
-                        y: expected, yOffset: row * n * MemoryLayout<Float16>.stride,
-                        m: UInt32(n), n: UInt32(k))
+            try gemv.encode(
+                commandBuffer: cb, weights: weights,
+                scales: scaleBuffer, biases: biasBuffer,
+                x: input, xOffset: row * k * MemoryLayout<Float16>.stride,
+                y: expected, yOffset: row * n * MemoryLayout<Float16>.stride,
+                m: UInt32(n), n: UInt32(k))
         }
-        try gemv.encodeTwoRows(commandBuffer: cb, weights: weights,
-                           scales: scaleBuffer, biases: biasBuffer,
-                           x: input, y: actual,
-                           m: UInt32(n), n: UInt32(k))
+        try gemv.encodeTwoRows(
+            commandBuffer: cb, weights: weights,
+            scales: scaleBuffer, biases: biasBuffer,
+            x: input, y: actual,
+            m: UInt32(n), n: UInt32(k))
         cb.commit()
         cb.waitUntilCompleted()
         if let error = cb.error { throw error }
@@ -262,50 +289,59 @@ import TinyTitanValidationSupport
 
     @Test(arguments: [8])
     func affineTwoRowProjectionMatchesRepeatedGEMV(bits: Int) throws {
-        let t = 2, n = 65, k = 128
+        let t = 2
+        let n = 65
+        let k = 128
         let groups = k / Quantization.groupSize
         let packed = Self.packAffineValues(bits: bits, rows: n, columns: k)
-        let scales = [UInt16](repeating: Quantization.bf16Bits(0.002),
-                              count: n * groups)
-        let biases = [UInt16](repeating: Quantization.bf16Bits(-0.01),
-                              count: n * groups)
+        let scales = [UInt16](
+            repeating: Quantization.bf16Bits(0.002),
+            count: n * groups)
+        let biases = [UInt16](
+            repeating: Quantization.bf16Bits(-0.01),
+            count: n * groups)
         let x = (0..<(t * k)).map { index in
             Float16(Float((index * 13) % 31 - 15) / 64)
         }
         let ctx = try MetalContext()
         let gemv = try AffineQuantGEMV(context: ctx, weightBits: bits)
         guard let weights = ctx.device.makeBuffer(bytes: packed, length: packed.count),
-              let scaleBuffer = ctx.device.makeBuffer(
+            let scaleBuffer = ctx.device.makeBuffer(
                 bytes: scales, length: scales.count * MemoryLayout<UInt16>.stride),
-              let biasBuffer = ctx.device.makeBuffer(
+            let biasBuffer = ctx.device.makeBuffer(
                 bytes: biases, length: biases.count * MemoryLayout<UInt16>.stride),
-              let input = Fp16Buffer.make(ctx.device, halves: x),
-              let expected = Fp16Buffer.make(ctx.device, count: t * n),
-              let actual = Fp16Buffer.make(ctx.device, count: t * n),
-              let cb = ctx.queue.makeCommandBuffer() else {
+            let input = Fp16Buffer.make(ctx.device, halves: x),
+            let expected = Fp16Buffer.make(ctx.device, count: t * n),
+            let actual = Fp16Buffer.make(ctx.device, count: t * n),
+            let cb = ctx.queue.makeCommandBuffer()
+        else {
             Issue.record("allocation failed")
             return
         }
         for row in 0..<t {
-            try gemv.encode(commandBuffer: cb, weights: weights,
-                        scales: scaleBuffer, biases: biasBuffer,
-                        x: input, xOffset: row * k * MemoryLayout<Float16>.stride,
-                        y: expected, yOffset: row * n * MemoryLayout<Float16>.stride,
-                        m: UInt32(n), n: UInt32(k))
+            try gemv.encode(
+                commandBuffer: cb, weights: weights,
+                scales: scaleBuffer, biases: biasBuffer,
+                x: input, xOffset: row * k * MemoryLayout<Float16>.stride,
+                y: expected, yOffset: row * n * MemoryLayout<Float16>.stride,
+                m: UInt32(n), n: UInt32(k))
         }
-        try gemv.encodeTwoRows(commandBuffer: cb, weights: weights,
-                           scales: scaleBuffer, biases: biasBuffer,
-                           x: input, y: actual,
-                           m: UInt32(n), n: UInt32(k))
+        try gemv.encodeTwoRows(
+            commandBuffer: cb, weights: weights,
+            scales: scaleBuffer, biases: biasBuffer,
+            x: input, y: actual,
+            m: UInt32(n), n: UInt32(k))
         cb.commit()
         cb.waitUntilCompleted()
         if let error = cb.error { throw error }
         let reference = Fp16Buffer.read(expected, count: t * n)
         let result = Fp16Buffer.read(actual, count: t * n)
-        #expect(RelError.maxAbsDiff(result, reference) <= 0.002,
-                "bits=\(bits)")
-        #expect(RelError.compute(actual: result, reference: reference) <= 0.0005,
-                "bits=\(bits)")
+        #expect(
+            RelError.maxAbsDiff(result, reference) <= 0.002,
+            "bits=\(bits)")
+        #expect(
+            RelError.compute(actual: result, reference: reference) <= 0.0005,
+            "bits=\(bits)")
     }
 
     @Test(arguments: [8])
@@ -315,10 +351,12 @@ import TinyTitanValidationSupport
         let k = 128
         let groups = k / Quantization.groupSize
         let packed = Self.packAffineValues(bits: bits, rows: n, columns: k)
-        let scales = [UInt16](repeating: Quantization.bf16Bits(0.002),
-                              count: n * groups)
-        let biases = [UInt16](repeating: Quantization.bf16Bits(-0.01),
-                              count: n * groups)
+        let scales = [UInt16](
+            repeating: Quantization.bf16Bits(0.002),
+            count: n * groups)
+        let biases = [UInt16](
+            repeating: Quantization.bf16Bits(-0.01),
+            count: n * groups)
         let x = (0..<(t * k)).map { index in
             Float16(Float((index * 13) % 31 - 15) / 64)
         }
@@ -326,43 +364,48 @@ import TinyTitanValidationSupport
         let ctx = try MetalContext()
         let gemv = try AffineQuantGEMV(context: ctx, weightBits: bits)
         let qmm = try PrefillInt4QMM(context: ctx, weightBits: bits)
-        guard let weights = ctx.device.makeBuffer(bytes: packed,
-                                                  length: packed.count),
-              let scaleBuffer = ctx.device.makeBuffer(
+        guard
+            let weights = ctx.device.makeBuffer(
+                bytes: packed,
+                length: packed.count),
+            let scaleBuffer = ctx.device.makeBuffer(
                 bytes: scales,
                 length: scales.count * MemoryLayout<UInt16>.stride),
-              let biasBuffer = ctx.device.makeBuffer(
+            let biasBuffer = ctx.device.makeBuffer(
                 bytes: biases,
                 length: biases.count * MemoryLayout<UInt16>.stride),
-              let input = Fp16Buffer.make(ctx.device, halves: x),
-              let expected = Fp16Buffer.make(ctx.device, count: t * n),
-              let actual = Fp16Buffer.make(ctx.device, count: t * n),
-              let commandBuffer = ctx.queue.makeCommandBuffer() else {
+            let input = Fp16Buffer.make(ctx.device, halves: x),
+            let expected = Fp16Buffer.make(ctx.device, count: t * n),
+            let actual = Fp16Buffer.make(ctx.device, count: t * n),
+            let commandBuffer = ctx.queue.makeCommandBuffer()
+        else {
             Issue.record("allocation failed")
             return
         }
 
         for row in 0..<t {
-            try gemv.encode(commandBuffer: commandBuffer,
-                        weights: weights,
-                        scales: scaleBuffer,
-                        biases: biasBuffer,
-                        x: input,
-                        xOffset: row * k * MemoryLayout<Float16>.stride,
-                        y: expected,
-                        yOffset: row * n * MemoryLayout<Float16>.stride,
-                        m: UInt32(n),
-                        n: UInt32(k))
+            try gemv.encode(
+                commandBuffer: commandBuffer,
+                weights: weights,
+                scales: scaleBuffer,
+                biases: biasBuffer,
+                x: input,
+                xOffset: row * k * MemoryLayout<Float16>.stride,
+                y: expected,
+                yOffset: row * n * MemoryLayout<Float16>.stride,
+                m: UInt32(n),
+                n: UInt32(k))
         }
-        try qmm.encode(commandBuffer: commandBuffer,
-                   weights: weights,
-                   scales: scaleBuffer,
-                   biases: biasBuffer,
-                   x: input,
-                   y: actual,
-                   t: t,
-                   n: n,
-                   k: k)
+        try qmm.encode(
+            commandBuffer: commandBuffer,
+            weights: weights,
+            scales: scaleBuffer,
+            biases: biasBuffer,
+            x: input,
+            y: actual,
+            t: t,
+            n: n,
+            k: k)
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         if let error = commandBuffer.error { throw error }
@@ -384,10 +427,11 @@ import TinyTitanValidationSupport
         ]
 
         for (index, shape) in shapes.enumerated() {
-            try Self.runPatternQMMMatchesRepeatedGEMV(t: shape.t,
-                                                      n: shape.n,
-                                                      k: shape.k,
-                                                      seed: 0x7100 + UInt64(index))
+            try Self.runPatternQMMMatchesRepeatedGEMV(
+                t: shape.t,
+                n: shape.n,
+                k: shape.k,
+                seed: 0x7100 + UInt64(index))
         }
     }
 
@@ -401,17 +445,18 @@ import TinyTitanValidationSupport
             (n: 2816, k: 8192),  // full o projection
             (n: 2112, k: 2816),  // shared gate/up projection
             (n: 2816, k: 2112),  // shared down projection
-            (n: 704,  k: 2816),  // routed gate/up projection
-            (n: 2816, k: 704),   // routed down projection
+            (n: 704, k: 2816),  // routed gate/up projection
+            (n: 2816, k: 704),  // routed down projection
         ]
 
         for (index, shape) in shapes.enumerated() {
-            try Self.runPatternQMMMatchesRepeatedGEMV(t: 32,
-                                                      n: shape.n,
-                                                      k: shape.k,
-                                                      seed: 0x8100 + UInt64(index),
-                                                      maxAbsTolerance: 2e-4,
-                                                      relTolerance: 5e-4)
+            try Self.runPatternQMMMatchesRepeatedGEMV(
+                t: 32,
+                n: shape.n,
+                k: shape.k,
+                seed: 0x8100 + UInt64(index),
+                maxAbsTolerance: 2e-4,
+                relTolerance: 5e-4)
         }
     }
 

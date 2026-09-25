@@ -1,6 +1,7 @@
-import Testing
 import Foundation
 import Metal
+import Testing
+
 @testable import TinyTitan
 
 /// Tests `GDNStateManager`'s per-slot layout. The delta-rule state and conv
@@ -27,7 +28,8 @@ import Metal
     @Test func oneSlotKeepsTheOriginalLayout() throws {
         let (_, gdn) = try makeManager(slots: 1)
         guard let layer = linearLayer(gdn) else {
-            Issue.record("config has no linear-attention layer"); return
+            Issue.record("config has no linear-attention layer")
+            return
         }
         #expect(gdn.slots == 1)
         #expect(gdn.stateOffset(layer: layer, slot: 0) == 0)
@@ -40,15 +42,18 @@ import Metal
     @Test func slotsGetDisjointRegions() throws {
         let (_, gdn) = try makeManager(slots: 3)
         guard let layer = linearLayer(gdn) else {
-            Issue.record("config has no linear-attention layer"); return
+            Issue.record("config has no linear-attention layer")
+            return
         }
         #expect(gdn.stateBuffer(layer: layer).length == 3 * gdn.stateBytesPerLayer)
         #expect(gdn.convTailBuffer(layer: layer).length == 3 * gdn.convTailBytesPerLayer)
         for slot in 0..<3 {
-            #expect(gdn.stateOffset(layer: layer, slot: slot)
-                        == slot * gdn.stateBytesPerLayer)
-            #expect(gdn.convTailOffset(layer: layer, slot: slot)
-                        == slot * gdn.convTailBytesPerLayer)
+            #expect(
+                gdn.stateOffset(layer: layer, slot: slot)
+                    == slot * gdn.stateBytesPerLayer)
+            #expect(
+                gdn.convTailOffset(layer: layer, slot: slot)
+                    == slot * gdn.convTailBytesPerLayer)
             let state = gdn.stateSlot(layer: layer, slot: slot)
             let tail = gdn.convTailSlot(layer: layer, slot: slot)
             #expect(state.buffer === gdn.stateBuffer(layer: layer))
@@ -61,7 +66,8 @@ import Metal
     @Test func resettingOneSlotClearsOnlyThatSlot() throws {
         let (_, gdn) = try makeManager(slots: 2)
         guard let layer = linearLayer(gdn) else {
-            Issue.record("config has no linear-attention layer"); return
+            Issue.record("config has no linear-attention layer")
+            return
         }
         let state = gdn.stateBuffer(layer: layer)
         let tail = gdn.convTailBuffer(layer: layer)
@@ -73,14 +79,16 @@ import Metal
         let statePtr = state.contents().bindMemory(to: UInt8.self, capacity: state.length)
         for i in 0..<gdn.stateBytesPerLayer {
             #expect(statePtr[i] == 0xFF, "slot 0 state byte \(i) was cleared")
-            #expect(statePtr[gdn.stateBytesPerLayer + i] == 0,
-                    "slot 1 state byte \(i) survived the reset")
+            #expect(
+                statePtr[gdn.stateBytesPerLayer + i] == 0,
+                "slot 1 state byte \(i) survived the reset")
         }
         let tailPtr = tail.contents().bindMemory(to: UInt8.self, capacity: tail.length)
         for i in 0..<gdn.convTailBytesPerLayer {
             #expect(tailPtr[i] == 0xFF, "slot 0 tail byte \(i) was cleared")
-            #expect(tailPtr[gdn.convTailBytesPerLayer + i] == 0,
-                    "slot 1 tail byte \(i) survived the reset")
+            #expect(
+                tailPtr[gdn.convTailBytesPerLayer + i] == 0,
+                "slot 1 tail byte \(i) survived the reset")
         }
     }
 }

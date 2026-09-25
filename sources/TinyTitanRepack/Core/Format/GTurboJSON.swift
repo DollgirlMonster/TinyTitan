@@ -22,14 +22,16 @@ enum GTurboJSON {
         var routedExpert: Int
     }
 
-    static func encodeManifest(plan: RepackPlan,
-                                      modelID: String,
-                                      sourceSnapshotHash: String,
-                                      files: [(relativePath: String, info: FileEntry)],
-                                      expertsPerLayer: Int,
-                                      numLayers: Int,
-                                      expertStride: UInt64,
-                                      bitWidths: QuantBitWidths) throws -> Data {
+    static func encodeManifest(
+        plan: RepackPlan,
+        modelID: String,
+        sourceSnapshotHash: String,
+        files: [(relativePath: String, info: FileEntry)],
+        expertsPerLayer: Int,
+        numLayers: Int,
+        expertStride: UInt64,
+        bitWidths: QuantBitWidths
+    ) throws -> Data {
         let arch = plan.arch
         var archDict: [String: Any] = [
             "hiddenSize": arch.hiddenSize,
@@ -52,7 +54,7 @@ enum GTurboJSON {
             "tieWordEmbeddings": arch.tieWordEmbeddings,
             "attentionKEqV": arch.attentionKEqV,
             "hiddenActivation": arch.hiddenActivation,
-            "fullAttentionLayerMask": arch.fullAttentionLayerMask.map { Int($0) }
+            "fullAttentionLayerMask": arch.fullAttentionLayerMask.map { Int($0) },
         ]
         // Family extension fields. Always written for the Qwen families.
         archDict["family"] = arch.family.rawValue
@@ -105,7 +107,7 @@ enum GTurboJSON {
             "flags": [
                 "streamingPresent": plan.streamingPresent,
                 "turboQuantKV": plan.turboQuantKV,
-                "aneSharedExpert": plan.aneSharedExpert
+                "aneSharedExpert": plan.aneSharedExpert,
             ],
             "modelID": modelID,
             "sourceSnapshotHash": sourceSnapshotHash,
@@ -115,9 +117,10 @@ enum GTurboJSON {
             "expertsPerLayer": expertsPerLayer,
             "numLayers": numLayers,
             "expertStride": expertStride,
-            "bitWidthOverridesHonored": plan.bitsOverrideCount
+            "bitWidthOverridesHonored": plan.bitsOverrideCount,
         ]
-        return try JSONSerialization.data(withJSONObject: manifest,
+        return try JSONSerialization.data(
+            withJSONObject: manifest,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
 
@@ -143,8 +146,10 @@ enum GTurboJSON {
     /// deliberately absent: they are read as BF16 by `dtype` and never
     /// dequantized. A stem that collides with a slot name would overwrite a
     /// slot, so it is skipped.
-    private static func quantObject(plan: RepackPlan,
-                                    bitWidths: QuantBitWidths) -> [String: Any] {
+    private static func quantObject(
+        plan: RepackPlan,
+        bitWidths: QuantBitWidths
+    ) -> [String: Any] {
         let slots = [
             "embedding": bitWidths.embedding,
             "attention": bitWidths.attention,
@@ -153,15 +158,18 @@ enum GTurboJSON {
             "routedExpert": bitWidths.routedExpert,
         ]
         func entry(_ bits: Int) -> [String: Any] {
-            ["weightBits": bits, "scheme": plan.baseMode,
-             "scaleType": "BF16", "biasType": "BF16",
-             "groupSize": plan.baseGroupSize]
+            [
+                "weightBits": bits, "scheme": plan.baseMode,
+                "scaleType": "BF16", "biasType": "BF16",
+                "groupSize": plan.baseGroupSize,
+            ]
         }
         var dict: [String: Any] = [:]
         for (slot, bits) in slots { dict[slot] = entry(bits) }
         for resident in plan.resident.entries {
             guard let spec = resident.quantSpec else { continue }
-            let stem = resident.name.hasSuffix(".weight")
+            let stem =
+                resident.name.hasSuffix(".weight")
                 ? String(resident.name.dropLast(".weight".count)) : resident.name
             guard dict[stem] == nil else { continue }
             dict[stem] = entry(spec.bits)
@@ -169,8 +177,10 @@ enum GTurboJSON {
         return dict
     }
 
-    static func encodeLayout(plan: RepackPlan,
-                                    expertStride: UInt64) throws -> Data {
+    static func encodeLayout(
+        plan: RepackPlan,
+        expertStride: UInt64
+    ) throws -> Data {
         // Every layer that carries experts must share one stride. The manifest
         // records a single value and `GTurboLayoutValidator` refuses a layout
         // whose layers disagree, so a plan like that cannot be written correctly
@@ -178,8 +188,9 @@ enum GTurboJSON {
         // packed payload, which for the 35B families is hundreds of gigabytes.
         // The two callers take the stride from the first non-empty layer, so a
         // disagreement between layers is exactly what would go unnoticed here.
-        let layerStrides = Set(plan.layers.filter { $0.expertsPerLayer > 0 }
-            .map(\.expertStride))
+        let layerStrides = Set(
+            plan.layers.filter { $0.expertsPerLayer > 0 }
+                .map(\.expertStride))
         guard layerStrides.count <= 1 else {
             throw RepackError.configurationInvalid(
                 detail: "packed expert stride differs between layers: "
@@ -205,15 +216,15 @@ enum GTurboJSON {
                     let key: String
                     switch slice.component {
                     case "weights": key = slice.role
-                    case "scales":  key = slice.role + "_scales"
-                    case "biases":  key = slice.role + "_biases"
-                    default:        key = slice.role + "_" + slice.component
+                    case "scales": key = slice.role + "_scales"
+                    case "biases": key = slice.role + "_biases"
+                    default: key = slice.role + "_" + slice.component
                     }
                     var t: [String: Any] = [
                         "offset": slice.offsetInExpertBlob,
-                        "size":   slice.sizeInExpertBlob,
-                        "dtype":  slice.dtype == 0 ? "U32" : "BF16",
-                        "shape":  slice.logicalShape.map { Int($0) }
+                        "size": slice.sizeInExpertBlob,
+                        "dtype": slice.dtype == 0 ? "U32" : "BF16",
+                        "shape": slice.logicalShape.map { Int($0) },
                     ]
                     if let bits = slice.bitsForWeights { t["bits"] = bits }
                     tensors[key] = t
@@ -221,15 +232,15 @@ enum GTurboJSON {
                 let expertEntry: [String: Any] = [
                     "expert": e,
                     "offset": base,
-                    "size":   lp.expertStride,
-                    "tensors": tensors
+                    "size": lp.expertStride,
+                    "tensors": tensors,
                 ]
                 experts.append(expertEntry)
             }
             layersArr.append([
                 "layer": lp.layerIndex,
-                "file":  layerFile,
-                "experts": experts
+                "file": layerFile,
+                "experts": experts,
             ])
         }
         let obj: [String: Any] = [
@@ -238,20 +249,22 @@ enum GTurboJSON {
             // Same source as `expertStride`: the first layer that actually
             // packs experts. GTurboPackedExpertsLayoutCodec.decode requires
             // expertsPerLayer > 0 and consistent across all layers.
-            "expertsPerLayer": plan.layers.first(where: { $0.expertsPerLayer > 0 })?.expertsPerLayer ?? 0,
-            "layers": layersArr
+            "expertsPerLayer": plan.layers.first(where: { $0.expertsPerLayer > 0 })?.expertsPerLayer
+                ?? 0,
+            "layers": layersArr,
         ]
-        return try JSONSerialization.data(withJSONObject: obj,
+        return try JSONSerialization.data(
+            withJSONObject: obj,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
 }
 
-private extension RepackPlan {
+extension RepackPlan {
     /// The .gturbo layout always streams routed experts from per-layer files;
     /// the remaining flags are fixed for the Qwen 3.6 baseline (no quantized
     /// KV, no ANE shared-expert fusion) and are computed here so the manifest
     /// mirrors the plan rather than a hardcoded dictionary.
-    var streamingPresent: Bool { layers.contains { $0.expertsPerLayer > 0 } }
-    var turboQuantKV: Bool { false }
-    var aneSharedExpert: Bool { false }
+    fileprivate var streamingPresent: Bool { layers.contains { $0.expertsPerLayer > 0 } }
+    fileprivate var turboQuantKV: Bool { false }
+    fileprivate var aneSharedExpert: Bool { false }
 }

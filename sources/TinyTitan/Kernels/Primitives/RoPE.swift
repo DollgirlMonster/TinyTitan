@@ -32,11 +32,14 @@ final class RoPE {
         self.yarnNeoxSubdim = try context.pipeline("rope_yarn_neox_subdim")
         self.yarnAttentionFactor = yarn?.attentionFactor ?? 1
         if let yarn {
-            guard let buffer = yarn.inverseFrequencies.withUnsafeBytes({ bytes -> MTLBuffer? in
-                guard let baseAddress = bytes.baseAddress else { return nil }
-                return context.device.makeBuffer(bytes: baseAddress, length: bytes.count,
-                                                 options: .storageModeShared)
-            }) else {
+            guard
+                let buffer = yarn.inverseFrequencies.withUnsafeBytes({ bytes -> MTLBuffer? in
+                    guard let baseAddress = bytes.baseAddress else { return nil }
+                    return context.device.makeBuffer(
+                        bytes: baseAddress, length: bytes.count,
+                        options: .storageModeShared)
+                })
+            else {
                 throw MetalError.bufferAllocationFailed("YaRN inverse frequencies")
             }
             self.yarnInverseFrequencies = buffer
@@ -50,16 +53,18 @@ final class RoPE {
     /// NeoX sub-dim rope where row `i` sits at `position + i * stride`.
     /// Used for the indexer's pooled blocks, which advance by the compression
     /// ratio rather than by one token.
-    func encodeNeoxSubdimStrided(commandBuffer: MTLCommandBuffer,
-                                 data: MTLBuffer,
-                                 dataOffset: Int = 0,
-                                 position: UInt32,
-                                 headDim: UInt32,
-                                 numHeads: UInt32,
-                                 rotaryDim: UInt32,
-                                 numTokens: UInt32,
-                                 stride: UInt32,
-                                 theta: Float) throws {
+    func encodeNeoxSubdimStrided(
+        commandBuffer: MTLCommandBuffer,
+        data: MTLBuffer,
+        dataOffset: Int = 0,
+        position: UInt32,
+        headDim: UInt32,
+        numHeads: UInt32,
+        rotaryDim: UInt32,
+        numTokens: UInt32,
+        stride: UInt32,
+        theta: Float
+    ) throws {
         precondition(rotaryDim.isMultiple(of: 2), "rotary_dim must be even")
         precondition(rotaryDim <= headDim, "rotary_dim must not exceed head_dim")
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
@@ -67,9 +72,12 @@ final class RoPE {
         }
         enc.setComputePipelineState(stridedNeoxSubdim)
         enc.setBuffer(data, offset: dataOffset, index: 0)
-        var positionValue = position, headDimValue = headDim
-        var numHeadsValue = numHeads, thetaValue = theta
-        var rotaryValue = rotaryDim, strideValue = stride
+        var positionValue = position
+        var headDimValue = headDim
+        var numHeadsValue = numHeads
+        var thetaValue = theta
+        var rotaryValue = rotaryDim
+        var strideValue = stride
         enc.setBytes(&positionValue, length: MemoryLayout<UInt32>.size, index: 1)
         enc.setBytes(&headDimValue, length: MemoryLayout<UInt32>.size, index: 2)
         enc.setBytes(&numHeadsValue, length: MemoryLayout<UInt32>.size, index: 3)
@@ -77,32 +85,37 @@ final class RoPE {
         enc.setBytes(&rotaryValue, length: MemoryLayout<UInt32>.size, index: 5)
         enc.setBytes(&strideValue, length: MemoryLayout<UInt32>.size, index: 6)
         enc.dispatchThreads(
-            MTLSize(width: Int(rotaryDim / 2), height: Int(numHeads),
-                    depth: Int(numTokens)),
+            MTLSize(
+                width: Int(rotaryDim / 2), height: Int(numHeads),
+                depth: Int(numTokens)),
             threadsPerThreadgroup: MTLSize(
-                width: min(Int(rotaryDim / 2),
-                           stridedNeoxSubdim.maxTotalThreadsPerThreadgroup),
+                width: min(
+                    Int(rotaryDim / 2),
+                    stridedNeoxSubdim.maxTotalThreadsPerThreadgroup),
                 height: 1, depth: 1))
         enc.endEncoding()
     }
 
-    func encodeNeoxSubdim(commandBuffer: MTLCommandBuffer,
-                          data: MTLBuffer,
-                          dataOffset: Int = 0,
-                          position: UInt32,
-                          headDim: UInt32,
-                          numHeads: UInt32,
-                          rotaryDim: UInt32,
-                          numTokens: UInt32 = 1,
-                          theta: Float) throws {
+    func encodeNeoxSubdim(
+        commandBuffer: MTLCommandBuffer,
+        data: MTLBuffer,
+        dataOffset: Int = 0,
+        position: UInt32,
+        headDim: UInt32,
+        numHeads: UInt32,
+        rotaryDim: UInt32,
+        numTokens: UInt32 = 1,
+        theta: Float
+    ) throws {
         precondition(rotaryDim.isMultiple(of: 2), "rotary_dim must be even")
         precondition(rotaryDim <= headDim, "rotary_dim must not exceed head_dim")
         if let frequencies = yarnInverseFrequencies {
-            try encodeYaRNNeoxSubdim(commandBuffer: commandBuffer, data: data,
-                                     dataOffset: dataOffset, position: position,
-                                     headDim: headDim, numHeads: numHeads,
-                                     rotaryDim: rotaryDim, numTokens: numTokens,
-                                     frequencies: frequencies)
+            try encodeYaRNNeoxSubdim(
+                commandBuffer: commandBuffer, data: data,
+                dataOffset: dataOffset, position: position,
+                headDim: headDim, numHeads: numHeads,
+                rotaryDim: rotaryDim, numTokens: numTokens,
+                frequencies: frequencies)
             return
         }
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
@@ -120,50 +133,59 @@ final class RoPE {
         encoder.setBytes(&numHeadsValue, length: MemoryLayout<UInt32>.size, index: 3)
         encoder.setBytes(&thetaValue, length: MemoryLayout<Float>.size, index: 4)
         encoder.setBytes(&rotaryDimValue, length: MemoryLayout<UInt32>.size, index: 5)
-        dispatch(encoder: encoder,
-                 pipeline: neoxSubdim,
-                 pairs: Int(rotaryDim) / 2,
-                 heads: Int(numHeads),
-                 tokens: Int(numTokens))
+        dispatch(
+            encoder: encoder,
+            pipeline: neoxSubdim,
+            pairs: Int(rotaryDim) / 2,
+            heads: Int(numHeads),
+            tokens: Int(numTokens))
         encoder.endEncoding()
     }
 
-    private func encodeYaRNNeoxSubdim(commandBuffer: MTLCommandBuffer,
-                                      data: MTLBuffer,
-                                      dataOffset: Int,
-                                      position: UInt32,
-                                      headDim: UInt32,
-                                      numHeads: UInt32,
-                                      rotaryDim: UInt32,
-                                      numTokens: UInt32,
-                                      frequencies: MTLBuffer) throws {
+    private func encodeYaRNNeoxSubdim(
+        commandBuffer: MTLCommandBuffer,
+        data: MTLBuffer,
+        dataOffset: Int,
+        position: UInt32,
+        headDim: UInt32,
+        numHeads: UInt32,
+        rotaryDim: UInt32,
+        numTokens: UInt32,
+        frequencies: MTLBuffer
+    ) throws {
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
         encoder.setComputePipelineState(yarnNeoxSubdim)
         encoder.setBuffer(data, offset: dataOffset, index: 0)
         encoder.setBuffer(frequencies, offset: 0, index: 1)
-        var pos = position, dim = headDim, heads = numHeads, rotary = rotaryDim
+        var pos = position
+        var dim = headDim
+        var heads = numHeads
+        var rotary = rotaryDim
         var magnitude = yarnAttentionFactor
         encoder.setBytes(&pos, length: MemoryLayout<UInt32>.size, index: 2)
         encoder.setBytes(&dim, length: MemoryLayout<UInt32>.size, index: 3)
         encoder.setBytes(&heads, length: MemoryLayout<UInt32>.size, index: 4)
         encoder.setBytes(&rotary, length: MemoryLayout<UInt32>.size, index: 5)
         encoder.setBytes(&magnitude, length: MemoryLayout<Float>.size, index: 6)
-        dispatch(encoder: encoder, pipeline: yarnNeoxSubdim,
-                 pairs: Int(rotaryDim) / 2, heads: Int(numHeads),
-                 tokens: Int(numTokens))
+        dispatch(
+            encoder: encoder, pipeline: yarnNeoxSubdim,
+            pairs: Int(rotaryDim) / 2, heads: Int(numHeads),
+            tokens: Int(numTokens))
         encoder.endEncoding()
     }
 
-    func encodeDefaultNeox(commandBuffer: MTLCommandBuffer,
-                                  data: MTLBuffer,
-                                  dataOffset: Int = 0,
-                                  position: UInt32,
-                                  headDim: UInt32,
-                                  numHeads: UInt32,
-                                  numTokens: UInt32 = 1,
-                                  theta: Float = 10_000.0) throws {
+    func encodeDefaultNeox(
+        commandBuffer: MTLCommandBuffer,
+        data: MTLBuffer,
+        dataOffset: Int = 0,
+        position: UInt32,
+        headDim: UInt32,
+        numHeads: UInt32,
+        numTokens: UInt32 = 1,
+        theta: Float = 10_000.0
+    ) throws {
         precondition(headDim.isMultiple(of: 2), "head_dim must be even")
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
@@ -179,26 +201,30 @@ final class RoPE {
         encoder.setBytes(&headDimValue, length: MemoryLayout<UInt32>.size, index: 2)
         encoder.setBytes(&numHeadsValue, length: MemoryLayout<UInt32>.size, index: 3)
         encoder.setBytes(&thetaValue, length: MemoryLayout<Float>.size, index: 4)
-        dispatch(encoder: encoder,
-                 pipeline: pipeline,
-                 pairs: Int(headDim) / 2,
-                 heads: Int(numHeads),
-                 tokens: Int(numTokens))
+        dispatch(
+            encoder: encoder,
+            pipeline: pipeline,
+            pairs: Int(headDim) / 2,
+            heads: Int(numHeads),
+            tokens: Int(numTokens))
         encoder.endEncoding()
     }
 
-    func encodeProportionalNeox(commandBuffer: MTLCommandBuffer,
-                                       data: MTLBuffer,
-                                       dataOffset: Int = 0,
-                                       position: UInt32,
-                                       headDim: UInt32,
-                                       numHeads: UInt32,
-                                       rotatedPairs: UInt32,
-                                       numTokens: UInt32 = 1,
-                                       theta: Float = 1_000_000.0) throws {
+    func encodeProportionalNeox(
+        commandBuffer: MTLCommandBuffer,
+        data: MTLBuffer,
+        dataOffset: Int = 0,
+        position: UInt32,
+        headDim: UInt32,
+        numHeads: UInt32,
+        rotatedPairs: UInt32,
+        numTokens: UInt32 = 1,
+        theta: Float = 1_000_000.0
+    ) throws {
         precondition(headDim.isMultiple(of: 2), "head_dim must be even")
-        precondition(rotatedPairs * 2 <= headDim,
-                     "rotatedPairs * 2 must not exceed head_dim")
+        precondition(
+            rotatedPairs * 2 <= headDim,
+            "rotatedPairs * 2 must not exceed head_dim")
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -222,20 +248,24 @@ final class RoPE {
         // `pair >= active_pairs` so the old headDim/2 dispatch was only
         // wasteful, not wrong — dispatching the true count keeps the guard
         // meaningful and avoids launching idle threads.
-        dispatch(encoder: encoder,
-                 pipeline: pipeline,
-                 pairs: Int(rotatedPairs),
-                 heads: Int(numHeads),
-                 tokens: Int(numTokens))
+        dispatch(
+            encoder: encoder,
+            pipeline: pipeline,
+            pairs: Int(rotatedPairs),
+            heads: Int(numHeads),
+            tokens: Int(numTokens))
         encoder.endEncoding()
     }
 
-    private static func specializedPipeline(_ context: MetalContext,
-                                            _ name: String,
-                                            headDim: UInt32,
-                                            numHeads: UInt32,
-                                            rotatedPairs: UInt32 = 0) throws
-        -> MTLComputePipelineState {
+    private static func specializedPipeline(
+        _ context: MetalContext,
+        _ name: String,
+        headDim: UInt32,
+        numHeads: UInt32,
+        rotatedPairs: UInt32 = 0
+    ) throws
+        -> MTLComputePipelineState
+    {
         try context.pipeline(
             name,
             constants: [
@@ -246,16 +276,20 @@ final class RoPE {
             ])
     }
 
-    private func defaultPipeline(headDim: UInt32,
-                                 numHeads: UInt32) -> MTLComputePipelineState {
+    private func defaultPipeline(
+        headDim: UInt32,
+        numHeads: UInt32
+    ) -> MTLComputePipelineState {
         if headDim == 256 && numHeads == 16 { return defaultNeoxSWAQ }
         if headDim == 256 && numHeads == 8 { return defaultNeoxSWAK }
         return defaultNeox
     }
 
-    private func proportionalPipeline(headDim: UInt32,
-                                      numHeads: UInt32,
-                                      rotatedPairs: UInt32) -> MTLComputePipelineState {
+    private func proportionalPipeline(
+        headDim: UInt32,
+        numHeads: UInt32,
+        rotatedPairs: UInt32
+    ) -> MTLComputePipelineState {
         if headDim == 512 && rotatedPairs == 64 && numHeads == 16 {
             return proportionalNeoxFullQ
         }
@@ -265,11 +299,13 @@ final class RoPE {
         return proportionalNeox
     }
 
-    private func dispatch(encoder: MTLComputeCommandEncoder,
-                          pipeline: MTLComputePipelineState,
-                          pairs: Int,
-                          heads: Int,
-                          tokens: Int) {
+    private func dispatch(
+        encoder: MTLComputeCommandEncoder,
+        pipeline: MTLComputePipelineState,
+        pairs: Int,
+        heads: Int,
+        tokens: Int
+    ) {
         let width = min(pairs, Int(pipeline.maxTotalThreadsPerThreadgroup))
         encoder.dispatchThreads(
             MTLSize(width: pairs, height: heads, depth: tokens),

@@ -18,9 +18,11 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
     private let files: [String: RemoteFileInfo]
     private let writeTileBytes: Int
 
-    public init(remote: HuggingFaceRemoteSource,
-                files: [String: RemoteFileInfo],
-                writeTileBytes: Int = WriterCore.tileBytes) {
+    public init(
+        remote: HuggingFaceRemoteSource,
+        files: [String: RemoteFileInfo],
+        writeTileBytes: Int = WriterCore.tileBytes
+    ) {
         self.remote = remote
         self.files = files
         self.writeTileBytes = writeTileBytes
@@ -70,7 +72,9 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
         audit.largestScratchBytes = max(audit.largestScratchBytes, scratch.count)
 
         var outputFDs: [String: Int32] = [:]
-        defer { outputFDs.values.forEach { close($0) } }
+        defer {
+            for descriptor in outputFDs.values { close(descriptor) }
+        }
         var downloaded: UInt64 = 0
 
         for copy in copies where !completedRangeIDs.contains(copy.id) {
@@ -137,11 +141,12 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
                 copy,
                 partialDirectory: partialDirectory,
                 scratch: scratch)
-            try commit(RemoteCompletedRange(
-                id: copy.id,
-                destinationDigest: digest,
-                sourceBytes: copy.size,
-                destinationBytes: copy.destinations.reduce(0) { $0 + $1.size }))
+            try commit(
+                RemoteCompletedRange(
+                    id: copy.id,
+                    destinationDigest: digest,
+                    sourceBytes: copy.size,
+                    destinationBytes: copy.destinations.reduce(0) { $0 + $1.size }))
             progress(downloaded)
             try? FileManager.default.removeItem(atPath: temporary.path)
             try Task.checkCancellation()
@@ -153,9 +158,11 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
         partialDirectory: String,
         scratch suppliedScratch: UnsafeMutableRawBufferPointer? = nil
     ) throws -> String {
-        let scratch = suppliedScratch ?? UnsafeMutableRawBufferPointer.allocate(
-            byteCount: WriterCore.tileBytes,
-            alignment: 16_384)
+        let scratch =
+            suppliedScratch
+            ?? UnsafeMutableRawBufferPointer.allocate(
+                byteCount: WriterCore.tileBytes,
+                alignment: 16_384)
         defer {
             if suppliedScratch == nil { scratch.deallocate() }
         }
@@ -166,9 +173,10 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
 
         var digest = DestinationDigest(copy: copy)
         for destination in copy.destinations {
-            digest.append(try RangeCopyPlanner.normalizedRelativePath(
-                destination.destinationPath,
-                root: partialDirectory))
+            digest.append(
+                try RangeCopyPlanner.normalizedRelativePath(
+                    destination.destinationPath,
+                    root: partialDirectory))
             digest.append(destination.destinationOffset)
             digest.append(destination.sourceOffset - copy.sourceOffset)
             digest.append(destination.size)
@@ -185,9 +193,10 @@ public final class HTTPRangeSourceByteProvider: SourceByteProvider {
                     buf: scratchBase,
                     count: count,
                     offset: offset)
-                digest.append(UnsafeRawBufferPointer(
-                    start: scratch.baseAddress,
-                    count: count))
+                digest.append(
+                    UnsafeRawBufferPointer(
+                        start: scratch.baseAddress,
+                        count: count))
                 remaining -= UInt64(count)
                 offset += UInt64(count)
             }

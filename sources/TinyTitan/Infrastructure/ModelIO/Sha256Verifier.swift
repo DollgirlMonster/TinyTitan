@@ -1,27 +1,32 @@
-import Foundation
 import CommonCrypto
 import Darwin
+import Foundation
 
 public enum Sha256Verifier {
 
     /// Compute the lowercase-hex SHA-256 of the entire file at `fileURL` by
     /// streaming through a fixed-size scratch read. Does not allocate the
     /// whole file.
-    public static func hashFile(at fileURL: URL,
-                                chunkBytes: Int = 1 << 20) throws -> String {
+    public static func hashFile(
+        at fileURL: URL,
+        chunkBytes: Int = 1 << 20
+    ) throws -> String {
         let fd = open(fileURL.path, O_RDONLY)
         guard fd >= 0 else {
             throw ModelError.posixFailed(call: "open(\(fileURL.path))", errno: errno)
         }
         defer { close(fd) }
 
-        return try hashFile(fileDescriptor: fd, displayName: fileURL.path,
-                            chunkBytes: chunkBytes)
+        return try hashFile(
+            fileDescriptor: fd, displayName: fileURL.path,
+            chunkBytes: chunkBytes)
     }
 
-    package static func hashFile(fileDescriptor fd: Int32,
-                                 displayName: String,
-                                 chunkBytes: Int = 1 << 20) throws -> String {
+    package static func hashFile(
+        fileDescriptor fd: Int32,
+        displayName: String,
+        chunkBytes: Int = 1 << 20
+    ) throws -> String {
         guard chunkBytes > 0 else {
             throw ModelError.indexCorrupt(detail: "SHA-256 chunk size must be positive")
         }
@@ -75,18 +80,22 @@ public enum Sha256Verifier {
     /// Throw `ModelError.checksumMismatch(file)` if the on-disk file's
     /// SHA-256 does not match `expectedHex`. Hex comparison is
     /// case-insensitive on the expected side (writer outputs lowercase).
-    public static func verifyFile(at fileURL: URL,
-                                  named name: String,
-                                  expectedHex: String) throws {
+    public static func verifyFile(
+        at fileURL: URL,
+        named name: String,
+        expectedHex: String
+    ) throws {
         let actual = try hashFile(at: fileURL)
         if actual.lowercased() != expectedHex.lowercased() {
             throw ModelError.checksumMismatch(file: name)
         }
     }
 
-    package static func verifyFile(fileDescriptor fd: Int32,
-                                   named name: String,
-                                   expectedHex: String) throws {
+    package static func verifyFile(
+        fileDescriptor fd: Int32,
+        named name: String,
+        expectedHex: String
+    ) throws {
         let actual = try hashFile(fileDescriptor: fd, displayName: name)
         if actual.lowercased() != expectedHex.lowercased() {
             throw ModelError.checksumMismatch(file: name)

@@ -46,9 +46,11 @@ public final class GDNStateManager {
     public static func worstCaseBytes(config: ArchConfig, slots: Int = 1) -> Int {
         precondition(slots > 0, "slots must be positive")
         let linear = config.linearAttention
-        let stateBytes = linear.numVHeads * linear.valueHeadDim
+        let stateBytes =
+            linear.numVHeads * linear.valueHeadDim
             * linear.keyHeadDim * fp32Size
-        let convTailBytes = max(0, linear.convKernelSize - 1)
+        let convTailBytes =
+            max(0, linear.convKernelSize - 1)
             * linear.qkvDim * fp16Size
         let linearLayers = (0..<config.numLayers)
             .filter { config.layerIsLinear($0) }
@@ -56,11 +58,14 @@ public final class GDNStateManager {
         return slots * linearLayers * (stateBytes + convTailBytes)
     }
 
-    public init(device: MTLDevice, config: ArchConfig,
-                slots: Int = 1,
-                enableSpeculativeCheckpoint: Bool = false) throws {
-        precondition(slots > 0 && slots <= Self.maximumSlots,
-                     "slots must be between 1 and \(Self.maximumSlots)")
+    public init(
+        device: MTLDevice, config: ArchConfig,
+        slots: Int = 1,
+        enableSpeculativeCheckpoint: Bool = false
+    ) throws {
+        precondition(
+            slots > 0 && slots <= Self.maximumSlots,
+            "slots must be between 1 and \(Self.maximumSlots)")
         self.config = config
         self.slots = slots
         let la = config.linearAttention
@@ -92,25 +97,33 @@ public final class GDNStateManager {
                 throw ModelError.internalInconsistency(
                     detail: "linear layer \(layer) present but linearAttention config is empty")
             }
-            guard let state = device.makeBuffer(length: stateBufferBytes,
-                                                options: .storageModeShared) else {
+            guard
+                let state = device.makeBuffer(
+                    length: stateBufferBytes,
+                    options: .storageModeShared)
+            else {
                 throw ModelError.residentBufferWrapFailed
             }
             state.label = "gdn.state.layer\(layer)"
-            guard let tail = device.makeBuffer(length: convTailBufferBytes,
-                                               options: .storageModeShared) else {
+            guard
+                let tail = device.makeBuffer(
+                    length: convTailBufferBytes,
+                    options: .storageModeShared)
+            else {
                 throw ModelError.residentBufferWrapFailed
             }
             tail.label = "gdn.convtail.layer\(layer)"
             states.append(state)
             tails.append(tail)
             if enableSpeculativeCheckpoint {
-                guard let speculativeState = device.makeBuffer(
-                    length: stateBufferBytes,
-                    options: .storageModeShared),
-                      let speculativeTail = device.makeBuffer(
-                    length: convTailBufferBytes,
-                    options: .storageModeShared) else {
+                guard
+                    let speculativeState = device.makeBuffer(
+                        length: stateBufferBytes,
+                        options: .storageModeShared),
+                    let speculativeTail = device.makeBuffer(
+                        length: convTailBufferBytes,
+                        options: .storageModeShared)
+                else {
                     throw ModelError.residentBufferWrapFailed
                 }
                 speculativeState.label = "gdn.speculative-state.layer\(layer)"
@@ -182,8 +195,9 @@ public final class GDNStateManager {
     }
 
     private func validateSlot(_ slot: Int) {
-        precondition(slot >= 0 && slot < slots,
-                     "slot \(slot) is out of range 0..<\(slots)")
+        precondition(
+            slot >= 0 && slot < slots,
+            "slot \(slot) is out of range 0..<\(slots)")
     }
 
     public func isLinear(layer: Int) -> Bool { stateBuffers[layer] != nil }
@@ -220,22 +234,27 @@ public final class GDNStateManager {
         return lengths
     }
 
-    func appendSnapshotPayload(to payload: inout Data,
-                               segmentLengths: [Int]) throws {
+    func appendSnapshotPayload(
+        to payload: inout Data,
+        segmentLengths: [Int]
+    ) throws {
         guard segmentLengths == snapshotSegmentLengths() else {
             throw InferenceStateSnapshotError.invalidLayout
         }
         var segment = 0
         for layer in 0..<config.numLayers {
             guard let state = stateBuffers[layer],
-                  let tail = convTailBuffers[layer] else { continue }
+                let tail = convTailBuffers[layer]
+            else { continue }
             let stateLength = segmentLengths[segment]
-            payload.append(state.contents().assumingMemoryBound(to: UInt8.self),
-                           count: stateLength)
+            payload.append(
+                state.contents().assumingMemoryBound(to: UInt8.self),
+                count: stateLength)
             segment += 1
             let tailLength = segmentLengths[segment]
-            payload.append(tail.contents().assumingMemoryBound(to: UInt8.self),
-                           count: tailLength)
+            payload.append(
+                tail.contents().assumingMemoryBound(to: UInt8.self),
+                count: tailLength)
             segment += 1
         }
     }
@@ -245,7 +264,8 @@ public final class GDNStateManager {
     func encodeSpeculativeRestore(commandBuffer: MTLCommandBuffer) throws {
         for layer in 0..<config.numLayers where stateBuffers[layer] != nil {
             guard speculativeStateBuffers[layer] != nil,
-                  speculativeConvTailBuffers[layer] != nil else {
+                speculativeConvTailBuffers[layer] != nil
+            else {
                 throw InferenceStateSnapshotError.invalidLayout
             }
         }
@@ -254,15 +274,18 @@ public final class GDNStateManager {
         }
         for layer in 0..<config.numLayers {
             guard let state = stateBuffers[layer],
-                  let tail = convTailBuffers[layer],
-                  let speculativeState = speculativeStateBuffers[layer],
-                  let speculativeTail = speculativeConvTailBuffers[layer] else { continue }
-            blit.copy(from: speculativeState, sourceOffset: 0,
-                      to: state, destinationOffset: 0,
-                      size: stateBytesPerLayer)
-            blit.copy(from: speculativeTail, sourceOffset: 0,
-                      to: tail, destinationOffset: 0,
-                      size: convTailBytesPerLayer)
+                let tail = convTailBuffers[layer],
+                let speculativeState = speculativeStateBuffers[layer],
+                let speculativeTail = speculativeConvTailBuffers[layer]
+            else { continue }
+            blit.copy(
+                from: speculativeState, sourceOffset: 0,
+                to: state, destinationOffset: 0,
+                size: stateBytesPerLayer)
+            blit.copy(
+                from: speculativeTail, sourceOffset: 0,
+                to: tail, destinationOffset: 0,
+                size: convTailBytesPerLayer)
         }
         blit.endEncoding()
     }
@@ -272,9 +295,11 @@ public final class GDNStateManager {
             ? snapshotSegmentLengths().reduce(0, +) : 0
     }
 
-    func restoreSnapshot(segmentLengths: [Int],
-                         bytes: UnsafeRawBufferPointer,
-                         offset: inout Int) throws {
+    func restoreSnapshot(
+        segmentLengths: [Int],
+        bytes: UnsafeRawBufferPointer,
+        offset: inout Int
+    ) throws {
         guard segmentLengths == snapshotSegmentLengths() else {
             throw InferenceStateSnapshotError.invalidLayout
         }
@@ -282,29 +307,35 @@ public final class GDNStateManager {
         var segment = 0
         for layer in 0..<config.numLayers {
             guard let state = stateBuffers[layer],
-                  let tail = convTailBuffers[layer] else { continue }
-            try copySnapshotSegment(bytes: bytes,
-                                    offset: &offset,
-                                    length: segmentLengths[segment],
-                                    destination: state)
+                let tail = convTailBuffers[layer]
+            else { continue }
+            try copySnapshotSegment(
+                bytes: bytes,
+                offset: &offset,
+                length: segmentLengths[segment],
+                destination: state)
             segment += 1
-            try copySnapshotSegment(bytes: bytes,
-                                    offset: &offset,
-                                    length: segmentLengths[segment],
-                                    destination: tail)
+            try copySnapshotSegment(
+                bytes: bytes,
+                offset: &offset,
+                length: segmentLengths[segment],
+                destination: tail)
             segment += 1
         }
     }
 
-    private func copySnapshotSegment(bytes: UnsafeRawBufferPointer,
-                                     offset: inout Int,
-                                     length: Int,
-                                     destination: MTLBuffer) throws {
+    private func copySnapshotSegment(
+        bytes: UnsafeRawBufferPointer,
+        offset: inout Int,
+        length: Int,
+        destination: MTLBuffer
+    ) throws {
         guard length <= destination.length,
-              offset >= 0,
-              length >= 0,
-              offset <= bytes.count - length,
-              let source = bytes.baseAddress?.advanced(by: offset) else {
+            offset >= 0,
+            length >= 0,
+            offset <= bytes.count - length,
+            let source = bytes.baseAddress?.advanced(by: offset)
+        else {
             throw InferenceStateSnapshotError.invalidLayout
         }
         memcpy(destination.contents(), source, length)

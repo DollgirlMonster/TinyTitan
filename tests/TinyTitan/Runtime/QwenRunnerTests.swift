@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// Qwen 3.6 runtime integration: runner construction against the qwen toy
 /// fixture (no auxiliary sandwich/scale tensors present — init must not touch
@@ -10,24 +11,28 @@ import TinyTitanValidationSupport
 /// graph, and the KV-cache + GDN-state reset interplay.
 @Suite struct QwenRunnerTests {
 
-    private func makeRunner(weightBits: Int = 4,
-                            slots: Int = 1,
-                            forceLogitsHead: Bool = false,
-                            maxContext: Int = 64) throws -> (URL, MetalContext, RealForwardRunner) {
+    private func makeRunner(
+        weightBits: Int = 4,
+        slots: Int = 1,
+        forceLogitsHead: Bool = false,
+        maxContext: Int = 64
+    ) throws -> (URL, MetalContext, RealForwardRunner) {
         let dir = try QwenToySynthetic.write(weightBits: weightBits)
         let ctx = try MetalContext()
-        let model = try Model.load(directoryURL: dir,
-                                   device: ctx.device,
-                                   expecting: .qwenToy())
+        let model = try Model.load(
+            directoryURL: dir,
+            device: ctx.device,
+            expecting: .qwenToy())
         // A 4-bit lm_head defaults to the fused greedy head, which never writes
         // the logits buffer; a logits comparison must force the logits head, as
         // the server does.
         let runtime = try RuntimeConfiguration(forceLogitsHead: forceLogitsHead)
-        let runner = try RealForwardRunner(model: model,
-                                           context: ctx,
-                                           maxContext: maxContext,
-                                           slots: slots,
-                                           runtimeConfiguration: runtime)
+        let runner = try RealForwardRunner(
+            model: model,
+            context: ctx,
+            maxContext: maxContext,
+            slots: slots,
+            runtimeConfiguration: runtime)
         return (dir, ctx, runner)
     }
 
@@ -134,13 +139,15 @@ import TinyTitanValidationSupport
         var gotB: [[Float]] = []
         for position in 0..<max(aTokens.count, bTokens.count) {
             if position < aTokens.count {
-                try await runner.produce(token: aTokens[position], position: position,
-                                         slot: 0, into: logits)
+                try await runner.produce(
+                    token: aTokens[position], position: position,
+                    slot: 0, into: logits)
                 gotA.append(Fp16Buffer.read(logits, count: vocab))
             }
             if position < bTokens.count {
-                try await runner.produce(token: bTokens[position], position: position,
-                                         slot: 1, into: logits)
+                try await runner.produce(
+                    token: bTokens[position], position: position,
+                    slot: 1, into: logits)
                 gotB.append(Fp16Buffer.read(logits, count: vocab))
             }
         }
@@ -149,8 +156,9 @@ import TinyTitanValidationSupport
             #expect(pair.0.count == pair.1.count)
             for (step, (want, got)) in zip(pair.0, pair.1).enumerated() {
                 for (i, (w, g)) in zip(want, got).enumerated() {
-                    #expect(abs(w - g) <= 1e-3,
-                            "slot \(slot) step \(step) logit \(i): \(g) vs \(w)")
+                    #expect(
+                        abs(w - g) <= 1e-3,
+                        "slot \(slot) step \(step) logit \(i): \(g) vs \(w)")
                 }
             }
         }
@@ -166,9 +174,10 @@ import TinyTitanValidationSupport
         let vocab = 1024
         let soloMaxContext = 65536
 
-        let (soloDir, soloCtx, solo) = try makeRunner(weightBits: bits,
-                                                      forceLogitsHead: true,
-                                                      maxContext: soloMaxContext)
+        let (soloDir, soloCtx, solo) = try makeRunner(
+            weightBits: bits,
+            forceLogitsHead: true,
+            maxContext: soloMaxContext)
         defer { try? FileManager.default.removeItem(at: soloDir) }
         let soloLogits = try makeLogits(soloCtx, vocab: vocab)
         _ = try await solo.prefillChunked(
@@ -178,28 +187,33 @@ import TinyTitanValidationSupport
         let expected = Fp16Buffer.read(soloLogits, count: vocab)
 
         for slot in 0..<4 {
-            let (dir, ctx, runner) = try makeRunner(weightBits: bits, slots: 4,
-                                                    forceLogitsHead: true,
-                                                    maxContext: soloMaxContext)
+            let (dir, ctx, runner) = try makeRunner(
+                weightBits: bits, slots: 4,
+                forceLogitsHead: true,
+                maxContext: soloMaxContext)
             defer { try? FileManager.default.removeItem(at: dir) }
             let logits = try makeLogits(ctx, vocab: vocab)
             _ = try await runner.prefillChunked(
                 tokens: tokens[...], startPosition: 0, slot: slot, outputMode: .logits,
                 config: .production(chunkTokens: 32), into: logits, onProgress: { _ in })
-            try await runner.produce(token: 2, position: tokens.count, slot: slot,
-                                     into: logits)
+            try await runner.produce(
+                token: 2, position: tokens.count, slot: slot,
+                into: logits)
             let actual = Fp16Buffer.read(logits, count: vocab)
             for (i, (want, got)) in zip(expected, actual).enumerated() {
-                #expect(abs(want - got) <= 1e-3,
-                        "slot \(slot) prefill+decode logit \(i): \(got) vs solo \(want)")
+                #expect(
+                    abs(want - got) <= 1e-3,
+                    "slot \(slot) prefill+decode logit \(i): \(got) vs solo \(want)")
             }
         }
     }
 
     private func makeLogits(_ ctx: MetalContext, vocab: Int) throws -> MTLBuffer {
-        guard let buf = ctx.device.makeBuffer(
-            length: vocab * MemoryLayout<Float16>.stride,
-            options: .storageModeShared) else {
+        guard
+            let buf = ctx.device.makeBuffer(
+                length: vocab * MemoryLayout<Float16>.stride,
+                options: .storageModeShared)
+        else {
             throw ModelError.residentBufferWrapFailed
         }
         return buf
@@ -239,29 +253,35 @@ import TinyTitanValidationSupport
             of: (Int, [[Float]]).self
         ) { group in
             group.addTask {
-                guard let logits = ctx.device.makeBuffer(
-                    length: vocab * MemoryLayout<Float16>.stride,
-                    options: .storageModeShared) else {
+                guard
+                    let logits = ctx.device.makeBuffer(
+                        length: vocab * MemoryLayout<Float16>.stride,
+                        options: .storageModeShared)
+                else {
                     throw ModelError.residentBufferWrapFailed
                 }
                 var rows: [[Float]] = []
                 for (position, token) in aTokens.enumerated() {
-                    try await runner.produce(token: token, position: position,
-                                             slot: 0, into: logits)
+                    try await runner.produce(
+                        token: token, position: position,
+                        slot: 0, into: logits)
                     rows.append(Fp16Buffer.read(logits, count: vocab))
                 }
                 return (0, rows)
             }
             group.addTask {
-                guard let logits = ctx.device.makeBuffer(
-                    length: vocab * MemoryLayout<Float16>.stride,
-                    options: .storageModeShared) else {
+                guard
+                    let logits = ctx.device.makeBuffer(
+                        length: vocab * MemoryLayout<Float16>.stride,
+                        options: .storageModeShared)
+                else {
                     throw ModelError.residentBufferWrapFailed
                 }
                 var rows: [[Float]] = []
                 for (position, token) in bTokens.enumerated() {
-                    try await runner.produce(token: token, position: position,
-                                             slot: 1, into: logits)
+                    try await runner.produce(
+                        token: token, position: position,
+                        slot: 1, into: logits)
                     rows.append(Fp16Buffer.read(logits, count: vocab))
                 }
                 return (1, rows)
@@ -278,8 +298,9 @@ import TinyTitanValidationSupport
             #expect(pair.0.count == pair.1.count)
             for (step, (want, got)) in zip(pair.0, pair.1).enumerated() {
                 for (i, (w, g)) in zip(want, got).enumerated() {
-                    #expect(abs(w - g) <= 1e-3,
-                            "slot \(slot) step \(step) logit \(i): \(g) vs \(w)")
+                    #expect(
+                        abs(w - g) <= 1e-3,
+                        "slot \(slot) step \(step) logit \(i): \(g) vs \(w)")
                 }
             }
         }
@@ -435,12 +456,13 @@ import TinyTitanValidationSupport
     @Test func kvManagerAndGdnState_resetInterplay() throws {
         let cfg = ArchConfig.qwenToy()
         let ctx = try MetalContext()
-        let kv = try KVCacheManager(device: ctx.device,
-                                    config: cfg,
-                                    maxContext: 32,
-                                    fp16RingEnabled: true,
-                                    slidingWindow: cfg.slidingWindow,
-                                    maxPrefillChunkTokens: 32)
+        let kv = try KVCacheManager(
+            device: ctx.device,
+            config: cfg,
+            maxContext: 32,
+            fp16RingEnabled: true,
+            slidingWindow: cfg.slidingWindow,
+            maxPrefillChunkTokens: 32)
         #expect(kv.layerKind(0) == .linear)
         #expect(kv.layerKind(1) == .full)
         #expect(kv.layerKind(2) == .linear)
@@ -459,9 +481,11 @@ import TinyTitanValidationSupport
         #expect(gdnState.isLinear(layer: 0))
         #expect(!gdnState.isLinear(layer: 1))
         let la = cfg.linearAttention
-        #expect(gdnState.stateBytesPerLayer
+        #expect(
+            gdnState.stateBytesPerLayer
                 == la.numVHeads * la.valueHeadDim * la.keyHeadDim * 4)
-        #expect(gdnState.convTailBytesPerLayer
+        #expect(
+            gdnState.convTailBytesPerLayer
                 == (la.convKernelSize - 1) * la.qkvDim * 2)
 
         // Dirty the recurrent state and the KV cursor, then reset both.

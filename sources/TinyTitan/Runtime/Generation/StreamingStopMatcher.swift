@@ -67,8 +67,9 @@ public struct StreamingStopMatcher: Sendable {
     private func utf8Boundary(_ text: String, retainingLastBytes: Int) -> String.Index {
         let utf8 = text.utf8
         guard retainingLastBytes > 0 else { return text.endIndex }
-        let target = utf8.index(utf8.startIndex,
-                                offsetBy: utf8.count - retainingLastBytes)
+        let target = utf8.index(
+            utf8.startIndex,
+            offsetBy: utf8.count - retainingLastBytes)
         // A UTF-8 continuation byte has top bits 10xxxxxx. Walk forward to the
         // next lead byte so the retained suffix never splits a codepoint.
         var boundary = target

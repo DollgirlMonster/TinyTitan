@@ -24,9 +24,11 @@ public enum GenerationDefaults {
         /// OpenAI presence penalty: subtracted from the logit of every id the
         /// history already contains, once per distinct id.
         public var presencePenalty: Float
-        public init(temperature: Float, topK: Int, topP: Float,
-                    minP: Float = GenerationDefaults.minP,
-                    presencePenalty: Float = GenerationDefaults.presencePenalty) {
+        public init(
+            temperature: Float, topK: Int, topP: Float,
+            minP: Float = GenerationDefaults.minP,
+            presencePenalty: Float = GenerationDefaults.presencePenalty
+        ) {
             self.temperature = temperature
             self.topK = topK
             self.topP = topP
@@ -35,17 +37,20 @@ public enum GenerationDefaults {
         }
     }
 
-    public static let house = Sampling(temperature: temperature,
-                                       topK: topK, topP: topP)
+    public static let house = Sampling(
+        temperature: temperature,
+        topK: topK, topP: topP)
 
     /// Qwen3.8-Flash-Next publishes **two** rows, because the checkpoint is
     /// specified with different sampling inside and outside thinking mode.
     /// Thinking is the card's default; instruct (non-thinking) raises the
     /// penalty on repetition.
-    public static let qwen38Thinking = Sampling(temperature: 1.0, topK: topK,
-                                                topP: 0.95)
-    public static let qwen38Instruct = Sampling(temperature: 0.7, topK: topK,
-                                                topP: 0.80, presencePenalty: 1.5)
+    public static let qwen38Thinking = Sampling(
+        temperature: 1.0, topK: topK,
+        topP: 0.95)
+    public static let qwen38Instruct = Sampling(
+        temperature: 0.7, topK: topK,
+        topP: 0.80, presencePenalty: 1.5)
 
     /// Defaults for a family, used wherever the caller did not ask for a value.
     /// An explicit request always wins -- this only fills the gap.
@@ -93,7 +98,7 @@ public struct GenerationConfig: Sendable {
     /// non-zero value is refused by `validate` until the filter is implemented.
     public var minP: Float = GenerationDefaults.minP
     public var repetitionPenalty: Float = 1.0
-    public var seed: UInt64?             // nil = nondeterministic
+    public var seed: UInt64?  // nil = nondeterministic
     public var stopStrings: [String] = []
     public var extraStopTokens: Set<Int32> = []
     /// A grammar the sampled tokens must stay inside, when the request asked
@@ -105,17 +110,19 @@ public struct GenerationConfig: Sendable {
     /// generated token; see `JSONConstraint`.
     public var constraint: JSONConstraint?
 
-    public init(maxNewTokens: Int = 256,
-                temperature: Float = GenerationDefaults.temperature,
-                topK: Int? = GenerationDefaults.topK,
-                topP: Float? = GenerationDefaults.topP,
-                presencePenalty: Float = GenerationDefaults.presencePenalty,
-                minP: Float = GenerationDefaults.minP,
-                repetitionPenalty: Float = 1.0,
-                seed: UInt64? = nil,
-                stopStrings: [String] = [],
-                extraStopTokens: Set<Int32> = [],
-                constraint: JSONConstraint? = nil) {
+    public init(
+        maxNewTokens: Int = 256,
+        temperature: Float = GenerationDefaults.temperature,
+        topK: Int? = GenerationDefaults.topK,
+        topP: Float? = GenerationDefaults.topP,
+        presencePenalty: Float = GenerationDefaults.presencePenalty,
+        minP: Float = GenerationDefaults.minP,
+        repetitionPenalty: Float = 1.0,
+        seed: UInt64? = nil,
+        stopStrings: [String] = [],
+        extraStopTokens: Set<Int32> = [],
+        constraint: JSONConstraint? = nil
+    ) {
         self.maxNewTokens = maxNewTokens
         self.temperature = temperature
         self.topK = topK
@@ -142,7 +149,7 @@ public struct GenerationConfig: Sendable {
             throw GeneratorError.invalidGenerationConfig(
                 "topK must be between 1 and 256")
         }
-        if let topP, (!topP.isFinite || topP <= 0 || topP > 1) {
+        if let topP, !topP.isFinite || topP <= 0 || topP > 1 {
             throw GeneratorError.invalidGenerationConfig(
                 "topP must be greater than zero and at most one")
         }
@@ -258,8 +265,10 @@ final class Sampler {
     private enum FrontEnd { case singleThreadgroup, tiled }
     private var lastFrontEnd: FrontEnd = .singleThreadgroup
 
-    init(context: MetalContext, vocab: Int = 262_144,
-                logitSoftcap: Float = 30.0) throws {
+    init(
+        context: MetalContext, vocab: Int = 262_144,
+        logitSoftcap: Float = 30.0
+    ) throws {
         self.softcap = try LogitSoftcapSoftmax(context: context)
         self.softcapTiled = try LogitSoftcapSoftmaxTiled(context: context, vocab: vocab)
         self.sampleKernel = try Sample(context: context)
@@ -275,22 +284,26 @@ final class Sampler {
     /// FP16 [vocab] scratch. `outToken` holds one UInt32. `position` indexes the
     /// per-position seed advance. Returns the path taken.
     @discardableResult
-    func sample(commandBuffer: MTLCommandBuffer,
-                       logits: MTLBuffer,
-                       probs: MTLBuffer,
-                       history: [Int32],
-                       config: GenerationConfig,
-                       position: Int,
-                       outToken: MTLBuffer) throws -> SamplePath {
+    func sample(
+        commandBuffer: MTLCommandBuffer,
+        logits: MTLBuffer,
+        probs: MTLBuffer,
+        history: [Int32],
+        config: GenerationConfig,
+        position: Int,
+        outToken: MTLBuffer
+    ) throws -> SamplePath {
         let v = UInt32(vocab)
 
-        let appliedPenalty = (config.repetitionPenalty != 1.0
-                              || config.presencePenalty != 0) && !history.isEmpty
+        let appliedPenalty =
+            (config.repetitionPenalty != 1.0
+                || config.presencePenalty != 0) && !history.isEmpty
         if appliedPenalty {
-            applyPenaltiesInPlace(logits: logits,
-                                  history: history,
-                                  repetition: config.repetitionPenalty,
-                                  presence: config.presencePenalty)
+            applyPenaltiesInPlace(
+                logits: logits,
+                history: history,
+                repetition: config.repetitionPenalty,
+                presence: config.presencePenalty)
         }
         // Structured output: floor every token the grammar no longer accepts,
         // in the shared logits buffer, before the softcap+softmax front-end
@@ -301,21 +314,24 @@ final class Sampler {
         if let constraint = config.constraint {
             let mask = constraint.allowedMask()
             guard !mask.isEmpty else { throw GeneratorError.constrainedDecodeStalled }
-            mask.apply(toLogits: logits.contents().bindMemory(to: Float16.self, capacity: vocab),
-                       count: vocab)
+            mask.apply(
+                toLogits: logits.contents().bindMemory(to: Float16.self, capacity: vocab),
+                count: vocab)
         }
         // The tiled front-end follows the same path selection as the Top-K
         // half: `generic` forces the single-threadgroup pair so an A/B
         // measures both halves of the sampler, not one.
         if samplerPath == .tiled, let softcapTiled {
-            try softcapTiled.encode(commandBuffer: commandBuffer,
-                                    logits: logits, probs: probs, v: v,
-                                    softcap: logitSoftcap)
+            try softcapTiled.encode(
+                commandBuffer: commandBuffer,
+                logits: logits, probs: probs, v: v,
+                softcap: logitSoftcap)
             lastFrontEnd = .tiled
         } else {
-            try softcap.encode(commandBuffer: commandBuffer,
-                               logits: logits, probs: probs, v: v,
-                               softcap: logitSoftcap)
+            try softcap.encode(
+                commandBuffer: commandBuffer,
+                logits: logits, probs: probs, v: v,
+                softcap: logitSoftcap)
             lastFrontEnd = .singleThreadgroup
         }
 
@@ -332,24 +348,27 @@ final class Sampler {
         // k > 64, k == 0 (top-k disabled, k becomes 256), and greedy stay on
         // the generic path, which remains the reference implementation.
         if samplerPath == .tiled,
-           config.temperature > 0,
-           let requestedK = config.topK,
-           (1...64).contains(requestedK) {
-            try topK64Kernel.encode(commandBuffer: commandBuffer,
-                                    probs: probs,
-                                    outToken: outToken,
-                                    temperature: config.temperature,
-                                    topP: config.topP ?? 1.0,
-                                    seed: seed,
-                                    topK: UInt32(requestedK))
+            config.temperature > 0,
+            let requestedK = config.topK,
+            (1...64).contains(requestedK)
+        {
+            try topK64Kernel.encode(
+                commandBuffer: commandBuffer,
+                probs: probs,
+                outToken: outToken,
+                temperature: config.temperature,
+                topP: config.topP ?? 1.0,
+                seed: seed,
+                topK: UInt32(requestedK))
         } else {
-            try sampleKernel.encode(commandBuffer: commandBuffer,
-                                    probs: probs, outToken: outToken, v: v,
-                                    temperature: isGreedy ? 0.0 : config.temperature,
-                                    topK: UInt32(config.topK ?? 0),
-                                    topP: config.topP ?? 1.0,
-                                    seed: seed,
-                                    position: UInt32(position))
+            try sampleKernel.encode(
+                commandBuffer: commandBuffer,
+                probs: probs, outToken: outToken, v: v,
+                temperature: isGreedy ? 0.0 : config.temperature,
+                topK: UInt32(config.topK ?? 0),
+                topP: config.topP ?? 1.0,
+                seed: seed,
+                position: UInt32(position))
         }
 
         if appliedPenalty { return .hostPenalty }
@@ -404,10 +423,12 @@ final class Sampler {
     /// end, so applying them together costs one walk of the table rather than
     /// two. Both work inside the softcap's space, which is where the repeated
     /// logit already lived for the repetition penalty.
-    private func applyPenaltiesInPlace(logits: MTLBuffer,
-                                       history: [Int32],
-                                       repetition: Float,
-                                       presence: Float) {
+    private func applyPenaltiesInPlace(
+        logits: MTLBuffer,
+        history: [Int32],
+        repetition: Float,
+        presence: Float
+    ) {
         if !penaltyHistorySeeded {
             for id in history where id >= 0 && Int(id) < vocab {
                 penaltyFrequency[id, default: 0] += 1
@@ -460,7 +481,8 @@ final class Sampler {
             if presence != 0 {
                 if logitSoftcap > 0 {
                     let capped = logitSoftcap * tanhf(value / logitSoftcap)
-                    value = logitSoftcap
+                    value =
+                        logitSoftcap
                         * atanhf(max(min(capped - presence, limit), -limit) / logitSoftcap)
                 } else {
                     value -= presence
@@ -486,7 +508,7 @@ final class Sampler {
     static func seedFor(config: GenerationConfig, position: Int) -> UInt64 {
         if let s = config.seed {
             let mixed = Self.splitmix64(s &+ UInt64(bitPattern: Int64(position)))
-            return mixed == 0 ? 0x9E3779B97F4A7C15 : mixed
+            return mixed == 0 ? 0x9E37_79B9_7F4A_7C15 : mixed
         }
         var t = timespec()
         clock_gettime(CLOCK_MONOTONIC, &t)
@@ -494,15 +516,16 @@ final class Sampler {
         // the same nanosecond still draw distinct seeds.
         let counter = Self.nondeterministicSeedCounter
             .wrappingAdd(1, ordering: .relaxed).newValue
-        let raw = (UInt64(bitPattern: Int64(t.tv_nsec)) &+ counter) &* 0x9E3779B97F4A7C15
+        let raw =
+            (UInt64(bitPattern: Int64(t.tv_nsec)) &+ counter) &* 0x9E37_79B9_7F4A_7C15
             &+ UInt64(bitPattern: Int64(t.tv_sec))
-        return raw == 0 ? 0x9E3779B97F4A7C15 : raw
+        return raw == 0 ? 0x9E37_79B9_7F4A_7C15 : raw
     }
 
     private static func splitmix64(_ x: UInt64) -> UInt64 {
-        var z = x &+ 0x9E3779B97F4A7C15
-        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
-        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        var z = x &+ 0x9E37_79B9_7F4A_7C15
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
         return z ^ (z >> 31)
     }
 }

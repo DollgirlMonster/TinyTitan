@@ -13,15 +13,15 @@ enum MetalError: Error, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .noDevice:                   return "No Metal device"
-        case .noQueue:                    return "Failed to create Metal command queue"
+        case .noDevice: return "No Metal device"
+        case .noQueue: return "Failed to create Metal command queue"
         case .missingShaderResource(let n): return "Shader resource missing: \(n)"
-        case .missingFunction(let n):     return "Metal function missing in library: \(n)"
-        case .libraryCompileFailed(let s):return "Metal library compile failed: \(s)"
-        case .commandEncoderFailed:       return "Failed to create Metal compute command encoder"
+        case .missingFunction(let n): return "Metal function missing in library: \(n)"
+        case .libraryCompileFailed(let s): return "Metal library compile failed: \(s)"
+        case .commandEncoderFailed: return "Failed to create Metal compute command encoder"
         case .bufferAllocationFailed(let label):
             return "Failed to allocate Metal buffer: \(label)"
-        case .invalidState(let detail):   return "Invalid Metal encoder state: \(detail)"
+        case .invalidState(let detail): return "Invalid Metal encoder state: \(detail)"
         }
     }
 }
@@ -54,8 +54,8 @@ public struct MetalFunctionConstant: Hashable, Sendable {
 /// use from multiple threads. The pipeline cache behind them is the only
 /// mutable state and is guarded by its own lock.
 public final class MetalContext: @unchecked Sendable {
-    public let device:  MTLDevice
-    public let queue:   MTLCommandQueue
+    public let device: MTLDevice
+    public let queue: MTLCommandQueue
     public let library: MTLLibrary
 
     private struct PipelineCacheKey: Hashable {
@@ -69,9 +69,9 @@ public final class MetalContext: @unchecked Sendable {
 
     public init() throws {
         guard let dev = MTLCreateSystemDefaultDevice() else { throw MetalError.noDevice }
-        guard let q   = dev.makeCommandQueue()           else { throw MetalError.noQueue }
-        self.device  = dev
-        self.queue   = q
+        guard let q = dev.makeCommandQueue() else { throw MetalError.noQueue }
+        self.device = dev
+        self.queue = q
         self.library = try Self.compileShaderLibrary(device: dev)
     }
 
@@ -123,8 +123,9 @@ public final class MetalContext: @unchecked Sendable {
 
     private static func shaderURL(module: String) -> URL? {
         guard let subdirectory = shaderSubdirectories[module] else { return nil }
-        return Bundle.module.url(forResource: module, withExtension: "metal",
-                                 subdirectory: subdirectory)
+        return Bundle.module.url(
+            forResource: module, withExtension: "metal",
+            subdirectory: subdirectory)
     }
 
     private static func compileShaderLibrary(device: MTLDevice) throws -> MTLLibrary {
@@ -165,14 +166,18 @@ public final class MetalContext: @unchecked Sendable {
         try pipeline(name, constants: [])
     }
 
-    public func pipeline(_ name: String,
-                         constants: [MetalFunctionConstant]) throws -> MTLComputePipelineState {
+    public func pipeline(
+        _ name: String,
+        constants: [MetalFunctionConstant]
+    ) throws -> MTLComputePipelineState {
         try pipeline(name, constants: constants, maxTotalThreadsPerThreadgroup: nil)
     }
 
-    public func pipeline(_ name: String,
-                         constants: [MetalFunctionConstant],
-                         maxTotalThreadsPerThreadgroup hint: Int?) throws -> MTLComputePipelineState {
+    public func pipeline(
+        _ name: String,
+        constants: [MetalFunctionConstant],
+        maxTotalThreadsPerThreadgroup hint: Int?
+    ) throws -> MTLComputePipelineState {
         if let hint {
             precondition(hint > 0, "maxTotalThreadsPerThreadgroup must be positive")
         }
@@ -180,9 +185,10 @@ public final class MetalContext: @unchecked Sendable {
             if $0.index != $1.index { return $0.index < $1.index }
             return Self.constantSortKey($0.value) < Self.constantSortKey($1.value)
         }
-        let key = PipelineCacheKey(name: name,
-                                   constants: sortedConstants,
-                                   maxTotalThreadsPerThreadgroup: hint)
+        let key = PipelineCacheKey(
+            name: name,
+            constants: sortedConstants,
+            maxTotalThreadsPerThreadgroup: hint)
         // K2: compile+insert happen inside the lock. The naive double-checked
         // locking compiled the PSO *outside* the lock, so a concurrent miss on
         // the same key compiled the pipeline multiple times. Compiling under
@@ -218,9 +224,10 @@ public final class MetalContext: @unchecked Sendable {
             descriptor.computeFunction = fn
             descriptor.maxTotalThreadsPerThreadgroup = hint
             var reflection: MTLAutoreleasedComputePipelineReflection?
-            p = try device.makeComputePipelineState(descriptor: descriptor,
-                                                    options: [],
-                                                    reflection: &reflection)
+            p = try device.makeComputePipelineState(
+                descriptor: descriptor,
+                options: [],
+                reflection: &reflection)
         } else {
             p = try device.makeComputePipelineState(function: fn)
         }
@@ -230,9 +237,9 @@ public final class MetalContext: @unchecked Sendable {
 
     private static func constantSortKey(_ value: MetalFunctionConstant.Value) -> String {
         switch value {
-        case .bool(let v):   return "b:\(v ? 1 : 0)"
+        case .bool(let v): return "b:\(v ? 1 : 0)"
         case .uint32(let v): return "u:\(v)"
-        case .float(let v):  return "f:\(v.bitPattern)"
+        case .float(let v): return "f:\(v.bitPattern)"
         }
     }
 }

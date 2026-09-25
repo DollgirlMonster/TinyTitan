@@ -1,6 +1,7 @@
+import ContinuityCore
 import Foundation
 import Testing
-import ContinuityCore
+
 @testable import TinyTitanMemory
 
 /// A journal that refuses writes on demand, standing in for a full disk, an
@@ -65,10 +66,12 @@ private actor RefusingJournal: ContinuityJournal {
     }
 
     private func set(_ key: String, _ value: String, in harness: Harness) async
-        -> MemoryToolResult {
-        await harness.service.execute(name: "memory_set",
-                                      arguments: ["key": .string(key), "value": .string(value)],
-                                      in: harness.context)
+        -> MemoryToolResult
+    {
+        await harness.service.execute(
+            name: "memory_set",
+            arguments: ["key": .string(key), "value": .string(value)],
+            in: harness.context)
     }
 
     private func journalFailureLines(_ harness: Harness) -> Int {
@@ -84,10 +87,11 @@ private actor RefusingJournal: ContinuityJournal {
         #expect(await harness.service.isDurable)
         #expect(!harness.events.messages().contains { $0.contains("degraded") })
         let records = await harness.journal.records
-        #expect(records.contains { record in
-            if case .memory(let item) = record { return item.value == "postgres" }
-            return false
-        })
+        #expect(
+            records.contains { record in
+                if case .memory(let item) = record { return item.value == "postgres" }
+                return false
+            })
     }
 
     @Test func aSetTheJournalRefusesIsAFailureAndNotDurable() async throws {
@@ -104,9 +108,10 @@ private actor RefusingJournal: ContinuityJournal {
         // fact, and a local retry would have answered "stored".
         let again = await set("decisions/queue", "sqs", in: harness)
         #expect(again.isFailure)
-        let read = await harness.service.execute(name: "memory_get",
-                                                 arguments: ["key": .string("decisions/db")],
-                                                 in: harness.context)
+        let read = await harness.service.execute(
+            name: "memory_get",
+            arguments: ["key": .string("decisions/db")],
+            in: harness.context)
         #expect(read.jsonString().contains("postgres"))
         #expect(journalFailureLines(harness) == 1)
 
@@ -123,9 +128,10 @@ private actor RefusingJournal: ContinuityJournal {
         _ = await set("decisions/db", "postgres", in: harness)
         await harness.journal.refuse(true)
 
-        let result = await harness.service.execute(name: "memory_delete",
-                                                   arguments: ["key": .string("decisions/db")],
-                                                   in: harness.context)
+        let result = await harness.service.execute(
+            name: "memory_delete",
+            arguments: ["key": .string("decisions/db")],
+            in: harness.context)
         #expect(result.isFailure)
         #expect(!result.jsonString().contains("\"deleted\":true"))
         #expect(await harness.service.isDurable == false)
@@ -136,10 +142,11 @@ private actor RefusingJournal: ContinuityJournal {
         await harness.journal.refuse(true)
 
         for index in 0..<2 {
-            await harness.service.recordTurn(session: harness.context, index: index,
-                                             prompt: "prompt \(index)", reply: "reply \(index)",
-                                             model: nil, promptTokens: 1, completionTokens: 1,
-                                             latencyMilliseconds: 1, stopReason: "stop")
+            await harness.service.recordTurn(
+                session: harness.context, index: index,
+                prompt: "prompt \(index)", reply: "reply \(index)",
+                model: nil, promptTokens: 1, completionTokens: 1,
+                latencyMilliseconds: 1, stopReason: "stop")
         }
 
         #expect(await harness.service.isDurable == false)

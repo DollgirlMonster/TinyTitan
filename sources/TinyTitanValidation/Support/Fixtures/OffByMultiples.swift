@@ -8,6 +8,6 @@ public enum OffByMultiples {
     /// Multiples of the INT4 group size 64. Useful when the kernel
     /// preconditions `N % 64 == 0`.
     public static let multiplesOfGroup: [Int] = [
-        64, 128, 192, 256, 320, 512, 704, 1024, 2816
+        64, 128, 192, 256, 320, 512, 704, 1024, 2816,
     ]
 }

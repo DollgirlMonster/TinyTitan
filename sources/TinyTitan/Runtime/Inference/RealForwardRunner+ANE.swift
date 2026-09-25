@@ -28,16 +28,18 @@ extension RealForwardRunner {
         guard let stage = cb.makeBlitCommandEncoder() else {
             throw ModelError.residentBufferWrapFailed
         }
-        stage.copy(from: scratch.normed, sourceOffset: 0,
-                   to: ane.stagingNormed, destinationOffset: 0,
-                   size: t * D * halfBytes)
+        stage.copy(
+            from: scratch.normed, sourceOffset: 0,
+            to: ane.stagingNormed, destinationOffset: 0,
+            size: t * D * halfBytes)
         stage.endEncoding()
         cb.commit()
         try waitForCompletion(cb)
         recordKernelGPU(role: "prefill_ane_stage", cb)
 
-        try await ane.predict(layer: L, history: startPosition,
-                              tokenCount: t, selection: selection)
+        try await ane.predict(
+            layer: L, history: startPosition,
+            tokenCount: t, selection: selection)
         ane.appendShadow(layer: L, startPosition: startPosition, tokenCount: t)
         // Start the next covered layer's model load now: it overlaps the MoE
         // stage the caller is about to encode and run on the GPU, which is
@@ -53,21 +55,23 @@ extension RealForwardRunner {
         }
         cb = next
         if let kv {
-            try copyPrefillKVToCache(commandBuffer: cb,
-                                     kv: kv,
-                                     layer: L,
-                                     startPosition: startPosition,
-                                     tokenCount: t,
-                                     keySource: ane.stagingK,
-                                     valueSource: ane.stagingV,
-                                     bytesPerToken: kvDim * halfBytes)
+            try copyPrefillKVToCache(
+                commandBuffer: cb,
+                kv: kv,
+                layer: L,
+                startPosition: startPosition,
+                tokenCount: t,
+                keySource: ane.stagingK,
+                valueSource: ane.stagingV,
+                bytesPerToken: kvDim * halfBytes)
         }
         guard let out = cb.makeBlitCommandEncoder() else {
             throw ModelError.residentBufferWrapFailed
         }
-        out.copy(from: ane.stagingOut, sourceOffset: 0,
-                 to: scratch.h1, destinationOffset: 0,
-                 size: t * D * halfBytes)
+        out.copy(
+            from: ane.stagingOut, sourceOffset: 0,
+            to: scratch.h1, destinationOffset: 0,
+            size: t * D * halfBytes)
         out.endEncoding()
     }
 }

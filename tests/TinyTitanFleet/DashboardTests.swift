@@ -8,23 +8,37 @@ import Testing
 private func sampleGroup() -> FleetGroup {
     let local = FleetNode(
         id: "macbook-ab:3080", name: "macbook-ab", host: "127.0.0.1", port: 3080, isSelf: true,
-        source: "local", addresses: ["192.168.18.27", "fd7a:115c:a1e0::1"], dshVersion: "0.1.5-rc.2",
-        workspaces: [FleetWorkspace(id: "w-ab", path: "/Users/me/Project", title: "Project", sessionCount: 1, hiddenSessionCount: 0, sessionIds: ["s-ab"])],
-        sessions: [FleetSession(sessionId: "s-ab", workspaceId: "w-ab", title: "local work", turns: 3)]
+        source: "local", addresses: ["192.168.18.27", "fd7a:115c:a1e0::1"],
+        dshVersion: "0.1.5-rc.2",
+        workspaces: [
+            FleetWorkspace(
+                id: "w-ab", path: "/Users/me/Project", title: "Project", sessionCount: 1,
+                hiddenSessionCount: 0, sessionIds: ["s-ab"])
+        ],
+        sessions: [
+            FleetSession(sessionId: "s-ab", workspaceId: "w-ab", title: "local work", turns: 3)
+        ]
     )
     let remote = FleetNode(
         id: "100.114.69.128:3080", name: "Node3", host: "100.114.69.128", port: 3080, isSelf: false,
-        source: "tailscale", addresses: ["100.114.69.128", "fd7a:115c:a1e0::7f01:45af"], dshVersion: "0.1.4",
+        source: "tailscale", addresses: ["100.114.69.128", "fd7a:115c:a1e0::7f01:45af"],
+        dshVersion: "0.1.4",
         lastSeen: Date().timeIntervalSince1970 * 1000 - 4000,
-        workspaces: [FleetWorkspace(id: "w-n3", path: "/Users/node3/Downloads/TT_Test", title: "TT_Test", sessionCount: 2, hiddenSessionCount: 0, sessionIds: ["s-n3a", "s-n3b"])],
+        workspaces: [
+            FleetWorkspace(
+                id: "w-n3", path: "/Users/node3/Downloads/TT_Test", title: "TT_Test",
+                sessionCount: 2, hiddenSessionCount: 0, sessionIds: ["s-n3a", "s-n3b"])
+        ],
         sessions: [
-            FleetSession(sessionId: "s-n3a", workspaceId: "w-n3", title: "story benchmark", turns: 12),
+            FleetSession(
+                sessionId: "s-n3a", workspaceId: "w-n3", title: "story benchmark", turns: 12),
             FleetSession(sessionId: "s-n3b", workspaceId: "w-n3", title: "fleet smoke", turns: 3),
         ]
     )
     let idle = FleetNode(
         id: "100.101.5.9:3080", name: "fra-dc-01", host: "100.101.5.9", port: 3080, isSelf: false,
-        source: "tailscale", addresses: ["100.101.5.9"], dshVersion: nil, lastSeen: Date().timeIntervalSince1970 * 1000 - 90_000
+        source: "tailscale", addresses: ["100.101.5.9"], dshVersion: nil,
+        lastSeen: Date().timeIntervalSince1970 * 1000 - 90_000
     )
     return FleetGroup(group: "tinytitan-lan", nodes: [local, remote, idle])
 }
@@ -59,8 +73,9 @@ private func dashboard() -> FleetDashboard {
         #expect(headings(76).contains("DSH"))
         #expect(!headings(60).contains("DSH"), "then the harness version")
         #expect(!headings(60).contains("TYPE"))
-        #expect(headings(46).contains("NAME") && headings(46).contains("ADDRESS"),
-                "the member and its address are the last to go")
+        #expect(
+            headings(46).contains("NAME") && headings(46).contains("ADDRESS"),
+            "the member and its address are the last to go")
     }
 
     @Test func aTinyWindowSaysSoRatherThanDrawingRubbish() {
@@ -69,12 +84,20 @@ private func dashboard() -> FleetDashboard {
     }
 
     @Test func longNamesAndPathsAreElidedNotOverflowed() {
-        let group = FleetGroup(group: "g", nodes: [
-            FleetNode(id: "x:1", name: "a-very-long-machine-name-that-will-not-fit", host: "10.0.0.1", port: 3080, isSelf: false,
-                      source: "seed", addresses: [], dshVersion: "0.1.0",
-                      workspaces: [FleetWorkspace(id: "w", path: "/Users/someone/an/extremely/long/path/that/keeps/going", sessionCount: 0, hiddenSessionCount: 0, sessionIds: [])],
-                      sessions: []),
-        ])
+        let group = FleetGroup(
+            group: "g",
+            nodes: [
+                FleetNode(
+                    id: "x:1", name: "a-very-long-machine-name-that-will-not-fit", host: "10.0.0.1",
+                    port: 3080, isSelf: false,
+                    source: "seed", addresses: [], dshVersion: "0.1.0",
+                    workspaces: [
+                        FleetWorkspace(
+                            id: "w", path: "/Users/someone/an/extremely/long/path/that/keeps/going",
+                            sessionCount: 0, hiddenSessionCount: 0, sessionIds: [])
+                    ],
+                    sessions: [])
+            ])
         var state = FleetDashboard(seed: FleetTarget(host: "127.0.0.1", port: 3080))
         state.apply(group: group)
         let frame = FleetDashboardView.render(state, width: 60, height: 10)
@@ -100,8 +123,10 @@ private func dashboard() -> FleetDashboard {
     @Test func theSelectionStaysVisibleWhileScrolling() {
         var state = FleetDashboard(seed: FleetTarget(host: "127.0.0.1", port: 3080))
         let many = (0..<40).map { index in
-            FleetNode(id: "n\(index):3080", name: "node-\(index)", host: "10.0.0.\(index + 1)", port: 3080,
-                      isSelf: false, source: "seed", addresses: [], dshVersion: "0.1.0")
+            FleetNode(
+                id: "n\(index):3080", name: "node-\(index)", host: "10.0.0.\(index + 1)",
+                port: 3080,
+                isSelf: false, source: "seed", addresses: [], dshVersion: "0.1.0")
         }
         state.apply(group: FleetGroup(group: "g", nodes: many))
         for _ in 0..<35 { state.move(by: 1) }
@@ -112,7 +137,9 @@ private func dashboard() -> FleetDashboard {
         #expect(frame.selectedLine != nil)
         #expect((frame.lines.count - 4) > 0)
         if let index = frame.selectedLine {
-            #expect(index > 1 && index < frame.lines.count - 2, "the cursor stays inside the table, not in the footer")
+            #expect(
+                index > 1 && index < frame.lines.count - 2,
+                "the cursor stays inside the table, not in the footer")
             #expect(frame.lines[index].contains("node-35"))
         }
     }
@@ -128,8 +155,8 @@ private func dashboard() -> FleetDashboard {
     @Test func theTreeExpandsAndCollapsesPerMember() {
         var state = dashboard()
         #expect(state.rows.count == 8, "3 members + 2 workspaces + 3 sessions, all open")
-        state.move(by: 3) // Node3
-        state.press(.left) // collapse it
+        state.move(by: 3)  // Node3
+        state.press(.left)  // collapse it
         #expect(state.rows.count == 5, "its workspace and two sessions go with it")
         state.press(.right)
         #expect(state.rows.count == 8)
@@ -137,7 +164,7 @@ private func dashboard() -> FleetDashboard {
 
     @Test func pOnASessionAsksForTextAndBuildsTheRightAction() {
         var state = dashboard()
-        state.move(by: 5) // the first session row under Node3
+        state.move(by: 5)  // the first session row under Node3
         guard case .session(let node, _) = state.selectedRow else {
             Issue.record("expected a session row, got \(String(describing: state.selectedRow))")
             return
@@ -173,18 +200,22 @@ private func dashboard() -> FleetDashboard {
 
     @Test func pOnAWorkspaceTargetsThatWorkspace() {
         var state = dashboard()
-        state.move(by: 4) // the workspace row under Node3
+        state.move(by: 4)  // the workspace row under Node3
         guard case .workspace = state.selectedRow else {
             Issue.record("expected a workspace row")
             return
         }
         state.press(.character("p"))
-        #expect(state.mode == .input(field: .promptText(target: .workspace(nodeID: "100.114.69.128:3080", workspaceID: "w-n3"))))
+        #expect(
+            state.mode
+                == .input(
+                    field: .promptText(
+                        target: .workspace(nodeID: "100.114.69.128:3080", workspaceID: "w-n3"))))
     }
 
     @Test func archivingNeedsAConfirmation() {
         var state = dashboard()
-        state.move(by: 5) // a session
+        state.move(by: 5)  // a session
         state.press(.character("a"))
         guard case .confirm(_, let action) = state.mode else {
             Issue.record("a should confirm before archiving")
@@ -225,13 +256,15 @@ private func dashboard() -> FleetDashboard {
             return
         }
         #expect(sameNode == nodeID && path == "/tmp/x")
-        state.press(.enter) // Enter takes the folder name as the title
-        #expect(state.takePendingAction() == .createWorkspace(nodeID: nodeID, path: "/tmp/x", title: nil))
+        state.press(.enter)  // Enter takes the folder name as the title
+        #expect(
+            state.takePendingAction()
+                == .createWorkspace(nodeID: nodeID, path: "/tmp/x", title: nil))
     }
 
     @Test func destructiveKeysOnTheWrongRowExplainThemselves() {
         var state = dashboard()
-        state.press(.character("a")) // a member row, not a session
+        state.press(.character("a"))  // a member row, not a session
         #expect(state.mode == .browse)
         #expect(state.status.contains("select a session"))
         state.press(.character("d"))
@@ -289,9 +322,13 @@ private func dashboard() -> FleetDashboard {
     }
 
     @Test func typingDecodesIncludingMultiByteCharacters() {
-        #expect(FleetTerminal.decode(Array("abc".utf8)) == [.character("a"), .character("b"), .character("c")])
+        #expect(
+            FleetTerminal.decode(Array("abc".utf8)) == [
+                .character("a"), .character("b"), .character("c"),
+            ])
         #expect(FleetTerminal.decode(Array("é".utf8)) == [.character("é")], "two bytes, one key")
         #expect(FleetTerminal.decode(Array("✓".utf8)) == [.character("✓")])
-        #expect(FleetTerminal.decode([0x1B, 0x5B, 0x41] + Array("x".utf8)) == [.up, .character("x")])
+        #expect(
+            FleetTerminal.decode([0x1B, 0x5B, 0x41] + Array("x".utf8)) == [.up, .character("x")])
     }
 }

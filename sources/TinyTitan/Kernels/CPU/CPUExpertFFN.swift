@@ -45,12 +45,14 @@ public enum CPUExpertFFN {
         ///     block half the size it needs, and every offset after the first
         ///     wrong, with the shapes still plausible.
         public init(d: Int, f: Int, weightBits: Int = 4) {
-            precondition([4, 8].contains(weightBits),
-                         "expert layout supports 4- and 8-bit weights, not \(weightBits)")
-            precondition(d % groupSize == 0 && f % groupSize == 0,
-                         "d=\(d) and f=\(f) must be multiples of \(groupSize)")
+            precondition(
+                [4, 8].contains(weightBits),
+                "expert layout supports 4- and 8-bit weights, not \(weightBits)")
+            precondition(
+                d % groupSize == 0 && f % groupSize == 0,
+                "d=\(d) and f=\(f) must be multiples of \(groupSize)")
             let gateWeights = f * d * weightBits / 8
-            let gateMeta = f * (d / groupSize) * 2 // BF16
+            let gateMeta = f * (d / groupSize) * 2  // BF16
             let downWeights = d * f * weightBits / 8
             let downMeta = d * (f / groupSize) * 2
             gate = 0
@@ -85,13 +87,15 @@ public enum CPUExpertFFN {
     /// (1.19 ms vs 0.49 ms per production expert), spending the difference on
     /// scalar inserts to build each vector rather than on arithmetic.
     @inline(__always)
-    private static func gemv(weights: UnsafePointer<UInt8>,
-                             scales: UnsafePointer<UInt16>,
-                             biases: UnsafePointer<UInt16>,
-                             x: UnsafePointer<Float>,
-                             rows: Int,
-                             n: Int,
-                             out: UnsafeMutablePointer<Float>) {
+    private static func gemv(
+        weights: UnsafePointer<UInt8>,
+        scales: UnsafePointer<UInt16>,
+        biases: UnsafePointer<UInt16>,
+        x: UnsafePointer<Float>,
+        rows: Int,
+        n: Int,
+        out: UnsafeMutablePointer<Float>
+    ) {
         // Same contract as the standalone wrapper: the kernel's row stride and
         // its scale/bias groups are both derived from `n`, so a width that is not
         // a whole number of 64-element groups mis-strides every row after the
@@ -111,26 +115,30 @@ public enum CPUExpertFFN {
     /// `expert` points at the start of this expert's block; `out` and `x` are
     /// both length `d`. `scratch` must hold at least `2 * f` floats and is
     /// caller-owned so a worker can reuse one allocation across experts.
-    public static func accumulate(expert: UnsafeRawPointer,
-                                  offsets: Offsets,
-                                  x: UnsafePointer<Float>,
-                                  d: Int,
-                                  f: Int,
-                                  routeWeight: Float,
-                                  scratch: UnsafeMutablePointer<Float>,
-                                  out: UnsafeMutablePointer<Float>) {
+    public static func accumulate(
+        expert: UnsafeRawPointer,
+        offsets: Offsets,
+        x: UnsafePointer<Float>,
+        d: Int,
+        f: Int,
+        routeWeight: Float,
+        scratch: UnsafeMutablePointer<Float>,
+        out: UnsafeMutablePointer<Float>
+    ) {
         let base = expert.assumingMemoryBound(to: UInt8.self)
         let gateOut = scratch
         let upOut = scratch + f
 
-        gemv(weights: base + offsets.gate,
-             scales: (expert + offsets.gateScales).assumingMemoryBound(to: UInt16.self),
-             biases: (expert + offsets.gateBiases).assumingMemoryBound(to: UInt16.self),
-             x: x, rows: f, n: d, out: gateOut)
-        gemv(weights: base + offsets.up,
-             scales: (expert + offsets.upScales).assumingMemoryBound(to: UInt16.self),
-             biases: (expert + offsets.upBiases).assumingMemoryBound(to: UInt16.self),
-             x: x, rows: f, n: d, out: upOut)
+        gemv(
+            weights: base + offsets.gate,
+            scales: (expert + offsets.gateScales).assumingMemoryBound(to: UInt16.self),
+            biases: (expert + offsets.gateBiases).assumingMemoryBound(to: UInt16.self),
+            x: x, rows: f, n: d, out: gateOut)
+        gemv(
+            weights: base + offsets.up,
+            scales: (expert + offsets.upScales).assumingMemoryBound(to: UInt16.self),
+            biases: (expert + offsets.upBiases).assumingMemoryBound(to: UInt16.self),
+            x: x, rows: f, n: d, out: upOut)
 
         for i in 0..<f {
             gateOut[i] = silu(gateOut[i]) * upOut[i]
@@ -142,10 +150,11 @@ public enum CPUExpertFFN {
         // way, so this keeps the single code path rather than the micro-
         // optimisation. The cost is elsewhere -- see the note on `gemv`.
         let downOut = scratch + 2 * f
-        gemv(weights: base + offsets.down,
-             scales: (expert + offsets.downScales).assumingMemoryBound(to: UInt16.self),
-             biases: (expert + offsets.downBiases).assumingMemoryBound(to: UInt16.self),
-             x: gateOut, rows: d, n: f, out: downOut)
+        gemv(
+            weights: base + offsets.down,
+            scales: (expert + offsets.downScales).assumingMemoryBound(to: UInt16.self),
+            biases: (expert + offsets.downBiases).assumingMemoryBound(to: UInt16.self),
+            x: gateOut, rows: d, n: f, out: downOut)
         for r in 0..<d {
             out[r] += routeWeight * downOut[r]
         }

@@ -37,23 +37,23 @@ struct ResidentFilePlan: Sendable {
     let path: String
     let entries: [ResidentEntry]
     let stringTable: [UInt8]
-    let stringTableOffsets: [UInt32]   // per-entry offsets into the table
-    let indexSize: UInt64              // header + entries + table + padding
-    let residentSize: UInt64           // tensor payload region
+    let stringTableOffsets: [UInt32]  // per-entry offsets into the table
+    let indexSize: UInt64  // header + entries + table + padding
+    let residentSize: UInt64  // tensor payload region
     var totalSize: UInt64 { indexSize + residentSize }
 }
 
 struct PerExpertTensorSlice: Sendable {
-    let role: String                   // "gate" | "up" | "down"
-    let component: String              // "weights" | "scales" | "biases"
-    let dtype: UInt8                   // 0=U32, 1=BF16
-    let logicalShape: [UInt64]         // per-expert logical shape
-    let offsetInExpertBlob: UInt64     // within each expert blob
+    let role: String  // "gate" | "up" | "down"
+    let component: String  // "weights" | "scales" | "biases"
+    let dtype: UInt8  // 0=U32, 1=BF16
+    let logicalShape: [UInt64]  // per-expert logical shape
+    let offsetInExpertBlob: UInt64  // within each expert blob
     let sizeInExpertBlob: UInt64
     /// For each expert e (0..<expertsPerLayer): source byte offset & size.
     let sourceOffsetPerExpert: UInt64  // stride per expert in source
     let sourceTensor: SourceTensor
-    let bitsForWeights: Int?           // 4 for routed expert weight; nil for scales/biases
+    let bitsForWeights: Int?  // 4 for routed expert weight; nil for scales/biases
 }
 
 struct LayerFilePlan: Sendable {
@@ -68,11 +68,13 @@ struct LayerFilePlan: Sendable {
         logicalExpert
     }
 
-    init(layerIndex: Int,
-                path: String,
-                expertsPerLayer: Int,
-                expertStride: UInt64,
-                subTensors: [PerExpertTensorSlice]) {
+    init(
+        layerIndex: Int,
+        path: String,
+        expertsPerLayer: Int,
+        expertStride: UInt64,
+        subTensors: [PerExpertTensorSlice]
+    ) {
         self.layerIndex = layerIndex
         self.path = path
         self.expertsPerLayer = expertsPerLayer
@@ -97,8 +99,8 @@ struct PassthroughFile: Sendable, Equatable {
 
 struct RepackPlan: Sendable {
     let arch: ArchInfo
-    let baseMode: String                  // "affine"
-    let baseGroupSize: Int                // 64
+    let baseMode: String  // "affine"
+    let baseGroupSize: Int  // 64
     let bitsOverrideCount: Int
     let resident: ResidentFilePlan
     let layers: [LayerFilePlan]
@@ -157,7 +159,7 @@ enum RepackPlanner {
     /// Classify a tensor name. Routed-expert tensors split off the LM bucket.
     enum Bucket: Equatable {
         case lmResident
-        case routedExpert(role: String, layer: Int)   // role = "gate"|"up"|"down"
+        case routedExpert(role: String, layer: Int)  // role = "gate"|"up"|"down"
         case excludedMultimodal
         /// Belongs to a sidecar installed separately, not to this model's
         /// payload. Qwen3.8-Flash-Next ships its MTP draft inside the target's
@@ -167,19 +169,23 @@ enum RepackPlanner {
         case unknown
     }
 
-    static func classify(_ name: String, numLayers: Int,
-                         family: RepackModelFamily) -> Bucket {
+    static func classify(
+        _ name: String, numLayers: Int,
+        family: RepackModelFamily
+    ) -> Bucket {
         if family == .qwen36MTP {
             if name.hasPrefix("layers.") {
                 if let role = routedExpertRole(in: name),
-                   let layer = layerIndex(in: name),
-                   layer >= 0 && layer < numLayers {
+                    let layer = layerIndex(in: name),
+                    layer >= 0 && layer < numLayers
+                {
                     return .routedExpert(role: role, layer: layer)
                 }
                 return .lmResident
             }
             if name == "norm.weight" || name.hasPrefix("fc.")
-                || name.hasPrefix("pre_fc_norm_") {
+                || name.hasPrefix("pre_fc_norm_")
+            {
                 return .lmResident
             }
             return .unknown
@@ -192,8 +198,9 @@ enum RepackPlanner {
             guard name.hasPrefix("mtp.") else { return .excludedSidecar }
             let stripped = String(name.dropFirst("mtp.".count))
             if let role = routedExpertRole(in: stripped),
-               let layer = layerIndex(in: stripped),
-               layer >= 0 && layer < numLayers {
+                let layer = layerIndex(in: stripped),
+                layer >= 0 && layer < numLayers
+            {
                 return .routedExpert(role: role, layer: layer)
             }
             return .lmResident
@@ -209,8 +216,9 @@ enum RepackPlanner {
             if name.hasPrefix("lm_head.") { return .lmResident }
             if name.hasPrefix("model.language_model.") {
                 if let role = routedExpertRole(in: name),
-                   let layer = layerIndex(in: name),
-                   layer >= 0 && layer < numLayers {
+                    let layer = layerIndex(in: name),
+                    layer >= 0 && layer < numLayers
+                {
                     return .routedExpert(role: role, layer: layer)
                 }
                 return .lmResident
@@ -220,8 +228,9 @@ enum RepackPlanner {
         if name.hasPrefix("language_model.") {
             // Routed expert?
             if let role = routedExpertRole(in: name),
-               let layer = layerIndex(in: name),
-               layer >= 0 && layer < numLayers {
+                let layer = layerIndex(in: name),
+                layer >= 0 && layer < numLayers
+            {
                 return .routedExpert(role: role, layer: layer)
             }
             return .lmResident
@@ -235,7 +244,7 @@ enum RepackPlanner {
     private static func routedExpertRole(in name: String) -> String? {
         guard name.contains(".mlp.switch_mlp.") else { return nil }
         if name.contains(".gate_proj.") { return "gate" }
-        if name.contains(".up_proj.")   { return "up" }
+        if name.contains(".up_proj.") { return "up" }
         if name.contains(".down_proj.") { return "down" }
         return nil
     }
@@ -251,11 +260,13 @@ enum RepackPlanner {
 
     /// Build the plan from parsed shard headers + source metadata.
     /// - throws: classification + companion + override count failures.
-    static func plan(meta: IndexLoader.SourceMetadata,
-                            arch: ArchInfo,
-                            shardHeaders: [Safetensors.Header],
-                            outputDir: String,
-                            passthroughFiles: [PassthroughFile] = []) throws -> RepackPlan {
+    static func plan(
+        meta: IndexLoader.SourceMetadata,
+        arch: ArchInfo,
+        shardHeaders: [Safetensors.Header],
+        outputDir: String,
+        passthroughFiles: [PassthroughFile] = []
+    ) throws -> RepackPlan {
 
         // Companion tensors may live in different shards, so resolve them
         // through one global registry.
@@ -283,18 +294,19 @@ enum RepackPlanner {
             }
             let b = classify(name, numLayers: arch.numLayers, family: arch.family)
             switch b {
-            case .lmResident:                   lmResidentBases.append(name)
+            case .lmResident: lmResidentBases.append(name)
             case .routedExpert(let role, let layer):
                 var byRole = routedByLayerAndRole[layer] ?? [:]
                 if byRole[role] != nil {
-                    throw RepackError.configurationInvalid(detail:
-                        "two routed-expert tensors for layer \(layer) role \(role)")
+                    throw RepackError.configurationInvalid(
+                        detail:
+                            "two routed-expert tensors for layer \(layer) role \(role)")
                 }
                 byRole[role] = name
                 routedByLayerAndRole[layer] = byRole
-            case .excludedMultimodal:           continue
-            case .excludedSidecar:              continue
-            case .unknown:                      throw RepackError.unknownTensorPrefix(name: name)
+            case .excludedMultimodal: continue
+            case .excludedSidecar: continue
+            case .unknown: throw RepackError.unknownTensorPrefix(name: name)
             }
         }
 
@@ -303,10 +315,11 @@ enum RepackPlanner {
         excludedMultimodalNames.sort()
 
         let residentPath = (outputDir as NSString).appendingPathComponent("model_weights.bin")
-        let resident = try planResidentFile(path: residentPath,
-                                            baseNames: lmResidentBases,
-                                            family: arch.family,
-                                            registry: registry, meta: meta)
+        let resident = try planResidentFile(
+            path: residentPath,
+            baseNames: lmResidentBases,
+            family: arch.family,
+            registry: registry, meta: meta)
 
         let layersDir = (outputDir as NSString).appendingPathComponent("packed_experts")
         var layerPlans: [LayerFilePlan] = []
@@ -314,53 +327,62 @@ enum RepackPlanner {
         for layer in 0..<arch.numLayers {
             let bundle = routedByLayerAndRole[layer] ?? [:]
             // Synthetic snapshots may legitimately have no routed experts.
-            guard let gName = bundle["gate"], let uName = bundle["up"], let dName = bundle["down"] else {
+            guard let gName = bundle["gate"], let uName = bundle["up"], let dName = bundle["down"]
+            else {
                 if bundle.isEmpty {
-                    layerPlans.append(LayerFilePlan(layerIndex: layer,
-                                                    path: (layersDir as NSString).appendingPathComponent("layer_\(String(format: "%02d", layer)).bin"),
-                                                    expertsPerLayer: 0,
-                                                    expertStride: 0,
-                                                    subTensors: []))
+                    layerPlans.append(
+                        LayerFilePlan(
+                            layerIndex: layer,
+                            path: (layersDir as NSString).appendingPathComponent(
+                                "layer_\(String(format: "%02d", layer)).bin"),
+                            expertsPerLayer: 0,
+                            expertStride: 0,
+                            subTensors: []))
                     continue
                 }
-                throw RepackError.configurationInvalid(detail:
-                    "layer \(layer) routed-expert bundle incomplete: \(bundle)")
+                throw RepackError.configurationInvalid(
+                    detail:
+                        "layer \(layer) routed-expert bundle incomplete: \(bundle)")
             }
             let path = (layersDir as NSString)
                 .appendingPathComponent("layer_\(String(format: "%02d", layer)).bin")
-            let lp = try planLayerFile(path: path, layer: layer,
-                                       gateName: gName, upName: uName, downName: dName,
-                                       registry: registry, meta: meta, arch: arch)
+            let lp = try planLayerFile(
+                path: path, layer: layer,
+                gateName: gName, upName: uName, downName: dName,
+                registry: registry, meta: meta, arch: arch)
             layerPlans.append(lp)
         }
 
         let matched = SourceFingerprint.modelID(forIndexSha256: meta.indexSha256Hex)
 
-        return RepackPlan(arch: arch,
-                          baseMode: meta.baseMode,
-                          baseGroupSize: meta.baseGroupSize,
-                          bitsOverrideCount: bitsOverrideCount,
-                          resident: resident,
-                          layers: layerPlans,
-                          matchedModelID: matched,
-                          excludedMultimodalTensorNames: excludedMultimodalNames,
-                          passthroughFiles: passthroughFiles)
+        return RepackPlan(
+            arch: arch,
+            baseMode: meta.baseMode,
+            baseGroupSize: meta.baseGroupSize,
+            bitsOverrideCount: bitsOverrideCount,
+            resident: resident,
+            layers: layerPlans,
+            matchedModelID: matched,
+            excludedMultimodalTensorNames: excludedMultimodalNames,
+            passthroughFiles: passthroughFiles)
     }
 
     private static func isMultimodalTensorName(_ name: String) -> Bool {
-        name.hasPrefix("vision_tower.") ||
-            name.hasPrefix("embed_vision.") ||
-            name.hasPrefix("audio_tower.")
+        name.hasPrefix("vision_tower.") || name.hasPrefix("embed_vision.")
+            || name.hasPrefix("audio_tower.")
     }
 
     // MARK: - Resident planning
 
-    private static func planResidentFile(path: String,
-                                         baseNames: [String],
-                                         family: RepackModelFamily,
-                                         registry: [String: SourceTensor],
-                                         meta: IndexLoader.SourceMetadata) throws
-                                        -> ResidentFilePlan {
+    private static func planResidentFile(
+        path: String,
+        baseNames: [String],
+        family: RepackModelFamily,
+        registry: [String: SourceTensor],
+        meta: IndexLoader.SourceMetadata
+    ) throws
+        -> ResidentFilePlan
+    {
         let entryCount = baseNames.count
 
         var stringTable: [UInt8] = []
@@ -374,9 +396,10 @@ enum RepackPlanner {
 
         // Index size includes the fixed header, fixed-width entries, and the
         // string table, padded to a 16 KB page boundary.
-        let rawIdx = UInt64(GTurboBinary.indexHeaderBytes
-            + entryCount * GTurboBinary.indexEntryBytes
-            + stringTable.count)
+        let rawIdx = UInt64(
+            GTurboBinary.indexHeaderBytes
+                + entryCount * GTurboBinary.indexEntryBytes
+                + stringTable.count)
         let indexSize = roundUpToPage(rawIdx)
 
         var fileCursor = indexSize
@@ -399,12 +422,14 @@ enum RepackPlanner {
                     throw RepackError.missingBiasesCompanion(name: name)
                 }
                 if scales.dtype != .bf16 || biases.dtype != .bf16 {
-                    throw RepackError.dtypeMismatch(name: name,
+                    throw RepackError.dtypeMismatch(
+                        name: name,
                         detail: "expected BF16 scales/biases, got \(scales.dtype)/\(biases.dtype)")
                 }
                 let spec = IndexLoader.quantSpec(forTensor: sourceName, meta: meta)
-                let logical = try logicalShape(forPackedSource: weight.shape,
-                                               scalesShape: scales.shape)
+                let logical = try logicalShape(
+                    forPackedSource: weight.shape,
+                    scalesShape: scales.shape)
 
                 let wOff = fileCursor
                 let wSize = weight.sizeBytes
@@ -414,55 +439,60 @@ enum RepackPlanner {
                 let bSize = biases.sizeBytes
                 fileCursor = bOff + bSize
 
-                entries.append(ResidentEntry(
-                    name: name, dtype: 0,
-                    logicalShape4: try padTo4(logical),
-                    fileOffset: wOff, sizeBytes: wSize,
-                    scaleOffset: sOff, scaleSize: sSize,
-                    biasOffset: bOff, biasSize: bSize,
-                    quantSpec: spec,
-                    sourceWeight: weight, sourceScales: scales, sourceBiases: biases))
+                entries.append(
+                    ResidentEntry(
+                        name: name, dtype: 0,
+                        logicalShape4: try padTo4(logical),
+                        fileOffset: wOff, sizeBytes: wSize,
+                        scaleOffset: sOff, scaleSize: sSize,
+                        biasOffset: bOff, biasSize: bSize,
+                        quantSpec: spec,
+                        sourceWeight: weight, sourceScales: scales, sourceBiases: biases))
             } else {
                 // Unquantized (BF16 norm / scalar) — no companions.
                 let off = fileCursor
                 let size = weight.sizeBytes
                 fileCursor = off + size
 
-                entries.append(ResidentEntry(
-                    name: name, dtype: dtype,
-                    logicalShape4: try padTo4(weight.shape),
-                    fileOffset: off, sizeBytes: size,
-                    scaleOffset: 0, scaleSize: 0,
-                    biasOffset: 0, biasSize: 0,
-                    quantSpec: nil,
-                    sourceWeight: weight, sourceScales: nil, sourceBiases: nil))
+                entries.append(
+                    ResidentEntry(
+                        name: name, dtype: dtype,
+                        logicalShape4: try padTo4(weight.shape),
+                        fileOffset: off, sizeBytes: size,
+                        scaleOffset: 0, scaleSize: 0,
+                        biasOffset: 0, biasSize: 0,
+                        quantSpec: nil,
+                        sourceWeight: weight, sourceScales: nil, sourceBiases: nil))
             }
         }
 
         let residentSize = fileCursor - indexSize
 
-        return ResidentFilePlan(path: path,
-                                entries: entries,
-                                stringTable: stringTable,
-                                stringTableOffsets: offsets,
-                                indexSize: indexSize,
-                                residentSize: residentSize)
+        return ResidentFilePlan(
+            path: path,
+            entries: entries,
+            stringTable: stringTable,
+            stringTableOffsets: offsets,
+            indexSize: indexSize,
+            residentSize: residentSize)
     }
 
     // MARK: - Layer planning
 
-    private static func planLayerFile(path: String, layer: Int,
-                                      gateName: String, upName: String, downName: String,
-                                      registry: [String: SourceTensor],
-                                      meta: IndexLoader.SourceMetadata,
-                                      arch: ArchInfo) throws -> LayerFilePlan {
+    private static func planLayerFile(
+        path: String, layer: Int,
+        gateName: String, upName: String, downName: String,
+        registry: [String: SourceTensor],
+        meta: IndexLoader.SourceMetadata,
+        arch: ArchInfo
+    ) throws -> LayerFilePlan {
         let expertCount = arch.numExperts
         guard expertCount > 0 else {
             throw RepackError.configurationInvalid(
                 detail: "layer \(layer) has routed experts but numExperts is zero")
         }
         let roles: [(role: String, name: String)] = [
-            ("gate", gateName), ("up", upName), ("down", downName)
+            ("gate", gateName), ("up", upName), ("down", downName),
         ]
         var subs: [PerExpertTensorSlice] = []
         subs.reserveCapacity(9)
@@ -471,24 +501,34 @@ enum RepackPlanner {
         for (role, name) in roles {
             guard let w = registry[name] else { throw RepackError.missingTensor(name: name) }
             if w.dtype != .u32 || w.shape.count != 3 || Int(w.shape[0]) != expertCount {
-                throw RepackError.shapeMismatch(name: name,
-                    detail: "expected U32 rank-3 with leading \(expertCount), got \(w.dtype) \(w.shape)")
+                throw RepackError.shapeMismatch(
+                    name: name,
+                    detail:
+                        "expected U32 rank-3 with leading \(expertCount), got \(w.dtype) \(w.shape)"
+                )
             }
             let base = name.hasSuffix(".weight") ? String(name.dropLast(".weight".count)) : name
-            guard let s = registry[base + ".scales"] else { throw RepackError.missingScalesCompanion(name: name) }
-            guard let b = registry[base + ".biases"] else { throw RepackError.missingBiasesCompanion(name: name) }
+            guard let s = registry[base + ".scales"] else {
+                throw RepackError.missingScalesCompanion(name: name)
+            }
+            guard let b = registry[base + ".biases"] else {
+                throw RepackError.missingBiasesCompanion(name: name)
+            }
             if s.dtype != .bf16 || b.dtype != .bf16 {
-                throw RepackError.dtypeMismatch(name: name,
+                throw RepackError.dtypeMismatch(
+                    name: name,
                     detail: "expected BF16 scales/biases, got \(s.dtype)/\(b.dtype)")
             }
 
             let perExpertWeightSize = w.sizeBytes / UInt64(expertCount)
-            let perExpertScaleSize  = s.sizeBytes / UInt64(expertCount)
-            let perExpertBiasSize   = b.sizeBytes / UInt64(expertCount)
-            if perExpertWeightSize * UInt64(expertCount) != w.sizeBytes ||
-               perExpertScaleSize  * UInt64(expertCount) != s.sizeBytes ||
-               perExpertBiasSize   * UInt64(expertCount) != b.sizeBytes {
-                throw RepackError.shapeMismatch(name: name,
+            let perExpertScaleSize = s.sizeBytes / UInt64(expertCount)
+            let perExpertBiasSize = b.sizeBytes / UInt64(expertCount)
+            if perExpertWeightSize * UInt64(expertCount) != w.sizeBytes
+                || perExpertScaleSize * UInt64(expertCount) != s.sizeBytes
+                || perExpertBiasSize * UInt64(expertCount) != b.sizeBytes
+            {
+                throw RepackError.shapeMismatch(
+                    name: name,
                     detail: "source bytes not evenly divisible by \(expertCount) experts")
             }
 
@@ -496,8 +536,9 @@ enum RepackPlanner {
             let perExpertSourceShape = Array(w.shape.dropFirst())
             let scalesLogical = Array(s.shape.dropFirst())
             let biasesLogical = Array(b.shape.dropFirst())
-            let logicalPerExpert = try logicalShape(forPackedSource: perExpertSourceShape,
-                                                    scalesShape: scalesLogical)
+            let logicalPerExpert = try logicalShape(
+                forPackedSource: perExpertSourceShape,
+                scalesShape: scalesLogical)
 
             let wSlice = PerExpertTensorSlice(
                 role: role, component: "weights", dtype: 0,
@@ -521,20 +562,28 @@ enum RepackPlanner {
                 bitsForWeights: nil)
             blobCursor += perExpertBiasSize
 
-            subs.append(wSlice); subs.append(sSlice); subs.append(bSlice)
+            subs.append(wSlice)
+            subs.append(sSlice)
+            subs.append(bSlice)
         }
 
         let expertStride = roundUpToPage(blobCursor)
-        return LayerFilePlan(layerIndex: layer, path: path,
-                             expertsPerLayer: expertCount,
-                             expertStride: expertStride,
-                             subTensors: subs)
+        return LayerFilePlan(
+            layerIndex: layer, path: path,
+            expertsPerLayer: expertCount,
+            expertStride: expertStride,
+            subTensors: subs)
     }
 
     // MARK: - Helpers
 
     private static func ietnyDtype(_ d: SourceTensor.Dtype) -> UInt8 {
-        switch d { case .u32: 0; case .bf16: 1; case .fp16: 2; case .fp32: 3 }
+        switch d {
+        case .u32: 0
+        case .bf16: 1
+        case .fp16: 2
+        case .fp32: 3
+        }
     }
 
     private static func roundUpToPage(_ v: UInt64) -> UInt64 {
@@ -560,8 +609,10 @@ enum RepackPlanner {
     /// Logical shape of an MLX packed quantized tensor. The scale grid is
     /// authoritative because six-bit values do not have an integral U32
     /// packing factor.
-    private static func logicalShape(forPackedSource source: [UInt64],
-                                     scalesShape: [UInt64]) throws -> [UInt64] {
+    private static func logicalShape(
+        forPackedSource source: [UInt64],
+        scalesShape: [UInt64]
+    ) throws -> [UInt64] {
         guard !source.isEmpty else { return source }
         guard let lastScale = scalesShape.last else {
             throw RepackError.shapeMismatch(
@@ -583,12 +634,13 @@ enum RepackPlanner {
     /// per-layer groups in layer index order, then the final norm (and, for
     /// families with an untied head, `lm_head` last).
     private static func lmResidentOrdering(family: RepackModelFamily)
-        -> (String, String) -> Bool {
+        -> (String, String) -> Bool
+    {
         // Compute a sort key per name; we order by (group rank, layer, slot rank, name).
         func key(_ n: String) -> (Int, Int, Int, String) {
             if n == "language_model.model.embed_tokens.weight" { return (0, 0, 0, n) }
-            if n == "language_model.model.norm.weight"          { return (3, 0, 0, n) }
-            if n == "language_model.lm_head.weight"             { return (4, 0, 0, n) }
+            if n == "language_model.model.norm.weight" { return (3, 0, 0, n) }
+            if n == "language_model.lm_head.weight" { return (4, 0, 0, n) }
             if let li = layerIndex(in: n) {
                 let slot = qwenSlotRank(in: n)
                 return (1, li, slot, n)
@@ -596,7 +648,8 @@ enum RepackPlanner {
             return (2, 0, 0, n)
         }
         return { a, b in
-            let ka = key(a), kb = key(b)
+            let ka = key(a)
+            let kb = key(b)
             if ka.0 != kb.0 { return ka.0 < kb.0 }
             if ka.1 != kb.1 { return ka.1 < kb.1 }
             if ka.2 != kb.2 { return ka.2 < kb.2 }
@@ -608,41 +661,44 @@ enum RepackPlanner {
     /// projections/norms, then the gated-DeltaNet linear-attention bundle,
     /// then router, shared-expert gate and MLP, then the two layer norms.
     private static func qwenSlotRank(in n: String) -> Int {
-        if n.contains(".self_attn.q_proj.weight")   { return 0 }
-        if n.contains(".self_attn.k_proj.weight")   { return 1 }
-        if n.contains(".self_attn.v_proj.weight")   { return 2 }
-        if n.contains(".self_attn.o_proj.weight")   { return 3 }
-        if n.contains(".self_attn.q_norm.weight")   { return 4 }
-        if n.contains(".self_attn.k_norm.weight")   { return 5 }
+        if n.contains(".self_attn.q_proj.weight") { return 0 }
+        if n.contains(".self_attn.k_proj.weight") { return 1 }
+        if n.contains(".self_attn.v_proj.weight") { return 2 }
+        if n.contains(".self_attn.o_proj.weight") { return 3 }
+        if n.contains(".self_attn.q_norm.weight") { return 4 }
+        if n.contains(".self_attn.k_norm.weight") { return 5 }
         if n.contains(".linear_attn.in_proj_qkv.weight") { return 6 }
-        if n.contains(".linear_attn.in_proj_z.weight")   { return 7 }
-        if n.contains(".linear_attn.in_proj_a.weight")   { return 8 }
-        if n.contains(".linear_attn.in_proj_b.weight")   { return 9 }
-        if n.contains(".linear_attn.conv1d.weight")      { return 10 }
-        if n.hasSuffix(".linear_attn.A_log")             { return 11 }
-        if n.hasSuffix(".linear_attn.dt_bias")           { return 12 }
-        if n.contains(".linear_attn.norm.weight")        { return 13 }
-        if n.contains(".linear_attn.out_proj.weight")    { return 14 }
-        if n.contains(".mlp.gate.weight")                { return 15 }
-        if n.contains(".mlp.shared_expert_gate.weight")  { return 16 }
+        if n.contains(".linear_attn.in_proj_z.weight") { return 7 }
+        if n.contains(".linear_attn.in_proj_a.weight") { return 8 }
+        if n.contains(".linear_attn.in_proj_b.weight") { return 9 }
+        if n.contains(".linear_attn.conv1d.weight") { return 10 }
+        if n.hasSuffix(".linear_attn.A_log") { return 11 }
+        if n.hasSuffix(".linear_attn.dt_bias") { return 12 }
+        if n.contains(".linear_attn.norm.weight") { return 13 }
+        if n.contains(".linear_attn.out_proj.weight") { return 14 }
+        if n.contains(".mlp.gate.weight") { return 15 }
+        if n.contains(".mlp.shared_expert_gate.weight") { return 16 }
         if n.contains(".mlp.shared_expert.gate_proj.weight") { return 17 }
-        if n.contains(".mlp.shared_expert.up_proj.weight")   { return 18 }
+        if n.contains(".mlp.shared_expert.up_proj.weight") { return 18 }
         if n.contains(".mlp.shared_expert.down_proj.weight") { return 19 }
-        if n.hasSuffix(".input_layernorm.weight")        { return 20 }
+        if n.hasSuffix(".input_layernorm.weight") { return 20 }
         if n.hasSuffix(".post_attention_layernorm.weight") { return 21 }
         return 100
     }
 
     /// Normalize the sidecar's single decoder layer to the target tensor-name
     /// contract. MTP-only adapter tensors retain their upstream names.
-    private static func residentDestinationName(_ source: String,
-                                                family: RepackModelFamily) -> String {
+    private static func residentDestinationName(
+        _ source: String,
+        family: RepackModelFamily
+    ) -> String {
         if family == .qwen38flashMTP {
             // Strip `mtp.` and put the decoder layer under the target's own
             // prefix, so the draft's layer body reuses the family schema
             // verbatim. The fusion projections and their norms stay at the
             // root: they exist only in the draft.
-            let stripped = source.hasPrefix("mtp.")
+            let stripped =
+                source.hasPrefix("mtp.")
                 ? String(source.dropFirst("mtp.".count)) : source
             if stripped.hasPrefix("layers.") {
                 return "model.language_model." + stripped

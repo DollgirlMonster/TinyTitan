@@ -16,11 +16,14 @@ public struct SupportedModelSource: Sendable, Equatable {
     public let installedBytes: UInt64
     public let reserveBytes: UInt64
 
-    public func installOptions(outputDirectory: URL,
-                               overwrite: Bool,
-                               token: String?,
-                               resume: Bool = false)
-        -> RemoteStreamingRepackOptions {
+    public func installOptions(
+        outputDirectory: URL,
+        overwrite: Bool,
+        token: String?,
+        resume: Bool = false
+    )
+        -> RemoteStreamingRepackOptions
+    {
         RemoteStreamingRepackOptions(
             repoID: repoID,
             revision: revision,

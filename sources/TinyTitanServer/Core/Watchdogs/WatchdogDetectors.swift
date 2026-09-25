@@ -71,8 +71,10 @@ public struct LoopWatchdog: Watchdog {
         leavingFactor = factor
     }
 
-    public mutating func observe(_ chunk: String,
-                                 at instant: ContinuousClock.Instant) -> WatchdogVerdict {
+    public mutating func observe(
+        _ chunk: String,
+        at instant: ContinuousClock.Instant
+    ) -> WatchdogVerdict {
         guard !tripped else { return .fine }
         for byte in chunk.utf8 {
             if let verdict = push(byte) { return verdict }
@@ -121,8 +123,9 @@ public struct LoopWatchdog: Watchdog {
         // Deliberately no excerpt: server logs carry operational facts, never
         // generated or remembered content. What was repeated is in the reply
         // the user already has.
-        return .concern("a \(window)-byte window repeated \(entry.count) times, "
-                        + "period \(period) bytes")
+        return .concern(
+            "a \(window)-byte window repeated \(entry.count) times, "
+                + "period \(period) bytes")
     }
 
     /// The dictionary can only hold as many live windows as the history, so
@@ -157,8 +160,10 @@ public struct StallWatchdog: Watchdog {
         threshold = .seconds(configuration.stallSeconds)
     }
 
-    public mutating func observe(_ chunk: String,
-                                 at instant: ContinuousClock.Instant) -> WatchdogVerdict {
+    public mutating func observe(
+        _ chunk: String,
+        at instant: ContinuousClock.Instant
+    ) -> WatchdogVerdict {
         if !chunk.isEmpty { lastToken = instant }
         return .fine
     }
@@ -199,17 +204,20 @@ public struct StubWatchdog: Watchdog {
         asked = configuration.stubAskedBytes
     }
 
-    public mutating func finish(visibleBytes: Int,
-                                requestBytes: Int,
-                                finishReason: String) -> WatchdogVerdict {
+    public mutating func finish(
+        visibleBytes: Int,
+        requestBytes: Int,
+        finishReason: String
+    ) -> WatchdogVerdict {
         // `tool_calls` is a real answer in a tool loop and `length` already
         // tells the client what happened. Only a normal stop can be a stub.
         guard finishReason == "stop", visibleBytes < threshold else { return .fine }
         // And something has to have been asked for. Judged without the
         // request, this rule calls "OK." a failure.
         guard requestBytes >= asked else { return .fine }
-        return .concern("finished normally with \(visibleBytes) visible bytes "
-                        + "for a \(requestBytes)-byte request")
+        return .concern(
+            "finished normally with \(visibleBytes) visible bytes "
+                + "for a \(requestBytes)-byte request")
     }
 }
 
@@ -233,8 +241,10 @@ public enum PingPongWatchdog {
     /// the same arguments three times in a row with nothing else in
     /// between: the model is not getting what it needs and is asking again
     /// identically, which is the failure this watches for.
-    public static func inspect(_ messages: [GFTokenizer.Message],
-                               configuration: WatchdogConfiguration) -> WatchdogVerdict {
+    public static func inspect(
+        _ messages: [GFTokenizer.Message],
+        configuration: WatchdogConfiguration
+    ) -> WatchdogVerdict {
         guard configuration.isEnabled else { return .fine }
         var previous: String?
         var run = 0
@@ -247,7 +257,10 @@ public enum PingPongWatchdog {
                 // Counting only within the tool-call subsequence would treat
                 // three reads an hour apart as consecutive, which is the
                 // false positive this rule exists to avoid.
-                if message.role != .tool { previous = nil; run = 0 }
+                if message.role != .tool {
+                    previous = nil
+                    run = 0
+                }
                 continue
             }
             for call in message.toolCalls {
@@ -258,8 +271,9 @@ public enum PingPongWatchdog {
             }
         }
         guard let worst, worst.count >= configuration.pingPongRepeats else { return .fine }
-        return .concern("tool \(worst.name) called \(worst.count) times in a row "
-                        + "with identical arguments")
+        return .concern(
+            "tool \(worst.name) called \(worst.count) times in a row "
+                + "with identical arguments")
     }
 
     /// Sorted keys, so two calls that differ only in the order the client

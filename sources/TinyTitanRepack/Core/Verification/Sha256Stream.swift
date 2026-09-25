@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 
 /// Streaming SHA-256 hasher. Wraps CryptoKit's incremental API so we can hash
 /// a file as we walk it (mmap'd source pages + zero-filled gaps) without
@@ -20,22 +20,27 @@ struct Sha256Stream {
 
     /// One-shot helper to hash a file from disk in tile-bounded chunks. Used
     /// for fingerprinting `model.safetensors.index.json`.
-    static func hashFile(path: String,
-                                tileBytes: Int = 65_536,
-                                noCache: Bool = false,
-                                noFollow: Bool = false) throws -> String {
+    static func hashFile(
+        path: String,
+        tileBytes: Int = 65_536,
+        noCache: Bool = false,
+        noFollow: Bool = false
+    ) throws -> String {
         let flags = O_RDONLY | (noFollow ? O_NOFOLLOW : 0)
         let fd = open(path, flags)
         if fd < 0 { throw RepackError.fileOpenFailed(path: path, errno: errno) }
         defer { close(fd) }
-        return try hashFileDescriptor(fd, displayPath: path,
-                                      tileBytes: tileBytes, noCache: noCache)
+        return try hashFileDescriptor(
+            fd, displayPath: path,
+            tileBytes: tileBytes, noCache: noCache)
     }
 
-    package static func hashFileDescriptor(_ fd: Int32,
-                                           displayPath: String,
-                                           tileBytes: Int = 65_536,
-                                           noCache: Bool = false) throws -> String {
+    package static func hashFileDescriptor(
+        _ fd: Int32,
+        displayPath: String,
+        tileBytes: Int = 65_536,
+        noCache: Bool = false
+    ) throws -> String {
         guard tileBytes > 0 else {
             throw RepackError.configurationInvalid(detail: "SHA-256 tile size must be positive")
         }
@@ -55,15 +60,17 @@ struct Sha256Stream {
             let got = pread(fd, buf.baseAddress, want, off_t(total))
             if got < 0, errno == EINTR { continue }
             if got < 0 {
-                throw RepackError.preadShort(path: displayPath,
-                                             expected: want, got: 0, errno: errno)
+                throw RepackError.preadShort(
+                    path: displayPath,
+                    expected: want, got: 0, errno: errno)
             }
             guard got > 0 else {
                 // EOF before the fstat size: the file shrank mid-hash. Report
                 // the actual short-read count (0) instead of silently hashing
                 // a truncated prefix.
-                throw RepackError.preadShort(path: displayPath,
-                                             expected: want, got: 0, errno: errno)
+                throw RepackError.preadShort(
+                    path: displayPath,
+                    expected: want, got: 0, errno: errno)
             }
             hasher.update(UnsafeRawBufferPointer(start: buf.baseAddress, count: got))
             total += UInt64(got)

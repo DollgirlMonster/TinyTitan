@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// Validates the 4-bit embedding lookup kernel against the CPU reference.
 @Suite struct EmbedLookupTests {
@@ -14,14 +15,15 @@ import TinyTitanValidationSupport
     }
 
     private static func buildTable4(seed: UInt64)
-        -> (packed: [UInt8], scales: [UInt16], biases: [UInt16]) {
+        -> (packed: [UInt8], scales: [UInt16], biases: [UInt16])
+    {
         var rng = SeedTree(seed).key("embed-lookup-int4-table")
         var rows: [[Float]] = []
         rows.reserveCapacity(Sizes.V)
         for _ in 0..<Sizes.V {
             rows.append((0..<Sizes.D).map { _ in rng.uniform(-1.0, 1.0) })
         }
-        var packed = [UInt8]( repeating: 0, count: Sizes.V * (Sizes.D / 2))
+        var packed = [UInt8](repeating: 0, count: Sizes.V * (Sizes.D / 2))
         var scales = [UInt16](repeating: 0, count: Sizes.V * Sizes.groupsPerRow)
         var biases = [UInt16](repeating: 0, count: Sizes.V * Sizes.groupsPerRow)
         for v in 0..<Sizes.V {
@@ -40,17 +42,20 @@ import TinyTitanValidationSupport
         let ctx = try MetalContext()
         let kernel = try EmbedLookupInt4(context: ctx)
 
-        guard let tableBuf = ctx.device.makeBuffer(
+        guard
+            let tableBuf = ctx.device.makeBuffer(
                 bytes: packed, length: packed.count,
                 options: .storageModeShared),
-              let scalesBuf = ctx.device.makeBuffer(
+            let scalesBuf = ctx.device.makeBuffer(
                 bytes: scales, length: scales.count * MemoryLayout<UInt16>.size,
                 options: .storageModeShared),
-              let biasesBuf = ctx.device.makeBuffer(
+            let biasesBuf = ctx.device.makeBuffer(
                 bytes: biases, length: biases.count * MemoryLayout<UInt16>.size,
                 options: .storageModeShared),
-              let outBuf = Fp16Buffer.make(ctx.device, count: Sizes.D) else {
-            Issue.record("alloc failed"); return
+            let outBuf = Fp16Buffer.make(ctx.device, count: Sizes.D)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let token: UInt32 = 9
         // sqrt(D) for the toy D=128 (5.65...). The kernel treats the scale as
@@ -58,13 +63,15 @@ import TinyTitanValidationSupport
         let outScale = Float(Sizes.D).squareRoot()
 
         let cb = try #require(ctx.queue.makeCommandBuffer())
-        try kernel.encode(commandBuffer: cb,
-                      table: tableBuf, scales: scalesBuf, biases: biasesBuf,
-                      out: outBuf,
-                      tokenId: token, d: UInt32(Sizes.D),
-                      outScale: outScale,
-                      vocab: UInt32(Sizes.V))
-        cb.commit(); cb.waitUntilCompleted()
+        try kernel.encode(
+            commandBuffer: cb,
+            table: tableBuf, scales: scalesBuf, biases: biasesBuf,
+            out: outBuf,
+            tokenId: token, d: UInt32(Sizes.D),
+            outScale: outScale,
+            vocab: UInt32(Sizes.V))
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let ref = EmbedLookupRef.applyInt4(
             tablePacked: packed, tableScales: scales, tableBiases: biases,
@@ -80,26 +87,31 @@ import TinyTitanValidationSupport
         let ctx = try MetalContext()
         let kernel = try EmbedLookupInt4(context: ctx)
 
-        guard let tableBuf = ctx.device.makeBuffer(
+        guard
+            let tableBuf = ctx.device.makeBuffer(
                 bytes: packed, length: packed.count,
                 options: .storageModeShared),
-              let scalesBuf = ctx.device.makeBuffer(
+            let scalesBuf = ctx.device.makeBuffer(
                 bytes: scales, length: scales.count * MemoryLayout<UInt16>.size,
                 options: .storageModeShared),
-              let biasesBuf = ctx.device.makeBuffer(
+            let biasesBuf = ctx.device.makeBuffer(
                 bytes: biases, length: biases.count * MemoryLayout<UInt16>.size,
                 options: .storageModeShared),
-              let outBuf = Fp16Buffer.make(ctx.device, count: Sizes.D) else {
-            Issue.record("alloc failed"); return
+            let outBuf = Fp16Buffer.make(ctx.device, count: Sizes.D)
+        else {
+            Issue.record("alloc failed")
+            return
         }
         let token: UInt32 = 2
         let cb = try #require(ctx.queue.makeCommandBuffer())
-        try kernel.encode(commandBuffer: cb,
-                      table: tableBuf, scales: scalesBuf, biases: biasesBuf,
-                      out: outBuf,
-                      tokenId: token, d: UInt32(Sizes.D), outScale: 1.0,
-                      vocab: UInt32(Sizes.V))
-        cb.commit(); cb.waitUntilCompleted()
+        try kernel.encode(
+            commandBuffer: cb,
+            table: tableBuf, scales: scalesBuf, biases: biasesBuf,
+            out: outBuf,
+            tokenId: token, d: UInt32(Sizes.D), outScale: 1.0,
+            vocab: UInt32(Sizes.V))
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let ref = EmbedLookupRef.applyInt4(
             tablePacked: packed, tableScales: scales, tableBiases: biases,

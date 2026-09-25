@@ -1,8 +1,9 @@
-import Testing
 import Foundation
 import Metal
-@testable import TinyTitan
+import Testing
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 /// Validates the standalone 8-bit dense MLP wrapper used as the shared-expert
 /// branch of the MoE (gelu_pytorch_tanh default activation; the Qwen runtime
@@ -21,12 +22,15 @@ import TinyTitanValidationSupport
     }
 
     private static func packMatrix(_ rows: [[Float]])
-        -> (rows: [Quantization.Int8AffineRow],
-            packed: [UInt8], scales: [UInt16], biases: [UInt16]) {
+        -> (
+            rows: [Quantization.Int8AffineRow],
+            packed: [UInt8], scales: [UInt16], biases: [UInt16]
+        )
+    {
         let M = rows.count
         let N = rows[0].count
         let gpr = N / Quantization.groupSize
-        var packed = [UInt8]( repeating: 0, count: M * N)
+        var packed = [UInt8](repeating: 0, count: M * N)
         var scales = [UInt16](repeating: 0, count: M * gpr)
         var biases = [UInt16](repeating: 0, count: M * gpr)
         var rowsOut: [Quantization.Int8AffineRow] = []
@@ -51,16 +55,16 @@ import TinyTitanValidationSupport
         var rng = SeedTree(0x601).key("shared-expert-int8")
         let xFp32 = (0..<Sizes.D).map { _ in rng.uniform(-0.4, 0.4) }
         let gate = (0..<Sizes.F).map { _ in (0..<Sizes.D).map { _ in rng.uniform(-0.4, 0.4) } }
-        let up   = (0..<Sizes.F).map { _ in (0..<Sizes.D).map { _ in rng.uniform(-0.4, 0.4) } }
+        let up = (0..<Sizes.F).map { _ in (0..<Sizes.D).map { _ in rng.uniform(-0.4, 0.4) } }
         let down = (0..<Sizes.D).map { _ in (0..<Sizes.F).map { _ in rng.uniform(-0.4, 0.4) } }
 
         // Reference: dense MLP applied to x.
         let xFp16 = xFp32.map { Float(Float16($0)) }
         let gatePack = Self.packMatrix(gate)
-        let upPack   = Self.packMatrix(up)
+        let upPack = Self.packMatrix(up)
         let downPack = Self.packMatrix(down)
         let gateOut = DequantInt8GemvRef.apply(weightRows: gatePack.rows, x: xFp16, n: Sizes.D)
-        let upOut   = DequantInt8GemvRef.apply(weightRows: upPack.rows,   x: xFp16, n: Sizes.D)
+        let upOut = DequantInt8GemvRef.apply(weightRows: upPack.rows, x: xFp16, n: Sizes.D)
         // gelu_pytorch_tanh + multiply (round through FP16 once to match the kernel's storage).
         let act: [Float] = zip(gateOut, upOut).map { g, u in
             let x3 = g * g * g
@@ -75,36 +79,51 @@ import TinyTitanValidationSupport
         let wrapper = try SharedExpertInt8(context: ctx)
 
         guard let xBuf = Fp16Buffer.make(ctx.device, values: xFp32),
-              let yBuf = Fp16Buffer.make(ctx.device, count: Sizes.D),
-              let sa   = Fp16Buffer.make(ctx.device, count: Sizes.F) else {
-            Issue.record("alloc failed"); return
+            let yBuf = Fp16Buffer.make(ctx.device, count: Sizes.D),
+            let sa = Fp16Buffer.make(ctx.device, count: Sizes.F)
+        else {
+            Issue.record("alloc failed")
+            return
         }
 
-        func pack(_ p: (rows: [Quantization.Int8AffineRow],
-                        packed: [UInt8], scales: [UInt16], biases: [UInt16]),
-                  rows: UInt32, cols: UInt32) throws -> SharedExpertInt8Proj {
-            let wBuf = try #require(ctx.device.makeBuffer(bytes: p.packed,
-                                                          length: p.packed.count,
-                                                          options: .storageModeShared))
-            let sBuf = try #require(ctx.device.makeBuffer(bytes: p.scales,
-                                                          length: p.scales.count * 2,
-                                                          options: .storageModeShared))
-            let bBuf = try #require(ctx.device.makeBuffer(bytes: p.biases,
-                                                          length: p.biases.count * 2,
-                                                          options: .storageModeShared))
-            return SharedExpertInt8Proj(weights: wBuf, scales: sBuf, biases: bBuf,
-                                        rows: rows, cols: cols)
+        func pack(
+            _ p: (
+                rows: [Quantization.Int8AffineRow],
+                packed: [UInt8], scales: [UInt16], biases: [UInt16]
+            ),
+            rows: UInt32, cols: UInt32
+        ) throws -> SharedExpertInt8Proj {
+            let wBuf = try #require(
+                ctx.device.makeBuffer(
+                    bytes: p.packed,
+                    length: p.packed.count,
+                    options: .storageModeShared))
+            let sBuf = try #require(
+                ctx.device.makeBuffer(
+                    bytes: p.scales,
+                    length: p.scales.count * 2,
+                    options: .storageModeShared))
+            let bBuf = try #require(
+                ctx.device.makeBuffer(
+                    bytes: p.biases,
+                    length: p.biases.count * 2,
+                    options: .storageModeShared))
+            return SharedExpertInt8Proj(
+                weights: wBuf, scales: sBuf, biases: bBuf,
+                rows: rows, cols: cols)
         }
         let gateProj = try pack(gatePack, rows: UInt32(Sizes.F), cols: UInt32(Sizes.D))
-        let upProj   = try pack(upPack,   rows: UInt32(Sizes.F), cols: UInt32(Sizes.D))
+        let upProj = try pack(upPack, rows: UInt32(Sizes.F), cols: UInt32(Sizes.D))
         let downProj = try pack(downPack, rows: UInt32(Sizes.D), cols: UInt32(Sizes.F))
 
         let cb = try #require(ctx.queue.makeCommandBuffer())
-        try wrapper.encode(commandBuffer: cb,
-                           x: xBuf, gate: gateProj, up: upProj, down: downProj,
-                           y: yBuf,
-                           scratchAct: sa)
-        cb.commit(); cb.waitUntilCompleted()
+        try wrapper.encode(
+            commandBuffer: cb,
+            x: xBuf, gate: gateProj, up: upProj, down: downProj,
+            y: yBuf,
+            scratchAct: sa)
+        cb.commit()
+        cb.waitUntilCompleted()
 
         let actual = Fp16Buffer.read(yBuf, count: Sizes.D)
         let rel = RelError.compute(actual: actual, reference: yRef)

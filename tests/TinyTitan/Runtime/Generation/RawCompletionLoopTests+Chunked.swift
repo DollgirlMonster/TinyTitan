@@ -21,7 +21,8 @@ extension RawCompletionLoopTests {
                 config: GenerationConfig(maxNewTokens: 4, temperature: 0),
                 context: context,
                 scratch: scratch,
-                prefillConfig: .production(chunkTokens: 32)) { _ in }
+                prefillConfig: .production(chunkTokens: 32)
+            ) { _ in }
             Issue.record("expected chunked unsupported error")
         } catch let error as PrefillError {
             guard case .chunkedUnsupported(let reason) = error else {
@@ -50,11 +51,12 @@ extension RawCompletionLoopTests {
             config: GenerationConfig(maxNewTokens: 1, temperature: 0),
             context: context,
             scratch: scratch,
-            prefillConfig: .production(chunkTokens: 32)) { progress in
-                if case .prefill(let done, let total) = progress {
-                    prefills.append((done, total))
-                }
+            prefillConfig: .production(chunkTokens: 32)
+        ) { progress in
+            if case .prefill(let done, let total) = progress {
+                prefills.append((done, total))
             }
+        }
 
         #expect(result.newTokens == 1)
         #expect(producer.chunkedCalls == 1)
@@ -82,11 +84,12 @@ extension RawCompletionLoopTests {
             config: GenerationConfig(maxNewTokens: 1, temperature: 0),
             context: context,
             scratch: scratch,
-            prefillConfig: .production(chunkTokens: 32)) { progress in
-                if case .token(_, let id, _) = progress {
-                    tokens.append(id)
-                }
+            prefillConfig: .production(chunkTokens: 32)
+        ) { progress in
+            if case .token(_, let id, _) = progress {
+                tokens.append(id)
             }
+        }
 
         #expect(result.newTokens == 1)
         #expect(tokens == [tokenA])
@@ -114,7 +117,8 @@ extension RawCompletionLoopTests {
                 config: GenerationConfig(maxNewTokens: 1, temperature: 0.7),
                 context: context,
                 scratch: scratch,
-                prefillConfig: .production(chunkTokens: 32)) { _ in }
+                prefillConfig: .production(chunkTokens: 32)
+            ) { _ in }
             Issue.record("expected unsupported chunked prefill seed")
         } catch let error as PrefillError {
             guard case .unsupportedPrefillSeed(let reason) = error else {

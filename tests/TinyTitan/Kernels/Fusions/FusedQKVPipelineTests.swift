@@ -1,8 +1,9 @@
 import Foundation
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct FusedQKVPipelineTests {
     @Test func fullShapeFusedPipelineMatchesThreeGEMVChainBitwise() throws {
@@ -31,31 +32,39 @@ import TinyTitanValidationSupport
         let fusedEpilogue = try FusedQKVEpilogue(context: ctx)
 
         guard
-            let qWeights = ctx.device.makeBuffer(bytes: qProjection.weights,
-                                                 length: qProjection.weights.count,
-                                                 options: .storageModeShared),
-            let qScales = ctx.device.makeBuffer(bytes: qProjection.scales,
-                                                length: qProjection.scales.count * 2,
-                                                options: .storageModeShared),
-            let qBiases = ctx.device.makeBuffer(bytes: qProjection.biases,
-                                                length: qProjection.biases.count * 2,
-                                                options: .storageModeShared),
-            let kvWeights = ctx.device.makeBuffer(bytes: kvProjection.weights,
-                                                  length: kvProjection.weights.count,
-                                                  options: .storageModeShared),
-            let kvScales = ctx.device.makeBuffer(bytes: kvProjection.scales,
-                                                 length: kvProjection.scales.count * 2,
-                                                 options: .storageModeShared),
-            let kvBiases = ctx.device.makeBuffer(bytes: kvProjection.biases,
-                                                 length: kvProjection.biases.count * 2,
-                                                 options: .storageModeShared),
+            let qWeights = ctx.device.makeBuffer(
+                bytes: qProjection.weights,
+                length: qProjection.weights.count,
+                options: .storageModeShared),
+            let qScales = ctx.device.makeBuffer(
+                bytes: qProjection.scales,
+                length: qProjection.scales.count * 2,
+                options: .storageModeShared),
+            let qBiases = ctx.device.makeBuffer(
+                bytes: qProjection.biases,
+                length: qProjection.biases.count * 2,
+                options: .storageModeShared),
+            let kvWeights = ctx.device.makeBuffer(
+                bytes: kvProjection.weights,
+                length: kvProjection.weights.count,
+                options: .storageModeShared),
+            let kvScales = ctx.device.makeBuffer(
+                bytes: kvProjection.scales,
+                length: kvProjection.scales.count * 2,
+                options: .storageModeShared),
+            let kvBiases = ctx.device.makeBuffer(
+                bytes: kvProjection.biases,
+                length: kvProjection.biases.count * 2,
+                options: .storageModeShared),
             let xBuffer = Fp16Buffer.make(ctx.device, halves: x),
-            let qNormBuffer = ctx.device.makeBuffer(bytes: qNorm,
-                                                    length: qNorm.count * 2,
-                                                    options: .storageModeShared),
-            let kNormBuffer = ctx.device.makeBuffer(bytes: kNorm,
-                                                    length: kNorm.count * 2,
-                                                    options: .storageModeShared),
+            let qNormBuffer = ctx.device.makeBuffer(
+                bytes: qNorm,
+                length: qNorm.count * 2,
+                options: .storageModeShared),
+            let kNormBuffer = ctx.device.makeBuffer(
+                bytes: kNorm,
+                length: kNorm.count * 2,
+                options: .storageModeShared),
             let qLegacy = Fp16Buffer.make(ctx.device, count: qRows),
             let kLegacy = Fp16Buffer.make(ctx.device, count: kvRows),
             let vLegacy = Fp16Buffer.make(ctx.device, count: kvRows),
@@ -68,59 +77,69 @@ import TinyTitanValidationSupport
             return
         }
 
-        try gemv.encode(commandBuffer: commandBuffer,
-                    weights: qWeights, scales: qScales, biases: qBiases,
-                    x: xBuffer, y: qLegacy,
-                    m: UInt32(qRows), n: UInt32(n))
-        try gemv.encode(commandBuffer: commandBuffer,
-                    weights: kvWeights, scales: kvScales, biases: kvBiases,
-                    x: xBuffer, y: kLegacy,
-                    m: UInt32(kvRows), n: UInt32(n))
-        try gemv.encode(commandBuffer: commandBuffer,
-                    weights: kvWeights, scales: kvScales, biases: kvBiases,
-                    x: xBuffer, y: vLegacy,
-                    m: UInt32(kvRows), n: UInt32(n))
-        try rms.encodeBF16WPerHead(commandBuffer: commandBuffer,
-                               x: qLegacy, weight: qNormBuffer, out: qLegacy,
-                               headDim: UInt32(headDim), numHeads: numQHeads, eps: 1e-6)
-        try rms.encodeBF16WPerHead(commandBuffer: commandBuffer,
-                               x: kLegacy, weight: kNormBuffer, out: kLegacy,
-                               headDim: UInt32(headDim), numHeads: numKVHeads, eps: 1e-6)
-        try rms.encodeNoScalePerHead(commandBuffer: commandBuffer,
-                                 x: vLegacy, out: vLegacy,
-                                 headDim: UInt32(headDim), numHeads: numKVHeads, eps: 1e-6)
-        try rope.encodeProportionalNeox(commandBuffer: commandBuffer,
-                                    data: qLegacy,
-                                    position: 12,
-                                    headDim: UInt32(headDim),
-                                    numHeads: UInt32(numQHeads),
-                                    rotatedPairs: 64,
-                                    theta: 1_000_000)
-        try rope.encodeProportionalNeox(commandBuffer: commandBuffer,
-                                    data: kLegacy,
-                                    position: 12,
-                                    headDim: UInt32(headDim),
-                                    numHeads: UInt32(numKVHeads),
-                                    rotatedPairs: 64,
-                                    theta: 1_000_000)
+        try gemv.encode(
+            commandBuffer: commandBuffer,
+            weights: qWeights, scales: qScales, biases: qBiases,
+            x: xBuffer, y: qLegacy,
+            m: UInt32(qRows), n: UInt32(n))
+        try gemv.encode(
+            commandBuffer: commandBuffer,
+            weights: kvWeights, scales: kvScales, biases: kvBiases,
+            x: xBuffer, y: kLegacy,
+            m: UInt32(kvRows), n: UInt32(n))
+        try gemv.encode(
+            commandBuffer: commandBuffer,
+            weights: kvWeights, scales: kvScales, biases: kvBiases,
+            x: xBuffer, y: vLegacy,
+            m: UInt32(kvRows), n: UInt32(n))
+        try rms.encodeBF16WPerHead(
+            commandBuffer: commandBuffer,
+            x: qLegacy, weight: qNormBuffer, out: qLegacy,
+            headDim: UInt32(headDim), numHeads: numQHeads, eps: 1e-6)
+        try rms.encodeBF16WPerHead(
+            commandBuffer: commandBuffer,
+            x: kLegacy, weight: kNormBuffer, out: kLegacy,
+            headDim: UInt32(headDim), numHeads: numKVHeads, eps: 1e-6)
+        try rms.encodeNoScalePerHead(
+            commandBuffer: commandBuffer,
+            x: vLegacy, out: vLegacy,
+            headDim: UInt32(headDim), numHeads: numKVHeads, eps: 1e-6)
+        try rope.encodeProportionalNeox(
+            commandBuffer: commandBuffer,
+            data: qLegacy,
+            position: 12,
+            headDim: UInt32(headDim),
+            numHeads: UInt32(numQHeads),
+            rotatedPairs: 64,
+            theta: 1_000_000)
+        try rope.encodeProportionalNeox(
+            commandBuffer: commandBuffer,
+            data: kLegacy,
+            position: 12,
+            headDim: UInt32(headDim),
+            numHeads: UInt32(numKVHeads),
+            rotatedPairs: 64,
+            theta: 1_000_000)
 
-        try fusedGEMV.encode(commandBuffer: commandBuffer,
-                         qWeights: qWeights, qScales: qScales, qBiases: qBiases,
-                         kWeights: kvWeights, kScales: kvScales, kBiases: kvBiases,
-                         vWeights: kvWeights, vScales: kvScales, vBiases: kvBiases,
-                         x: xBuffer,
-                         qOut: qFused, kOut: kFused, vOut: vFused,
-                         qRows: UInt32(qRows), kvRows: UInt32(kvRows), n: UInt32(n))
-        try fusedEpilogue.encode(commandBuffer: commandBuffer,
-                             q: qFused, k: kFused, v: vFused,
-                             qWeight: qNormBuffer, kWeight: kNormBuffer,
-                             headDim: UInt32(headDim),
-                             numQHeads: UInt32(numQHeads),
-                             numKVHeads: UInt32(numKVHeads),
-                             position: 12,
-                             theta: 1_000_000,
-                             rotatedPairs: 64,
-                             eps: 1e-6)
+        try fusedGEMV.encode(
+            commandBuffer: commandBuffer,
+            qWeights: qWeights, qScales: qScales, qBiases: qBiases,
+            kWeights: kvWeights, kScales: kvScales, kBiases: kvBiases,
+            vWeights: kvWeights, vScales: kvScales, vBiases: kvBiases,
+            x: xBuffer,
+            qOut: qFused, kOut: kFused, vOut: vFused,
+            qRows: UInt32(qRows), kvRows: UInt32(kvRows), n: UInt32(n))
+        try fusedEpilogue.encode(
+            commandBuffer: commandBuffer,
+            q: qFused, k: kFused, v: vFused,
+            qWeight: qNormBuffer, kWeight: kNormBuffer,
+            headDim: UInt32(headDim),
+            numQHeads: UInt32(numQHeads),
+            numKVHeads: UInt32(numKVHeads),
+            position: 12,
+            theta: 1_000_000,
+            rotatedPairs: 64,
+            eps: 1e-6)
 
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
@@ -134,11 +153,15 @@ import TinyTitanValidationSupport
         #expect(Self.bytes(vLegacy, count: kvRows) == Self.bytes(vFused, count: kvRows))
     }
 
-    private static func makeProjection(rows: Int,
-                                       n: Int,
-                                       seed: UInt64) -> (weights: [UInt8],
-                                                        scales: [UInt16],
-                                                        biases: [UInt16]) {
+    private static func makeProjection(
+        rows: Int,
+        n: Int,
+        seed: UInt64
+    ) -> (
+        weights: [UInt8],
+        scales: [UInt16],
+        biases: [UInt16]
+    ) {
         let packedCount = rows * n / 2
         let groupCount = rows * n / Quantization.groupSize
         let weights = (0..<packedCount).map { index in
@@ -154,8 +177,9 @@ import TinyTitanValidationSupport
     }
 
     private static func bytes(_ buffer: MTLBuffer, count: Int) -> [UInt8] {
-        Array(UnsafeBufferPointer(
-            start: buffer.contents().assumingMemoryBound(to: UInt8.self),
-            count: count * MemoryLayout<Float16>.size))
+        Array(
+            UnsafeBufferPointer(
+                start: buffer.contents().assumingMemoryBound(to: UInt8.self),
+                count: count * MemoryLayout<Float16>.size))
     }
 }

@@ -39,15 +39,16 @@ extension RealForwardRunner {
     }
 
     private func gateWeights(_ view: TensorView) -> HyperConnection.Weights {
-        HyperConnection.Weights(weights: view.buffer,
-                                weightsOffset: Int(view.offset),
-                                scales: view.buffer,
-                                scalesOffset: Int(view.scaleOffset),
-                                biases: view.buffer,
-                                biasesOffset: Int(view.biasOffset),
-                                // dtype 1 is BF16; a promoted tensor carries no
-                                // scales or biases and must not be unpacked.
-                                isBF16: view.dtype == 1)
+        HyperConnection.Weights(
+            weights: view.buffer,
+            weightsOffset: Int(view.offset),
+            scales: view.buffer,
+            scalesOffset: Int(view.scaleOffset),
+            biases: view.buffer,
+            biasesOffset: Int(view.biasOffset),
+            // dtype 1 is BF16; a promoted tensor carries no
+            // scales or biases and must not be unpacked.
+            isBF16: view.dtype == 1)
     }
 
     /// Fused hyper-connection gates. Default off until the golden has proven
@@ -55,47 +56,55 @@ extension RealForwardRunner {
     var hcFusedEnabled: Bool { profile.hcFused }
 
     /// Residual -> block input, for one decode token.
-    func encodeResidualEntryDecode(commandBuffer: MTLCommandBuffer,
-                                   hidden: MTLBuffer,
-                                   norm: TensorView,
-                                   out: MTLBuffer,
-                                   sublayer: ResidualSublayer,
-                                   layer: Int,
-                                   eps: Float) throws {
+    func encodeResidualEntryDecode(
+        commandBuffer: MTLCommandBuffer,
+        hidden: MTLBuffer,
+        norm: TensorView,
+        out: MTLBuffer,
+        sublayer: ResidualSublayer,
+        layer: Int,
+        eps: Float
+    ) throws {
         if let hc = hyperConnection {
-            let down = sublayer == .attention
+            let down =
+                sublayer == .attention
                 ? try model.hcAttnMixDown(layer: layer)
                 : try model.hcMlpMixDown(layer: layer)
-            let up = sublayer == .attention
+            let up =
+                sublayer == .attention
                 ? try model.hcAttnMixUp(layer: layer)
                 : try model.hcMlpMixUp(layer: layer)
             if !ablated("hcread") {
-            let dw = gateWeights(down), uw = gateWeights(up)
-            if hcFusedEnabled, hc.canFuseRead(down: dw, up: uw) {
-                try hc.encodeReadFused(commandBuffer: commandBuffer,
-                                       streamsBuffer: hidden,
-                                       hcNorm: norm.buffer,
-                                       hcNormOffset: Int(norm.offset),
-                                       down: dw, up: uw,
-                                       blockInput: out, eps: eps)
-            } else {
-                try hc.encodeRead(commandBuffer: commandBuffer,
-                                  streamsBuffer: hidden,
-                                  hcNorm: norm.buffer,
-                                  hcNormOffset: Int(norm.offset),
-                                  down: dw, up: uw,
-                                  blockInput: out, eps: eps)
-            }
+                let dw = gateWeights(down)
+                let uw = gateWeights(up)
+                if hcFusedEnabled, hc.canFuseRead(down: dw, up: uw) {
+                    try hc.encodeReadFused(
+                        commandBuffer: commandBuffer,
+                        streamsBuffer: hidden,
+                        hcNorm: norm.buffer,
+                        hcNormOffset: Int(norm.offset),
+                        down: dw, up: uw,
+                        blockInput: out, eps: eps)
+                } else {
+                    try hc.encodeRead(
+                        commandBuffer: commandBuffer,
+                        streamsBuffer: hidden,
+                        hcNorm: norm.buffer,
+                        hcNormOffset: Int(norm.offset),
+                        down: dw, up: uw,
+                        blockInput: out, eps: eps)
+                }
             }
             return
         }
         if !ablated("norm") {
-            try rms.encodeBF16W(commandBuffer: commandBuffer,
-                                x: hidden,
-                                weight: norm.buffer, weightOffset: Int(norm.offset),
-                                out: out,
-                                d: UInt32(cfg.hiddenSize), eps: eps)
-            }
+            try rms.encodeBF16W(
+                commandBuffer: commandBuffer,
+                x: hidden,
+                weight: norm.buffer, weightOffset: Int(norm.offset),
+                out: out,
+                d: UInt32(cfg.hiddenSize), eps: eps)
+        }
     }
 
     /// Block output -> residual, for one decode token.
@@ -103,33 +112,39 @@ extension RealForwardRunner {
     /// Consumes the `normed` the matching entry left inside the
     /// `HyperConnection`, so the two must bracket exactly one block on the
     /// same command buffer.
-    func encodeResidualExitDecode(commandBuffer: MTLCommandBuffer,
-                                  hidden: MTLBuffer,
-                                  delta: MTLBuffer,
-                                  sublayer: ResidualSublayer,
-                                  layer: Int) throws {
+    func encodeResidualExitDecode(
+        commandBuffer: MTLCommandBuffer,
+        hidden: MTLBuffer,
+        delta: MTLBuffer,
+        sublayer: ResidualSublayer,
+        layer: Int
+    ) throws {
         if let hc = hyperConnection {
-            let inject = sublayer == .attention
+            let inject =
+                sublayer == .attention
                 ? try model.hcAttnInject(layer: layer)
                 : try model.hcMlpInject(layer: layer)
             let iw = gateWeights(inject)
             if hcFusedEnabled, hc.canFuseWrite(inject: iw) {
-                try hc.encodeWriteFused(commandBuffer: commandBuffer,
-                                        streamsBuffer: hidden,
-                                        inject: iw,
-                                        blockOut: delta)
+                try hc.encodeWriteFused(
+                    commandBuffer: commandBuffer,
+                    streamsBuffer: hidden,
+                    inject: iw,
+                    blockOut: delta)
             } else {
-                try hc.encodeWrite(commandBuffer: commandBuffer,
-                                   streamsBuffer: hidden,
-                                   inject: iw,
-                                   blockOut: delta)
+                try hc.encodeWrite(
+                    commandBuffer: commandBuffer,
+                    streamsBuffer: hidden,
+                    inject: iw,
+                    blockOut: delta)
             }
             return
         }
-        try requireElementwise().encodeResidualAdd(commandBuffer: commandBuffer,
-                                           hidden: hidden,
-                                           delta: delta,
-                                           count: cfg.hiddenSize)
+        try requireElementwise().encodeResidualAdd(
+            commandBuffer: commandBuffer,
+            hidden: hidden,
+            delta: delta,
+            count: cfg.hiddenSize)
     }
 
     /// The batched projection the hyper-connection gates hand their GEMMs to.
@@ -153,78 +168,90 @@ extension RealForwardRunner {
                 }
                 return
             }
-            try prefillQMM.encode(commandBuffer: commandBuffer,
-                                  weights: weights.weights,
-                                  weightsOffset: weights.weightsOffset,
-                                  scales: weights.scales,
-                                  scalesOffset: weights.scalesOffset,
-                                  biases: weights.biases,
-                                  biasesOffset: weights.biasesOffset,
-                                  x: x, y: y,
-                                  t: tokens, n: rows, k: columns)
+            try prefillQMM.encode(
+                commandBuffer: commandBuffer,
+                weights: weights.weights,
+                weightsOffset: weights.weightsOffset,
+                scales: weights.scales,
+                scalesOffset: weights.scalesOffset,
+                biases: weights.biases,
+                biasesOffset: weights.biasesOffset,
+                x: x, y: y,
+                t: tokens, n: rows, k: columns)
         }
     }
 
     /// Residual -> block input, for a prefill chunk of `tokens` rows.
-    func encodeResidualEntryPrefill(commandBuffer: MTLCommandBuffer,
-                                    hidden: MTLBuffer,
-                                    norm: TensorView,
-                                    out: MTLBuffer,
-                                    sublayer: ResidualSublayer,
-                                    layer: Int,
-                                    tokens: Int,
-                                    eps: Float) throws {
+    func encodeResidualEntryPrefill(
+        commandBuffer: MTLCommandBuffer,
+        hidden: MTLBuffer,
+        norm: TensorView,
+        out: MTLBuffer,
+        sublayer: ResidualSublayer,
+        layer: Int,
+        tokens: Int,
+        eps: Float
+    ) throws {
         if let hc = hyperConnection {
-            let down = sublayer == .attention
+            let down =
+                sublayer == .attention
                 ? try model.hcAttnMixDown(layer: layer)
                 : try model.hcMlpMixDown(layer: layer)
-            let up = sublayer == .attention
+            let up =
+                sublayer == .attention
                 ? try model.hcAttnMixUp(layer: layer)
                 : try model.hcMlpMixUp(layer: layer)
-            try hc.encodeReadRows(commandBuffer: commandBuffer,
-                                  streamsBuffer: hidden,
-                                  hcNorm: norm.buffer,
-                                  hcNormOffset: Int(norm.offset),
-                                  down: gateWeightsPublic(down),
-                                  up: gateWeightsPublic(up),
-                                  blockInput: out,
-                                  tokens: tokens, eps: eps,
-                                  project: prefillGateProjection)
+            try hc.encodeReadRows(
+                commandBuffer: commandBuffer,
+                streamsBuffer: hidden,
+                hcNorm: norm.buffer,
+                hcNormOffset: Int(norm.offset),
+                down: gateWeightsPublic(down),
+                up: gateWeightsPublic(up),
+                blockInput: out,
+                tokens: tokens, eps: eps,
+                project: prefillGateProjection)
             return
         }
-        try prefillRMS.encodeBF16W(commandBuffer: commandBuffer,
-                                   x: hidden,
-                                   weight: norm.buffer,
-                                   weightOffset: Int(norm.offset),
-                                   out: out,
-                                   t: UInt32(tokens),
-                                   d: UInt32(cfg.hiddenSize),
-                                   eps: eps)
+        try prefillRMS.encodeBF16W(
+            commandBuffer: commandBuffer,
+            x: hidden,
+            weight: norm.buffer,
+            weightOffset: Int(norm.offset),
+            out: out,
+            t: UInt32(tokens),
+            d: UInt32(cfg.hiddenSize),
+            eps: eps)
     }
 
     /// Block output -> residual, for a prefill chunk of `tokens` rows.
-    func encodeResidualExitPrefill(commandBuffer: MTLCommandBuffer,
-                                   hidden: MTLBuffer,
-                                   delta: MTLBuffer,
-                                   sublayer: ResidualSublayer,
-                                   layer: Int,
-                                   tokens: Int) throws {
+    func encodeResidualExitPrefill(
+        commandBuffer: MTLCommandBuffer,
+        hidden: MTLBuffer,
+        delta: MTLBuffer,
+        sublayer: ResidualSublayer,
+        layer: Int,
+        tokens: Int
+    ) throws {
         if let hc = hyperConnection {
-            let inject = sublayer == .attention
+            let inject =
+                sublayer == .attention
                 ? try model.hcAttnInject(layer: layer)
                 : try model.hcMlpInject(layer: layer)
-            try hc.encodeWriteRows(commandBuffer: commandBuffer,
-                                   streamsBuffer: hidden,
-                                   inject: gateWeightsPublic(inject),
-                                   blockOut: delta,
-                                   tokens: tokens,
-                                   project: prefillGateProjection)
+            try hc.encodeWriteRows(
+                commandBuffer: commandBuffer,
+                streamsBuffer: hidden,
+                inject: gateWeightsPublic(inject),
+                blockOut: delta,
+                tokens: tokens,
+                project: prefillGateProjection)
             return
         }
-        try requireElementwise().encodeResidualAdd(commandBuffer: commandBuffer,
-                                           hidden: hidden,
-                                           delta: delta,
-                                           count: tokens * cfg.hiddenSize)
+        try requireElementwise().encodeResidualAdd(
+            commandBuffer: commandBuffer,
+            hidden: hidden,
+            delta: delta,
+            count: tokens * cfg.hiddenSize)
     }
 }
 
@@ -245,7 +272,8 @@ extension RealForwardRunner {
     /// selection is skipped rather than computed and thrown away.
     func qsaSelectionNeeded(layer: Int, position: Int) -> Bool {
         guard qsaIndexer != nil, cfg.fullAttentionLayerMask[layer] == 1,
-              let exactness = qsaExactness else { return false }
+            let exactness = qsaExactness
+        else { return false }
         return !exactness.isDenseExact(visibleKeys: position + 1)
     }
 
@@ -264,16 +292,19 @@ extension RealForwardRunner {
     /// Off until verified: TINYTITAN_QSA_GPU_SELECT=1 turns it on, =verify runs
     /// both and reports any mask difference.
     var qsaGPUSelectEnabled: Bool { profile.qsaGPUSelect }
-    static let qsaSelectVerifyFlag = ProcessInfo.processInfo.environment["TINYTITAN_QSA_GPU_SELECT"] == "verify"
+    static let qsaSelectVerifyFlag =
+        ProcessInfo.processInfo.environment["TINYTITAN_QSA_GPU_SELECT"] == "verify"
     var qsaSelectVerify: Bool { Self.qsaSelectVerifyFlag }
 
-    func encodeQSAEntryAndSelect(passthrough: inout MTLCommandBuffer,
-                                 hidden: MTLBuffer,
-                                 norm: TensorView,
-                                 out: MTLBuffer,
-                                 layer: Int,
-                                 position: Int,
-                                 eps: Float) throws -> MTLBuffer? {
+    func encodeQSAEntryAndSelect(
+        passthrough: inout MTLCommandBuffer,
+        hidden: MTLBuffer,
+        norm: TensorView,
+        out: MTLBuffer,
+        layer: Int,
+        position: Int,
+        eps: Float
+    ) throws -> MTLBuffer? {
         guard let indexer = qsaIndexer else { return nil }
         let weights = try indexerWeights(layer: layer)
         let selecting = qsaSelectionNeeded(layer: layer, position: position)
@@ -281,55 +312,68 @@ extension RealForwardRunner {
             // Inside the window nothing is selected, so there is nothing to
             // read back and no reason to break the pipeline: the entry and
             // the key append ride the layer's own command buffer.
-            try encodeResidualEntryDecode(commandBuffer: passthrough,
-                                          hidden: hidden, norm: norm, out: out,
-                                          sublayer: .attention, layer: layer,
-                                          eps: eps)
-            try indexer.encodeAppendKey(commandBuffer: passthrough, hidden: out,
-                                        weights: weights, layer: layer,
-                                        position: position, eps: eps)
+            try encodeResidualEntryDecode(
+                commandBuffer: passthrough,
+                hidden: hidden, norm: norm, out: out,
+                sublayer: .attention, layer: layer,
+                eps: eps)
+            try indexer.encodeAppendKey(
+                commandBuffer: passthrough, hidden: out,
+                weights: weights, layer: layer,
+                position: position, eps: eps)
             return nil
         }
-        let gpuSelect = qsaGPUSelectEnabled && indexer.canSelectOnGPU
+        let gpuSelect =
+            qsaGPUSelectEnabled && indexer.canSelectOnGPU
             && activationDumpDirectory == nil
         if gpuSelect && !qsaSelectVerify {
             // Everything rides the layer's own command buffer: entry, key
             // append, scores, and the selection itself. No readback.
-            try encodeResidualEntryDecode(commandBuffer: passthrough, hidden: hidden,
-                                          norm: norm, out: out,
-                                          sublayer: .attention, layer: layer,
-                                          eps: eps)
-            try indexer.encodeAppendKey(commandBuffer: passthrough, hidden: out,
-                                        weights: weights, layer: layer,
-                                        position: position, eps: eps)
+            try encodeResidualEntryDecode(
+                commandBuffer: passthrough, hidden: hidden,
+                norm: norm, out: out,
+                sublayer: .attention, layer: layer,
+                eps: eps)
+            try indexer.encodeAppendKey(
+                commandBuffer: passthrough, hidden: out,
+                weights: weights, layer: layer,
+                position: position, eps: eps)
             try rotate(&passthrough, role: "qsa.entry_append")
-            try indexer.encodeScores(commandBuffer: passthrough, hidden: out,
-                                     weights: weights, layer: layer,
-                                     position: position, eps: eps)
+            try indexer.encodeScores(
+                commandBuffer: passthrough, hidden: out,
+                weights: weights, layer: layer,
+                position: position, eps: eps)
             try rotate(&passthrough, role: "qsa.scores")
-            let mask = try indexer.encodeSelectKeys(commandBuffer: passthrough,
-                                                    visibleKeys: position + 1)
+            let mask = try indexer.encodeSelectKeys(
+                commandBuffer: passthrough,
+                visibleKeys: position + 1)
             try rotate(&passthrough, role: "qsa.select")
             return mask
         }
-        guard try runSync({ cb in
-            try encodeResidualEntryDecode(commandBuffer: cb, hidden: hidden,
-                                          norm: norm, out: out,
-                                          sublayer: .attention, layer: layer,
-                                          eps: eps)
-            // The key is cached at every position, in or out of the window:
-            // crossing the boundary later must not find holes behind it.
-            try indexer.encodeAppendKey(commandBuffer: cb, hidden: out,
-                                        weights: weights, layer: layer,
-                                        position: position, eps: eps)
-            try indexer.encodeScores(commandBuffer: cb, hidden: out,
-                                     weights: weights, layer: layer,
-                                     position: position, eps: eps)
-            if gpuSelect {
-                _ = try indexer.encodeSelectKeys(commandBuffer: cb,
-                                                 visibleKeys: position + 1)
-            }
-        }) != nil else {
+        guard
+            try runSync({ cb in
+                try encodeResidualEntryDecode(
+                    commandBuffer: cb, hidden: hidden,
+                    norm: norm, out: out,
+                    sublayer: .attention, layer: layer,
+                    eps: eps)
+                // The key is cached at every position, in or out of the window:
+                // crossing the boundary later must not find holes behind it.
+                try indexer.encodeAppendKey(
+                    commandBuffer: cb, hidden: out,
+                    weights: weights, layer: layer,
+                    position: position, eps: eps)
+                try indexer.encodeScores(
+                    commandBuffer: cb, hidden: out,
+                    weights: weights, layer: layer,
+                    position: position, eps: eps)
+                if gpuSelect {
+                    _ = try indexer.encodeSelectKeys(
+                        commandBuffer: cb,
+                        visibleKeys: position + 1)
+                }
+            }) != nil
+        else {
             throw ModelError.residentBufferWrapFailed
         }
         if gpuSelect {
@@ -340,12 +384,18 @@ extension RealForwardRunner {
             let mask = indexer.selectKeys(visibleKeys: position + 1)
             let cpuMask = indexer.keepMaskBytes(count: position + 1)
             if gpuMask != cpuMask {
-                let diff = zip(gpuMask, cpuMask).enumerated().filter { $0.element.0 != $0.element.1 }
+                let diff = zip(gpuMask, cpuMask).enumerated().filter {
+                    $0.element.0 != $0.element.1
+                }
                 FileHandle.standardError.write(
-                    Data("TinyTitan qsa_select_verify MISMATCH layer=\(layer) position=\(position) cells=\(diff.count) first=\(diff.prefix(4).map { $0.offset })\n".utf8))
+                    Data(
+                        "TinyTitan qsa_select_verify MISMATCH layer=\(layer) position=\(position) cells=\(diff.count) first=\(diff.prefix(4).map { $0.offset })\n"
+                            .utf8))
             } else if position % 64 == 0 {
                 FileHandle.standardError.write(
-                    Data("TinyTitan qsa_select_verify ok layer=\(layer) position=\(position)\n".utf8))
+                    Data(
+                        "TinyTitan qsa_select_verify ok layer=\(layer) position=\(position)\n".utf8)
+                )
             }
             return mask
         }
@@ -357,10 +407,13 @@ extension RealForwardRunner {
     }
 
     /// The same snapshot from the chunked path, taken from its last row.
-    func dumpQSAChunkSnapshot(selection: QSASelection,
-                              lastVisible: Int, rows: Int) {
+    func dumpQSAChunkSnapshot(
+        selection: QSASelection,
+        lastVisible: Int, rows: Int
+    ) {
         guard let directory = activationDumpDirectory,
-              let indexer = qsaIndexer else { return }
+            let indexer = qsaIndexer
+        else { return }
         let base = (rows - 1) * selection.maskStride
         let keep = selection.mask.contents()
             .bindMemory(to: UInt8.self, capacity: base + lastVisible)
@@ -369,15 +422,19 @@ extension RealForwardRunner {
             to: directory.appendingPathComponent("qsa_keep.bin"))
         let blocks = (lastVisible - 1) / indexer.compressRatio + 1
         let scores = indexer.debugSnapshot(
-            cells: 1, blocks: indexer.scoredBlocksPerRow * rows).scores
-        let row = Array(scores[(rows - 1) * indexer.scoredBlocksPerRow ..<
-                               (rows - 1) * indexer.scoredBlocksPerRow + blocks])
+            cells: 1, blocks: indexer.scoredBlocksPerRow * rows
+        ).scores
+        let row = Array(
+            scores[
+                (rows - 1) * indexer.scoredBlocksPerRow..<(rows - 1) * indexer.scoredBlocksPerRow
+                    + blocks])
         row.withUnsafeBufferPointer {
             try? Data(buffer: $0).write(
                 to: directory.appendingPathComponent("qsa_scores.f32"))
         }
-        writeQSACaches(directory: directory, indexer: indexer,
-                       visibleKeys: lastVisible, blocks: blocks)
+        writeQSACaches(
+            directory: directory, indexer: indexer,
+            visibleKeys: lastVisible, blocks: blocks)
     }
 
     /// Writes the indexer's scores and selection for the newest query, so the
@@ -390,7 +447,8 @@ extension RealForwardRunner {
     /// difference is the selection's own.
     func dumpQSASnapshot(layer: Int, visibleKeys: Int) {
         guard let directory = activationDumpDirectory,
-              let indexer = qsaIndexer else { return }
+            let indexer = qsaIndexer
+        else { return }
         let blocks = (visibleKeys - 1) / indexer.compressRatio + 1
         let snapshot = indexer.debugSnapshot(cells: visibleKeys, blocks: blocks)
         try? Data(snapshot.keep).write(
@@ -399,21 +457,28 @@ extension RealForwardRunner {
             try? Data(buffer: $0).write(
                 to: directory.appendingPathComponent("qsa_scores.f32"))
         }
-        writeQSACaches(directory: directory, indexer: indexer,
-                       visibleKeys: visibleKeys, blocks: blocks)
+        writeQSACaches(
+            directory: directory, indexer: indexer,
+            visibleKeys: visibleKeys, blocks: blocks)
     }
 
-    private func writeQSACaches(directory: URL, indexer: QSAIndexer,
-                                visibleKeys: Int, blocks: Int) {
-        if let pooled = indexer.debugPooled(layer: Self.qsaSnapshotLayer,
-                                            blocks: blocks) {
+    private func writeQSACaches(
+        directory: URL, indexer: QSAIndexer,
+        visibleKeys: Int, blocks: Int
+    ) {
+        if let pooled = indexer.debugPooled(
+            layer: Self.qsaSnapshotLayer,
+            blocks: blocks)
+        {
             pooled.withUnsafeBufferPointer {
                 try? Data(buffer: $0).write(
                     to: directory.appendingPathComponent("qsa_pooled.f32"))
             }
         }
-        if let raw = indexer.debugRawKeys(layer: Self.qsaSnapshotLayer,
-                                          count: visibleKeys) {
+        if let raw = indexer.debugRawKeys(
+            layer: Self.qsaSnapshotLayer,
+            count: visibleKeys)
+        {
             raw.withUnsafeBufferPointer {
                 try? Data(buffer: $0).write(
                     to: directory.appendingPathComponent("qsa_raw.f32"))
@@ -425,12 +490,15 @@ extension RealForwardRunner {
 /// Fills the indexer's caches for a prefill chunk, so decode can cross the
 /// dense-exact boundary later without finding holes behind it.
 extension RealForwardRunner {
-    func encodeQSAPrefill(cb: inout MTLCommandBuffer,
-                          blockInput: MTLBuffer,
-                          layer: Int, startPosition: Int, tokens: Int,
-                          eps: Float) throws -> QSASelection? {
+    func encodeQSAPrefill(
+        cb: inout MTLCommandBuffer,
+        blockInput: MTLBuffer,
+        layer: Int, startPosition: Int, tokens: Int,
+        eps: Float
+    ) throws -> QSASelection? {
         guard let indexer = qsaIndexer,
-              cfg.fullAttentionLayerMask[layer] == 1 else { return nil }
+            cfg.fullAttentionLayerMask[layer] == 1
+        else { return nil }
         let commandBuffer = cb
         let weights = try indexerWeights(layer: layer)
         let destination = try indexer.rawKeyDestination(
@@ -457,29 +525,31 @@ extension RealForwardRunner {
                     m: UInt32(rows), n: UInt32(columns))
             }
         } else {
-            try prefillQMM.encode(commandBuffer: commandBuffer,
-                                  weights: key.buffer,
-                                  weightsOffset: Int(key.offset),
-                                  scales: key.buffer,
-                                  scalesOffset: Int(key.scaleOffset),
-                                  biases: key.buffer,
-                                  biasesOffset: Int(key.biasOffset),
-                                  x: blockInput,
-                                  y: destination.buffer,
-                                  yOffset: destination.offset,
-                                  t: tokens,
-                                  n: indexer.headDim,
-                                  k: Int(key.shape.1))
+            try prefillQMM.encode(
+                commandBuffer: commandBuffer,
+                weights: key.buffer,
+                weightsOffset: Int(key.offset),
+                scales: key.buffer,
+                scalesOffset: Int(key.scaleOffset),
+                biases: key.buffer,
+                biasesOffset: Int(key.biasOffset),
+                x: blockInput,
+                y: destination.buffer,
+                yOffset: destination.offset,
+                t: tokens,
+                n: indexer.headDim,
+                k: Int(key.shape.1))
         }
-        try indexer.encodePoolPrefill(commandBuffer: commandBuffer,
-                                      weights: weights, layer: layer,
-                                      startPosition: startPosition,
-                                      tokens: tokens, eps: eps)
+        try indexer.encodePoolPrefill(
+            commandBuffer: commandBuffer,
+            weights: weights, layer: layer,
+            startPosition: startPosition,
+            tokens: tokens, eps: eps)
 
         // Nothing to choose while the chunk's longest query still sees
         // everything, so no scoring pass and no barrier.
         guard let exactness = qsaExactness,
-              !exactness.isDenseExact(visibleKeys: startPosition + tokens)
+            !exactness.isDenseExact(visibleKeys: startPosition + tokens)
         else { return nil }
 
         try indexer.encodeScoresPrefill(
@@ -500,15 +570,16 @@ extension RealForwardRunner {
                     }
                     return
                 }
-                try self.prefillQMM.encode(commandBuffer: cb,
-                                           weights: view.buffer,
-                                           weightsOffset: Int(view.offset),
-                                           scales: view.buffer,
-                                           scalesOffset: Int(view.scaleOffset),
-                                           biases: view.buffer,
-                                           biasesOffset: Int(view.biasOffset),
-                                           x: x, y: y,
-                                           t: count, n: rows, k: columns)
+                try self.prefillQMM.encode(
+                    commandBuffer: cb,
+                    weights: view.buffer,
+                    weightsOffset: Int(view.offset),
+                    scales: view.buffer,
+                    scalesOffset: Int(view.scaleOffset),
+                    biases: view.buffer,
+                    biasesOffset: Int(view.biasOffset),
+                    x: x, y: y,
+                    t: count, n: rows, k: columns)
             })
         // The selection is a host computation over the scores, so the chunk's
         // command buffer has to land first. The same barrier the routed MoE
@@ -520,16 +591,19 @@ extension RealForwardRunner {
             throw ModelError.residentBufferWrapFailed
         }
         cb = next
-        let selection = indexer.selectKeysPrefill(startPosition: startPosition,
-                                                  tokens: tokens,
-                                                  layer: layer)
+        let selection = indexer.selectKeysPrefill(
+            startPosition: startPosition,
+            tokens: tokens,
+            layer: layer)
         // The chunk's last row is the one a sequential run's final decode
         // step also produces, so it is the comparable one.
         if activationDumpDirectory != nil, layer == Self.qsaSnapshotLayer,
-           let selection {
-            dumpQSAChunkSnapshot(selection: selection,
-                                 lastVisible: startPosition + tokens,
-                                 rows: tokens)
+            let selection
+        {
+            dumpQSAChunkSnapshot(
+                selection: selection,
+                lastVisible: startPosition + tokens,
+                rows: tokens)
         }
         return selection
     }
@@ -574,10 +648,13 @@ extension RealForwardRunner {
     }
 
     /// Encodes the n-gram block on the layers that carry one.
-    func encodePLEDecode(commandBuffer: MTLCommandBuffer,
-                         layer: Int, position: Int, eps: Float) throws {
+    func encodePLEDecode(
+        commandBuffer: MTLCommandBuffer,
+        layer: Int, position: Int, eps: Float
+    ) throws {
         guard let ple = pleBlock,
-              cfg.ple.layerIndices.contains(layer) else { return }
+            cfg.ple.layerIndices.contains(layer)
+        else { return }
         if activationDumpActive(position: position) {
             dumpActivation("L\(layer)_ple_pre", hidden, count: residualWidth, position: position)
         }
@@ -588,9 +665,10 @@ extension RealForwardRunner {
             normQuery: vector(try model.pleNormQuery(layer: layer)),
             normConv: vector(try model.pleNormConv(layer: layer)),
             conv1d: vector(try model.pleConv(layer: layer)))
-        try ple.encodeDecode(commandBuffer: commandBuffer,
-                             streamsBuffer: hidden,
-                             weights: weights, eps: eps)
+        try ple.encodeDecode(
+            commandBuffer: commandBuffer,
+            streamsBuffer: hidden,
+            weights: weights, eps: eps)
     }
 
     /// Gathers a whole prefill chunk's n-gram rows.
@@ -607,18 +685,22 @@ extension RealForwardRunner {
             if pleContext.count > hash.ngramSize {
                 pleContext.removeLast(pleContext.count - hash.ngramSize)
             }
-            try table.gather(rows: hash.rows(context: pleContext),
-                             into: ple.embedding.contents()
-                                .advanced(by: index * rowBytes))
+            try table.gather(
+                rows: hash.rows(context: pleContext),
+                into: ple.embedding.contents()
+                    .advanced(by: index * rowBytes))
         }
     }
 
     /// Encodes the n-gram block over a whole prefill chunk.
-    func encodePLEPrefill(commandBuffer: MTLCommandBuffer,
-                          hidden: MTLBuffer,
-                          layer: Int, tokens: Int, eps: Float) throws {
+    func encodePLEPrefill(
+        commandBuffer: MTLCommandBuffer,
+        hidden: MTLBuffer,
+        layer: Int, tokens: Int, eps: Float
+    ) throws {
         guard let ple = pleBlock,
-              cfg.ple.layerIndices.contains(layer) else { return }
+            cfg.ple.layerIndices.contains(layer)
+        else { return }
         let weights = PLEBlock.Weights(
             keyProj: projection(try model.pleKeyProj(layer: layer)),
             valueProj: projection(try model.pleValueProj(layer: layer)),
@@ -626,9 +708,11 @@ extension RealForwardRunner {
             normQuery: vector(try model.pleNormQuery(layer: layer)),
             normConv: vector(try model.pleNormConv(layer: layer)),
             conv1d: vector(try model.pleConv(layer: layer)))
-        try ple.encodeRows(commandBuffer: commandBuffer,
-                           streamsBuffer: hidden, weights: weights,
-                           tokens: tokens, eps: eps) {
+        try ple.encodeRows(
+            commandBuffer: commandBuffer,
+            streamsBuffer: hidden, weights: weights,
+            tokens: tokens, eps: eps
+        ) {
             [self] cb, proj, x, y, rows, columns, count in
             // Same reason as the hyper-connection gate: a promoted projection
             // has no scales or biases for the batched QMM to read.
@@ -645,26 +729,28 @@ extension RealForwardRunner {
                 }
                 return
             }
-            try prefillQMM.encode(commandBuffer: cb,
-                                  weights: proj.weights,
-                                  weightsOffset: proj.weightsOffset,
-                                  scales: proj.scales,
-                                  scalesOffset: proj.scalesOffset,
-                                  biases: proj.biases,
-                                  biasesOffset: proj.biasesOffset,
-                                  x: x, y: y,
-                                  t: count, n: rows, k: columns)
+            try prefillQMM.encode(
+                commandBuffer: cb,
+                weights: proj.weights,
+                weightsOffset: proj.weightsOffset,
+                scales: proj.scales,
+                scalesOffset: proj.scalesOffset,
+                biases: proj.biases,
+                biasesOffset: proj.biasesOffset,
+                x: x, y: y,
+                t: count, n: rows, k: columns)
         }
     }
 
     private func projection(_ view: TensorView) -> PLEBlock.Projection {
-        PLEBlock.Projection(weights: view.buffer,
-                            weightsOffset: Int(view.offset),
-                            scales: view.buffer,
-                            scalesOffset: Int(view.scaleOffset),
-                            biases: view.buffer,
-                            biasesOffset: Int(view.biasOffset),
-                            isBF16: view.dtype == 1)
+        PLEBlock.Projection(
+            weights: view.buffer,
+            weightsOffset: Int(view.offset),
+            scales: view.buffer,
+            scalesOffset: Int(view.scaleOffset),
+            biases: view.buffer,
+            biasesOffset: Int(view.biasOffset),
+            isBF16: view.dtype == 1)
     }
 
     private func vector(_ view: TensorView) -> PLEBlock.Vector {
@@ -679,29 +765,33 @@ extension RealForwardRunner {
     /// which is why the 8-bit build promotes it to the checkpoint's bf16. The
     /// dtype travels on the tensor, not the slot, so the choice is made here
     /// rather than when the kernels are built.
-    func encodeScalarGate(commandBuffer: MTLCommandBuffer,
-                          view: TensorView,
-                          x: MTLBuffer, xOffset: Int = 0,
-                          y: MTLBuffer, yOffset: Int = 0,
-                          n: UInt32) throws {
+    func encodeScalarGate(
+        commandBuffer: MTLCommandBuffer,
+        view: TensorView,
+        x: MTLBuffer, xOffset: Int = 0,
+        y: MTLBuffer, yOffset: Int = 0,
+        n: UInt32
+    ) throws {
         if view.dtype == 1 {
-            try requireBF16ScalarGate().encode(commandBuffer: commandBuffer,
-                                       weights: view.buffer,
-                                       weightsOffset: Int(view.offset),
-                                       x: x, xOffset: xOffset,
-                                       y: y, yOffset: yOffset,
-                                       m: 1, n: n)
+            try requireBF16ScalarGate().encode(
+                commandBuffer: commandBuffer,
+                weights: view.buffer,
+                weightsOffset: Int(view.offset),
+                x: x, xOffset: xOffset,
+                y: y, yOffset: yOffset,
+                m: 1, n: n)
         } else {
-            try requireInt8ScalarGate().encode(commandBuffer: commandBuffer,
-                                       weights: view.buffer,
-                                       weightsOffset: Int(view.offset),
-                                       scales: view.buffer,
-                                       scalesOffset: Int(view.scaleOffset),
-                                       biases: view.buffer,
-                                       biasesOffset: Int(view.biasOffset),
-                                       x: x, xOffset: xOffset,
-                                       y: y, yOffset: yOffset,
-                                       m: 1, n: n)
+            try requireInt8ScalarGate().encode(
+                commandBuffer: commandBuffer,
+                weights: view.buffer,
+                weightsOffset: Int(view.offset),
+                scales: view.buffer,
+                scalesOffset: Int(view.scaleOffset),
+                biases: view.buffer,
+                biasesOffset: Int(view.biasOffset),
+                x: x, xOffset: xOffset,
+                y: y, yOffset: yOffset,
+                m: 1, n: n)
         }
     }
 }

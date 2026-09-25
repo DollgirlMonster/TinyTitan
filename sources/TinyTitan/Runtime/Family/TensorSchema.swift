@@ -43,31 +43,33 @@ public struct TensorSchema: Sendable {
     public let gdnDtBias: @Sendable (Int) -> String
     public let gdnNorm: @Sendable (Int) -> String
 
-    public init(embedding: String,
-                lmHead: String,
-                finalNorm: String,
-                qProj: @escaping @Sendable (Int) -> String,
-                kProj: @escaping @Sendable (Int) -> String,
-                vProj: @escaping @Sendable (Int) -> String,
-                oProj: @escaping @Sendable (Int) -> String,
-                router: @escaping @Sendable (Int) -> String,
-                sharedExpertGate: @escaping @Sendable (Int) -> String,
-                sharedExpertUp: @escaping @Sendable (Int) -> String,
-                sharedExpertDown: @escaping @Sendable (Int) -> String,
-                sharedExpertScalarGate: @escaping @Sendable (Int) -> String,
-                inputNorm: @escaping @Sendable (Int) -> String,
-                postAttnNorm: @escaping @Sendable (Int) -> String,
-                qNorm: @escaping @Sendable (Int) -> String,
-                kNorm: @escaping @Sendable (Int) -> String,
-                gdnQKV: @escaping @Sendable (Int) -> String,
-                gdnZ: @escaping @Sendable (Int) -> String,
-                gdnA: @escaping @Sendable (Int) -> String,
-                gdnB: @escaping @Sendable (Int) -> String,
-                gdnOut: @escaping @Sendable (Int) -> String,
-                gdnConv: @escaping @Sendable (Int) -> String,
-                gdnALog: @escaping @Sendable (Int) -> String,
-                gdnDtBias: @escaping @Sendable (Int) -> String,
-                gdnNorm: @escaping @Sendable (Int) -> String) {
+    public init(
+        embedding: String,
+        lmHead: String,
+        finalNorm: String,
+        qProj: @escaping @Sendable (Int) -> String,
+        kProj: @escaping @Sendable (Int) -> String,
+        vProj: @escaping @Sendable (Int) -> String,
+        oProj: @escaping @Sendable (Int) -> String,
+        router: @escaping @Sendable (Int) -> String,
+        sharedExpertGate: @escaping @Sendable (Int) -> String,
+        sharedExpertUp: @escaping @Sendable (Int) -> String,
+        sharedExpertDown: @escaping @Sendable (Int) -> String,
+        sharedExpertScalarGate: @escaping @Sendable (Int) -> String,
+        inputNorm: @escaping @Sendable (Int) -> String,
+        postAttnNorm: @escaping @Sendable (Int) -> String,
+        qNorm: @escaping @Sendable (Int) -> String,
+        kNorm: @escaping @Sendable (Int) -> String,
+        gdnQKV: @escaping @Sendable (Int) -> String,
+        gdnZ: @escaping @Sendable (Int) -> String,
+        gdnA: @escaping @Sendable (Int) -> String,
+        gdnB: @escaping @Sendable (Int) -> String,
+        gdnOut: @escaping @Sendable (Int) -> String,
+        gdnConv: @escaping @Sendable (Int) -> String,
+        gdnALog: @escaping @Sendable (Int) -> String,
+        gdnDtBias: @escaping @Sendable (Int) -> String,
+        gdnNorm: @escaping @Sendable (Int) -> String
+    ) {
         self.embedding = embedding
         self.lmHead = lmHead
         self.finalNorm = finalNorm

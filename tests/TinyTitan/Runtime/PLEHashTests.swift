@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 /// PLE row addressing against golden vectors produced by the reference
@@ -32,24 +33,28 @@ struct PLEHashTests {
     }
 
     static let golden: Golden = {
-        guard let url = Bundle.module.url(forResource: "ple_golden",
-                                          withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let g = try? JSONDecoder().decode(Golden.self, from: data)
+        guard
+            let url = Bundle.module.url(
+                forResource: "ple_golden",
+                withExtension: "json"),
+            let data = try? Data(contentsOf: url),
+            let g = try? JSONDecoder().decode(Golden.self, from: data)
         else { fatalError("ple_golden.json fixture missing") }
         return g
     }()
 
     static func hash() -> PLEHash {
         let c = golden.constants
-        return PLEHash(multipliers: c.multipliers, offsets: c.offsets,
-                       vocabSizes: c.vocab, ngramSize: c.ngramSize,
-                       headsPerNgram: c.headsPerNgram, eosTokenID: c.eos)
+        return PLEHash(
+            multipliers: c.multipliers, offsets: c.offsets,
+            vocabSizes: c.vocab, ngramSize: c.ngramSize,
+            headsPerNgram: c.headsPerNgram, eosTokenID: c.eos)
     }
 
     private func check(_ name: String) {
         guard let c = Self.golden.cases[name] else {
-            Issue.record("missing golden case \(name)"); return
+            Issue.record("missing golden case \(name)")
+            return
         }
         // `prev` is -1 padded in the fixture; drop those to real predecessors.
         let previous = c.prev.filter { $0 >= 0 }
@@ -58,8 +63,9 @@ struct PLEHashTests {
         for (t, expected) in c.rows.enumerated() where t < actual.count {
             let got = "\(actual[t].prefix(4))"
             let want = "\(expected.prefix(4))"
-            #expect(actual[t] == expected,
-                    "\(name) token \(t): got \(got)... want \(want)...")
+            #expect(
+                actual[t] == expected,
+                "\(name) token \(t): got \(got)... want \(want)...")
         }
     }
 
@@ -67,7 +73,7 @@ struct PLEHashTests {
         let h = Self.hash()
         #expect(h.ngramSize == 3)
         #expect(h.headsPerNgram == 8)
-        #expect(h.headCount == 16)          // 2 orders x 8 heads
+        #expect(h.headCount == 16)  // 2 orders x 8 heads
         #expect(h.vocabSizes.count == 16)
         // Head vocabularies are distinct primes just above 20M.
         #expect(Set(h.vocabSizes).count == 16)
@@ -100,8 +106,9 @@ struct PLEHashTests {
             for (head, row) in tokenRows.enumerated() {
                 let lo = h.offsets[head]
                 let hi = lo + h.vocabSizes[head]
-                #expect(UInt64(row) >= lo && UInt64(row) < hi,
-                        "head \(head) row \(row) outside [\(lo), \(hi))")
+                #expect(
+                    UInt64(row) >= lo && UInt64(row) < hi,
+                    "head \(head) row \(row) outside [\(lo), \(hi))")
             }
         }
     }
@@ -139,10 +146,12 @@ struct PLEHashTests {
 /// trap.
 @Suite("PLE sidecar geometry")
 struct PLEConstantsGeometryTests {
-    private func constants(ngramSize: Int = 3,
-                           headsPerNgram: Int = 8,
-                           pleHeadDim: Int = 160,
-                           headEntries: Int? = nil) -> PLEConstants {
+    private func constants(
+        ngramSize: Int = 3,
+        headsPerNgram: Int = 8,
+        pleHeadDim: Int = 160,
+        headEntries: Int? = nil
+    ) -> PLEConstants {
         let headCount = headEntries ?? (headsPerNgram * (ngramSize - 1))
         return PLEConstants(
             layerMultipliers: Array(repeating: 1, count: ngramSize),
@@ -171,12 +180,14 @@ struct PLEConstantsGeometryTests {
     @Test("A different n-gram shape is refused")
     func refusesShapeMismatch() {
         #expect(throws: ModelError.self) {
-            try constants(ngramSize: 4).validate(embedDim: 2560, ngramSize: 3,
-                                                 headsPerNgram: 8)
+            try constants(ngramSize: 4).validate(
+                embedDim: 2560, ngramSize: 3,
+                headsPerNgram: 8)
         }
         #expect(throws: ModelError.self) {
-            try constants(headsPerNgram: 4).validate(embedDim: 2560, ngramSize: 3,
-                                                    headsPerNgram: 8)
+            try constants(headsPerNgram: 4).validate(
+                embedDim: 2560, ngramSize: 3,
+                headsPerNgram: 8)
         }
     }
 
@@ -186,8 +197,9 @@ struct PLEConstantsGeometryTests {
         // too few is what a truncated sidecar looks like, and it is checked
         // here so the failure is named rather than left to a precondition.
         #expect(throws: ModelError.self) {
-            try constants(headEntries: 4).validate(embedDim: 2560, ngramSize: 3,
-                                                  headsPerNgram: 8)
+            try constants(headEntries: 4).validate(
+                embedDim: 2560, ngramSize: 3,
+                headsPerNgram: 8)
         }
     }
 }

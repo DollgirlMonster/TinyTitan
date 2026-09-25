@@ -13,7 +13,6 @@ import Foundation
 import Metal
 import Synchronization
 
-
 public struct ExpertIOAdviceResult: Sendable, Equatable {
     public let requested: Int
     public let failed: Int
@@ -22,12 +21,14 @@ public struct ExpertIOAdviceResult: Sendable, Equatable {
     public let skipped: Int
     public let maxCallNanos: UInt64
 
-    public init(requested: Int,
-                failed: Int,
-                calls: Int? = nil,
-                bytes: UInt64 = 0,
-                skipped: Int = 0,
-                maxCallNanos: UInt64 = 0) {
+    public init(
+        requested: Int,
+        failed: Int,
+        calls: Int? = nil,
+        bytes: UInt64 = 0,
+        skipped: Int = 0,
+        maxCallNanos: UInt64 = 0
+    ) {
         self.requested = requested
         self.failed = failed
         self.calls = calls ?? requested
@@ -37,11 +38,12 @@ public struct ExpertIOAdviceResult: Sendable, Equatable {
     }
 
     public static func skipped(requested: Int, bytes: UInt64 = 0) -> ExpertIOAdviceResult {
-        ExpertIOAdviceResult(requested: requested,
-                             failed: 0,
-                             calls: 0,
-                             bytes: bytes,
-                             skipped: requested)
+        ExpertIOAdviceResult(
+            requested: requested,
+            failed: 0,
+            calls: 0,
+            bytes: bytes,
+            skipped: requested)
     }
 
 }
@@ -64,9 +66,11 @@ public struct ExpertCachePlan: Sendable, Equatable {
     public let misses: [Int]
     public let hits: Int
 
-    public init(experts: [Int], assignedSlots: [Int],
-                assignedGenerations: [UInt64], misses: [Int], hits: Int,
-                layer: Int = 0) {
+    public init(
+        experts: [Int], assignedSlots: [Int],
+        assignedGenerations: [UInt64], misses: [Int], hits: Int,
+        layer: Int = 0
+    ) {
         self.experts = experts
         self.assignedSlots = assignedSlots
         self.assignedGenerations = assignedGenerations

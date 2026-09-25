@@ -63,8 +63,10 @@ public final class NgramTableReader: @unchecked Sendable {
     ///     data from the wrong rows.
     ///   - bypassCache: keep the gather out of the page cache. Default on,
     ///     because a bounded footprint is the point of streaming.
-    public init(path: String, rowDim: Int, rowCount: UInt64,
-                bypassCache: Bool = true) throws {
+    public init(
+        path: String, rowDim: Int, rowCount: UInt64,
+        bypassCache: Bool = true
+    ) throws {
         // Thrown, not a precondition: both values come from `ple_constants.json`,
         // which is a file on disk rather than a fact of the build. A corrupt or
         // foreign sidecar used to abort the process here instead of reporting
@@ -106,10 +108,12 @@ public final class NgramTableReader: @unchecked Sendable {
         let size = UInt64(st.st_size)
         let surplusLimit: UInt64 = 1 << 20
         guard size >= expected, size - expected <= surplusLimit,
-              size % UInt64(bytes) == 0 else {
+            size % UInt64(bytes) == 0
+        else {
             close(opened)
-            throw Failure.sizeMismatch(path: path, expected: expected,
-                                       actual: size)
+            throw Failure.sizeMismatch(
+                path: path, expected: expected,
+                actual: size)
         }
         self.fd = opened
         self.path = path
@@ -123,8 +127,10 @@ public final class NgramTableReader: @unchecked Sendable {
     /// Gathers `rows` into `destination`, which must hold
     /// `rows.count * rowDim` fp16 values. Rows land in the order given, which
     /// is head order — the caller concatenates them into the PLE input.
-    public func gather(rows: [UInt32],
-                       into destination: UnsafeMutableRawPointer) throws {
+    public func gather(
+        rows: [UInt32],
+        into destination: UnsafeMutableRawPointer
+    ) throws {
         for (i, row) in rows.enumerated() {
             guard UInt64(row) < rowCount else {
                 throw Failure.rowOutOfRange(row: row, rowCount: rowCount)
@@ -133,15 +139,17 @@ public final class NgramTableReader: @unchecked Sendable {
             let target = destination.advanced(by: i * rowBytes)
             var moved = 0
             while moved < rowBytes {
-                let n = pread(fd, target.advanced(by: moved),
-                              rowBytes - moved, off_t(offset) + off_t(moved))
+                let n = pread(
+                    fd, target.advanced(by: moved),
+                    rowBytes - moved, off_t(offset) + off_t(moved))
                 if n < 0 {
                     if errno == EINTR { continue }
                     throw Failure.readFailed(row: row, errno: errno)
                 }
                 if n == 0 {
-                    throw Failure.shortRead(row: row, expected: rowBytes,
-                                            got: moved)
+                    throw Failure.shortRead(
+                        row: row, expected: rowBytes,
+                        got: moved)
                 }
                 moved += n
             }

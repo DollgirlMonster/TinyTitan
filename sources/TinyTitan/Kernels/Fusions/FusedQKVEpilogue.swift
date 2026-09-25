@@ -39,39 +39,45 @@ final class FusedQKVEpilogue {
         self.specializedPSOs = variants
     }
 
-    func encode(commandBuffer cb: MTLCommandBuffer,
-                       q: MTLBuffer,
-                       qOffset: Int = 0,
-                       k: MTLBuffer,
-                       kOffset: Int = 0,
-                       v: MTLBuffer,
-                       vOffset: Int = 0,
-                       qWeight: MTLBuffer,
-                       qWeightOffset: Int = 0,
-                       kWeight: MTLBuffer,
-                       kWeightOffset: Int = 0,
-                       headDim: UInt32,
-                       numQHeads: UInt32,
-                       numKVHeads: UInt32,
-                       position: UInt32,
-                       theta: Float,
-                       rotatedPairs: UInt32,
-                       eps: Float) throws {
-        precondition(headDim <= 512,
-                     "headDim > 512 exceeds the fused QKV epilogue scratch")
-        precondition(rotatedPairs * 2 <= headDim,
-                     "rotatedPairs must fit inside one NeoX head")
+    func encode(
+        commandBuffer cb: MTLCommandBuffer,
+        q: MTLBuffer,
+        qOffset: Int = 0,
+        k: MTLBuffer,
+        kOffset: Int = 0,
+        v: MTLBuffer,
+        vOffset: Int = 0,
+        qWeight: MTLBuffer,
+        qWeightOffset: Int = 0,
+        kWeight: MTLBuffer,
+        kWeightOffset: Int = 0,
+        headDim: UInt32,
+        numQHeads: UInt32,
+        numKVHeads: UInt32,
+        position: UInt32,
+        theta: Float,
+        rotatedPairs: UInt32,
+        eps: Float
+    ) throws {
+        precondition(
+            headDim <= 512,
+            "headDim > 512 exceeds the fused QKV epilogue scratch")
+        precondition(
+            rotatedPairs * 2 <= headDim,
+            "rotatedPairs must fit inside one NeoX head")
         guard let enc = cb.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
         enc.setComputePipelineState(
-            specializedPSOs[Shape(headDim: headDim,
-                                  numQHeads: numQHeads,
-                                  numKVHeads: numKVHeads,
-                                  rotatedPairs: rotatedPairs)] ?? pso)
-        enc.setBuffer(q,       offset: qOffset,       index: 0)
-        enc.setBuffer(k,       offset: kOffset,       index: 1)
-        enc.setBuffer(v,       offset: vOffset,       index: 2)
+            specializedPSOs[
+                Shape(
+                    headDim: headDim,
+                    numQHeads: numQHeads,
+                    numKVHeads: numKVHeads,
+                    rotatedPairs: rotatedPairs)] ?? pso)
+        enc.setBuffer(q, offset: qOffset, index: 0)
+        enc.setBuffer(k, offset: kOffset, index: 1)
+        enc.setBuffer(v, offset: vOffset, index: 2)
         enc.setBuffer(qWeight, offset: qWeightOffset, index: 3)
         enc.setBuffer(kWeight, offset: kWeightOffset, index: 4)
         var headDimVar = headDim
@@ -82,17 +88,18 @@ final class FusedQKVEpilogue {
         var rotatedVar = rotatedPairs
         var epsVar = eps
         enc.setBytes(&headDimVar, length: MemoryLayout<UInt32>.size, index: 5)
-        enc.setBytes(&numQVar,    length: MemoryLayout<UInt32>.size, index: 6)
-        enc.setBytes(&numKVVar,   length: MemoryLayout<UInt32>.size, index: 7)
-        enc.setBytes(&posVar,     length: MemoryLayout<UInt32>.size, index: 8)
-        enc.setBytes(&thetaVar,   length: MemoryLayout<Float>.size,  index: 9)
+        enc.setBytes(&numQVar, length: MemoryLayout<UInt32>.size, index: 6)
+        enc.setBytes(&numKVVar, length: MemoryLayout<UInt32>.size, index: 7)
+        enc.setBytes(&posVar, length: MemoryLayout<UInt32>.size, index: 8)
+        enc.setBytes(&thetaVar, length: MemoryLayout<Float>.size, index: 9)
         enc.setBytes(&rotatedVar, length: MemoryLayout<UInt32>.size, index: 10)
-        enc.setBytes(&epsVar,     length: MemoryLayout<Float>.size,  index: 11)
+        enc.setBytes(&epsVar, length: MemoryLayout<Float>.size, index: 11)
 
         let threads = min(Int(pso.maxTotalThreadsPerThreadgroup), 256)
         let groups = Int(numQHeads + 2 * numKVHeads)
-        enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
-                                 threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
+        enc.dispatchThreadgroups(
+            MTLSize(width: groups, height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
         enc.endEncoding()
     }
 }

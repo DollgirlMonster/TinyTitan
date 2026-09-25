@@ -22,14 +22,16 @@ public struct ContextRequest: Sendable {
     public let focus: String?
     public let now: Date
 
-    public init(task: ContinuityTask,
-                sessionID: UUID? = nil,
-                items: [MemoryItem],
-                index: [String: MemoryItem] = [:],
-                turns: [SessionTurn] = [],
-                budget: ContextBudget = ContextBudget(),
-                focus: String? = nil,
-                now: Date = Date()) {
+    public init(
+        task: ContinuityTask,
+        sessionID: UUID? = nil,
+        items: [MemoryItem],
+        index: [String: MemoryItem] = [:],
+        turns: [SessionTurn] = [],
+        budget: ContextBudget = ContextBudget(),
+        focus: String? = nil,
+        now: Date = Date()
+    ) {
         self.task = task
         self.sessionID = sessionID
         self.items = items
@@ -85,9 +87,11 @@ public struct DefaultContextAssembler: ContextAssembler {
         // capped, so taking it up front cannot starve the state below.
         var turnBlock: String?
         if budget.recentTurnCount > 0, !request.turns.isEmpty {
-            let (text, cost) = renderTurns(request.turns, budget: budget,
-                                           allowance: min(budget.turnTokenAllowance,
-                                                          max(0, remaining)))
+            let (text, cost) = renderTurns(
+                request.turns, budget: budget,
+                allowance: min(
+                    budget.turnTokenAllowance,
+                    max(0, remaining)))
             if let text {
                 turnBlock = text
                 remaining -= cost
@@ -103,9 +107,11 @@ public struct DefaultContextAssembler: ContextAssembler {
             guard !selectedAddresses.contains(item.address) else { continue }
             var group = [item]
             if budget.includesDependencies {
-                group.append(contentsOf: resolveDependencies(of: item,
-                                                             index: request.index,
-                                                             excluding: selectedAddresses))
+                group.append(
+                    contentsOf: resolveDependencies(
+                        of: item,
+                        index: request.index,
+                        excluding: selectedAddresses))
             }
             let cost = group.reduce(0) { $0 + $1.estimatedTokens }
             guard cost <= remaining else {
@@ -130,22 +136,25 @@ public struct DefaultContextAssembler: ContextAssembler {
         var versions: [String: Int] = [:]
         for item in selected { versions[item.address] = item.version }
 
-        return ContextSnapshot(taskID: request.task.id,
-                               sessionID: request.sessionID,
-                               createdAt: request.now,
-                               memoryItemIDs: selected.map(\.id),
-                               memoryVersions: versions,
-                               droppedItemIDs: dropped.map(\.id),
-                               renderedContext: rendered,
-                               estimatedTokenCount: Self.estimateTokens(rendered),
-                               budget: ContextBudgetRecord(budget))
+        return ContextSnapshot(
+            taskID: request.task.id,
+            sessionID: request.sessionID,
+            createdAt: request.now,
+            memoryItemIDs: selected.map(\.id),
+            memoryVersions: versions,
+            droppedItemIDs: dropped.map(\.id),
+            renderedContext: rendered,
+            estimatedTokenCount: Self.estimateTokens(rendered),
+            budget: ContextBudgetRecord(budget))
     }
 
     // MARK: - Ranking
 
-    private func rank(_ items: [MemoryItem],
-                      budget: ContextBudget,
-                      focus: String?) -> [MemoryItem] {
+    private func rank(
+        _ items: [MemoryItem],
+        budget: ContextBudget,
+        focus: String?
+    ) -> [MemoryItem] {
         let terms = Self.terms(in: focus)
         return items.sorted { lhs, rhs in
             let leftPriority = budget.priority(of: lhs.namespace)
@@ -189,9 +198,11 @@ public struct DefaultContextAssembler: ContextAssembler {
         return Set(words.prefix(32))
     }
 
-    private func resolveDependencies(of item: MemoryItem,
-                                     index: [String: MemoryItem],
-                                     excluding: Set<String>) -> [MemoryItem] {
+    private func resolveDependencies(
+        of item: MemoryItem,
+        index: [String: MemoryItem],
+        excluding: Set<String>
+    ) -> [MemoryItem] {
         var seen = excluding
         seen.insert(item.address)
         var out: [MemoryItem] = []
@@ -203,7 +214,8 @@ public struct DefaultContextAssembler: ContextAssembler {
                 for address in current.dependencies where !seen.contains(address) {
                     seen.insert(address)
                     guard let resolved = index[address],
-                          resolved.status.isEligibleForContext else { continue }
+                        resolved.status.isEligibleForContext
+                    else { continue }
                     out.append(resolved)
                     next.append(resolved)
                 }
@@ -230,9 +242,11 @@ public struct DefaultContextAssembler: ContextAssembler {
         return lines.joined(separator: "\n")
     }
 
-    private func renderTurns(_ turns: [SessionTurn],
-                             budget: ContextBudget,
-                             allowance: Int) -> (String?, Int) {
+    private func renderTurns(
+        _ turns: [SessionTurn],
+        budget: ContextBudget,
+        allowance: Int
+    ) -> (String?, Int) {
         guard allowance > 0 else { return (nil, 0) }
         var chosen: [String] = []
         var cost = Self.estimateTokens("## Recent activity")
@@ -244,8 +258,9 @@ public struct DefaultContextAssembler: ContextAssembler {
             // being too big. One long exchange would otherwise take the whole
             // allowance with it and leave no recent activity at all, which is
             // the opposite of what a cap is for.
-            let fieldLimit = min(budget.maxTurnCharacters,
-                                 max(1, (available * 4) / 2 - 24))
+            let fieldLimit = min(
+                budget.maxTurnCharacters,
+                max(1, (available * 4) / 2 - 24))
             var block = "- asked: \(truncate(flatten(turn.prompt), to: fieldLimit))"
             if let response = turn.response {
                 block += "\n  replied: \(truncate(flatten(response), to: fieldLimit))"

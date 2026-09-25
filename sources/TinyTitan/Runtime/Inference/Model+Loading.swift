@@ -7,9 +7,9 @@
 //  shape and the code that loads it are separate reads.
 //
 
+import Darwin
 import Foundation
 import Metal
-import Darwin
 import TinyTitanFormat
 
 extension Model {
@@ -22,13 +22,15 @@ extension Model {
     /// share a descriptor, sizes and timing stats. Extracting any of them
     /// needs six or seven parameters, trading one readable sequence for
     /// several functions with unwieldy signatures.
-    public static func load(directoryURL: URL,
-                            device: MTLDevice,
-                            expecting: ArchConfig = .qwen36_35B_A3B,
-                            streamingMode: ExpertStreamingMode = .pread(slotCount: 32),
-                            expertCachePolicy: ExpertCachePolicy = PreadExpertStreamer.cachePolicyDefault,
-                            integrityPolicy: ModelIntegrityPolicy? = nil,
-                            loadStats: UnsafeMutablePointer<ModelLoadStats>? = nil) throws -> Model {
+    public static func load(
+        directoryURL: URL,
+        device: MTLDevice,
+        expecting: ArchConfig = .qwen36_35B_A3B,
+        streamingMode: ExpertStreamingMode = .pread(slotCount: 32),
+        expertCachePolicy: ExpertCachePolicy = PreadExpertStreamer.cachePolicyDefault,
+        integrityPolicy: ModelIntegrityPolicy? = nil,
+        loadStats: UnsafeMutablePointer<ModelLoadStats>? = nil
+    ) throws -> Model {
         var stats = ModelLoadStats()
         defer {
             loadStats?.pointee = stats
@@ -74,7 +76,8 @@ extension Model {
                     loadedReceipt,
                     directoryURL: directoryURL,
                     manifestSha256: manifestSha)
-                stats.receiptValidationNanos &+= clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - receiptStart
+                stats.receiptValidationNanos &+=
+                    clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - receiptStart
                 receipt = loadedReceipt
                 trustedReceiptUsable = true
             } catch {
@@ -83,7 +86,8 @@ extension Model {
                 // full re-hash would mask tampering or a moved directory and
                 // defeat the policy's purpose.
                 if let receiptError = error as? ModelError,
-                   case .trustedReceiptInvalid = receiptError {
+                    case .trustedReceiptInvalid = receiptError
+                {
                     throw receiptError
                 }
                 throw ModelError.trustedReceiptInvalid(
@@ -97,11 +101,12 @@ extension Model {
             data: manifestData, expecting: expecting)
         if let receipt {
             let receiptStart = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-            try VerifiedInstallReceiptReader.validate(receipt,
-                                                      directoryURL: directoryURL,
-                                                      manifest: manifest,
-                                                      manifestSha256: manifestSha,
-                                                      manifestSize: manifestSize)
+            try VerifiedInstallReceiptReader.validate(
+                receipt,
+                directoryURL: directoryURL,
+                manifest: manifest,
+                manifestSha256: manifestSha,
+                manifestSize: manifestSize)
             stats.receiptValidationNanos &+= clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - receiptStart
         }
 
@@ -149,11 +154,14 @@ extension Model {
         // back to the full hash here.
         if resolvedIntegrityPolicy == .fullSha256 || !trustedReceiptUsable {
             let eagerShaStart = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-            try Sha256Verifier.verifyFile(fileDescriptor: weightsFD,
-                                          named: "model_weights.bin",
-                                          expectedHex: weightsEntry.sha256)
-            guard Sha256Verifier.hashData(layoutData).lowercased()
-                    == layoutEntry.sha256.lowercased() else {
+            try Sha256Verifier.verifyFile(
+                fileDescriptor: weightsFD,
+                named: "model_weights.bin",
+                expectedHex: weightsEntry.sha256)
+            guard
+                Sha256Verifier.hashData(layoutData).lowercased()
+                    == layoutEntry.sha256.lowercased()
+            else {
                 throw ModelError.checksumMismatch(file: "packed_experts/layout.json")
             }
             stats.eagerSha256Nanos = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - eagerShaStart
@@ -162,34 +170,38 @@ extension Model {
         }
 
         // -- decode layout from TinyTitanFormat wire codec
-        let layout = try PackedExpertsLayoutReader.decode(data: layoutData,
-                                                          manifest: manifest)
+        let layout = try PackedExpertsLayoutReader.decode(
+            data: layoutData,
+            manifest: manifest)
         if trustedReceiptUsable {
             let receiptStart = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-            try validateTrustedReceiptLayerLayout(modelDirectory: modelDirectory,
-                                                  manifest: manifest,
-                                                  layout: layout)
+            try validateTrustedReceiptLayerLayout(
+                modelDirectory: modelDirectory,
+                manifest: manifest,
+                layout: layout)
             stats.receiptValidationNanos &+= clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - receiptStart
         }
 
         // -- load resident index using the FD passed from openFile()
         let residentIndex = try ResidentIndexReader.load(
             fileDescriptor: weightsFD, displayPath: "model_weights.bin")
-        try validateRuntimeSchema(residentIndex: residentIndex,
-                                  layout: layout,
-                                  manifest: manifest,
-                                  config: expecting)
+        try validateRuntimeSchema(
+            residentIndex: residentIndex,
+            layout: layout,
+            manifest: manifest,
+            config: expecting)
 
         // The resident index must account for the complete weights file.
         let fileSize = weightsSize
         let (expectedSize, overflow) = residentIndex.header.indexSize
             .addingReportingOverflow(residentIndex.header.residentSize)
         if overflow || fileSize != expectedSize {
-            throw ModelError.indexCorrupt(detail: """
-                model_weights.bin size \(fileSize) != indexSize \
-                \(residentIndex.header.indexSize) + residentSize \
-                \(residentIndex.header.residentSize) = \(expectedSize)
-                """)
+            throw ModelError.indexCorrupt(
+                detail: """
+                    model_weights.bin size \(fileSize) != indexSize \
+                    \(residentIndex.header.indexSize) + residentSize \
+                    \(residentIndex.header.residentSize) = \(expectedSize)
+                    """)
         }
 
         // -- create resident buffer, reusing the opened FD
@@ -296,7 +308,8 @@ extension Model {
         }
         // A model with no routed experts never dispatches the MoE kernels, so
         // only the Gated-DeltaNet tile bounds it -- and that tile is wider.
-        let tileWidth = config.numExperts == 0
+        let tileWidth =
+            config.numExperts == 0
             ? Self.maximumDenseThreadgroupTileWidth
             : Self.maximumThreadgroupTileWidth
         guard config.hiddenSize <= tileWidth else {
@@ -321,7 +334,8 @@ extension Model {
                     + "split-KV scratch the attention kernels are built with")
         }
         guard config.fullHeadDim <= Attention.maxHeadDim,
-              config.headDim <= Attention.maxHeadDim else {
+            config.headDim <= Attention.maxHeadDim
+        else {
             throw ModelError.unsupportedArchitecture(
                 detail: "head dimension \(max(config.fullHeadDim, config.headDim)) exceeds "
                     + "the \(Attention.maxHeadDim)-element attention threadgroup tile")
@@ -329,10 +343,12 @@ extension Model {
 
     }
 
-    static func validateRuntimeSchema(residentIndex: ResidentIndex,
-                                      layout: PackedExpertsLayout,
-                                      manifest: Manifest,
-                                      config: ArchConfig) throws {
+    static func validateRuntimeSchema(
+        residentIndex: ResidentIndex,
+        layout: PackedExpertsLayout,
+        manifest: Manifest,
+        config: ArchConfig
+    ) throws {
         guard let quant = manifest.quant else {
             throw ModelError.indexCorrupt(
                 detail: "manifest.quant is required by the executable runtime schema")
@@ -351,22 +367,25 @@ extension Model {
 
         switch config.family {
         case .qwen35Dense:
-            try Self.validateDenseSchema(checks: checks, config: config,
-                                         quant: quant, overrides: manifest.quantOverrides)
+            try Self.validateDenseSchema(
+                checks: checks, config: config,
+                quant: quant, overrides: manifest.quantOverrides)
         case .qwen38flash:
             // Embedding and head are 8-bit in this checkpoint while the body
             // is 4-bit, so both are validated against the embedding slot the
             // manifest declares rather than an assumed width.
-            try checks.requireAffine("model.language_model.embed_tokens.weight",
-                                     rows: config.vocabSize,
-                                     columns: config.hiddenSize,
-                                     slot: quant.embedding)
+            try checks.requireAffine(
+                "model.language_model.embed_tokens.weight",
+                rows: config.vocabSize,
+                columns: config.hiddenSize,
+                slot: quant.embedding)
             // `lm_head` sits at the archive root in this family, not under the
             // language-model prefix.
-            try checks.requireAffine("lm_head.weight",
-                                     rows: config.vocabSize,
-                                     columns: config.hiddenSize,
-                                     slot: quant.embedding)
+            try checks.requireAffine(
+                "lm_head.weight",
+                rows: config.vocabSize,
+                columns: config.hiddenSize,
+                slot: quant.embedding)
             // The hyper-connection residual is the family's defining feature
             // and the one thing whose absence would let a mis-repacked payload
             // load and then compute a plain-residual model. Check the
@@ -396,29 +415,32 @@ extension Model {
                     name: Qwen38FlashTensors.pleConstantsFile)
             }
         case .qwen38flashMTP:
-            try Self.validateQwen38DraftSchema(checks: checks, quant: quant,
-                                               config: config)
+            try Self.validateQwen38DraftSchema(
+                checks: checks, quant: quant,
+                config: config)
         case .qwen36:
             try checks.requireAffine(
-                                     "language_model.model.embed_tokens.weight",
-                                     rows: config.vocabSize,
-                                     columns: config.hiddenSize,
-                                     slot: quant.embedding)
+                "language_model.model.embed_tokens.weight",
+                rows: config.vocabSize,
+                columns: config.hiddenSize,
+                slot: quant.embedding)
             // The untied lm_head is quantized with the embedding slot layout
             // (padded to the same vocab rows). `Model.lmHeadWeightBits` falls
             // back to that slot, so the coupling is validated here — the
             // fallback is only reachable when this check already passed.
-            try checks.requireAffine("language_model.lm_head.weight",
-                                     rows: config.vocabSize,
-                                     columns: config.hiddenSize,
-                                     slot: quant.embedding)
+            try checks.requireAffine(
+                "language_model.lm_head.weight",
+                rows: config.vocabSize,
+                columns: config.hiddenSize,
+                slot: quant.embedding)
         case .qwen36MTP:
             // The MTP sidecar shares the target's embedding and lm_head; it
             // carries only the 2D->D projection and its two input norms.
-            try checks.requireAffine("fc.weight",
-                                     rows: config.hiddenSize,
-                                     columns: 2 * config.hiddenSize,
-                                     slot: quant.attention)
+            try checks.requireAffine(
+                "fc.weight",
+                rows: config.hiddenSize,
+                columns: 2 * config.hiddenSize,
+                slot: quant.attention)
             try checks.requireBF16("pre_fc_norm_embedding.weight", count: config.hiddenSize)
             try checks.requireBF16("pre_fc_norm_hidden.weight", count: config.hiddenSize)
         }
@@ -432,8 +454,9 @@ extension Model {
                 ? config.hiddenSize * config.hyperConnections.count
                 : config.hiddenSize)
 
-        try validateLayerSchema(checks: checks, layout: layout, config: config,
-                                quant: quant, overrides: manifest.quantOverrides)
+        try validateLayerSchema(
+            checks: checks, layout: layout, config: config,
+            quant: quant, overrides: manifest.quantOverrides)
 
     }
 
@@ -462,13 +485,16 @@ extension Model {
     /// carries an explicit `in_proj_a` at the slot's 4 bits describes the width
     /// the kernel already uses; refusing it broke a `qwen38flash` install
     /// (issue #16) on load, before any weight was read.
-    static func validateRoleUniformity(overrides: [String: Int],
-                                       family: ModelFamily,
-                                       attentionBits: Int) throws {
+    static func validateRoleUniformity(
+        overrides: [String: Int],
+        family: ModelFamily,
+        attentionBits: Int
+    ) throws {
         guard !overrides.isEmpty else { return }
         for (stem, bits) in overrides.sorted(by: { $0.key < $1.key })
         where stem.hasSuffix(".linear_attn.in_proj_a")
-            || stem.hasSuffix(".linear_attn.in_proj_b") {
+            || stem.hasSuffix(".linear_attn.in_proj_b")
+        {
             guard bits == 16 || bits == attentionBits else {
                 throw ModelError.unsupportedArchitecture(
                     detail: "\(family.rawValue) declares \(stem) at \(bits) bits; the GDN "
@@ -483,17 +509,32 @@ extension Model {
             ("qo", [".self_attn.q_proj", ".self_attn.o_proj"]),
             ("kv", [".self_attn.k_proj", ".self_attn.v_proj"]),
             ("ffn", [".mlp.gate_proj", ".mlp.up_proj", ".mlp.down_proj"]),
-            ("gdn", [".linear_attn.in_proj_qkv", ".linear_attn.in_proj_z",
-                     ".linear_attn.out_proj"]),
+            (
+                "gdn",
+                [
+                    ".linear_attn.in_proj_qkv", ".linear_attn.in_proj_z",
+                    ".linear_attn.out_proj",
+                ]
+            ),
             // The three families whose weights read the attention slot until a
             // manifest overrides them. Each is one kernel instance for the
             // whole model, so a manifest that promoted one layer's gate and not
             // the next would read half of them at the wrong width.
-            ("hyperGate", [".attn_hyper_connection.block_inject_weight",
-                           ".mlp_hyper_connection.block_inject_weight"]),
+            (
+                "hyperGate",
+                [
+                    ".attn_hyper_connection.block_inject_weight",
+                    ".mlp_hyper_connection.block_inject_weight",
+                ]
+            ),
             ("pleKey", [".ple.key_proj"]),
-            ("qsaIndexer", [".self_attn.indexer.index_q_proj",
-                            ".self_attn.indexer.index_k_proj"]),
+            (
+                "qsaIndexer",
+                [
+                    ".self_attn.indexer.index_q_proj",
+                    ".self_attn.indexer.index_k_proj",
+                ]
+            ),
             ("head", [".lm_head"]),
         ]
         for role in roles {
@@ -528,15 +569,17 @@ extension Model {
         let dense = TensorSchema.schema(for: .qwen35Dense)
         try checks.requireAffine(
             dense.embedding, rows: config.vocabSize, columns: config.hiddenSize,
-            slot: quant.slot(forTensorNamed: dense.embedding,
-                             overrides: overrides, fallback: quant.embedding))
+            slot: quant.slot(
+                forTensorNamed: dense.embedding,
+                overrides: overrides, fallback: quant.embedding))
         if !config.tieWordEmbeddings {
             // The 9B. The 2B and 4B tie the embedding and ship no head tensor
             // at all, so requiring one there would refuse a correct install.
             try checks.requireAffine(
                 dense.lmHead, rows: config.vocabSize, columns: config.hiddenSize,
-                slot: quant.slot(forTensorNamed: dense.lmHead,
-                                 overrides: overrides, fallback: quant.embedding))
+                slot: quant.slot(
+                    forTensorNamed: dense.lmHead,
+                    overrides: overrides, fallback: quant.embedding))
         }
     }
 
@@ -555,18 +598,22 @@ extension Model {
         // [query; gate] q_proj, and gated-DeltaNet layers carry the
         // linear_attn bundle. The Qwen checkpoints keep no auxiliary
         // sandwich/scale tensors.
-        try validateFamilyQuantSupport(config: config, quant: quant,
-                                       overrides: overrides)
-        try validateRoleUniformity(overrides: overrides, family: config.family,
-                                   attentionBits: quant.attention.weightBits)
-        try validateLayerTensors(checks: checks, config: config, quant: quant,
-                                 overrides: overrides)
+        try validateFamilyQuantSupport(
+            config: config, quant: quant,
+            overrides: overrides)
+        try validateRoleUniformity(
+            overrides: overrides, family: config.family,
+            attentionBits: quant.attention.weightBits)
+        try validateLayerTensors(
+            checks: checks, config: config, quant: quant,
+            overrides: overrides)
         // A dense install packs no experts at all (`expertsPerLayer: 0` and an
         // empty layout), so the routed cross-check has nothing to cross-check
         // and would divide by zero experts.
         if config.numExperts > 0 {
-            try validateRoutedExpertLayout(checks: checks, layout: layout,
-                                           config: config, quant: quant)
+            try validateRoutedExpertLayout(
+                checks: checks, layout: layout,
+                config: config, quant: quant)
         }
     }
 
@@ -599,7 +646,8 @@ extension Model {
             ("QSA-indexer", ".self_attn.indexer.index_q_proj"),
         ]
         for family in families {
-            let declared = overrides.first { $0.key.hasSuffix(family.suffix) }?.value
+            let declared =
+                overrides.first { $0.key.hasSuffix(family.suffix) }?.value
                 ?? quant.attention.weightBits
             guard [4, 8].contains(declared) else {
                 throw ModelError.unsupportedArchitecture(
@@ -625,39 +673,46 @@ extension Model {
         // what the schema's shared-expert roles name, and the routed half of
         // the layer does not exist.
         let denseFFN = config.numExperts == 0
-        let blockNormWidth = config.hyperConnections.enabled
+        let blockNormWidth =
+            config.hyperConnections.enabled
             ? config.hiddenSize * config.hyperConnections.count
             : config.hiddenSize
         for layer in 0..<config.numLayers {
             try checks.requireBF16(schema.inputNorm(layer), count: blockNormWidth)
             try checks.requireBF16(schema.postAttnNorm(layer), count: blockNormWidth)
             if !denseFFN {
-                try checks.requireAffineOrBF16(schema.router(layer),
-                                         rows: config.numExperts, columns: config.hiddenSize,
-                                         slot: quant.router)
+                try checks.requireAffineOrBF16(
+                    schema.router(layer),
+                    rows: config.numExperts, columns: config.hiddenSize,
+                    slot: quant.router)
                 // The shared-expert scalar gate is quantized at the ROUTER's bit
                 // width (8-bit on the target checkpoint, 4-bit on the MTP
                 // sidecar), independent of the sharedExpert slot.
-                try checks.requireAffineOrBF16(schema.sharedExpertScalarGate(layer),
-                                         rows: 1, columns: config.hiddenSize,
-                                         slot: quant.router)
+                try checks.requireAffineOrBF16(
+                    schema.sharedExpertScalarGate(layer),
+                    rows: 1, columns: config.hiddenSize,
+                    slot: quant.router)
             }
             // Each projection resolves its own width: a dense install declares
             // `mlp.*` per tensor (4-bit) while the sharedExpert slot says 8, and
             // reading the slot there is a silently wrong model, not an error.
             func ffnSlot(_ name: String) -> ManifestQuantSlot {
-                quant.slot(forTensorNamed: name, overrides: overrides,
-                           fallback: quant.sharedExpert)
+                quant.slot(
+                    forTensorNamed: name, overrides: overrides,
+                    fallback: quant.sharedExpert)
             }
-            try checks.requireAffine(schema.sharedExpertGate(layer),
-                                     rows: config.intermediateSize, columns: config.hiddenSize,
-                                     slot: ffnSlot(schema.sharedExpertGate(layer)))
-            try checks.requireAffine(schema.sharedExpertUp(layer),
-                                     rows: config.intermediateSize, columns: config.hiddenSize,
-                                     slot: ffnSlot(schema.sharedExpertUp(layer)))
-            try checks.requireAffine(schema.sharedExpertDown(layer),
-                                     rows: config.hiddenSize, columns: config.intermediateSize,
-                                     slot: ffnSlot(schema.sharedExpertDown(layer)))
+            try checks.requireAffine(
+                schema.sharedExpertGate(layer),
+                rows: config.intermediateSize, columns: config.hiddenSize,
+                slot: ffnSlot(schema.sharedExpertGate(layer)))
+            try checks.requireAffine(
+                schema.sharedExpertUp(layer),
+                rows: config.intermediateSize, columns: config.hiddenSize,
+                slot: ffnSlot(schema.sharedExpertUp(layer)))
+            try checks.requireAffine(
+                schema.sharedExpertDown(layer),
+                rows: config.hiddenSize, columns: config.intermediateSize,
+                slot: ffnSlot(schema.sharedExpertDown(layer)))
 
             // Each projection resolves its own width: a dense install keeps
             // k/v at 8 bits while the attention slot says 4, and validating
@@ -674,46 +729,59 @@ extension Model {
                 let kvDimension = try checks.checkedIntMultiply(
                     config.numFullKVHeads, config.fullHeadDim,
                     field: "layer \(layer) key/value")
-                try checks.requireBF16(schema.qNorm(layer),
-                                       count: config.fullHeadDim)
-                try checks.requireBF16(schema.kNorm(layer),
-                                       count: config.fullHeadDim)
-                try checks.requireAffine(schema.qProj(layer),
-                                         rows: queryDimension, columns: config.hiddenSize,
-                                         slot: roleSlot(schema.qProj(layer), quant.attention))
-                try checks.requireAffine(schema.kProj(layer),
-                                         rows: kvDimension, columns: config.hiddenSize,
-                                         slot: roleSlot(schema.kProj(layer), quant.attention))
-                try checks.requireAffine(schema.vProj(layer),
-                                         rows: kvDimension, columns: config.hiddenSize,
-                                         slot: roleSlot(schema.vProj(layer), quant.attention))
-                try checks.requireAffine(schema.oProj(layer),
-                                         rows: config.hiddenSize,
-                                         columns: config.numHeads * config.fullHeadDim,
-                                         slot: roleSlot(schema.oProj(layer), quant.attention))
+                try checks.requireBF16(
+                    schema.qNorm(layer),
+                    count: config.fullHeadDim)
+                try checks.requireBF16(
+                    schema.kNorm(layer),
+                    count: config.fullHeadDim)
+                try checks.requireAffine(
+                    schema.qProj(layer),
+                    rows: queryDimension, columns: config.hiddenSize,
+                    slot: roleSlot(schema.qProj(layer), quant.attention))
+                try checks.requireAffine(
+                    schema.kProj(layer),
+                    rows: kvDimension, columns: config.hiddenSize,
+                    slot: roleSlot(schema.kProj(layer), quant.attention))
+                try checks.requireAffine(
+                    schema.vProj(layer),
+                    rows: kvDimension, columns: config.hiddenSize,
+                    slot: roleSlot(schema.vProj(layer), quant.attention))
+                try checks.requireAffine(
+                    schema.oProj(layer),
+                    rows: config.hiddenSize,
+                    columns: config.numHeads * config.fullHeadDim,
+                    slot: roleSlot(schema.oProj(layer), quant.attention))
             } else if config.layerIsLinear(layer) {
                 let la = config.linearAttention
-                try checks.requireAffine(schema.gdnQKV(layer),
-                                         rows: la.qkvDim, columns: config.hiddenSize,
-                                         slot: roleSlot(schema.gdnQKV(layer), quant.attention))
-                try checks.requireAffine(schema.gdnZ(layer),
-                                         rows: la.valueDim, columns: config.hiddenSize,
-                                         slot: roleSlot(schema.gdnZ(layer), quant.attention))
-                try checks.requireAffineOrBF16(schema.gdnA(layer),
-                                         rows: la.numVHeads, columns: config.hiddenSize,
-                                         slot: quant.attention)
-                try checks.requireAffineOrBF16(schema.gdnB(layer),
-                                         rows: la.numVHeads, columns: config.hiddenSize,
-                                         slot: quant.attention)
-                try checks.requireAffine(schema.gdnOut(layer),
-                                         rows: config.hiddenSize, columns: la.valueDim,
-                                         slot: roleSlot(schema.gdnOut(layer), quant.attention))
-                try checks.requireBF16(schema.gdnConv(layer),
-                                       count: la.qkvDim * la.convKernelSize)
+                try checks.requireAffine(
+                    schema.gdnQKV(layer),
+                    rows: la.qkvDim, columns: config.hiddenSize,
+                    slot: roleSlot(schema.gdnQKV(layer), quant.attention))
+                try checks.requireAffine(
+                    schema.gdnZ(layer),
+                    rows: la.valueDim, columns: config.hiddenSize,
+                    slot: roleSlot(schema.gdnZ(layer), quant.attention))
+                try checks.requireAffineOrBF16(
+                    schema.gdnA(layer),
+                    rows: la.numVHeads, columns: config.hiddenSize,
+                    slot: quant.attention)
+                try checks.requireAffineOrBF16(
+                    schema.gdnB(layer),
+                    rows: la.numVHeads, columns: config.hiddenSize,
+                    slot: quant.attention)
+                try checks.requireAffine(
+                    schema.gdnOut(layer),
+                    rows: config.hiddenSize, columns: la.valueDim,
+                    slot: roleSlot(schema.gdnOut(layer), quant.attention))
+                try checks.requireBF16(
+                    schema.gdnConv(layer),
+                    count: la.qkvDim * la.convKernelSize)
                 try checks.requireBF16OrFP32(schema.gdnALog(layer), count: la.numVHeads)
                 try checks.requireBF16OrFP32(schema.gdnDtBias(layer), count: la.numVHeads)
-                try checks.requireBF16OrFP32(schema.gdnNorm(layer),
-                                       count: la.valueHeadDim)
+                try checks.requireBF16OrFP32(
+                    schema.gdnNorm(layer),
+                    count: la.valueHeadDim)
             }
         }
 
@@ -742,15 +810,21 @@ extension Model {
                     slot: quant.routedExpert,
                     field: "routed layer \(layer.layer) \(role)")
                 let expectedRoles: [(String, String, [UInt32], Int?, UInt64, UInt64)] = [
-                    (role, "U32", [sizes.shape.0, sizes.shape.1],
-                     quant.routedExpert.weightBits, sizes.weight,
-                     UInt64(MemoryLayout<UInt32>.alignment)),
-                    ("\(role)_scales", "BF16",
-                     [sizes.shape.0, UInt32(columns / quant.routedExpert.groupSize)],
-                     nil, sizes.aux, UInt64(MemoryLayout<UInt16>.alignment)),
-                    ("\(role)_biases", "BF16",
-                     [sizes.shape.0, UInt32(columns / quant.routedExpert.groupSize)],
-                     nil, sizes.aux, UInt64(MemoryLayout<UInt16>.alignment)),
+                    (
+                        role, "U32", [sizes.shape.0, sizes.shape.1],
+                        quant.routedExpert.weightBits, sizes.weight,
+                        UInt64(MemoryLayout<UInt32>.alignment)
+                    ),
+                    (
+                        "\(role)_scales", "BF16",
+                        [sizes.shape.0, UInt32(columns / quant.routedExpert.groupSize)],
+                        nil, sizes.aux, UInt64(MemoryLayout<UInt16>.alignment)
+                    ),
+                    (
+                        "\(role)_biases", "BF16",
+                        [sizes.shape.0, UInt32(columns / quant.routedExpert.groupSize)],
+                        nil, sizes.aux, UInt64(MemoryLayout<UInt16>.alignment)
+                    ),
                 ]
                 for (name, dtype, shape, bits, size, alignment) in expectedRoles {
                     guard let expected = reference.subTensors[name] else {
@@ -759,20 +833,25 @@ extension Model {
                     }
                     let (end, overflow) = expected.offset.addingReportingOverflow(expected.size)
                     guard expected.dtype == dtype,
-                          expected.shape == shape,
-                          expected.bits == bits,
-                          expected.size == size,
-                          expected.offset % alignment == 0,
-                          !overflow,
-                          end <= reference.size,
-                          end <= UInt64(UInt32.max) + 1 else {
+                        expected.shape == shape,
+                        expected.bits == bits,
+                        expected.size == size,
+                        expected.offset % alignment == 0,
+                        !overflow,
+                        end <= reference.size,
+                        end <= UInt64(UInt32.max) + 1
+                    else {
                         throw ModelError.indexCorrupt(
-                            detail: "routed layer \(layer.layer) role \(name) does not match the required schema")
+                            detail:
+                                "routed layer \(layer.layer) role \(name) does not match the required schema"
+                        )
                     }
                     for expert in layer.experts.dropFirst()
-                        where expert.subTensors[name] != expected {
+                    where expert.subTensors[name] != expected {
                         throw ModelError.indexCorrupt(
-                            detail: "routed layer \(layer.layer) role \(name) metadata differs across experts")
+                            detail:
+                                "routed layer \(layer.layer) role \(name) metadata differs across experts"
+                        )
                     }
                 }
             }

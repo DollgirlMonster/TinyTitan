@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import Synchronization
 import Testing
+
 @testable import TinyTitanRepackCore
 
 @Suite struct InstallLockTests {

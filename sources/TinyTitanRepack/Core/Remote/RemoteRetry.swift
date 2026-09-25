@@ -6,10 +6,12 @@ public struct RemoteRetryPolicy: Sendable {
     public var maxDelayNs: UInt64
     public var maxServerDelayNs: UInt64
 
-    public init(attempts: Int = 4,
-                baseDelayNs: UInt64 = 1_000_000_000,
-                maxDelayNs: UInt64 = 16_000_000_000,
-                maxServerDelayNs: UInt64 = 60 * 60 * 1_000_000_000) {
+    public init(
+        attempts: Int = 4,
+        baseDelayNs: UInt64 = 1_000_000_000,
+        maxDelayNs: UInt64 = 16_000_000_000,
+        maxServerDelayNs: UInt64 = 60 * 60 * 1_000_000_000
+    ) {
         self.attempts = attempts
         self.baseDelayNs = baseDelayNs
         self.maxDelayNs = maxDelayNs
@@ -26,8 +28,8 @@ public struct RemoteRetryPolicy: Sendable {
             // URLError.cancelled therefore means the session aborted the task
             // on its own (teardown, resource limits), which is transient.
             case .timedOut, .networkConnectionLost, .cannotConnectToHost,
-                 .dnsLookupFailed, .notConnectedToInternet, .resourceUnavailable,
-                 .cancelled:
+                .dnsLookupFailed, .notConnectedToInternet, .resourceUnavailable,
+                .cancelled:
                 return true
             default:
                 return false
@@ -45,9 +47,11 @@ public struct RemoteRetryPolicy: Sendable {
         return false
     }
 
-    public func retryDelayNs(error: Error,
-                             localDelayNs: UInt64,
-                             now: Date = Date()) throws -> UInt64 {
+    public func retryDelayNs(
+        error: Error,
+        localDelayNs: UInt64,
+        now: Date = Date()
+    ) throws -> UInt64 {
         let raw: String?
         if case RepackError.remoteHTTPResponse(_, _, let retryAfter) = error {
             raw = retryAfter
@@ -68,17 +72,19 @@ public struct RemoteRetryPolicy: Sendable {
 public typealias RemoteRetrySleeper = @Sendable (UInt64) async throws -> Void
 public typealias RemoteRetryJitter = @Sendable () -> UInt64
 
-public func withRemoteRetries<T>(_ policy: RemoteRetryPolicy,
-                                 label: String,
-                                 audit: RepackAudit?,
-                                 now: @Sendable () -> Date = Date.init,
-                                 jitter: @escaping RemoteRetryJitter = {
-                                     UInt64.random(in: 0..<250_000_000)
-                                 },
-                                 sleeper: @escaping RemoteRetrySleeper = {
-                                     try await Task.sleep(nanoseconds: $0)
-                                 },
-                                 op: () async throws -> T) async throws -> T {
+public func withRemoteRetries<T>(
+    _ policy: RemoteRetryPolicy,
+    label: String,
+    audit: RepackAudit?,
+    now: @Sendable () -> Date = Date.init,
+    jitter: @escaping RemoteRetryJitter = {
+        UInt64.random(in: 0..<250_000_000)
+    },
+    sleeper: @escaping RemoteRetrySleeper = {
+        try await Task.sleep(nanoseconds: $0)
+    },
+    op: () async throws -> T
+) async throws -> T {
     let attempts = max(policy.attempts, 1)
     var delay = policy.baseDelayNs
     var lastError: Error?
@@ -89,7 +95,8 @@ public func withRemoteRetries<T>(_ policy: RemoteRetryPolicy,
         } catch {
             lastError = error
             guard attempt < attempts,
-                  RemoteRetryPolicy.isRetryable(error) else {
+                RemoteRetryPolicy.isRetryable(error)
+            else {
                 throw error
             }
             let localDelay = delay == 0 ? 0 : saturatingAdd(delay, jitter())
@@ -105,11 +112,13 @@ public func withRemoteRetries<T>(_ policy: RemoteRetryPolicy,
                 try await sleeper(retryDelay)
             }
             let doubled = delay.multipliedReportingOverflow(by: 2)
-            delay = min(doubled.overflow ? UInt64.max : doubled.partialValue,
-                        policy.maxDelayNs)
+            delay = min(
+                doubled.overflow ? UInt64.max : doubled.partialValue,
+                policy.maxDelayNs)
         }
     }
-    throw lastError ?? RepackError.remoteProtocolInvalid(detail: "retry loop exited without an error")
+    throw lastError
+        ?? RepackError.remoteProtocolInvalid(detail: "retry loop exited without an error")
 }
 
 private func retryableStatus(_ status: Int) -> Bool {

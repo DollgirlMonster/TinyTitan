@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanRepackCore
 
 /// Classification over the complete tensor-name list of the pinned
@@ -12,11 +13,13 @@ struct Qwen4ExpClassifyTests {
     static let layers = 48
 
     static func realNames() throws -> [String] {
-        let url = try #require(Bundle.module.url(
-            forResource: "qwen38_tensor_names", withExtension: "txt",
-            subdirectory: "Support")
-            ?? Bundle.module.url(forResource: "qwen38_tensor_names",
-                                 withExtension: "txt"))
+        let url = try #require(
+            Bundle.module.url(
+                forResource: "qwen38_tensor_names", withExtension: "txt",
+                subdirectory: "Support")
+                ?? Bundle.module.url(
+                    forResource: "qwen38_tensor_names",
+                    withExtension: "txt"))
         return try String(contentsOf: url, encoding: .utf8)
             .split(separator: "\n").map(String.init)
     }
@@ -28,7 +31,8 @@ struct Qwen4ExpClassifyTests {
         var unknown: [String] = []
         for n in names {
             if case .unknown = RepackPlanner.classify(
-                n, numLayers: Self.layers, family: .qwen38flash) {
+                n, numLayers: Self.layers, family: .qwen38flash)
+            {
                 unknown.append(n)
             }
         }
@@ -40,7 +44,8 @@ struct Qwen4ExpClassifyTests {
         var byLayer: [Int: Set<String>] = [:]
         for n in try Self.realNames() {
             if case .routedExpert(let role, let layer) = RepackPlanner.classify(
-                n, numLayers: Self.layers, family: .qwen38flash) {
+                n, numLayers: Self.layers, family: .qwen38flash)
+            {
                 #expect(n.contains(".mlp.switch_mlp."))
                 #expect(!n.hasPrefix("mtp."), "MTP experts must not land in the target")
                 byLayer[layer, default: []].insert(role)
@@ -58,8 +63,10 @@ struct Qwen4ExpClassifyTests {
         let mtp = names.filter { $0.hasPrefix("mtp.") }
         #expect(mtp.count == 81)
         for n in mtp {
-            #expect(RepackPlanner.classify(n, numLayers: Self.layers,
-                                           family: .qwen38flash)
+            #expect(
+                RepackPlanner.classify(
+                    n, numLayers: Self.layers,
+                    family: .qwen38flash)
                     == .excludedSidecar)
         }
     }
@@ -67,9 +74,11 @@ struct Qwen4ExpClassifyTests {
     @Test("lm_head sits at the top level in this family and stays resident")
     func topLevelLMHead() throws {
         for suffix in ["weight", "scales", "biases"] {
-            #expect(RepackPlanner.classify("lm_head.\(suffix)",
-                                           numLayers: Self.layers,
-                                           family: .qwen38flash) == .lmResident)
+            #expect(
+                RepackPlanner.classify(
+                    "lm_head.\(suffix)",
+                    numLayers: Self.layers,
+                    family: .qwen38flash) == .lmResident)
         }
     }
 
@@ -84,23 +93,28 @@ struct Qwen4ExpClassifyTests {
             "model.language_model.embed_tokens.weight",
         ]
         for p in probes {
-            #expect(RepackPlanner.classify(p, numLayers: Self.layers,
-                                           family: .qwen38flash) == .lmResident,
-                    "\(p)")
+            #expect(
+                RepackPlanner.classify(
+                    p, numLayers: Self.layers,
+                    family: .qwen38flash) == .lmResident,
+                "\(p)")
         }
     }
 
     @Test("qwen36 classification is unchanged by the new family")
     func qwen36Unaffected() {
-        #expect(RepackPlanner.classify(
-            "language_model.model.layers.3.mlp.switch_mlp.gate_proj.weight",
-            numLayers: 40, family: .qwen36) == .routedExpert(role: "gate", layer: 3))
-        #expect(RepackPlanner.classify(
-            "language_model.model.embed_tokens.weight",
-            numLayers: 40, family: .qwen36) == .lmResident)
+        #expect(
+            RepackPlanner.classify(
+                "language_model.model.layers.3.mlp.switch_mlp.gate_proj.weight",
+                numLayers: 40, family: .qwen36) == .routedExpert(role: "gate", layer: 3))
+        #expect(
+            RepackPlanner.classify(
+                "language_model.model.embed_tokens.weight",
+                numLayers: 40, family: .qwen36) == .lmResident)
         // A qwen4_exp-style name must NOT be accepted by the qwen36 family.
-        #expect(RepackPlanner.classify(
-            "model.language_model.embed_tokens.weight",
-            numLayers: 40, family: .qwen36) == .unknown)
+        #expect(
+            RepackPlanner.classify(
+                "model.language_model.embed_tokens.weight",
+                numLayers: 40, family: .qwen36) == .unknown)
     }
 }

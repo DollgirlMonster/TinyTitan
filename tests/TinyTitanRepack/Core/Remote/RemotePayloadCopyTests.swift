@@ -1,6 +1,7 @@
 import Foundation
 import Synchronization
 import Testing
+
 @testable import TinyTitanRepackCore
 
 final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
@@ -23,14 +24,19 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
     /// Sends a response, or reports a URL error when the response object cannot
     /// be built. A stub that traps takes the whole test process down with it, so
     /// an unbuildable response is an error the client observes, not a crash.
-    private func respond(url: URL,
-                         status: Int,
-                         headers: [String: String]? = nil,
-                         body: Data? = nil) {
-        guard let response = HTTPURLResponse(url: url,
-                                             statusCode: status,
-                                             httpVersion: nil,
-                                             headerFields: headers) else {
+    private func respond(
+        url: URL,
+        status: Int,
+        headers: [String: String]? = nil,
+        body: Data? = nil
+    ) {
+        guard
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: status,
+                httpVersion: nil,
+                headerFields: headers)
+        else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             client?.urlProtocolDidFinishLoading(self)
             return
@@ -79,9 +85,10 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
         }
 
         if method == "HEAD" {
-            let headers = baseHeaders(filename: filename,
-                                      data: data,
-                                      contentLength: data.count)
+            let headers = baseHeaders(
+                filename: filename,
+                data: data,
+                contentLength: data.count)
             respond(url: url, status: 200, headers: headers)
             return
         }
@@ -98,18 +105,21 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
         } else {
             body = Data(data[start...end])
         }
-        var headers = baseHeaders(filename: filename,
-                                  data: data,
-                                  contentLength: expectedLength)
+        var headers = baseHeaders(
+            filename: filename,
+            data: data,
+            contentLength: expectedLength)
         headers["Content-Range"] = "bytes \(start)-\(end)/\(data.count)"
         respond(url: url, status: 206, headers: headers, body: body)
     }
 
     override func stopLoading() {}
 
-    func baseHeaders(filename: String,
-                             data: Data,
-                             contentLength: Int) -> [String: String] {
+    func baseHeaders(
+        filename: String,
+        data: Data,
+        contentLength: Int
+    ) -> [String: String] {
         var headers = [
             "X-Repo-Commit": Self.commit,
             "X-Linked-Size": "\(data.count)",
@@ -128,7 +138,8 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
     static func filename(from url: URL) -> String? {
         let parts = url.path.split(separator: "/").map(String.init)
         guard let resolveIndex = parts.firstIndex(of: "resolve"),
-              parts.count > resolveIndex + 2 else {
+            parts.count > resolveIndex + 2
+        else {
             return nil
         }
         return parts[(resolveIndex + 2)...].joined(separator: "/")
@@ -146,11 +157,12 @@ final class FakeHFURLProtocol: URLProtocol, @unchecked Sendable {
         let body = value.dropFirst("bytes=".count)
         let parts = body.split(separator: "-", maxSplits: 1)
         guard parts.count == 2,
-              let start = Int(parts[0]),
-              let end = Int(parts[1]),
-              start >= 0,
-              end >= start,
-              end < fileSize else {
+            let start = Int(parts[0]),
+            let end = Int(parts[1]),
+            start >= 0,
+            end >= start,
+            end < fileSize
+        else {
             return nil
         }
         return (start, end)
@@ -174,16 +186,22 @@ struct RemotePayloadCopyTests {
 
 }
 
-func remoteFiles(snapshotDir: String,
-                         snap: SyntheticSnapshot.Snapshot,
-                         includeRequiredTokenizer: Bool,
-                         includeOptionalTokenizer: Bool) throws -> [String: Data] {
+func remoteFiles(
+    snapshotDir: String,
+    snap: SyntheticSnapshot.Snapshot,
+    includeRequiredTokenizer: Bool,
+    includeOptionalTokenizer: Bool
+) throws -> [String: Data] {
     var files = [
-        "config.json": try Data(contentsOf: URL(fileURLWithPath:
-            (snapshotDir as NSString).appendingPathComponent("config.json"))),
-        "model.safetensors.index.json": try Data(contentsOf: URL(fileURLWithPath:
-            (snapshotDir as NSString).appendingPathComponent("model.safetensors.index.json"))),
-        "model-00001-of-00001.safetensors": try Data(contentsOf: URL(fileURLWithPath: snap.shardPath)),
+        "config.json": try Data(
+            contentsOf: URL(
+                fileURLWithPath: (snapshotDir as NSString).appendingPathComponent("config.json"))),
+        "model.safetensors.index.json": try Data(
+            contentsOf: URL(
+                fileURLWithPath: (snapshotDir as NSString).appendingPathComponent(
+                    "model.safetensors.index.json"))),
+        "model-00001-of-00001.safetensors": try Data(
+            contentsOf: URL(fileURLWithPath: snap.shardPath)),
     ]
     if includeRequiredTokenizer {
         files["tokenizer.json"] = remoteTokenizerJSON
@@ -210,15 +228,17 @@ func fakeHFSession() -> RemoteDownloadSession {
     RemoteDownloadSession(protocolClasses: [FakeHFURLProtocol.self])
 }
 
-func remoteOptions(outputDir: String,
-                           session: RemoteDownloadSession,
-                           rangeRetryAttempts: Int = 4,
-                           resume: Bool = false,
-                           overwrite: Bool = true,
-                           repoID: String = "owner/model",
-                           revision: String = "main",
-                           rangeChunkBytes: Int = 4096,
-                           copyAuditPath: String? = nil) -> RemoteStreamingRepackOptions {
+func remoteOptions(
+    outputDir: String,
+    session: RemoteDownloadSession,
+    rangeRetryAttempts: Int = 4,
+    resume: Bool = false,
+    overwrite: Bool = true,
+    repoID: String = "owner/model",
+    revision: String = "main",
+    rangeChunkBytes: Int = 4096,
+    copyAuditPath: String? = nil
+) -> RemoteStreamingRepackOptions {
     RemoteStreamingRepackOptions(
         repoID: repoID,
         revision: revision,
@@ -241,38 +261,54 @@ final class InstallProgressRecorder: Sendable {
     func append(_ value: ModelInstallProgress) { storage.withLock { $0.append(value) } }
 }
 
-func assertRemoteTokenizerFilesRecorded(outputDir: String,
-                                                expectsOptionalSpecialTokens: Bool) throws {
+func assertRemoteTokenizerFilesRecorded(
+    outputDir: String,
+    expectsOptionalSpecialTokens: Bool
+) throws {
     let tokenizerDir = (outputDir as NSString).appendingPathComponent("tokenizer")
-    #expect(try Data(contentsOf: URL(fileURLWithPath:
-        (tokenizerDir as NSString).appendingPathComponent("tokenizer.json"))) == remoteTokenizerJSON)
-    #expect(try Data(contentsOf: URL(fileURLWithPath:
-        (tokenizerDir as NSString).appendingPathComponent("tokenizer_config.json"))) == remoteTokenizerConfigJSON)
-    let specialTokensPath = (tokenizerDir as NSString).appendingPathComponent("special_tokens_map.json")
-    #expect(FileManager.default.fileExists(atPath: specialTokensPath) == expectsOptionalSpecialTokens)
+    #expect(
+        try Data(
+            contentsOf: URL(
+                fileURLWithPath: (tokenizerDir as NSString).appendingPathComponent("tokenizer.json")
+            )) == remoteTokenizerJSON)
+    #expect(
+        try Data(
+            contentsOf: URL(
+                fileURLWithPath: (tokenizerDir as NSString).appendingPathComponent(
+                    "tokenizer_config.json"))) == remoteTokenizerConfigJSON)
+    let specialTokensPath = (tokenizerDir as NSString).appendingPathComponent(
+        "special_tokens_map.json")
+    #expect(
+        FileManager.default.fileExists(atPath: specialTokensPath) == expectsOptionalSpecialTokens)
     let chatTemplatePath = (tokenizerDir as NSString).appendingPathComponent("chat_template.jinja")
-    #expect(FileManager.default.fileExists(atPath: chatTemplatePath) == expectsOptionalSpecialTokens)
+    #expect(
+        FileManager.default.fileExists(atPath: chatTemplatePath) == expectsOptionalSpecialTokens)
 
-    let manifestData = try Data(contentsOf: URL(fileURLWithPath:
-        (outputDir as NSString).appendingPathComponent("manifest.json")))
+    let manifestData = try Data(
+        contentsOf: URL(
+            fileURLWithPath: (outputDir as NSString).appendingPathComponent("manifest.json")))
     let manifest = try #require(
         try JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
     let manifestFiles = try #require(manifest["files"] as? [String: Any])
     #expect(manifestFiles["tokenizer/config.json"] != nil)
     #expect(manifestFiles["tokenizer/tokenizer.json"] != nil)
     #expect(manifestFiles["tokenizer/tokenizer_config.json"] != nil)
-    #expect((manifestFiles["tokenizer/special_tokens_map.json"] != nil) == expectsOptionalSpecialTokens)
+    #expect(
+        (manifestFiles["tokenizer/special_tokens_map.json"] != nil) == expectsOptionalSpecialTokens)
     #expect((manifestFiles["tokenizer/chat_template.jinja"] != nil) == expectsOptionalSpecialTokens)
 
-    let receiptData = try Data(contentsOf: URL(fileURLWithPath:
-        (outputDir as NSString).appendingPathComponent(VerifiedInstallReceiptWriter.fileName)))
+    let receiptData = try Data(
+        contentsOf: URL(
+            fileURLWithPath: (outputDir as NSString).appendingPathComponent(
+                VerifiedInstallReceiptWriter.fileName)))
     let receipt = try #require(
         try JSONSerialization.jsonObject(with: receiptData) as? [String: Any])
     let receiptFiles = try #require(receipt["files"] as? [String: Any])
     #expect(receiptFiles["tokenizer/config.json"] != nil)
     #expect(receiptFiles["tokenizer/tokenizer.json"] != nil)
     #expect(receiptFiles["tokenizer/tokenizer_config.json"] != nil)
-    #expect((receiptFiles["tokenizer/special_tokens_map.json"] != nil) == expectsOptionalSpecialTokens)
+    #expect(
+        (receiptFiles["tokenizer/special_tokens_map.json"] != nil) == expectsOptionalSpecialTokens)
     #expect((receiptFiles["tokenizer/chat_template.jinja"] != nil) == expectsOptionalSpecialTokens)
 }
 

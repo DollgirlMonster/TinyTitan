@@ -1,5 +1,5 @@
-import Testing
 import Foundation
+import Testing
 import TinyTitanValidationSupport
 
 /// Cross-validates `RopeRef.apply` against an independent reference
@@ -8,13 +8,15 @@ import TinyTitanValidationSupport
 @Suite struct RoPEReferenceTests {
 
     /// Inline-trig reference. No precomputed tables, no Accelerate.
-    private static func scalarRef(input: [Float],
-                                  numTokens: Int,
-                                  numHeads: Int,
-                                  headDim: Int,
-                                  rotaryDim: Int,
-                                  position: Int,
-                                  theta: Float) -> [Float] {
+    private static func scalarRef(
+        input: [Float],
+        numTokens: Int,
+        numHeads: Int,
+        headDim: Int,
+        rotaryDim: Int,
+        position: Int,
+        theta: Float
+    ) -> [Float] {
         var out = input
         let pairs = rotaryDim / 2
         for t in 0..<numTokens {
@@ -38,13 +40,14 @@ import TinyTitanValidationSupport
         return out
     }
 
-    @Test("vForce ref matches scalar ref",
-          arguments: [
-            (1, 16, 256, 256,   7, Float(10_000),    UInt64(0xD1)),
-            (4,  8, 256, 256,  33, Float(10_000),    UInt64(0xD2)),
-            (1, 16, 512, 128,  11, Float(1_000_000), UInt64(0xD3)),
-            (2,  4,  64,  64,   5, Float(10_000),    UInt64(0xD4)),
-          ])
+    @Test(
+        "vForce ref matches scalar ref",
+        arguments: [
+            (1, 16, 256, 256, 7, Float(10_000), UInt64(0xD1)),
+            (4, 8, 256, 256, 33, Float(10_000), UInt64(0xD2)),
+            (1, 16, 512, 128, 11, Float(1_000_000), UInt64(0xD3)),
+            (2, 4, 64, 64, 5, Float(10_000), UInt64(0xD4)),
+        ])
     func vForceMatchesScalar(
         numTokens: Int,
         numHeads: Int,
@@ -78,7 +81,10 @@ import TinyTitanValidationSupport
     @Test("Partial rotation leaves passthrough region byte-identical")
     func partialPassthroughUntouched() {
         var rng = SeedTree(0xD5).key("rope-passthrough")
-        let numTokens = 2, numHeads = 4, headDim = 64, rotaryDim = 32
+        let numTokens = 2
+        let numHeads = 4
+        let headDim = 64
+        let rotaryDim = 32
         let count = numTokens * numHeads * headDim
         let input = (0..<count).map { _ in rng.uniform(-1.0, 1.0) }
 
@@ -92,8 +98,9 @@ import TinyTitanValidationSupport
             for h in 0..<numHeads {
                 let base = (t * numHeads + h) * headDim
                 for i in rotaryDim..<headDim {
-                    #expect(out[base + i] == input[base + i],
-                            "passthrough drifted at t=\(t) h=\(h) i=\(i)")
+                    #expect(
+                        out[base + i] == input[base + i],
+                        "passthrough drifted at t=\(t) h=\(h) i=\(i)")
                 }
             }
         }

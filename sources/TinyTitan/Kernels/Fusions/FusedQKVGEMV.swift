@@ -17,9 +17,10 @@ final class FusedQKVGEMV {
     ]
 
     init(context: MetalContext) throws {
-        self.pso = try context.pipeline("dequant_int4_qkv_gemv_simd",
-                                        constants: [],
-                                        maxTotalThreadsPerThreadgroup: 512)
+        self.pso = try context.pipeline(
+            "dequant_int4_qkv_gemv_simd",
+            constants: [],
+            maxTotalThreadsPerThreadgroup: 512)
         var variants: [Shape: MTLComputePipelineState] = [:]
         for shape in Self.realDecodeShapes {
             variants[shape] = try context.pipeline(
@@ -35,29 +36,31 @@ final class FusedQKVGEMV {
         self.specializedPSOs = variants
     }
 
-    func encode(commandBuffer: MTLCommandBuffer,
-                       qWeights: MTLBuffer, qWeightsOffset: Int = 0,
-                       qScales: MTLBuffer, qScalesOffset: Int = 0,
-                       qBiases: MTLBuffer, qBiasesOffset: Int = 0,
-                       kWeights: MTLBuffer, kWeightsOffset: Int = 0,
-                       kScales: MTLBuffer, kScalesOffset: Int = 0,
-                       kBiases: MTLBuffer, kBiasesOffset: Int = 0,
-                       vWeights: MTLBuffer, vWeightsOffset: Int = 0,
-                       vScales: MTLBuffer, vScalesOffset: Int = 0,
-                       vBiases: MTLBuffer, vBiasesOffset: Int = 0,
-                       x: MTLBuffer,
-                       qOut: MTLBuffer, qOutOffset: Int = 0,
-                       kOut: MTLBuffer, kOutOffset: Int = 0,
-                       vOut: MTLBuffer, vOutOffset: Int = 0,
-                       qRows: UInt32,
-                       kvRows: UInt32,
-                       n: UInt32) throws {
-        precondition(n % UInt32(Quantization.groupSize) == 0,
-                     "N must be a multiple of \(Quantization.groupSize)")
-        precondition(qWeightsOffset % 2 == 0 &&
-                     kWeightsOffset % 2 == 0 &&
-                     vWeightsOffset % 2 == 0,
-                     "FusedQKVGEMV needs 2-aligned weights offsets")
+    func encode(
+        commandBuffer: MTLCommandBuffer,
+        qWeights: MTLBuffer, qWeightsOffset: Int = 0,
+        qScales: MTLBuffer, qScalesOffset: Int = 0,
+        qBiases: MTLBuffer, qBiasesOffset: Int = 0,
+        kWeights: MTLBuffer, kWeightsOffset: Int = 0,
+        kScales: MTLBuffer, kScalesOffset: Int = 0,
+        kBiases: MTLBuffer, kBiasesOffset: Int = 0,
+        vWeights: MTLBuffer, vWeightsOffset: Int = 0,
+        vScales: MTLBuffer, vScalesOffset: Int = 0,
+        vBiases: MTLBuffer, vBiasesOffset: Int = 0,
+        x: MTLBuffer,
+        qOut: MTLBuffer, qOutOffset: Int = 0,
+        kOut: MTLBuffer, kOutOffset: Int = 0,
+        vOut: MTLBuffer, vOutOffset: Int = 0,
+        qRows: UInt32,
+        kvRows: UInt32,
+        n: UInt32
+    ) throws {
+        precondition(
+            n % UInt32(Quantization.groupSize) == 0,
+            "N must be a multiple of \(Quantization.groupSize)")
+        precondition(
+            qWeightsOffset % 2 == 0 && kWeightsOffset % 2 == 0 && vWeightsOffset % 2 == 0,
+            "FusedQKVGEMV needs 2-aligned weights offsets")
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
@@ -83,12 +86,15 @@ final class FusedQKVGEMV {
         enc.setBytes(&kvVar, length: MemoryLayout<UInt32>.size, index: 14)
         enc.setBytes(&nVar, length: MemoryLayout<UInt32>.size, index: 15)
         let totalRows = Int(qRows + 2 * kvRows)
-        enc.dispatchThreadgroups(MTLSize(width: (totalRows + 7) / 8,
-                                         height: 1,
-                                         depth: 1),
-                                 threadsPerThreadgroup: MTLSize(width: 256,
-                                                                 height: 1,
-                                                                 depth: 1))
+        enc.dispatchThreadgroups(
+            MTLSize(
+                width: (totalRows + 7) / 8,
+                height: 1,
+                depth: 1),
+            threadsPerThreadgroup: MTLSize(
+                width: 256,
+                height: 1,
+                depth: 1))
         enc.endEncoding()
     }
 }

@@ -34,10 +34,12 @@ struct AssistantOutput {
 
     /// `observeReasoning` sees the thought text and nothing else -- on the
     /// GPU path, the loop detector that watches reasoning on its own.
-    init(stops: [String],
-         onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void,
-         observeVisible: @escaping (String) -> Void = { _ in },
-         observeReasoning: @escaping (String) -> Void = { _ in }) {
+    init(
+        stops: [String],
+        onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void,
+        observeVisible: @escaping (String) -> Void = { _ in },
+        observeReasoning: @escaping (String) -> Void = { _ in }
+    ) {
         self.stopMatcher = StreamingStopMatcher(stops: stops)
         self.onEvent = onEvent
         self.observeVisible = observeVisible

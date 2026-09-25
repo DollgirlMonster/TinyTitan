@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import TinyTitan
 
 /// The reader replaces v3.x's one-at-a-time fetch, so what has to be pinned is
@@ -25,11 +26,14 @@ import Foundation
     }
 
     private static func withDestinations<T>(
-        _ n: Int, _ body: ([UnsafeMutableRawPointer]) throws -> T) rethrows -> T {
+        _ n: Int, _ body: ([UnsafeMutableRawPointer]) throws -> T
+    ) rethrows -> T {
         let bufs = (0..<n).map { _ in
             UnsafeMutableRawPointer.allocate(byteCount: stride, alignment: 16384)
         }
-        defer { bufs.forEach { $0.deallocate() } }
+        defer {
+            for buffer in bufs { buffer.deallocate() }
+        }
         return try body(bufs)
     }
 
@@ -37,9 +41,10 @@ import Foundation
         let count = 64
         let url = try Self.makeFixture(count: count)
         defer { try? FileManager.default.removeItem(at: url) }
-        let reader = try ParallelExpertReader(path: url.path,
-                                             expertStride: Self.stride,
-                                             threads: 4)
+        let reader = try ParallelExpertReader(
+            path: url.path,
+            expertStride: Self.stride,
+            threads: 4)
         // Deliberately out of order and with a repeat, which is what routing
         // produces and what a naive index/offset mix-up would break.
         let wanted: [UInt32] = [63, 0, 17, 17, 40, 5, 62, 1]
@@ -48,10 +53,12 @@ import Foundation
             for (i, expert) in wanted.enumerated() {
                 let expected = UInt8(Int(expert) % 251)
                 let bytes = bufs[i].assumingMemoryBound(to: UInt8.self)
-                #expect(bytes[0] == expected,
-                        "destination \(i) wanted expert \(expert)")
-                #expect(bytes[Self.stride - 1] == expected,
-                        "destination \(i) tail mismatch for expert \(expert)")
+                #expect(
+                    bytes[0] == expected,
+                    "destination \(i) wanted expert \(expert)")
+                #expect(
+                    bytes[Self.stride - 1] == expected,
+                    "destination \(i) tail mismatch for expert \(expert)")
             }
         }
     }
@@ -62,9 +69,10 @@ import Foundation
         defer { try? FileManager.default.removeItem(at: url) }
         let ids = (0..<UInt32(count)).reversed().map { $0 }
         func firstBytes(threads: Int) throws -> [UInt8] {
-            let reader = try ParallelExpertReader(path: url.path,
-                                                 expertStride: Self.stride,
-                                                 threads: threads)
+            let reader = try ParallelExpertReader(
+                path: url.path,
+                expertStride: Self.stride,
+                threads: threads)
             return try Self.withDestinations(ids.count) { bufs in
                 try reader.fetch(experts: ids, into: bufs)
                 return bufs.map { $0.assumingMemoryBound(to: UInt8.self)[0] }
@@ -76,9 +84,10 @@ import Foundation
     @Test func repeatedBatchesReuseThePool() throws {
         let url = try Self.makeFixture(count: 16)
         defer { try? FileManager.default.removeItem(at: url) }
-        let reader = try ParallelExpertReader(path: url.path,
-                                             expertStride: Self.stride,
-                                             threads: 4)
+        let reader = try ParallelExpertReader(
+            path: url.path,
+            expertStride: Self.stride,
+            threads: 4)
         // Workers park between batches; a lost wake-up would hang here rather
         // than fail, so this also guards the condition-variable handshake.
         try Self.withDestinations(4) { bufs in
@@ -86,7 +95,8 @@ import Foundation
                 let ids = (0..<4).map { UInt32((round * 4 + $0) % 16) }
                 try reader.fetch(experts: ids, into: bufs)
                 for (i, expert) in ids.enumerated() {
-                    #expect(bufs[i].assumingMemoryBound(to: UInt8.self)[0]
+                    #expect(
+                        bufs[i].assumingMemoryBound(to: UInt8.self)[0]
                             == UInt8(Int(expert) % 251))
                 }
             }
@@ -96,9 +106,10 @@ import Foundation
     @Test func concurrentCallersCannotOverwritePublishedBatch() async throws {
         let url = try Self.makeFixture(count: 32)
         defer { try? FileManager.default.removeItem(at: url) }
-        let reader = try ParallelExpertReader(path: url.path,
-                                             expertStride: Self.stride,
-                                             threads: 4)
+        let reader = try ParallelExpertReader(
+            path: url.path,
+            expertStride: Self.stride,
+            threads: 4)
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             for worker in 0..<2 {
@@ -127,8 +138,9 @@ import Foundation
     @Test func emptyFetchIsANoOp() throws {
         let url = try Self.makeFixture(count: 4)
         defer { try? FileManager.default.removeItem(at: url) }
-        let reader = try ParallelExpertReader(path: url.path,
-                                             expertStride: Self.stride)
+        let reader = try ParallelExpertReader(
+            path: url.path,
+            expertStride: Self.stride)
         try reader.fetch(experts: [], into: [])
         #expect(reader.threadCount >= 1)
     }
@@ -144,9 +156,10 @@ import Foundation
     @Test func readBeyondEndOfFileFails() throws {
         let url = try Self.makeFixture(count: 2)
         defer { try? FileManager.default.removeItem(at: url) }
-        let reader = try ParallelExpertReader(path: url.path,
-                                             expertStride: Self.stride,
-                                             threads: 2)
+        let reader = try ParallelExpertReader(
+            path: url.path,
+            expertStride: Self.stride,
+            threads: 2)
         _ = Self.withDestinations(1) { bufs in
             #expect(throws: ParallelExpertReader.Failure.self) {
                 try reader.fetch(experts: [99], into: bufs)
@@ -157,11 +170,13 @@ import Foundation
     @Test func threadCountIsClampedToTheSupportedRange() throws {
         let url = try Self.makeFixture(count: 4)
         defer { try? FileManager.default.removeItem(at: url) }
-        let low = try ParallelExpertReader(path: url.path,
-                                          expertStride: Self.stride, threads: 0)
+        let low = try ParallelExpertReader(
+            path: url.path,
+            expertStride: Self.stride, threads: 0)
         #expect(low.threadCount == 1)
-        let high = try ParallelExpertReader(path: url.path,
-                                           expertStride: Self.stride, threads: 999)
+        let high = try ParallelExpertReader(
+            path: url.path,
+            expertStride: Self.stride, threads: 999)
         #expect(high.threadCount == 16)
     }
 }

@@ -27,12 +27,14 @@ public struct ContextBudget: Sendable, Equatable {
     /// re-derive the decision wrongly.
     public var includesDependencies: Bool
 
-    public init(maxTokens: Int = 4096,
-                priorityNamespaces: [String] = [],
-                recentTurnCount: Int = 4,
-                turnShare: Double = 0.35,
-                maxTurnCharacters: Int = 1200,
-                includesDependencies: Bool = true) {
+    public init(
+        maxTokens: Int = 4096,
+        priorityNamespaces: [String] = [],
+        recentTurnCount: Int = 4,
+        turnShare: Double = 0.35,
+        maxTurnCharacters: Int = 1200,
+        includesDependencies: Bool = true
+    ) {
         self.maxTokens = max(0, maxTokens)
         self.priorityNamespaces = priorityNamespaces
         self.recentTurnCount = max(0, recentTurnCount)
@@ -43,12 +45,15 @@ public struct ContextBudget: Sendable, Equatable {
 
     /// State only, no transcript. What a fresh session on a long task wants:
     /// the accumulated facts, not the last conversation's small talk.
-    public static func stateOnly(maxTokens: Int = 4096,
-                                 priorityNamespaces: [String] = []) -> ContextBudget {
-        ContextBudget(maxTokens: maxTokens,
-                      priorityNamespaces: priorityNamespaces,
-                      recentTurnCount: 0,
-                      turnShare: 0)
+    public static func stateOnly(
+        maxTokens: Int = 4096,
+        priorityNamespaces: [String] = []
+    ) -> ContextBudget {
+        ContextBudget(
+            maxTokens: maxTokens,
+            priorityNamespaces: priorityNamespaces,
+            recentTurnCount: 0,
+            turnShare: 0)
     }
 
     /// Rank for a namespace, lower is more important.

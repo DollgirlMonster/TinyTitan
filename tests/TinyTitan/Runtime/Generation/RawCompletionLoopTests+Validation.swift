@@ -22,7 +22,8 @@ extension RawCompletionLoopTests {
                 config: GenerationConfig(maxNewTokens: 1, temperature: 0),
                 context: context,
                 scratch: scratch,
-                prefillConfig: .off) { _ in }
+                prefillConfig: .off
+            ) { _ in }
             Issue.record("expected context overflow")
         } catch let error as GeneratorError {
             guard case .contextOverflow(let prompt, let maxNew, let maxContext) = error else {
@@ -56,7 +57,8 @@ extension RawCompletionLoopTests {
                 config: GenerationConfig(maxNewTokens: 0, temperature: 0),
                 context: context,
                 scratch: scratch,
-                prefillConfig: .off) { _ in }
+                prefillConfig: .off
+            ) { _ in }
             Issue.record("expected invalid generation config")
         } catch let error as GeneratorError {
             guard case .invalidGenerationConfig(let reason) = error else {
@@ -87,7 +89,8 @@ extension RawCompletionLoopTests {
                 config: GenerationConfig(maxNewTokens: 1, temperature: 0),
                 context: context,
                 scratch: scratch,
-                prefillConfig: .off) { _ in }
+                prefillConfig: .off
+            ) { _ in }
             Issue.record("expected empty prompt rejection")
         } catch let error as GeneratorError {
             #expect(error == .emptyPrompt)

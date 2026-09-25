@@ -38,12 +38,13 @@ extension RealForwardRunner {
         var position = startPosition
         for (offset, token) in tokens.enumerated() {
             try Task.checkCancellation()
-            try await produceToken(token: token,
-                                   position: position,
-                                   slot: slot,
-                                   into: logits,
-                                   emitHead: offset == tokens.count - 1,
-                                   outputMode: outputMode)
+            try await produceToken(
+                token: token,
+                position: position,
+                slot: slot,
+                into: logits,
+                emitHead: offset == tokens.count - 1,
+                outputMode: outputMode)
             position += 1
             onProgress(offset + 1)
         }
@@ -76,10 +77,12 @@ extension RealForwardRunner {
         }
     }
 
-    private func validateChunkedPrefill(tokens: ArraySlice<Int32>,
-                                        startPosition: Int,
-                                        config: PrefillRuntimeConfig,
-                                        slot: Int = 0) throws {
+    private func validateChunkedPrefill(
+        tokens: ArraySlice<Int32>,
+        startPosition: Int,
+        config: PrefillRuntimeConfig,
+        slot: Int = 0
+    ) throws {
         guard config.mode == .chunked else {
             throw PrefillError.chunkedUnsupported(
                 "prefillChunked requires PrefillRuntimeConfig.mode == .chunked")
@@ -91,35 +94,42 @@ extension RealForwardRunner {
         let kvPosition = kv?.position(slot: slot) ?? 0
         guard kvPosition == startPosition else {
             throw PrefillError.chunkedUnsupported(
-                "chunked prefill cursor \(kvPosition) != startPosition \(startPosition) for slot \(slot)")
+                "chunked prefill cursor \(kvPosition) != startPosition \(startPosition) for slot \(slot)"
+            )
         }
         guard tokens.count <= maxContext - startPosition else {
             throw PrefillError.chunkedUnsupported(
-                "chunked prefill range starting at \(startPosition) with \(tokens.count) tokens exceeds maxContext \(maxContext)")
+                "chunked prefill range starting at \(startPosition) with \(tokens.count) tokens exceeds maxContext \(maxContext)"
+            )
         }
     }
 
-    public func prefillChunked(tokens: ArraySlice<Int32>,
-                               startPosition: Int,
-                               outputMode: PrefillOutputMode,
-                               config: PrefillRuntimeConfig,
-                               into logits: MTLBuffer,
-                               onProgress: (Int) -> Void) async throws -> PrefillResult {
-        try await prefillChunked(tokens: tokens, startPosition: startPosition, slot: 0,
-                                 outputMode: outputMode, config: config, into: logits,
-                                 onProgress: onProgress)
+    public func prefillChunked(
+        tokens: ArraySlice<Int32>,
+        startPosition: Int,
+        outputMode: PrefillOutputMode,
+        config: PrefillRuntimeConfig,
+        into logits: MTLBuffer,
+        onProgress: (Int) -> Void
+    ) async throws -> PrefillResult {
+        try await prefillChunked(
+            tokens: tokens, startPosition: startPosition, slot: 0,
+            outputMode: outputMode, config: config, into: logits,
+            onProgress: onProgress)
     }
 
     /// Slot-aware chunked prefill: the chunk lands in `slot`'s KV and GDN
     /// regions, so every sequence takes the same (golden) prefill path instead
     /// of the numerically different decode-as-prefill fallback.
-    public func prefillChunked(tokens: ArraySlice<Int32>,
-                               startPosition: Int,
-                               slot: Int,
-                               outputMode: PrefillOutputMode,
-                               config: PrefillRuntimeConfig,
-                               into logits: MTLBuffer,
-                               onProgress: (Int) -> Void) async throws -> PrefillResult {
+    public func prefillChunked(
+        tokens: ArraySlice<Int32>,
+        startPosition: Int,
+        slot: Int,
+        outputMode: PrefillOutputMode,
+        config: PrefillRuntimeConfig,
+        into logits: MTLBuffer,
+        onProgress: (Int) -> Void
+    ) async throws -> PrefillResult {
         // Prefill shares the runner's scratch with decode, so a batched slot
         // must not run a chunk while another slot is decoding. One gate covers
         // both; a prefill holds it for its whole burst.
@@ -137,13 +147,15 @@ extension RealForwardRunner {
         }
     }
 
-    func runPrefillChunked(tokens: ArraySlice<Int32>,
-                           startPosition: Int,
-                           slot: Int = 0,
-                           outputMode: PrefillOutputMode,
-                           config: PrefillRuntimeConfig,
-                           into logits: MTLBuffer,
-                           onProgress: (Int) -> Void) async throws -> PrefillResult {
+    func runPrefillChunked(
+        tokens: ArraySlice<Int32>,
+        startPosition: Int,
+        slot: Int = 0,
+        outputMode: PrefillOutputMode,
+        config: PrefillRuntimeConfig,
+        into logits: MTLBuffer,
+        onProgress: (Int) -> Void
+    ) async throws -> PrefillResult {
         try prefillChunkState.requireClean(operation: "prefillChunked")
         defer { resetExpertUseCountsAfterPrefill() }
         // The chunked path does not go through `produceToken`, so it needs
@@ -163,16 +175,18 @@ extension RealForwardRunner {
                 outputMode: outputMode, into: logits, onProgress: onProgress)
         }
         releasePrefillCacheWiring()
-        try validateChunkedPrefill(tokens: tokens, startPosition: startPosition,
-                                   config: config, slot: slot)
+        try validateChunkedPrefill(
+            tokens: tokens, startPosition: startPosition,
+            config: config, slot: slot)
         guard !tokens.isEmpty else {
             return PrefillResult(newPosition: startPosition, seed: .logitsWritten)
         }
 
         let scratch = try ensurePrefillScratch(config: config)
-        let spans = PrefillChunkPlanner.spans(tokenCount: tokens.count,
-                                              startPosition: startPosition,
-                                              config: config)
+        let spans = PrefillChunkPlanner.spans(
+            tokenCount: tokens.count,
+            startPosition: startPosition,
+            config: config)
         do {
             for (spanIndex, span) in spans.enumerated() {
                 try Task.checkCancellation()
@@ -199,11 +213,13 @@ extension RealForwardRunner {
             throw error
         }
         if outputMode == .greedyIfAvailable, useFusedGreedyHead {
-            return PrefillResult(newPosition: startPosition + tokens.count,
-                                 seed: .greedyToken(lastGreedyToken))
+            return PrefillResult(
+                newPosition: startPosition + tokens.count,
+                seed: .greedyToken(lastGreedyToken))
         }
-        return PrefillResult(newPosition: startPosition + tokens.count,
-                             seed: .logitsWritten)
+        return PrefillResult(
+            newPosition: startPosition + tokens.count,
+            seed: .logitsWritten)
     }
 
     func ensurePrefillScratch(config: PrefillRuntimeConfig) throws -> PrefillChunkScratchBuffers {
@@ -220,18 +236,20 @@ extension RealForwardRunner {
     /// the per-layer dispatch, and the head. Each stage it calls is its own
     /// method; what remains is the sequence, and inlining less of it would
     /// only hide the order the stages must run in.
-    func executePrefillChunk(tokens: ArraySlice<Int32>,
-                                     startPosition: Int,
-                                     slot: Int = 0,
-                                     outputMode: PrefillOutputMode,
-                                     logits: MTLBuffer,
-                                     scratch: PrefillChunkScratchBuffers,
-                                     config: PrefillRuntimeConfig,
-                                     writeFinalHead: Bool,
-                                     preparedHidden: MTLBuffer? = nil,
-                                     snapshotGDNAfterFirstToken: Bool = false,
-                                     useTwoRowProjection: Bool = false,
-                                     pairRoutedMoE: Bool = false) async throws {
+    func executePrefillChunk(
+        tokens: ArraySlice<Int32>,
+        startPosition: Int,
+        slot: Int = 0,
+        outputMode: PrefillOutputMode,
+        logits: MTLBuffer,
+        scratch: PrefillChunkScratchBuffers,
+        config: PrefillRuntimeConfig,
+        writeFinalHead: Bool,
+        preparedHidden: MTLBuffer? = nil,
+        snapshotGDNAfterFirstToken: Bool = false,
+        useTwoRowProjection: Bool = false,
+        pairRoutedMoE: Bool = false
+    ) async throws {
         // Layer-major prefill (one band of chunks walked layer by layer, with
         // a residual per chunk) is gone: every call runs the whole stack in
         // order, so the prologue and epilogue are unconditional.
@@ -257,27 +275,31 @@ extension RealForwardRunner {
         try kv?.reserve(tokens: startPosition + tokens.count, slot: slot)
         guard startPosition >= 0, startPosition + tokens.count <= maxContext else {
             throw PrefillError.chunkedUnsupported(
-                "chunked prefill range [\(startPosition), \(startPosition + tokens.count)) exceeds maxContext \(maxContext)")
+                "chunked prefill range [\(startPosition), \(startPosition + tokens.count)) exceeds maxContext \(maxContext)"
+            )
         }
         guard tokens.count <= scratch.layout.chunkTokens else {
             throw PrefillError.chunkedUnsupported(
-                "chunked prefill token count \(tokens.count) exceeds scratch chunk size \(scratch.layout.chunkTokens)")
+                "chunked prefill token count \(tokens.count) exceeds scratch chunk size \(scratch.layout.chunkTokens)"
+            )
         }
         guard !snapshotGDNAfterFirstToken || tokens.count == 2 else {
             throw PrefillError.chunkedUnsupported(
                 "Gated-DeltaNet speculative checkpoint requires two rows")
         }
-        if let kv, kv.fp16RingEnabled, let ringLayer = (0..<cfg.numLayers).first(where: {
-            kv.ringCapacity(layer: $0) > 0
-        }) {
+        if let kv, kv.fp16RingEnabled,
+            let ringLayer = (0..<cfg.numLayers).first(where: {
+                kv.ringCapacity(layer: $0) > 0
+            })
+        {
             let requiredCapacity = min(maxContext, cfg.slidingWindow + config.chunkTokens)
             let ringCapacity = kv.ringCapacity(layer: ringLayer)
             guard requiredCapacity <= ringCapacity else {
                 throw PrefillError.chunkedUnsupported(
-                    "KV ring capacity \(ringCapacity) cannot hold required capacity \(requiredCapacity) for maxContext \(maxContext), slidingWindow \(cfg.slidingWindow), and prefillChunkTokens \(config.chunkTokens)")
+                    "KV ring capacity \(ringCapacity) cannot hold required capacity \(requiredCapacity) for maxContext \(maxContext), slidingWindow \(cfg.slidingWindow), and prefillChunkTokens \(config.chunkTokens)"
+                )
             }
         }
-
 
         let layerViews = try makeLayerPrefillViews()
 
@@ -289,8 +311,11 @@ extension RealForwardRunner {
         if let existing = prefillTokenBuffer, existing.length >= tokenBytes {
             tokenBuffer = existing
         } else {
-            guard let made = ctx.device.makeBuffer(length: tokenBytes,
-                                                   options: .storageModeShared) else {
+            guard
+                let made = ctx.device.makeBuffer(
+                    length: tokenBytes,
+                    options: .storageModeShared)
+            else {
                 throw ModelError.residentBufferWrapFailed
             }
             made.label = "prefill.tokenIDs"
@@ -303,16 +328,17 @@ extension RealForwardRunner {
         }
         let D = cfg.hiddenSize
         let eps: Float = 1e-6
-        let embedOutScale = cfg.embeddingScaledBySqrtHidden
+        let embedOutScale =
+            cfg.embeddingScaledBySqrtHidden
             ? Float(D).squareRoot()
             : 1.0
         let t = tokens.count
         let emb = try model.embedding()
 
-
         if runPrologue {
-            prefillChunkState.markDirty(startPosition: startPosition,
-                                        tokenCount: tokens.count)
+            prefillChunkState.markDirty(
+                startPosition: startPosition,
+                tokenCount: tokens.count)
         }
         // The n-gram rows depend only on token ids, so the whole chunk's
         // gather runs before any layer needs it.
@@ -332,11 +358,12 @@ extension RealForwardRunner {
                 guard let blit = cb.makeBlitCommandEncoder() else {
                     throw ModelError.residentBufferWrapFailed
                 }
-                blit.copy(from: preparedHidden,
-                          sourceOffset: 0,
-                          to: target,
-                          destinationOffset: 0,
-                          size: t * D * MemoryLayout<Float16>.stride)
+                blit.copy(
+                    from: preparedHidden,
+                    sourceOffset: 0,
+                    to: target,
+                    destinationOffset: 0,
+                    size: t * D * MemoryLayout<Float16>.stride)
                 blit.endEncoding()
                 if hyperConnection != nil {
                     try requireElementwise().encodeHCExpand(
@@ -350,19 +377,20 @@ extension RealForwardRunner {
                 // and is widened from there. `normed` is free until the first
                 // layer's read gate writes it.
                 let embedTarget = hyperConnection == nil ? scratch.hidden : scratch.normed
-                try prefillEmbed.encode(commandBuffer: cb,
-                                    table: emb.buffer,
-                                    tableOffset: Int(emb.offset),
-                                    scales: emb.buffer,
-                                    scalesOffset: Int(emb.scaleOffset),
-                                    biases: emb.buffer,
-                                    biasesOffset: Int(emb.biasOffset),
-                                    tokens: tokenBuffer,
-                                    out: embedTarget,
-                                    t: UInt32(t),
-                                    d: UInt32(D),
-                                    outScale: embedOutScale,
-                                    vocab: UInt32(cfg.vocabSize))
+                try prefillEmbed.encode(
+                    commandBuffer: cb,
+                    table: emb.buffer,
+                    tableOffset: Int(emb.offset),
+                    scales: emb.buffer,
+                    scalesOffset: Int(emb.scaleOffset),
+                    biases: emb.buffer,
+                    biasesOffset: Int(emb.biasOffset),
+                    tokens: tokenBuffer,
+                    out: embedTarget,
+                    t: UInt32(t),
+                    d: UInt32(D),
+                    outScale: embedOutScale,
+                    vocab: UInt32(cfg.vocabSize))
                 if hyperConnection != nil {
                     try requireElementwise().encodeHCExpand(
                         commandBuffer: cb,
@@ -380,14 +408,15 @@ extension RealForwardRunner {
         // the rest of the request.
         let aneChunk: ANEPrefillAttention? = {
             guard let ane = anePrefill,
-                  slot == 0,
-                  !snapshotGDNAfterFirstToken,
-                  !useTwoRowProjection,
-                  !pairRoutedMoE,
-                  preparedHidden == nil,
-                  ane.eligibleChunk(startPosition: startPosition,
-                                    tokenCount: tokens.count,
-                                    configChunkTokens: config.chunkTokens)
+                slot == 0,
+                !snapshotGDNAfterFirstToken,
+                !useTwoRowProjection,
+                !pairRoutedMoE,
+                preparedHidden == nil,
+                ane.eligibleChunk(
+                    startPosition: startPosition,
+                    tokenCount: tokens.count,
+                    configChunkTokens: config.chunkTokens)
             else { return nil }
             return ane
         }()
@@ -415,23 +444,32 @@ extension RealForwardRunner {
         if prefillProfile {
             let prefillTotal = prefillRouteNanos + prefillTileNanos + prefillTailNanos
             print("[prefill phases over \(t) tokens, \(prefillTotal / 1_000_000) ms total]")
-            print("  route readback + GPU: \(String(format: "%.1f", Double(prefillRouteNanos) / 1e6)) ms")
-            print("  expert fetch + tiles: \(String(format: "%.1f", Double(prefillTileNanos) / 1e6)) ms")
-            print("  tail + residual:      \(String(format: "%.1f", Double(prefillTailNanos) / 1e6)) ms")
+            print(
+                "  route readback + GPU: \(String(format: "%.1f", Double(prefillRouteNanos) / 1e6)) ms"
+            )
+            print(
+                "  expert fetch + tiles: \(String(format: "%.1f", Double(prefillTileNanos) / 1e6)) ms"
+            )
+            print(
+                "  tail + residual:      \(String(format: "%.1f", Double(prefillTailNanos) / 1e6)) ms"
+            )
             let perLayer = Double(prefillActiveExperts) / Double(max(1, cfg.numLayers))
-            print("  active experts/layer: \(String(format: "%.2f", perLayer))"
-                + " (topK=\(cfg.topKExperts), max possible \(t * cfg.topKExperts))")
+            print(
+                "  active experts/layer: \(String(format: "%.2f", perLayer))"
+                    + " (topK=\(cfg.topKExperts), max possible \(t * cfg.topKExperts))")
         }
 
         if writeFinalHead, runEpilogue {
-            try encodeFinalHead(logits: logits, scratch: scratch,
-                                tokenCount: t, hiddenSize: D, rmsEps: eps,
-                                outputMode: outputMode)
+            try encodeFinalHead(
+                logits: logits, scratch: scratch,
+                tokenCount: t, hiddenSize: D, rmsEps: eps,
+                outputMode: outputMode)
         }
 
         if runEpilogue {
-            aneChunk?.finishChunk(startPosition: startPosition,
-                                  tokenCount: tokens.count)
+            aneChunk?.finishChunk(
+                startPosition: startPosition,
+                tokenCount: tokens.count)
             kv?.advance(slot: slot, by: tokens.count)
             prefillChunkState.markCommitted()
         }
@@ -479,18 +517,20 @@ extension RealForwardRunner {
     /// `weightBits` is the *role's* width, not the attention slot's: the dense
     /// Qwen 3.5 installs keep k/v at 8 bits with q/o at 4, and the int4-only
     /// batched paths below would read an 8-bit tensor as packed nibbles.
-    func encodeAffineProjection(commandBuffer: MTLCommandBuffer,
-                              family: PrefillProjectionFamily,
-                              weightBits: Int,
-                              weights: TensorView,
-                              x: MTLBuffer,
-                              y: MTLBuffer,
-                              rows: Int,
-                              columns: Int,
-                              tokenCount: Int,
-                              xStrideElements: Int,
-                              yStrideElements: Int,
-                              useTwoRowProjection: Bool) throws {
+    func encodeAffineProjection(
+        commandBuffer: MTLCommandBuffer,
+        family: PrefillProjectionFamily,
+        weightBits: Int,
+        weights: TensorView,
+        x: MTLBuffer,
+        y: MTLBuffer,
+        rows: Int,
+        columns: Int,
+        tokenCount: Int,
+        xStrideElements: Int,
+        yStrideElements: Int,
+        useTwoRowProjection: Bool
+    ) throws {
         // A promoted tensor carries no scales or biases, so none of the
         // batched paths below can read it -- they would take the companions
         // from offset zero, which is the file header. Fall straight to the
@@ -514,8 +554,9 @@ extension RealForwardRunner {
             return
         }
         if tokenCount >= 32, weightBits == 4,
-           family == .q || family == .kv || family == .o,
-           let candidate = prefillMPPAffineInt4 {
+            family == .q || family == .kv || family == .o,
+            let candidate = prefillMPPAffineInt4
+        {
             let path = try candidate.encode(
                 commandBuffer: commandBuffer,
                 weights: weights.buffer,
@@ -534,7 +575,8 @@ extension RealForwardRunner {
             }
         }
         if useTwoRowProjection && tokenCount == 2
-            && xStrideElements == columns && yStrideElements == rows {
+            && xStrideElements == columns && yStrideElements == rows
+        {
             if weightBits == 4 {
                 try int4.encodeTwoRows(
                     commandBuffer: commandBuffer,
@@ -565,21 +607,23 @@ extension RealForwardRunner {
             return
         }
         if weightBits == model.attentionWeightBits,
-           PrefillProjectionDispatchPolicy.selectedDispatch(
+            PrefillProjectionDispatchPolicy.selectedDispatch(
                 for: family,
-                chunkTokens: tokenCount) == .qmm {
-            try prefillQMM.encode(commandBuffer: commandBuffer,
-                              weights: weights.buffer,
-                              weightsOffset: Int(weights.offset),
-                              scales: weights.buffer,
-                              scalesOffset: Int(weights.scaleOffset),
-                              biases: weights.buffer,
-                              biasesOffset: Int(weights.biasOffset),
-                              x: x,
-                              y: y,
-                              t: tokenCount,
-                              n: rows,
-                              k: columns)
+                chunkTokens: tokenCount) == .qmm
+        {
+            try prefillQMM.encode(
+                commandBuffer: commandBuffer,
+                weights: weights.buffer,
+                weightsOffset: Int(weights.offset),
+                scales: weights.buffer,
+                scalesOffset: Int(weights.scaleOffset),
+                biases: weights.buffer,
+                biasesOffset: Int(weights.biasOffset),
+                x: x,
+                y: y,
+                t: tokenCount,
+                n: rows,
+                k: columns)
             return
         }
         for row in 0..<tokenCount {
@@ -596,33 +640,38 @@ extension RealForwardRunner {
         }
     }
 
-    func copyPrefillKV(commandBuffer: MTLCommandBuffer,
-                       source: MTLBuffer,
-                       destination: (buffer: MTLBuffer, offset: Int, stride: Int),
-                       sourceTokenOffset: Int,
-                       tokenCount: Int,
-                       bytesPerToken: Int) throws {
+    func copyPrefillKV(
+        commandBuffer: MTLCommandBuffer,
+        source: MTLBuffer,
+        destination: (buffer: MTLBuffer, offset: Int, stride: Int),
+        sourceTokenOffset: Int,
+        tokenCount: Int,
+        bytesPerToken: Int
+    ) throws {
         guard tokenCount > 0 else { return }
         guard let blit = commandBuffer.makeBlitCommandEncoder() else {
             throw ModelError.residentBufferWrapFailed
         }
-        blit.copy(from: source,
-                  sourceOffset: sourceTokenOffset * bytesPerToken,
-                  to: destination.buffer,
-                  destinationOffset: destination.offset,
-                  size: tokenCount * bytesPerToken)
+        blit.copy(
+            from: source,
+            sourceOffset: sourceTokenOffset * bytesPerToken,
+            to: destination.buffer,
+            destinationOffset: destination.offset,
+            size: tokenCount * bytesPerToken)
         blit.endEncoding()
     }
 
-    func copyPrefillKVToCache(commandBuffer: MTLCommandBuffer,
-                              kv: KVCacheManager,
-                              layer: Int,
-                              startPosition: Int,
-                              tokenCount: Int,
-                              slot: Int = 0,
-                              keySource: MTLBuffer,
-                              valueSource: MTLBuffer,
-                              bytesPerToken: Int) throws {
+    func copyPrefillKVToCache(
+        commandBuffer: MTLCommandBuffer,
+        kv: KVCacheManager,
+        layer: Int,
+        startPosition: Int,
+        tokenCount: Int,
+        slot: Int = 0,
+        keySource: MTLBuffer,
+        valueSource: MTLBuffer,
+        bytesPerToken: Int
+    ) throws {
         if kv.precision.isQuantized {
             guard let kvQuantizer else {
                 throw ModelError.internalInconsistency(
@@ -636,16 +685,18 @@ extension RealForwardRunner {
                 commandBuffer: commandBuffer,
                 source: keySource,
                 sourceTokenStrideElements: elements,
-                destination: kv.keyRangeView(layer: layer, start: startPosition,
-                                             count: firstSpan, slot: slot),
+                destination: kv.keyRangeView(
+                    layer: layer, start: startPosition,
+                    count: firstSpan, slot: slot),
                 tokenCount: firstSpan,
                 elementCount: elements)
             try kvQuantizer.encode(
                 commandBuffer: commandBuffer,
                 source: valueSource,
                 sourceTokenStrideElements: elements,
-                destination: kv.valueRangeView(layer: layer, start: startPosition,
-                                               count: firstSpan, slot: slot),
+                destination: kv.valueRangeView(
+                    layer: layer, start: startPosition,
+                    count: firstSpan, slot: slot),
                 tokenCount: firstSpan,
                 elementCount: elements)
             guard firstSpan < tokenCount else { return }
@@ -657,8 +708,9 @@ extension RealForwardRunner {
                 source: keySource,
                 sourceOffset: sourceOffset,
                 sourceTokenStrideElements: elements,
-                destination: kv.keyRangeView(layer: layer, start: secondStart,
-                                             count: secondCount, slot: slot),
+                destination: kv.keyRangeView(
+                    layer: layer, start: secondStart,
+                    count: secondCount, slot: slot),
                 tokenCount: secondCount,
                 elementCount: elements)
             try kvQuantizer.encode(
@@ -666,8 +718,9 @@ extension RealForwardRunner {
                 source: valueSource,
                 sourceOffset: sourceOffset,
                 sourceTokenStrideElements: elements,
-                destination: kv.valueRangeView(layer: layer, start: secondStart,
-                                               count: secondCount, slot: slot),
+                destination: kv.valueRangeView(
+                    layer: layer, start: secondStart,
+                    count: secondCount, slot: slot),
                 tokenCount: secondCount,
                 elementCount: elements)
             return
@@ -675,52 +728,62 @@ extension RealForwardRunner {
         let capacity = kv.capacity(layer: layer)
         let physicalStart = startPosition % capacity
         let firstSpan = min(tokenCount, capacity - physicalStart)
-        let keyFirst = kv.kRange(layer: layer, start: startPosition, count: firstSpan,
-                                 slot: slot)
-        let valueFirst = kv.vRange(layer: layer, start: startPosition, count: firstSpan,
-                                   slot: slot)
-        try copyPrefillKV(commandBuffer: commandBuffer,
-                          source: keySource,
-                          destination: keyFirst,
-                          sourceTokenOffset: 0,
-                          tokenCount: firstSpan,
-                          bytesPerToken: bytesPerToken)
-        try copyPrefillKV(commandBuffer: commandBuffer,
-                          source: valueSource,
-                          destination: valueFirst,
-                          sourceTokenOffset: 0,
-                          tokenCount: firstSpan,
-                          bytesPerToken: bytesPerToken)
+        let keyFirst = kv.kRange(
+            layer: layer, start: startPosition, count: firstSpan,
+            slot: slot)
+        let valueFirst = kv.vRange(
+            layer: layer, start: startPosition, count: firstSpan,
+            slot: slot)
+        try copyPrefillKV(
+            commandBuffer: commandBuffer,
+            source: keySource,
+            destination: keyFirst,
+            sourceTokenOffset: 0,
+            tokenCount: firstSpan,
+            bytesPerToken: bytesPerToken)
+        try copyPrefillKV(
+            commandBuffer: commandBuffer,
+            source: valueSource,
+            destination: valueFirst,
+            sourceTokenOffset: 0,
+            tokenCount: firstSpan,
+            bytesPerToken: bytesPerToken)
         guard firstSpan < tokenCount else { return }
 
         let secondCount = tokenCount - firstSpan
         let secondStart = startPosition + firstSpan
-        let keySecond = kv.kRange(layer: layer, start: secondStart, count: secondCount,
-                                  slot: slot)
-        let valueSecond = kv.vRange(layer: layer, start: secondStart, count: secondCount,
-                                    slot: slot)
-        try copyPrefillKV(commandBuffer: commandBuffer,
-                          source: keySource,
-                          destination: keySecond,
-                          sourceTokenOffset: firstSpan,
-                          tokenCount: secondCount,
-                          bytesPerToken: bytesPerToken)
-        try copyPrefillKV(commandBuffer: commandBuffer,
-                          source: valueSource,
-                          destination: valueSecond,
-                          sourceTokenOffset: firstSpan,
-                          tokenCount: secondCount,
-                          bytesPerToken: bytesPerToken)
+        let keySecond = kv.kRange(
+            layer: layer, start: secondStart, count: secondCount,
+            slot: slot)
+        let valueSecond = kv.vRange(
+            layer: layer, start: secondStart, count: secondCount,
+            slot: slot)
+        try copyPrefillKV(
+            commandBuffer: commandBuffer,
+            source: keySource,
+            destination: keySecond,
+            sourceTokenOffset: firstSpan,
+            tokenCount: secondCount,
+            bytesPerToken: bytesPerToken)
+        try copyPrefillKV(
+            commandBuffer: commandBuffer,
+            source: valueSource,
+            destination: valueSecond,
+            sourceTokenOffset: firstSpan,
+            tokenCount: secondCount,
+            bytesPerToken: bytesPerToken)
     }
 
-    func encodeQuantizedKV(commandBuffer: MTLCommandBuffer,
-                                   kv: KVCacheManager,
-                                   layer: Int,
-                                   position: Int,
-                                   slot: Int = 0,
-                                   keySource: MTLBuffer,
-                                   valueSource: MTLBuffer,
-                                   elementCount: Int) throws {
+    func encodeQuantizedKV(
+        commandBuffer: MTLCommandBuffer,
+        kv: KVCacheManager,
+        layer: Int,
+        position: Int,
+        slot: Int = 0,
+        keySource: MTLBuffer,
+        valueSource: MTLBuffer,
+        elementCount: Int
+    ) throws {
         guard let kvQuantizer else {
             throw ModelError.internalInconsistency(
                 detail: "quantized KV cache has no quantizer")
@@ -729,20 +792,21 @@ extension RealForwardRunner {
             commandBuffer: commandBuffer,
             source: keySource,
             sourceTokenStrideElements: elementCount,
-            destination: kv.keyRangeView(layer: layer, start: position, count: 1,
-                                         slot: slot),
+            destination: kv.keyRangeView(
+                layer: layer, start: position, count: 1,
+                slot: slot),
             tokenCount: 1,
             elementCount: elementCount)
         try kvQuantizer.encode(
             commandBuffer: commandBuffer,
             source: valueSource,
             sourceTokenStrideElements: elementCount,
-            destination: kv.valueRangeView(layer: layer, start: position, count: 1,
-                                           slot: slot),
+            destination: kv.valueRangeView(
+                layer: layer, start: position, count: 1,
+                slot: slot),
             tokenCount: 1,
             elementCount: elementCount)
     }
-
 
     /// Resolve every layer's tensor views once, before the chunk loop.
     func makeLayerPrefillViews() throws -> [LayerPrefillQKVViews] {
@@ -755,7 +819,8 @@ extension RealForwardRunner {
                 router: cfg.numExperts == 0 ? nil : try model.router(layer: L),
                 q: isLinear ? nil : try model.qProj(layer: L),
                 k: isLinear ? nil : try model.kProj(layer: L),
-                v: isLinear ? nil
+                v: isLinear
+                    ? nil
                     : ((isFull && cfg.attentionKEqV)
                         ? (try model.kProj(layer: L))
                         : (try model.vProj(layer: L))),
@@ -795,26 +860,29 @@ extension RealForwardRunner {
             // one-row decode gate serves here. `normed` is free once the last
             // layer has run.
             let rowBytes = D * residualStreamCount * MemoryLayout<Float16>.stride
-            try hc.encodeRead(commandBuffer: finalCB,
-                              streamsBuffer: scratch.hidden,
-                              streamsOffset: (t - 1) * rowBytes,
-                              hcNorm: finalNorm.buffer,
-                              hcNormOffset: Int(finalNorm.offset),
-                              down: gateWeightsPublic(try model.hcMixerDown()),
-                              up: gateWeightsPublic(try model.hcMixerUp()),
-                              blockInput: scratch.normed, eps: eps)
-            try encodeHeadGEMV(commandBuffer: finalCB,
-                               weights: lm.buffer, weightsOffset: Int(lm.offset),
-                               scales: lm.buffer, scalesOffset: Int(lm.scaleOffset),
-                               biases: lm.buffer, biasesOffset: Int(lm.biasOffset),
-                               x: scratch.normed, y: logits,
-                               m: UInt32(cfg.vocabSize), n: UInt32(D))
+            try hc.encodeRead(
+                commandBuffer: finalCB,
+                streamsBuffer: scratch.hidden,
+                streamsOffset: (t - 1) * rowBytes,
+                hcNorm: finalNorm.buffer,
+                hcNormOffset: Int(finalNorm.offset),
+                down: gateWeightsPublic(try model.hcMixerDown()),
+                up: gateWeightsPublic(try model.hcMixerUp()),
+                blockInput: scratch.normed, eps: eps)
+            try encodeHeadGEMV(
+                commandBuffer: finalCB,
+                weights: lm.buffer, weightsOffset: Int(lm.offset),
+                scales: lm.buffer, scalesOffset: Int(lm.scaleOffset),
+                biases: lm.buffer, biasesOffset: Int(lm.biasOffset),
+                x: scratch.normed, y: logits,
+                m: UInt32(cfg.vocabSize), n: UInt32(D))
             finalCB.commit()
             try waitForCompletion(finalCB)
             recordKernelGPU(role: "prefill_head", finalCB)
             if activationDumpDirectory != nil {
-                dumpActivation("prefill_logits", logits, count: cfg.vocabSize,
-                               position: 0)
+                dumpActivation(
+                    "prefill_logits", logits, count: cfg.vocabSize,
+                    position: 0)
             }
             return
         }
@@ -836,32 +904,35 @@ extension RealForwardRunner {
                 vocab: UInt32(cfg.vocabSize),
                 rmsEps: eps)
         } else {
-            try prefillFinalRowHead.encodeLogits(commandBuffer: finalCB,
-                                             hiddenBlock: scratch.hidden,
-                                             row: t - 1,
-                                             rowStrideElements: D,
-                                             normWeight: finalNorm.buffer,
-                                             normWeightOffset: Int(finalNorm.offset),
-                                             weights: lm.buffer,
-                                             weightsOffset: Int(lm.offset),
-                                             scales: lm.buffer,
-                                             scalesOffset: Int(lm.scaleOffset),
-                                             biases: lm.buffer,
-                                             biasesOffset: Int(lm.biasOffset),
-                                             logits: logits,
-                                             d: UInt32(D),
-                                             vocab: UInt32(cfg.vocabSize),
-                                             rmsEps: eps)
+            try prefillFinalRowHead.encodeLogits(
+                commandBuffer: finalCB,
+                hiddenBlock: scratch.hidden,
+                row: t - 1,
+                rowStrideElements: D,
+                normWeight: finalNorm.buffer,
+                normWeightOffset: Int(finalNorm.offset),
+                weights: lm.buffer,
+                weightsOffset: Int(lm.offset),
+                scales: lm.buffer,
+                scalesOffset: Int(lm.scaleOffset),
+                biases: lm.buffer,
+                biasesOffset: Int(lm.biasOffset),
+                logits: logits,
+                d: UInt32(D),
+                vocab: UInt32(cfg.vocabSize),
+                rmsEps: eps)
         }
         finalCB.commit()
         try waitForCompletion(finalCB)
         if activationDumpDirectory != nil {
             // The head has run and is complete, so these are the numbers the
             // reference's top-k printout compares against.
-            dumpActivation("prefill_logits", logits, count: cfg.vocabSize,
-                           position: 0)
-            dumpActivationPrivate("final_normed", scratch.normed,
-                                  count: D, position: 0)
+            dumpActivation(
+                "prefill_logits", logits, count: cfg.vocabSize,
+                position: 0)
+            dumpActivationPrivate(
+                "final_normed", scratch.normed,
+                count: D, position: 0)
         }
         if outputMode == .greedyIfAvailable, useFusedGreedyHead {
             lastGreedyToken = greedyTokenBuf.contents().load(as: UInt32.self)
@@ -895,20 +966,21 @@ extension RealForwardRunner {
             throw ModelError.residentBufferWrapFailed
         }
         let sharedProj = sharedExpertProjections[L]
-        try prefillSharedExpert.encodeBlock(commandBuffer: sharedCB,
-                                            x: scratch.routedX,
-                                            y: scratch.h1,
-                                            gate: sharedProj.gate,
-                                            up: sharedProj.up,
-                                            down: sharedProj.down,
-                                            scratchGate: scratch.sharedGateScratch,
-                                            scratchUp: scratch.sharedUpScratch,
-                                            scratchAct: scratch.sharedActScratch,
-                                            queryCount: t,
-                                            d: D,
-                                            intermediate: cfg.intermediateSize,
-                                            xStrideElements: D,
-                                            yStrideElements: D)
+        try prefillSharedExpert.encodeBlock(
+            commandBuffer: sharedCB,
+            x: scratch.routedX,
+            y: scratch.h1,
+            gate: sharedProj.gate,
+            up: sharedProj.up,
+            down: sharedProj.down,
+            scratchGate: scratch.sharedGateScratch,
+            scratchUp: scratch.sharedUpScratch,
+            scratchAct: scratch.sharedActScratch,
+            queryCount: t,
+            d: D,
+            intermediate: cfg.intermediateSize,
+            xStrideElements: D,
+            yStrideElements: D)
         sharedCB.commit()
         try waitForCompletion(sharedCB)
         recordKernelGPU(role: "prefill_shared_expert", sharedCB)
@@ -916,10 +988,11 @@ extension RealForwardRunner {
         guard let tailCB = ctx.queue.makeCommandBuffer() else {
             throw ModelError.residentBufferWrapFailed
         }
-        try requireElementwise().encodeResidualAdd(commandBuffer: tailCB,
-                                           hidden: scratch.hidden,
-                                           delta: scratch.h1,
-                                           count: t * D)
+        try requireElementwise().encodeResidualAdd(
+            commandBuffer: tailCB,
+            hidden: scratch.hidden,
+            delta: scratch.h1,
+            count: t * D)
         tailCB.commit()
         try waitForCompletion(tailCB)
         recordKernelGPU(role: "prefill_dense_ffn_tail", tailCB)
@@ -956,8 +1029,9 @@ extension RealForwardRunner {
         // block, so the router, the readback and the routed tiles do not exist
         // for it. Taken here, at the top, so none of them is encoded.
         if cfg.numExperts == 0 {
-            try encodeDenseFFNPrefill(cb: &cb, layer: L, scratch: scratch,
-                                      tokenCount: t, hiddenSize: D)
+            try encodeDenseFFNPrefill(
+                cb: &cb, layer: L, scratch: scratch,
+                tokenCount: t, hiddenSize: D)
             return
         }
         guard let routerView = views.router else {
@@ -969,356 +1043,374 @@ extension RealForwardRunner {
         let perExpertScale: (buffer: any MTLBuffer, offset: Int) =
             (try requireOnesPerExpertScale(), 0)
         try prefillRouter.encodeBlock(
-                    commandBuffer: cb,
-                    weights: routerView.buffer,
-                    weightsOffset: Int(routerView.offset),
-                    scales: routerView.buffer,
-                    scalesOffset: Int(routerView.scaleOffset),
-                    biases: routerView.buffer,
-                    biasesOffset: Int(routerView.biasOffset),
-                    hidden: scratch.routedX,
-                    effectiveScale: effectiveScaleBuffers[L],
-                    perExpertScale: perExpertScale.buffer,
-                    perExpertScaleOffset: perExpertScale.offset,
-                    outIndices: scratch.routeIDs,
-                    outWeights: scratch.routeWeights,
-                    queryCount: UInt32(t),
-                    numExperts: UInt32(cfg.numExperts),
-                    d: UInt32(D),
-                    topK: UInt32(cfg.topKExperts),
-                    hiddenStrideElements: UInt32(D))
+            commandBuffer: cb,
+            weights: routerView.buffer,
+            weightsOffset: Int(routerView.offset),
+            scales: routerView.buffer,
+            scalesOffset: Int(routerView.scaleOffset),
+            biases: routerView.buffer,
+            biasesOffset: Int(routerView.biasOffset),
+            hidden: scratch.routedX,
+            effectiveScale: effectiveScaleBuffers[L],
+            perExpertScale: perExpertScale.buffer,
+            perExpertScaleOffset: perExpertScale.offset,
+            outIndices: scratch.routeIDs,
+            outWeights: scratch.routeWeights,
+            queryCount: UInt32(t),
+            numExperts: UInt32(cfg.numExperts),
+            d: UInt32(D),
+            topK: UInt32(cfg.topKExperts),
+            hiddenStrideElements: UInt32(D))
 
-                cb.commit()
-                try waitForCompletion(cb)
-                // Prefill had no occupancy instrumentation at all: these buffers
-                // never reached recordKernelGPU, so TINYTITAN_KERNEL_STATS reported
-                // only the decode tokens of a request and prefill looked idle.
-                // Split by layer kind: the Track A go/no-go needs to know how
-                // the attention-block time divides between full-attention
-                // layers (whole block is ANE-expressible) and Gated-DeltaNet
-                // layers (only the dense projections are; the recurrent scan
-                // is not representable in a static Core ML graph).
-                recordKernelGPU(role: cfg.layerIsLinear(L) ? "prefill_gdn_router"
-                                    : "prefill_attn_router", cb)
+        cb.commit()
+        try waitForCompletion(cb)
+        // Prefill had no occupancy instrumentation at all: these buffers
+        // never reached recordKernelGPU, so TINYTITAN_KERNEL_STATS reported
+        // only the decode tokens of a request and prefill looked idle.
+        // Split by layer kind: the Track A go/no-go needs to know how
+        // the attention-block time divides between full-attention
+        // layers (whole block is ANE-expressible) and Gated-DeltaNet
+        // layers (only the dense projections are; the recurrent scan
+        // is not representable in a static Core ML graph).
+        recordKernelGPU(
+            role: cfg.layerIsLinear(L)
+                ? "prefill_gdn_router"
+                : "prefill_attn_router", cb)
 
-                let routeCount = t * cfg.topKExperts
-                let idPtr = scratch.routeIDs.contents()
-                    .bindMemory(to: UInt32.self, capacity: routeCount)
-                let weightPtr = scratch.routeWeights.contents()
-                    .bindMemory(to: Float16.self, capacity: routeCount)
-                // Reused per-chunk host scratch (R38): cleared in place so
-                // the routed-tile planner never allocates per chunk.
-                routeIDScratch.removeAll(keepingCapacity: true)
-                routeWeightScratch.removeAll(keepingCapacity: true)
-                routeIDScratch.reserveCapacity(routeCount)
-                routeWeightScratch.reserveCapacity(routeCount)
-                for i in 0..<routeCount {
-                    routeIDScratch.append(min(idPtr[i], UInt32(cfg.numExperts - 1)))
-                    routeWeightScratch.append(weightPtr[i])
-                }
-                if routeTraceFD >= 0 {
-                    // Same line format as the decode trace, prefixed with
-                    // the token's absolute position, so tail-window routing
-                    // can be compared with the response's.
-                    let k = cfg.topKExperts
-                    for row in 0..<t {
-                        recordRouteTrace(layer: L, position: startPosition + row,
-                                         experts: routeIDScratch[row * k ..< (row + 1) * k].map { Int($0) })
-                    }
-                }
-                let pairs = PrefillRouter.makeTokenExpertPairs(indices: routeIDScratch,
-                                                               weights: routeWeightScratch,
-                                                               queryCount: t,
-                                                               topK: cfg.topKExperts)
-                let schedulerConfig: PrefillRoutedTileSchedulerConfig
-                let routeTileExpertCount: Int
-                if let slotCount = model.routedExpertCacheSlotCount() {
-                    guard let fitted = Self.prefillRoutedTileSchedulerConfig.fitting(
-                        slotCount: slotCount) else {
-                        throw PrefillError.chunkedUnsupported(
-                            "prefill routed tiles cannot fit the \(slotCount)-slot expert cache")
-                    }
-                    schedulerConfig = fitted
-                    routeTileExpertCount = fitted.tileExperts
-                } else {
-                    schedulerConfig = Self.prefillRoutedTileSchedulerConfig
-                    routeTileExpertCount = schedulerConfig.tileExperts
-                }
-                let routes = try PrefillMoEGrouping.groupTokenExpertPairs(
-                    pairs,
-                    queryCount: t,
-                    topK: cfg.topKExperts,
-                    numExperts: cfg.numExperts,
-                    tileExpertCount: routeTileExpertCount,
-                    expertSortKeys: model.routedExpertPhysicalOffsets(layer: L))
-                prefillRouteEnd = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-                prefillRouteNanos &+= prefillRouteEnd - prefillLayerStart
-                // One group per *distinct* expert this chunk touches. For a
-                // 1-token chunk this is topK; for a speculative 2-token verify
-                // it is the union of the two tokens' routes, which is what
-                // decides whether the extra row rides along on weights the
-                // first row already pulled in or pays for its own.
-                prefillActiveExperts &+= UInt64(routes.groups.count)
+        let routeCount = t * cfg.topKExperts
+        let idPtr = scratch.routeIDs.contents()
+            .bindMemory(to: UInt32.self, capacity: routeCount)
+        let weightPtr = scratch.routeWeights.contents()
+            .bindMemory(to: Float16.self, capacity: routeCount)
+        // Reused per-chunk host scratch (R38): cleared in place so
+        // the routed-tile planner never allocates per chunk.
+        routeIDScratch.removeAll(keepingCapacity: true)
+        routeWeightScratch.removeAll(keepingCapacity: true)
+        routeIDScratch.reserveCapacity(routeCount)
+        routeWeightScratch.reserveCapacity(routeCount)
+        for i in 0..<routeCount {
+            routeIDScratch.append(min(idPtr[i], UInt32(cfg.numExperts - 1)))
+            routeWeightScratch.append(weightPtr[i])
+        }
+        if routeTraceFD >= 0 {
+            // Same line format as the decode trace, prefixed with
+            // the token's absolute position, so tail-window routing
+            // can be compared with the response's.
+            let k = cfg.topKExperts
+            for row in 0..<t {
+                recordRouteTrace(
+                    layer: L, position: startPosition + row,
+                    experts: routeIDScratch[row * k..<(row + 1) * k].map { Int($0) })
+            }
+        }
+        let pairs = PrefillRouter.makeTokenExpertPairs(
+            indices: routeIDScratch,
+            weights: routeWeightScratch,
+            queryCount: t,
+            topK: cfg.topKExperts)
+        let schedulerConfig: PrefillRoutedTileSchedulerConfig
+        let routeTileExpertCount: Int
+        if let slotCount = model.routedExpertCacheSlotCount() {
+            guard
+                let fitted = Self.prefillRoutedTileSchedulerConfig.fitting(
+                    slotCount: slotCount)
+            else {
+                throw PrefillError.chunkedUnsupported(
+                    "prefill routed tiles cannot fit the \(slotCount)-slot expert cache")
+            }
+            schedulerConfig = fitted
+            routeTileExpertCount = fitted.tileExperts
+        } else {
+            schedulerConfig = Self.prefillRoutedTileSchedulerConfig
+            routeTileExpertCount = schedulerConfig.tileExperts
+        }
+        let routes = try PrefillMoEGrouping.groupTokenExpertPairs(
+            pairs,
+            queryCount: t,
+            topK: cfg.topKExperts,
+            numExperts: cfg.numExperts,
+            tileExpertCount: routeTileExpertCount,
+            expertSortKeys: model.routedExpertPhysicalOffsets(layer: L))
+        prefillRouteEnd = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        prefillRouteNanos &+= prefillRouteEnd - prefillLayerStart
+        // One group per *distinct* expert this chunk touches. For a
+        // 1-token chunk this is topK; for a speculative 2-token verify
+        // it is the union of the two tokens' routes, which is what
+        // decides whether the extra row rides along on weights the
+        // first row already pulled in or pays for its own.
+        prefillActiveExperts &+= UInt64(routes.groups.count)
 
-                guard let sharedCB = ctx.queue.makeCommandBuffer() else {
-                    throw ModelError.residentBufferWrapFailed
-                }
-                let sharedProj = sharedExpertProjections[L]
-                try prefillSharedExpert.encodeBlock(commandBuffer: sharedCB,
-                                                    x: scratch.routedX,
-                                                    y: scratch.h1,
-                                                    gate: sharedProj.gate,
-                                                    up: sharedProj.up,
-                                                    down: sharedProj.down,
-                                                    scratchGate: scratch.sharedGateScratch,
-                                                    scratchUp: scratch.sharedUpScratch,
-                                                    scratchAct: scratch.sharedActScratch,
-                                                    queryCount: t,
-                                                    d: D,
-                                                    intermediate: cfg.intermediateSize,
-                                                    xStrideElements: D,
-                                                    yStrideElements: D)
-                if cfg.sharedExpertGated {
-                    // out = sigmoid(shared_expert_gate(moeX)) * shared_mlp(moeX),
-                    // per chunk row.
-                    let gateView = try requireTensorView(sharedProj.scalarGate, "shared-expert scalar gate")
-                    let halfBytes = MemoryLayout<Float16>.stride
-                    for row in 0..<t {
-                        try encodeScalarGate(
-                            commandBuffer: sharedCB,
-                            view: gateView,
-                            x: scratch.routedX,
-                            xOffset: row * D * halfBytes,
-                            y: scratch.sharedScalarGate,
-                            yOffset: row * halfBytes,
-                            n: UInt32(D))
-                    }
-                    for row in 0..<t {
-                        try requireElementwise().encodeSigmoidScalarMul(
-                            commandBuffer: sharedCB,
-                            y: scratch.h1,
-                            yOffset: row * D * halfBytes,
-                            gate: scratch.sharedScalarGate,
-                            gateOffset: row * halfBytes,
-                            count: D)
-                    }
-                }
-                sharedCB.commit()
-                try waitForCompletion(sharedCB)
-                recordKernelGPU(role: "prefill_shared_expert", sharedCB)
+        guard let sharedCB = ctx.queue.makeCommandBuffer() else {
+            throw ModelError.residentBufferWrapFailed
+        }
+        let sharedProj = sharedExpertProjections[L]
+        try prefillSharedExpert.encodeBlock(
+            commandBuffer: sharedCB,
+            x: scratch.routedX,
+            y: scratch.h1,
+            gate: sharedProj.gate,
+            up: sharedProj.up,
+            down: sharedProj.down,
+            scratchGate: scratch.sharedGateScratch,
+            scratchUp: scratch.sharedUpScratch,
+            scratchAct: scratch.sharedActScratch,
+            queryCount: t,
+            d: D,
+            intermediate: cfg.intermediateSize,
+            xStrideElements: D,
+            yStrideElements: D)
+        if cfg.sharedExpertGated {
+            // out = sigmoid(shared_expert_gate(moeX)) * shared_mlp(moeX),
+            // per chunk row.
+            let gateView = try requireTensorView(sharedProj.scalarGate, "shared-expert scalar gate")
+            let halfBytes = MemoryLayout<Float16>.stride
+            for row in 0..<t {
+                try encodeScalarGate(
+                    commandBuffer: sharedCB,
+                    view: gateView,
+                    x: scratch.routedX,
+                    xOffset: row * D * halfBytes,
+                    y: scratch.sharedScalarGate,
+                    yOffset: row * halfBytes,
+                    n: UInt32(D))
+            }
+            for row in 0..<t {
+                try requireElementwise().encodeSigmoidScalarMul(
+                    commandBuffer: sharedCB,
+                    y: scratch.h1,
+                    yOffset: row * D * halfBytes,
+                    gate: scratch.sharedScalarGate,
+                    gateOffset: row * halfBytes,
+                    count: D)
+            }
+        }
+        sharedCB.commit()
+        try waitForCompletion(sharedCB)
+        recordKernelGPU(role: "prefill_shared_expert", sharedCB)
 
-                let metadata = try prefillGroupedMoE.makeStreamedMetadataBuffers(
-                    device: ctx.device,
-                    routes: routes)
-                let routedOffsets = try model.routedExpertOffsets(layer: L)
-                struct PendingPrefillTile {
-                    let tileIndex: Int
-                    let commandBuffer: MTLCommandBuffer
-                    let fetch: PrefillStreamedTileFetchResult
-                    let argumentBuffer: PrefillStreamedTileArgumentBuffer
+        let metadata = try prefillGroupedMoE.makeStreamedMetadataBuffers(
+            device: ctx.device,
+            routes: routes)
+        let routedOffsets = try model.routedExpertOffsets(layer: L)
+        struct PendingPrefillTile {
+            let tileIndex: Int
+            let commandBuffer: MTLCommandBuffer
+            let fetch: PrefillStreamedTileFetchResult
+            let argumentBuffer: PrefillStreamedTileArgumentBuffer
+        }
+        var pendingTiles: [PendingPrefillTile] = []
+        var tileLifetime = PrefillStreamedTileSlotLifetime()
+        // `withExtendedLifetime` below takes a non-throwing closure,
+        // so the wait error is captured here and rethrown after the
+        // fetched blobs are released.
+        var pendingTileError: Error?
+        var tailError: Error?
+        func drainOldestPendingTile() throws {
+            guard !pendingTiles.isEmpty else { return }
+            let pending = pendingTiles.removeFirst()
+            withExtendedLifetime((pending.fetch, pending.argumentBuffer)) {
+                do {
+                    try waitForCompletion(pending.commandBuffer)
+                    recordKernelGPU(
+                        role: "prefill_routed_tile",
+                        pending.commandBuffer)
+                } catch {
+                    // Rethrown after the fetched blobs are released.
+                    pendingTileError = error
                 }
-                var pendingTiles: [PendingPrefillTile] = []
-                var tileLifetime = PrefillStreamedTileSlotLifetime()
-                // `withExtendedLifetime` below takes a non-throwing closure,
-                // so the wait error is captured here and rethrown after the
-                // fetched blobs are released.
-                var pendingTileError: Error?
-                var tailError: Error?
-                func drainOldestPendingTile() throws {
-                    guard !pendingTiles.isEmpty else { return }
-                    let pending = pendingTiles.removeFirst()
-                    withExtendedLifetime((pending.fetch, pending.argumentBuffer)) {
-                        do {
-                            try waitForCompletion(pending.commandBuffer)
-                            recordKernelGPU(role: "prefill_routed_tile",
-                                            pending.commandBuffer)
-                        } catch {
-                            // Rethrown after the fetched blobs are released.
-                            pendingTileError = error
-                        }
-                    }
-                    if let error = pendingTileError {
-                        pendingTileError = nil
-                        throw error
-                    }
-                    if !pending.fetch.plannedMissSlots.isEmpty {
-                        try tileLifetime.complete(tileIndex: pending.tileIndex)
-                    }
-                }
+            }
+            if let error = pendingTileError {
+                pendingTileError = nil
+                throw error
+            }
+            if !pending.fetch.plannedMissSlots.isEmpty {
+                try tileLifetime.complete(tileIndex: pending.tileIndex)
+            }
+        }
 
-                let routedTileScheduler = PrefillRoutedTileScheduler(config: schedulerConfig)
-                for (tileIndex, tile) in routes.tiles.enumerated() {
-                    let expertIDs = try PrefillStreamedTileBinding.expertIDs(
-                        forTile: tileIndex,
-                        routes: routes)
-                    var plannedFetch: RoutedExpertFetchPlan?
-                    if !pendingTiles.isEmpty {
-                        let pendingAssignedSlots = pendingTiles.flatMap(\.fetch.plannedAssignedSlots)
-                        if !pendingAssignedSlots.isEmpty {
-                            let pendingSlots = Set(pendingAssignedSlots)
-                            let plan = try model.planRoutedExpertsIfPossible(
-                                layer: L,
-                                experts: expertIDs,
-                                avoidingSlots: pendingSlots)
-                            let decision = routedTileScheduler.decide(
-                                PrefillRoutedTileSchedulerInput(
-                                    hasPendingTile: true,
-                                    pendingDepth: pendingTiles.count,
-                                    pendingAssignedSlots: pendingAssignedSlots,
-                                    avoidingSlotPlanAvailable: plan != nil))
-                            switch decision {
-                            case .prefetchNext:
-                                guard let plan else {
-                                    throw ModelError.indexCorrupt(
-                                        detail: "routed tile scheduler requested missing plan")
-                                }
-                                plannedFetch = plan
-                            case .drainBeforeIssue:
-                                try drainOldestPendingTile()
-                            case .issueWithoutPending:
-                                throw ModelError.indexCorrupt(
-                                    detail: "routed tile scheduler ignored pending tile")
-                            }
-                        } else {
-                            let decision = routedTileScheduler.decide(
-                                PrefillRoutedTileSchedulerInput(
-                                    hasPendingTile: true,
-                                    pendingDepth: pendingTiles.count,
-                                    pendingAssignedSlots: [],
-                                    avoidingSlotPlanAvailable: false))
-                            switch decision {
-                            case .drainBeforeIssue:
-                                try drainOldestPendingTile()
-                            case .issueWithoutPending, .prefetchNext:
-                                throw ModelError.indexCorrupt(
-                                    detail: "routed tile scheduler failed to drain empty-slot pending tile")
-                            }
-                        }
-                    } else {
-                        let decision = routedTileScheduler.decide(
-                            PrefillRoutedTileSchedulerInput(
-                                hasPendingTile: false,
-                                pendingAssignedSlots: [],
-                                avoidingSlotPlanAvailable: false))
-                        switch decision {
-                        case .issueWithoutPending:
-                            break
-                        case .prefetchNext, .drainBeforeIssue:
-                            throw ModelError.indexCorrupt(
-                                detail: "routed tile scheduler requested pending action without pending tile")
-                        }
-                    }
-                    let fetch = try await PrefillStreamedTileBinding.fetchBindingForTile(
-                        model: model,
+        let routedTileScheduler = PrefillRoutedTileScheduler(config: schedulerConfig)
+        for (tileIndex, tile) in routes.tiles.enumerated() {
+            let expertIDs = try PrefillStreamedTileBinding.expertIDs(
+                forTile: tileIndex,
+                routes: routes)
+            var plannedFetch: RoutedExpertFetchPlan?
+            if !pendingTiles.isEmpty {
+                let pendingAssignedSlots = pendingTiles.flatMap(\.fetch.plannedAssignedSlots)
+                if !pendingAssignedSlots.isEmpty {
+                    let pendingSlots = Set(pendingAssignedSlots)
+                    let plan = try model.planRoutedExpertsIfPossible(
                         layer: L,
-                        tileIndex: tileIndex,
-                        routes: routes,
-                        plannedFetch: plannedFetch,
-                        avoidingSlots: Set(pendingTiles.flatMap(\.fetch.plannedAssignedSlots)))
-                    try fetch.binding.validateCoversPairs(routes.sortedPairs,
-                                                          pairStart: Int(tile.pairStart),
-                                                          pairCount: Int(tile.pairCount))
-                    if !fetch.plannedMissSlots.isEmpty {
-                        try tileLifetime.begin(tileIndex: tileIndex,
-                                               plannedSlots: fetch.plannedMissSlots)
-                    }
-                    let argumentBuffer = try prefillGroupedMoE.makeStreamedArgumentBuffer(
-                        device: ctx.device,
-                        binding: fetch.binding)
-                    let streamedParams = PrefillGroupedRoutedMoEStreamedParams(
-                        pairStart: tile.pairStart,
-                        pairCount: tile.pairCount,
-                        d: UInt32(D),
-                        routedIntermediate: UInt32(cfg.moeIntermediateSize),
-                        topK: UInt32(cfg.topKExperts),
-                        hiddenStrideElements: UInt32(D),
-                        binding: fetch.binding,
-                        offsets: routedOffsets)
-                    guard let tileCB = ctx.queue.makeCommandBuffer() else {
-                        throw ModelError.residentBufferWrapFailed
-                    }
-                    _ = try prefillGroupedMoE.encodeStreamedBatched(
-                        commandBuffer: tileCB,
-                        hidden: scratch.routedX,
-                        sortedPairs: metadata.sortedPairs,
-                        routePartials: scratch.routePartials,
-                        gateUpActScratch: scratch.routedGateUpActScratch,
-                        downScratch: scratch.routedDownScratch,
-                        argumentBuffer: argumentBuffer,
-                        binding: fetch.binding,
-                        params: streamedParams,
-                        pairMicrobatchRows: scratch.layout.routedPairMicrobatchRows)
-                    tileCB.commit()
-                    pendingTiles.append(PendingPrefillTile(tileIndex: tileIndex,
-                                                           commandBuffer: tileCB,
-                                                           fetch: fetch,
-                                                           argumentBuffer: argumentBuffer))
-                    while pendingTiles.count > schedulerConfig.maxPendingDepth {
+                        experts: expertIDs,
+                        avoidingSlots: pendingSlots)
+                    let decision = routedTileScheduler.decide(
+                        PrefillRoutedTileSchedulerInput(
+                            hasPendingTile: true,
+                            pendingDepth: pendingTiles.count,
+                            pendingAssignedSlots: pendingAssignedSlots,
+                            avoidingSlotPlanAvailable: plan != nil))
+                    switch decision {
+                    case .prefetchNext:
+                        guard let plan else {
+                            throw ModelError.indexCorrupt(
+                                detail: "routed tile scheduler requested missing plan")
+                        }
+                        plannedFetch = plan
+                    case .drainBeforeIssue:
                         try drainOldestPendingTile()
+                    case .issueWithoutPending:
+                        throw ModelError.indexCorrupt(
+                            detail: "routed tile scheduler ignored pending tile")
                     }
-                }
-                while !pendingTiles.isEmpty {
-                    try drainOldestPendingTile()
-                }
-                prefillTileEnd = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-                prefillTileNanos &+= prefillTileEnd - prefillRouteEnd
-                guard let tailCB = ctx.queue.makeCommandBuffer() else {
-                    throw ModelError.residentBufferWrapFailed
-                }
-                try prefillMoE.encodeReduceTokenMajor(commandBuffer: tailCB,
-                                                  routePartials: scratch.routePartials,
-                                                  routeWeights: scratch.routeWeights,
-                                                  h2: scratch.h2,
-                                                  queryCount: UInt32(t),
-                                                  topK: UInt32(cfg.topKExperts),
-                                                  d: UInt32(D))
-                if hyperConnection != nil {
-                    // The gated write injects one block output per stream, so
-                    // the two MLP branches are summed first and written once.
-                    // Adding them separately would apply the inject gate
-                    // twice.
-                    try requireElementwise().encodeResidualAdd(commandBuffer: tailCB,
-                                                   hidden: scratch.h2,
-                                                   delta: scratch.h1,
-                                                   count: t * D)
-                    try encodeResidualExitPrefill(commandBuffer: tailCB,
-                                                  hidden: scratch.hidden,
-                                                  delta: scratch.h2,
-                                                  sublayer: .mlp, layer: L,
-                                                  tokens: t)
                 } else {
-                    // Plain pre-norm tail: hidden += gated shared branch
-                    // + routed branch.
-                    try requireElementwise().encodeResidualAdd(commandBuffer: tailCB,
-                                                   hidden: scratch.hidden,
-                                                   delta: scratch.h1,
-                                                   count: t * D)
-                    try requireElementwise().encodeResidualAdd(commandBuffer: tailCB,
-                                                   hidden: scratch.hidden,
-                                                   delta: scratch.h2,
-                                                   count: t * D)
-                }
-                tailCB.commit()
-                withExtendedLifetime(metadata) {
-                    do {
-                        try waitForCompletion(tailCB)
-                        recordKernelGPU(role: "prefill_moe_reduce", tailCB)
-                    } catch {
-                        // Rethrown after `metadata` is released.
-                        tailError = error
+                    let decision = routedTileScheduler.decide(
+                        PrefillRoutedTileSchedulerInput(
+                            hasPendingTile: true,
+                            pendingDepth: pendingTiles.count,
+                            pendingAssignedSlots: [],
+                            avoidingSlotPlanAvailable: false))
+                    switch decision {
+                    case .drainBeforeIssue:
+                        try drainOldestPendingTile()
+                    case .issueWithoutPending, .prefetchNext:
+                        throw ModelError.indexCorrupt(
+                            detail: "routed tile scheduler failed to drain empty-slot pending tile")
                     }
                 }
-                if let error = tailError {
-                    tailError = nil
-                    throw error
+            } else {
+                let decision = routedTileScheduler.decide(
+                    PrefillRoutedTileSchedulerInput(
+                        hasPendingTile: false,
+                        pendingAssignedSlots: [],
+                        avoidingSlotPlanAvailable: false))
+                switch decision {
+                case .issueWithoutPending:
+                    break
+                case .prefetchNext, .drainBeforeIssue:
+                    throw ModelError.indexCorrupt(
+                        detail:
+                            "routed tile scheduler requested pending action without pending tile")
                 }
-                if L + 1 < cfg.numLayers {
-                    guard let nextCB = ctx.queue.makeCommandBuffer() else {
-                        throw ModelError.residentBufferWrapFailed
-                    }
-                    cb = nextCB
-                }
-                prefillTailNanos &+= clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - prefillTileEnd
+            }
+            let fetch = try await PrefillStreamedTileBinding.fetchBindingForTile(
+                model: model,
+                layer: L,
+                tileIndex: tileIndex,
+                routes: routes,
+                plannedFetch: plannedFetch,
+                avoidingSlots: Set(pendingTiles.flatMap(\.fetch.plannedAssignedSlots)))
+            try fetch.binding.validateCoversPairs(
+                routes.sortedPairs,
+                pairStart: Int(tile.pairStart),
+                pairCount: Int(tile.pairCount))
+            if !fetch.plannedMissSlots.isEmpty {
+                try tileLifetime.begin(
+                    tileIndex: tileIndex,
+                    plannedSlots: fetch.plannedMissSlots)
+            }
+            let argumentBuffer = try prefillGroupedMoE.makeStreamedArgumentBuffer(
+                device: ctx.device,
+                binding: fetch.binding)
+            let streamedParams = PrefillGroupedRoutedMoEStreamedParams(
+                pairStart: tile.pairStart,
+                pairCount: tile.pairCount,
+                d: UInt32(D),
+                routedIntermediate: UInt32(cfg.moeIntermediateSize),
+                topK: UInt32(cfg.topKExperts),
+                hiddenStrideElements: UInt32(D),
+                binding: fetch.binding,
+                offsets: routedOffsets)
+            guard let tileCB = ctx.queue.makeCommandBuffer() else {
+                throw ModelError.residentBufferWrapFailed
+            }
+            _ = try prefillGroupedMoE.encodeStreamedBatched(
+                commandBuffer: tileCB,
+                hidden: scratch.routedX,
+                sortedPairs: metadata.sortedPairs,
+                routePartials: scratch.routePartials,
+                gateUpActScratch: scratch.routedGateUpActScratch,
+                downScratch: scratch.routedDownScratch,
+                argumentBuffer: argumentBuffer,
+                binding: fetch.binding,
+                params: streamedParams,
+                pairMicrobatchRows: scratch.layout.routedPairMicrobatchRows)
+            tileCB.commit()
+            pendingTiles.append(
+                PendingPrefillTile(
+                    tileIndex: tileIndex,
+                    commandBuffer: tileCB,
+                    fetch: fetch,
+                    argumentBuffer: argumentBuffer))
+            while pendingTiles.count > schedulerConfig.maxPendingDepth {
+                try drainOldestPendingTile()
+            }
+        }
+        while !pendingTiles.isEmpty {
+            try drainOldestPendingTile()
+        }
+        prefillTileEnd = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        prefillTileNanos &+= prefillTileEnd - prefillRouteEnd
+        guard let tailCB = ctx.queue.makeCommandBuffer() else {
+            throw ModelError.residentBufferWrapFailed
+        }
+        try prefillMoE.encodeReduceTokenMajor(
+            commandBuffer: tailCB,
+            routePartials: scratch.routePartials,
+            routeWeights: scratch.routeWeights,
+            h2: scratch.h2,
+            queryCount: UInt32(t),
+            topK: UInt32(cfg.topKExperts),
+            d: UInt32(D))
+        if hyperConnection != nil {
+            // The gated write injects one block output per stream, so
+            // the two MLP branches are summed first and written once.
+            // Adding them separately would apply the inject gate
+            // twice.
+            try requireElementwise().encodeResidualAdd(
+                commandBuffer: tailCB,
+                hidden: scratch.h2,
+                delta: scratch.h1,
+                count: t * D)
+            try encodeResidualExitPrefill(
+                commandBuffer: tailCB,
+                hidden: scratch.hidden,
+                delta: scratch.h2,
+                sublayer: .mlp, layer: L,
+                tokens: t)
+        } else {
+            // Plain pre-norm tail: hidden += gated shared branch
+            // + routed branch.
+            try requireElementwise().encodeResidualAdd(
+                commandBuffer: tailCB,
+                hidden: scratch.hidden,
+                delta: scratch.h1,
+                count: t * D)
+            try requireElementwise().encodeResidualAdd(
+                commandBuffer: tailCB,
+                hidden: scratch.hidden,
+                delta: scratch.h2,
+                count: t * D)
+        }
+        tailCB.commit()
+        withExtendedLifetime(metadata) {
+            do {
+                try waitForCompletion(tailCB)
+                recordKernelGPU(role: "prefill_moe_reduce", tailCB)
+            } catch {
+                // Rethrown after `metadata` is released.
+                tailError = error
+            }
+        }
+        if let error = tailError {
+            tailError = nil
+            throw error
+        }
+        if L + 1 < cfg.numLayers {
+            guard let nextCB = ctx.queue.makeCommandBuffer() else {
+                throw ModelError.residentBufferWrapFailed
+            }
+            cb = nextCB
+        }
+        prefillTailNanos &+= clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - prefillTileEnd
     }
 
     /// One layer's prefill pass over one chunk.
@@ -1361,16 +1453,18 @@ extension RealForwardRunner {
         let kvDim = numKVHeads * headDim
 
         if cfg.ple.layerIndices.contains(L) {
-            try encodePLEPrefill(commandBuffer: cb,
-                                 hidden: scratch.hidden,
-                                 layer: L, tokens: t, eps: eps)
+            try encodePLEPrefill(
+                commandBuffer: cb,
+                hidden: scratch.hidden,
+                layer: L, tokens: t, eps: eps)
         }
-        try encodeResidualEntryPrefill(commandBuffer: cb,
-                                       hidden: scratch.hidden,
-                                       norm: views.inputNorm,
-                                       out: scratch.normed,
-                                       sublayer: .attention, layer: L,
-                                       tokens: t, eps: eps)
+        try encodeResidualEntryPrefill(
+            commandBuffer: cb,
+            hidden: scratch.hidden,
+            norm: views.inputNorm,
+            out: scratch.normed,
+            sublayer: .attention, layer: L,
+            tokens: t, eps: eps)
         // The indexer caches a key for every prefilled token, in or out
         // of the dense-exact window: decode crossing the boundary later
         // must not find holes behind it.
@@ -1407,17 +1501,19 @@ extension RealForwardRunner {
         // Plain pre-norm residual block: hidden += attention branch,
         // then one post-attention norm feeds router, shared expert,
         // and routed phase 1 (routedX doubles as moeX).
-        try encodeResidualExitPrefill(commandBuffer: cb,
-                                      hidden: scratch.hidden,
-                                      delta: scratch.h1,
-                                      sublayer: .attention, layer: L,
-                                      tokens: t)
-        try encodeResidualEntryPrefill(commandBuffer: cb,
-                                       hidden: scratch.hidden,
-                                       norm: views.postAttention,
-                                       out: scratch.routedX,
-                                       sublayer: .mlp, layer: L,
-                                       tokens: t, eps: eps)
+        try encodeResidualExitPrefill(
+            commandBuffer: cb,
+            hidden: scratch.hidden,
+            delta: scratch.h1,
+            sublayer: .attention, layer: L,
+            tokens: t)
+        try encodeResidualEntryPrefill(
+            commandBuffer: cb,
+            hidden: scratch.hidden,
+            norm: views.postAttention,
+            out: scratch.routedX,
+            sublayer: .mlp, layer: L,
+            tokens: t, eps: eps)
         if pairRoutedMoE, t == 2 {
             try await encodeRoutedMoEVerifyPair(
                 cb: &cb, layer: L, views: views, scratch: scratch,
@@ -1436,8 +1532,9 @@ extension RealForwardRunner {
         // hidden is complete here. This is the number a reference dump compares
         // against (`layerN`), which is what localizes a wrong stage to a layer.
         if activationDumpActive(position: startPosition), L <= dumpLayerLimit {
-            dumpActivationPrivate("L\(L)_after", scratch.hidden,
-                                  count: t * D, position: startPosition)
+            dumpActivationPrivate(
+                "L\(L)_after", scratch.hidden,
+                count: t * D, position: startPosition)
             flushDeferredDumps()
         }
     }

@@ -67,16 +67,22 @@ public protocol Watchdog: Sendable {
     static var kind: WatchdogKind { get }
     mutating func observe(_ chunk: String, at instant: ContinuousClock.Instant) -> WatchdogVerdict
     mutating func check(at instant: ContinuousClock.Instant) -> WatchdogVerdict
-    mutating func finish(visibleBytes: Int, requestBytes: Int,
-                         finishReason: String) -> WatchdogVerdict
+    mutating func finish(
+        visibleBytes: Int, requestBytes: Int,
+        finishReason: String
+    ) -> WatchdogVerdict
 }
 
-public extension Watchdog {
-    mutating func observe(_ chunk: String,
-                          at instant: ContinuousClock.Instant) -> WatchdogVerdict { .fine }
-    mutating func check(at instant: ContinuousClock.Instant) -> WatchdogVerdict { .fine }
-    mutating func finish(visibleBytes: Int, requestBytes: Int,
-                         finishReason: String) -> WatchdogVerdict { .fine }
+extension Watchdog {
+    public mutating func observe(
+        _ chunk: String,
+        at instant: ContinuousClock.Instant
+    ) -> WatchdogVerdict { .fine }
+    public mutating func check(at instant: ContinuousClock.Instant) -> WatchdogVerdict { .fine }
+    public mutating func finish(
+        visibleBytes: Int, requestBytes: Int,
+        finishReason: String
+    ) -> WatchdogVerdict { .fine }
 }
 
 /// The whole configuration surface. Off by default, and observation-only
@@ -126,15 +132,17 @@ public struct WatchdogConfiguration: Sendable, Equatable {
     /// Identical tool calls in one request's history before it is a loop.
     public var pingPongRepeats: Int
 
-    public init(isEnabled: Bool = false,
-                acting: Set<WatchdogKind> = [],
-                stallSeconds: Double = 90,
-                loopRepeats: Int = 6,
-                loopWindowBytes: Int = 64,
-                loopHistoryBytes: Int = 1_200,
-                stubVisibleBytes: Int = 96,
-                stubAskedBytes: Int = 200,
-                pingPongRepeats: Int = 3) {
+    public init(
+        isEnabled: Bool = false,
+        acting: Set<WatchdogKind> = [],
+        stallSeconds: Double = 90,
+        loopRepeats: Int = 6,
+        loopWindowBytes: Int = 64,
+        loopHistoryBytes: Int = 1_200,
+        stubVisibleBytes: Int = 96,
+        stubAskedBytes: Int = 200,
+        pingPongRepeats: Int = 3
+    ) {
         self.isEnabled = isEnabled
         self.acting = acting
         self.stallSeconds = max(1, stallSeconds)
@@ -168,11 +176,15 @@ public struct WatchdogConfiguration: Sendable, Equatable {
         let flag = environment["TINYTITAN_WATCHDOGS"]?.lowercased()
         configuration.isEnabled = flag == "1" || flag == "on" || flag == "true"
         if let list = environment["TINYTITAN_WATCHDOG_ACT"] {
-            configuration.acting = Set(list
-                .split(separator: ",")
-                .compactMap { WatchdogKind(rawValue: $0.trimmingCharacters(in: .whitespaces)
-                    .lowercased()) }
-                .filter(\.canAct))
+            configuration.acting = Set(
+                list
+                    .split(separator: ",")
+                    .compactMap {
+                        WatchdogKind(
+                            rawValue: $0.trimmingCharacters(in: .whitespaces)
+                                .lowercased())
+                    }
+                    .filter(\.canAct))
         }
         if let value = environment["TINYTITAN_WATCHDOG_STALL_SECONDS"].flatMap(Double.init) {
             configuration.stallSeconds = max(1, value)
@@ -195,11 +207,10 @@ public struct WatchdogConfiguration: Sendable, Equatable {
     }
 }
 
-
-public extension WatchdogConfiguration {
+extension WatchdogConfiguration {
     /// Say what is watching, at startup, on the channel a server log
     /// actually captures.
-    func announce() {
+    public func announce() {
         ServerLog.watchdogStartup(summary)
     }
 }

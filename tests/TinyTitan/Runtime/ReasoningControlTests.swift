@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 
 /// The per-family reasoning contract: templates that define only the binary
@@ -11,8 +12,9 @@ struct ReasoningControlTests {
     func familyMapping() {
         #expect(ModelFamily.qwen36.reasoningControl == .binaryThinking)
         #expect(ModelFamily.qwen36MTP.reasoningControl == .binaryThinking)
-        #expect(ModelFamily.qwen38flash.reasoningControl
-            == .thinkingWithEffortLevels(defaultEffort: .xhigh))
+        #expect(
+            ModelFamily.qwen38flash.reasoningControl
+                == .thinkingWithEffortLevels(defaultEffort: .xhigh))
     }
 
     @Test("Nil effort always validates")
@@ -26,8 +28,10 @@ struct ReasoningControlTests {
     @Test("Binary families reject every effort level")
     func binaryFamiliesRejectEffort() {
         for effort in ModelReasoningEffort.allCases {
-            #expect(throws: ModelReasoningControlError.effortUnsupported(
-                family: .qwen36, effort: effort)) {
+            #expect(
+                throws: ModelReasoningControlError.effortUnsupported(
+                    family: .qwen36, effort: effort)
+            ) {
                 try ModelFamily.qwen36.validateReasoning(
                     thinkingMode: .on, effort: effort)
             }
@@ -36,8 +40,10 @@ struct ReasoningControlTests {
 
     @Test("Effort families require thinking on")
     func effortRequiresThinking() throws {
-        #expect(throws: ModelReasoningControlError.effortRequiresThinkingOn(
-            effort: .low)) {
+        #expect(
+            throws: ModelReasoningControlError.effortRequiresThinkingOn(
+                effort: .low)
+        ) {
             try ModelFamily.qwen38flash.validateReasoning(
                 thinkingMode: .off, effort: .low)
         }
@@ -47,23 +53,29 @@ struct ReasoningControlTests {
 
     @Test("Effective effort resolves the template default")
     func effectiveEffort() {
-        #expect(ModelFamily.qwen38flash.effectiveReasoningEffort(
-            thinkingMode: .on, effort: nil) == .xhigh)
-        #expect(ModelFamily.qwen38flash.effectiveReasoningEffort(
-            thinkingMode: .on, effort: .medium) == .medium)
-        #expect(ModelFamily.qwen38flash.effectiveReasoningEffort(
-            thinkingMode: .off, effort: .low) == nil)
-        #expect(ModelFamily.qwen36.effectiveReasoningEffort(
-            thinkingMode: .on, effort: nil) == nil)
+        #expect(
+            ModelFamily.qwen38flash.effectiveReasoningEffort(
+                thinkingMode: .on, effort: nil) == .xhigh)
+        #expect(
+            ModelFamily.qwen38flash.effectiveReasoningEffort(
+                thinkingMode: .on, effort: .medium) == .medium)
+        #expect(
+            ModelFamily.qwen38flash.effectiveReasoningEffort(
+                thinkingMode: .off, effort: .low) == nil)
+        #expect(
+            ModelFamily.qwen36.effectiveReasoningEffort(
+                thinkingMode: .on, effort: nil) == nil)
     }
 
     @Test("Environment resolution accepts only the template's levels")
     func environmentResolution() {
         #expect(ModelReasoningEffort.resolved(environment: [:]) == nil)
-        #expect(ModelReasoningEffort.resolved(
-            environment: ["TINYTITAN_REASONING_EFFORT": "XHigh"]) == .xhigh)
-        #expect(ModelReasoningEffort.resolved(
-            environment: ["TINYTITAN_REASONING_EFFORT": "high"]) == nil)
+        #expect(
+            ModelReasoningEffort.resolved(
+                environment: ["TINYTITAN_REASONING_EFFORT": "XHigh"]) == .xhigh)
+        #expect(
+            ModelReasoningEffort.resolved(
+                environment: ["TINYTITAN_REASONING_EFFORT": "high"]) == nil)
     }
 
     // MARK: Thinking levels
@@ -72,10 +84,12 @@ struct ReasoningControlTests {
     func supportedLevels() {
         #expect(ModelFamily.qwen36.supportedReasoningLevels == [.off, .on])
         #expect(ModelFamily.qwen36MTP.supportedReasoningLevels == [.off, .on])
-        #expect(ModelFamily.qwen38flash.supportedReasoningLevels
-            == [.off, .low, .medium, .xhigh])
-        #expect(ModelFamily.qwen38flashMTP.supportedReasoningLevels
-            == [.off, .low, .medium, .xhigh])
+        #expect(
+            ModelFamily.qwen38flash.supportedReasoningLevels
+                == [.off, .low, .medium, .xhigh])
+        #expect(
+            ModelFamily.qwen38flashMTP.supportedReasoningLevels
+                == [.off, .low, .medium, .xhigh])
         #expect(CPUModelFamily.qwen35Dense.supportedReasoningLevels == [.off, .on])
     }
 
@@ -106,8 +120,9 @@ struct ReasoningControlTests {
         for family in [ModelFamily.qwen36, .qwen36MTP, .qwen38flash, .qwen38flashMTP] {
             for level in family.supportedReasoningLevels {
                 let settings = try family.runtimeReasoning(for: level)
-                try family.validateReasoning(thinkingMode: settings.thinking,
-                                             effort: settings.effort)
+                try family.validateReasoning(
+                    thinkingMode: settings.thinking,
+                    effort: settings.effort)
             }
         }
     }
@@ -116,19 +131,25 @@ struct ReasoningControlTests {
     func unsupportedLevelsThrow() {
         let binary: [ReasoningLevel] = [.off, .on]
         for level in ReasoningLevel.allCases where !binary.contains(level) {
-            #expect(throws: ReasoningLevelError.unsupported(
-                family: "qwen36", level: level, supported: binary)) {
+            #expect(
+                throws: ReasoningLevelError.unsupported(
+                    family: "qwen36", level: level, supported: binary)
+            ) {
                 try ModelFamily.qwen36.runtimeReasoning(for: level)
             }
-            #expect(throws: ReasoningLevelError.unsupported(
-                family: "qwen3_5_dense", level: level, supported: binary)) {
+            #expect(
+                throws: ReasoningLevelError.unsupported(
+                    family: "qwen3_5_dense", level: level, supported: binary)
+            ) {
                 try CPUModelFamily.qwen35Dense.runtimeReasoning(for: level)
             }
         }
         let effort: [ReasoningLevel] = [.off, .low, .medium, .xhigh]
         for level in [ReasoningLevel.on, .minimal, .high, .max] {
-            #expect(throws: ReasoningLevelError.unsupported(
-                family: "qwen38flash", level: level, supported: effort)) {
+            #expect(
+                throws: ReasoningLevelError.unsupported(
+                    family: "qwen38flash", level: level, supported: effort)
+            ) {
                 try ModelFamily.qwen38flash.runtimeReasoning(for: level)
             }
         }
@@ -136,8 +157,9 @@ struct ReasoningControlTests {
 
     @Test("Display names and wire form")
     func displayNames() throws {
-        #expect(ReasoningLevel.allCases
-            == [.off, .on, .minimal, .low, .medium, .high, .xhigh, .max])
+        #expect(
+            ReasoningLevel.allCases
+                == [.off, .on, .minimal, .low, .medium, .high, .xhigh, .max])
         #expect(ReasoningLevel.xhigh.displayName == "extra high")
         for level in ReasoningLevel.allCases where level != .xhigh {
             #expect(level.displayName == level.rawValue)

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanMemory
 
 /// The journal's contract, and the content filter that makes it affordable.
@@ -8,22 +9,25 @@ import Testing
         try MemoryScope(namespace: "tinytitan", user: "local", workspace: workspace)
     }
 
-    private func turn(_ session: String,
-                      _ index: Int,
-                      prompt: String = "why is FooManager here?",
-                      reply: String = "It prevents a race in background sync.",
-                      at seconds: TimeInterval = 0) -> JournalTurn {
-        JournalTurn(session: session,
-                    workspace: "repo-a",
-                    index: index,
-                    timestamp: Date(timeIntervalSince1970: 1_000 + seconds),
-                    prompt: prompt,
-                    reply: reply,
-                    model: "qwen3.6",
-                    promptTokens: 120,
-                    completionTokens: 30,
-                    latencyMilliseconds: 4_200,
-                    stopReason: "stop")
+    private func turn(
+        _ session: String,
+        _ index: Int,
+        prompt: String = "why is FooManager here?",
+        reply: String = "It prevents a race in background sync.",
+        at seconds: TimeInterval = 0
+    ) -> JournalTurn {
+        JournalTurn(
+            session: session,
+            workspace: "repo-a",
+            index: index,
+            timestamp: Date(timeIntervalSince1970: 1_000 + seconds),
+            prompt: prompt,
+            reply: reply,
+            model: "qwen3.6",
+            promptTokens: 120,
+            completionTokens: 30,
+            latencyMilliseconds: 4_200,
+            stopReason: "stop")
     }
 
     // MARK: - Filter
@@ -37,12 +41,13 @@ import Testing
     /// 6000 bytes and under the 2730-character head budget).
     @Test func filterSummarisesMultibyteTextTruthfully() {
         let filter = JournalFilter()
-        let text = String(repeating: "漢", count: 2_000)   // 6,000 UTF-8 bytes
+        let text = String(repeating: "漢", count: 2_000)  // 6,000 UTF-8 bytes
         let (kept, dropped) = filter.filter(text)
 
         // The old failure printed "[... -3072 bytes omitted ...]".
-        #expect(!kept.contains("[-"),
-                "the summary reports a negative omitted count: \(kept.suffix(60))")
+        #expect(
+            !kept.contains("[-"),
+            "the summary reports a negative omitted count: \(kept.suffix(60))")
         #expect(kept.utf8.count < text.utf8.count, "the summary is not smaller than the body")
         #expect(dropped > 0)
         #expect(!kept.contains("\u{FFFD}"), "the cut split a UTF-8 scalar")
@@ -105,14 +110,16 @@ import Testing
     @Test func aFilteredTurnStaysWithinAFewKilobytes() {
         // The sizing claim the storage decision rests on.
         let filter = JournalFilter()
-        let prompt = "Please refactor the sync layer.\n```swift\n"
+        let prompt =
+            "Please refactor the sync layer.\n```swift\n"
             + (0..<500).map { "    let x\($0) = compute(\($0))" }.joined(separator: "\n")
             + "\n```"
         let reply = "I refactored it; the race is gone and 983 tests pass."
         let (keptPrompt, _) = filter.filter(prompt)
         let (keptReply, _) = filter.filter(reply)
-        let turn = JournalTurn(session: "s", workspace: "w", index: 0,
-                               prompt: keptPrompt, reply: keptReply)
+        let turn = JournalTurn(
+            session: "s", workspace: "w", index: 0,
+            prompt: keptPrompt, reply: keptReply)
         #expect(turn.byteCount < 5_120)
     }
 
@@ -122,8 +129,9 @@ import Testing
         let journal = InMemoryJournal()
         let scope = try scope()
         for index in 0..<3 {
-            await journal.record(turn("s1", index, prompt: "q\(index)", at: TimeInterval(index)),
-                                 in: scope)
+            await journal.record(
+                turn("s1", index, prompt: "q\(index)", at: TimeInterval(index)),
+                in: scope)
         }
 
         let turns = await journal.turns(session: "s1", limit: 10, in: scope)
@@ -143,8 +151,9 @@ import Testing
         let journal = InMemoryJournal(limits: JournalLimits(turnsPerSession: 5))
         let scope = try scope()
         for index in 0..<20 {
-            await journal.record(turn("s1", index, prompt: "q\(index)", at: TimeInterval(index)),
-                                 in: scope)
+            await journal.record(
+                turn("s1", index, prompt: "q\(index)", at: TimeInterval(index)),
+                in: scope)
         }
 
         let turns = await journal.turns(session: "s1", limit: 50, in: scope)
@@ -188,8 +197,10 @@ import Testing
         let journal = InMemoryJournal()
         let scope = try scope()
         await journal.record(turn("s1", 0, prompt: "why FooManager?", at: 0), in: scope)
-        await journal.record(turn("s2", 0, prompt: "unrelated question",
-                                  reply: "unrelated answer", at: 60), in: scope)
+        await journal.record(
+            turn(
+                "s2", 0, prompt: "unrelated question",
+                reply: "unrelated answer", at: 60), in: scope)
 
         let hits = await journal.search("foomanager", limit: 10, in: scope)
         #expect(hits.count == 1)

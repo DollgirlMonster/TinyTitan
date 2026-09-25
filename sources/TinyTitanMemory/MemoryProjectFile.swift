@@ -1,5 +1,5 @@
-import Foundation
 import ContinuityCore
+import Foundation
 
 /// A project file read without opening it for writing.
 ///
@@ -36,9 +36,12 @@ public struct MemoryProjectFile: Sendable {
     /// Every project file under a memory directory, newest first.
     public static func discover(in directory: URL) -> [MemoryProjectFile] {
         let manager = FileManager.default
-        guard let walker = manager.enumerator(at: directory,
-                                              includingPropertiesForKeys: [.contentModificationDateKey],
-                                              options: [.skipsHiddenFiles]) else { return [] }
+        guard
+            let walker = manager.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles])
+        else { return [] }
         var files: [MemoryProjectFile] = []
         for case let url as URL in walker where url.pathExtension == "ndjson" {
             if let file = try? load(url) { files.append(file) }
@@ -49,7 +52,8 @@ public struct MemoryProjectFile: Sendable {
     /// Picks a project by exact workspace id or by a unique prefix, so
     /// `photograph` finds `photograph-851a1c1a`.
     public static func resolve(_ name: String, among files: [MemoryProjectFile])
-        -> Result<MemoryProjectFile, ResolveError> {
+        -> Result<MemoryProjectFile, ResolveError>
+    {
         if let exact = files.first(where: { $0.workspace == name }) { return .success(exact) }
         let matches = files.filter { $0.workspace.hasPrefix(name) }
         switch matches.count {
@@ -81,7 +85,10 @@ public struct MemoryProjectFile: Sendable {
         for record in records {
             switch record {
             case .checkpoint(let log, let memory):
-                items = [:]; versions = [:]; tasks = [:]; sessions = []
+                items = [:]
+                versions = [:]
+                tasks = [:]
+                sessions = []
                 for task in log.tasks { tasks[task.id] = task }
                 for session in log.sessions { sessions.insert(session.id) }
                 events = log.events.count
@@ -100,13 +107,14 @@ public struct MemoryProjectFile: Sendable {
             }
         }
         let facts = items.values.map { item in
-            Fact(key: ContinuityStore.keyText(for: item),
-                 value: item.value,
-                 version: item.version,
-                 status: item.status.rawValue,
-                 updatedAt: item.updatedAt,
-                 history: (versions[item.address] ?? []).sorted { $0.0 < $1.0 }
-                     .map { (version: $0.0, value: $0.1) })
+            Fact(
+                key: ContinuityStore.keyText(for: item),
+                value: item.value,
+                version: item.version,
+                status: item.status.rawValue,
+                updatedAt: item.updatedAt,
+                history: (versions[item.address] ?? []).sorted { $0.0 < $1.0 }
+                    .map { (version: $0.0, value: $0.1) })
         }.sorted { $0.key < $1.key }
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         return MemoryProjectFile(
@@ -123,9 +131,12 @@ public struct MemoryProjectFile: Sendable {
     /// Where the project files are, by the same rule the server uses:
     /// `TINYTITAN_MEMORY_DIR`, else `memory/` under the current directory when it
     /// exists, else the binary's own fallback.
-    public static func defaultDirectory(environment: [String: String] = ProcessInfo.processInfo.environment,
-                                        currentDirectory: String = FileManager.default.currentDirectoryPath)
-        -> URL {
+    public static func defaultDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentDirectory: String = FileManager.default.currentDirectoryPath
+    )
+        -> URL
+    {
         if let explicit = environment["TINYTITAN_MEMORY_DIR"], !explicit.isEmpty {
             return URL(fileURLWithPath: explicit)
         }

@@ -51,8 +51,10 @@ final class PLEBlock {
 
     /// A batched GEMM the caller supplies: `(commandBuffer, projection, x,
     /// y, rows, columns, tokens)`.
-    typealias BatchedProjection = (MTLCommandBuffer, Projection, MTLBuffer,
-                                   MTLBuffer, Int, Int, Int) throws -> Void
+    typealias BatchedProjection = (
+        MTLCommandBuffer, Projection, MTLBuffer,
+        MTLBuffer, Int, Int, Int
+    ) throws -> Void
 
     struct Weights {
         let keyProj: Projection
@@ -82,14 +84,14 @@ final class PLEBlock {
     let embedding: MTLBuffer
     // Not private: the parity harness reads these back to compare the block
     // stage by stage against the reference implementation.
-    let keyBuf: MTLBuffer      // [hcDim]
-    let valueBuf: MTLBuffer    // [dim]
-    let keyNormed: MTLBuffer   // [hcDim]
-    let queryNormed: MTLBuffer // [hcDim]
-    let scoreBuf: MTLBuffer    // [streams]
-    let gateBuf: MTLBuffer     // [streams]
-    let gatedBuf: MTLBuffer    // [hcDim]
-    let convOut: MTLBuffer     // [hcDim]
+    let keyBuf: MTLBuffer  // [hcDim]
+    let valueBuf: MTLBuffer  // [dim]
+    let keyNormed: MTLBuffer  // [hcDim]
+    let queryNormed: MTLBuffer  // [hcDim]
+    let scoreBuf: MTLBuffer  // [streams]
+    let gateBuf: MTLBuffer  // [streams]
+    let gatedBuf: MTLBuffer  // [hcDim]
+    let convOut: MTLBuffer  // [hcDim]
     /// `[history + 1, hcDim]`, ping-ponged so the row shift is a
     /// non-overlapping blit.
     private var xpad: [MTLBuffer]
@@ -99,9 +101,11 @@ final class PLEBlock {
     /// prefill.
     let maxRows: Int
 
-    init(context: MetalContext, dim: Int, streams: Int, embedDim: Int,
-         kernelSize: Int, dilation: Int, maxRows: Int = 1,
-         weightBits: Int = 4) throws {
+    init(
+        context: MetalContext, dim: Int, streams: Int, embedDim: Int,
+        kernelSize: Int, dilation: Int, maxRows: Int = 1,
+        weightBits: Int = 4
+    ) throws {
         precondition(dim > 0 && streams > 0 && embedDim > 0)
         precondition(kernelSize > 1 && dilation > 0 && maxRows > 0)
         self.maxRows = maxRows
@@ -116,8 +120,10 @@ final class PLEBlock {
         let wide = dim * streams
         let f16 = MemoryLayout<Float16>.stride
         func make(_ count: Int) throws -> MTLBuffer {
-            guard let b = context.device.makeBuffer(
-                      length: max(count, 1) * f16, options: .storageModeShared) else {
+            guard
+                let b = context.device.makeBuffer(
+                    length: max(count, 1) * f16, options: .storageModeShared)
+            else {
                 throw MetalError.bufferAllocationFailed("PLE scratch")
             }
             return b
@@ -150,15 +156,17 @@ final class PLEBlock {
     /// read from is still intact: the pair ping-pongs, so advancing by a
     /// different amount is just a different source offset into it.
     func rewindWindow(acceptedRows: Int, passRows: Int) {
-        precondition(acceptedRows >= 0 && acceptedRows <= passRows,
-                     "cannot accept \(acceptedRows) of \(passRows) rows")
+        precondition(
+            acceptedRows >= 0 && acceptedRows <= passRows,
+            "cannot accept \(acceptedRows) of \(passRows) rows")
         guard acceptedRows != passRows else { return }
         let rowBytes = hcDim * MemoryLayout<Float16>.stride
         let source = xpad[1 - xpadIndex]
         let destination = xpad[xpadIndex]
-        memcpy(destination.contents(),
-               source.contents().advanced(by: acceptedRows * rowBytes),
-               history * rowBytes)
+        memcpy(
+            destination.contents(),
+            source.contents().advanced(by: acceptedRows * rowBytes),
+            history * rowBytes)
     }
 
     /// Clears the carried convolution history. Call between completions: a
@@ -176,13 +184,16 @@ final class PLEBlock {
     /// `embedding` must already hold this token's gathered rows. The state
     /// rotation is encoded on the same command buffer, after the read, so the
     /// caller only has to keep tokens in order.
-    func encodeDecode(commandBuffer: MTLCommandBuffer,
-                      streamsBuffer: MTLBuffer,
-                      weights: Weights,
-                      eps: Float) throws {
-        try encodeRows(commandBuffer: commandBuffer,
-                       streamsBuffer: streamsBuffer, weights: weights,
-                       tokens: 1, eps: eps, project: nil)
+    func encodeDecode(
+        commandBuffer: MTLCommandBuffer,
+        streamsBuffer: MTLBuffer,
+        weights: Weights,
+        eps: Float
+    ) throws {
+        try encodeRows(
+            commandBuffer: commandBuffer,
+            streamsBuffer: streamsBuffer, weights: weights,
+            tokens: 1, eps: eps, project: nil)
     }
 
     /// The block over `tokens` rows.
@@ -191,105 +202,122 @@ final class PLEBlock {
     /// per-row GEMV, which is what a decode step wants. Everything else is
     /// the same arithmetic with a row count threaded through, so decode and
     /// prefill cannot drift apart.
-    func encodeRows(commandBuffer: MTLCommandBuffer,
-                    streamsBuffer: MTLBuffer,
-                    weights: Weights,
-                    tokens: Int,
-                    eps: Float,
-                    project: BatchedProjection?) throws {
-        precondition(tokens <= maxRows,
-                     "PLEBlock scratch holds \(maxRows) rows, asked for \(tokens)")
+    func encodeRows(
+        commandBuffer: MTLCommandBuffer,
+        streamsBuffer: MTLBuffer,
+        weights: Weights,
+        tokens: Int,
+        eps: Float,
+        project: BatchedProjection?
+    ) throws {
+        precondition(
+            tokens <= maxRows,
+            "PLEBlock scratch holds \(maxRows) rows, asked for \(tokens)")
         let wide = hcDim
         if let project {
-            try project(commandBuffer, weights.keyProj, embedding, keyBuf,
-                        wide, embedDim, tokens)
-            try project(commandBuffer, weights.valueProj, embedding, valueBuf,
-                        dim, embedDim, tokens)
+            try project(
+                commandBuffer, weights.keyProj, embedding, keyBuf,
+                wide, embedDim, tokens)
+            try project(
+                commandBuffer, weights.valueProj, embedding, valueBuf,
+                dim, embedDim, tokens)
         } else {
-            try gemv.encode(commandBuffer: commandBuffer,
-                            weights: weights.keyProj.weights,
-                            weightsOffset: weights.keyProj.weightsOffset,
-                            scales: weights.keyProj.scales,
-                            scalesOffset: weights.keyProj.scalesOffset,
-                            biases: weights.keyProj.biases,
-                            biasesOffset: weights.keyProj.biasesOffset,
-                            x: embedding, y: keyBuf,
-                            m: UInt32(wide), n: UInt32(embedDim),
-                            isBF16: weights.keyProj.isBF16)
-            try gemv.encode(commandBuffer: commandBuffer,
-                            weights: weights.valueProj.weights,
-                            weightsOffset: weights.valueProj.weightsOffset,
-                            scales: weights.valueProj.scales,
-                            scalesOffset: weights.valueProj.scalesOffset,
-                            biases: weights.valueProj.biases,
-                            biasesOffset: weights.valueProj.biasesOffset,
-                            x: embedding, y: valueBuf,
-                            m: UInt32(dim), n: UInt32(embedDim),
-                            isBF16: weights.valueProj.isBF16)
+            try gemv.encode(
+                commandBuffer: commandBuffer,
+                weights: weights.keyProj.weights,
+                weightsOffset: weights.keyProj.weightsOffset,
+                scales: weights.keyProj.scales,
+                scalesOffset: weights.keyProj.scalesOffset,
+                biases: weights.keyProj.biases,
+                biasesOffset: weights.keyProj.biasesOffset,
+                x: embedding, y: keyBuf,
+                m: UInt32(wide), n: UInt32(embedDim),
+                isBF16: weights.keyProj.isBF16)
+            try gemv.encode(
+                commandBuffer: commandBuffer,
+                weights: weights.valueProj.weights,
+                weightsOffset: weights.valueProj.weightsOffset,
+                scales: weights.valueProj.scales,
+                scalesOffset: weights.valueProj.scalesOffset,
+                biases: weights.valueProj.biases,
+                biasesOffset: weights.valueProj.biasesOffset,
+                x: embedding, y: valueBuf,
+                m: UInt32(dim), n: UInt32(embedDim),
+                isBF16: weights.valueProj.isBF16)
         }
-        try rms.encodeBF16WGrouped(commandBuffer: commandBuffer,
-                                   x: keyBuf,
-                                   weight: weights.normKey.buffer,
-                                   weightOffset: weights.normKey.offset,
-                                   out: keyNormed,
-                                   groupDim: UInt32(dim), numGroups: streams,
-                                   eps: eps, tokens: tokens)
-        try rms.encodeBF16WGrouped(commandBuffer: commandBuffer,
-                                   x: streamsBuffer,
-                                   weight: weights.normQuery.buffer,
-                                   weightOffset: weights.normQuery.offset,
-                                   out: queryNormed,
-                                   groupDim: UInt32(dim), numGroups: streams,
-                                   eps: eps, tokens: tokens)
-        try elementwise.encodePLEStreamScore(commandBuffer: commandBuffer,
-                                             key: keyNormed, query: queryNormed,
-                                             out: scoreBuf,
-                                             dim: dim, streams: streams,
-                                             tokens: tokens)
-        try elementwise.encodePLESignedSqrtGate(commandBuffer: commandBuffer,
-                                                x: scoreBuf, out: gateBuf,
-                                                count: streams * tokens)
-        try elementwise.encodePLEBroadcastScale(commandBuffer: commandBuffer,
-                                                value: valueBuf, gate: gateBuf,
-                                                out: gatedBuf,
-                                                dim: dim, streams: streams,
-                                                tokens: tokens)
+        try rms.encodeBF16WGrouped(
+            commandBuffer: commandBuffer,
+            x: keyBuf,
+            weight: weights.normKey.buffer,
+            weightOffset: weights.normKey.offset,
+            out: keyNormed,
+            groupDim: UInt32(dim), numGroups: streams,
+            eps: eps, tokens: tokens)
+        try rms.encodeBF16WGrouped(
+            commandBuffer: commandBuffer,
+            x: streamsBuffer,
+            weight: weights.normQuery.buffer,
+            weightOffset: weights.normQuery.offset,
+            out: queryNormed,
+            groupDim: UInt32(dim), numGroups: streams,
+            eps: eps, tokens: tokens)
+        try elementwise.encodePLEStreamScore(
+            commandBuffer: commandBuffer,
+            key: keyNormed, query: queryNormed,
+            out: scoreBuf,
+            dim: dim, streams: streams,
+            tokens: tokens)
+        try elementwise.encodePLESignedSqrtGate(
+            commandBuffer: commandBuffer,
+            x: scoreBuf, out: gateBuf,
+            count: streams * tokens)
+        try elementwise.encodePLEBroadcastScale(
+            commandBuffer: commandBuffer,
+            value: valueBuf, gate: gateBuf,
+            out: gatedBuf,
+            dim: dim, streams: streams,
+            tokens: tokens)
         // The convolution's newest row is the normalized copy of `gated`,
         // written straight into the last slot of the padded window.
         let rowBytes = wide * MemoryLayout<Float16>.stride
         let current = xpad[xpadIndex]
-        try rms.encodeBF16WGrouped(commandBuffer: commandBuffer,
-                                   x: gatedBuf,
-                                   weight: weights.normConv.buffer,
-                                   weightOffset: weights.normConv.offset,
-                                   out: current, outOffset: history * rowBytes,
-                                   groupDim: UInt32(dim), numGroups: streams,
-                                   eps: eps, tokens: tokens)
-        try elementwise.encodePLEDilatedConv(commandBuffer: commandBuffer,
-                                             xpad: current,
-                                             weight: weights.conv1d.buffer,
-                                             weightOffset: weights.conv1d.offset,
-                                             out: convOut,
-                                             channels: wide, tokens: tokens,
-                                             kernelSize: kernelSize,
-                                             dilation: dilation)
+        try rms.encodeBF16WGrouped(
+            commandBuffer: commandBuffer,
+            x: gatedBuf,
+            weight: weights.normConv.buffer,
+            weightOffset: weights.normConv.offset,
+            out: current, outOffset: history * rowBytes,
+            groupDim: UInt32(dim), numGroups: streams,
+            eps: eps, tokens: tokens)
+        try elementwise.encodePLEDilatedConv(
+            commandBuffer: commandBuffer,
+            xpad: current,
+            weight: weights.conv1d.buffer,
+            weightOffset: weights.conv1d.offset,
+            out: convOut,
+            channels: wide, tokens: tokens,
+            kernelSize: kernelSize,
+            dilation: dilation)
         // Both terms land on the residual: the gated value unnormalized, and
         // the convolution, whose kernel has already applied the silu.
-        try elementwise.encodeResidualAdd(commandBuffer: commandBuffer,
-                                          hidden: streamsBuffer,
-                                          delta: gatedBuf, count: wide * tokens)
-        try elementwise.encodeResidualAdd(commandBuffer: commandBuffer,
-                                          hidden: streamsBuffer,
-                                          delta: convOut, count: wide * tokens)
+        try elementwise.encodeResidualAdd(
+            commandBuffer: commandBuffer,
+            hidden: streamsBuffer,
+            delta: gatedBuf, count: wide * tokens)
+        try elementwise.encodeResidualAdd(
+            commandBuffer: commandBuffer,
+            hidden: streamsBuffer,
+            delta: convOut, count: wide * tokens)
         // Advance the window by one row: rows 1...history of the buffer we
         // just used become rows 0..<history of the next one.
         let next = xpad[1 - xpadIndex]
         guard let blit = commandBuffer.makeBlitCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
-        blit.copy(from: current, sourceOffset: tokens * rowBytes,
-                  to: next, destinationOffset: 0,
-                  size: history * rowBytes)
+        blit.copy(
+            from: current, sourceOffset: tokens * rowBytes,
+            to: next, destinationOffset: 0,
+            size: history * rowBytes)
         blit.endEncoding()
         xpadIndex = 1 - xpadIndex
     }

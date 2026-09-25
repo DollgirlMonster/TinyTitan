@@ -40,12 +40,14 @@ extension RawCompletionLoopTests {
             writeTerminal(to: logits)
         }
 
-        func prefillChunked(tokens: ArraySlice<Int32>,
-                            startPosition: Int,
-                            outputMode: PrefillOutputMode,
-                            config: PrefillRuntimeConfig,
-                            into logits: MTLBuffer,
-                            onProgress: (Int) -> Void) async throws -> PrefillResult {
+        func prefillChunked(
+            tokens: ArraySlice<Int32>,
+            startPosition: Int,
+            outputMode: PrefillOutputMode,
+            config: PrefillRuntimeConfig,
+            into logits: MTLBuffer,
+            onProgress: (Int) -> Void
+        ) async throws -> PrefillResult {
             guard continuationPosition == startPosition else {
                 throw PrefillError.prefillCursorMismatch("test prefill cursor mismatch")
             }
@@ -53,8 +55,9 @@ extension RawCompletionLoopTests {
             continuationPosition += tokens.count
             onProgress(tokens.count)
             writeTerminal(to: logits)
-            return PrefillResult(newPosition: continuationPosition,
-                                 seed: .logitsWritten)
+            return PrefillResult(
+                newPosition: continuationPosition,
+                seed: .logitsWritten)
         }
 
         private func writeTerminal(to logits: MTLBuffer) {

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
@@ -34,7 +35,9 @@ struct ModelRouterTests {
 
         let running = Task { try await router.generate(Fixture.request(Fixture.alpha.id)) { _ in } }
         await Fixture.eventually("alpha to start generating") { await gate.isWaiting }
-        let switching = Task { try await router.generate(Fixture.request(Fixture.small.id)) { _ in } }
+        let switching = Task {
+            try await router.generate(Fixture.request(Fixture.small.id)) { _ in }
+        }
         await Fixture.eventually("the switch to queue") { await router.waiterCount == 1 }
 
         #expect(await router.residentModelID == Fixture.alpha.id)
@@ -59,7 +62,9 @@ struct ModelRouterTests {
 
         let first = Task { try await router.generate(Fixture.request(Fixture.alpha.id)) { _ in } }
         await Fixture.eventually("alpha to start") { await gate.isWaiting }
-        let switching = Task { try await router.generate(Fixture.request(Fixture.small.id)) { _ in } }
+        let switching = Task {
+            try await router.generate(Fixture.request(Fixture.small.id)) { _ in }
+        }
         await Fixture.eventually("the switch to queue") { await router.waiterCount == 1 }
         let later = Task { try await router.generate(Fixture.request(Fixture.alpha.id)) { _ in } }
         await Fixture.eventually("the later request to queue") { await router.waiterCount == 2 }
@@ -78,8 +83,10 @@ struct ModelRouterTests {
         }
         #expect(log.loads.isEmpty)
         #expect(throws: ModelRouterError.self) {
-            _ = try ModelRouter(catalog: Fixture.catalog, initialModelID: "no-such-model",
-                                reasoning: .off, maximumContext: 4_096) { _, _ in
+            _ = try ModelRouter(
+                catalog: Fixture.catalog, initialModelID: "no-such-model",
+                reasoning: .off, maximumContext: 4_096
+            ) { _, _ in
                 RoutedStubModel(id: "x", log: log, gate: nil, delay: nil)
             }
         }
@@ -164,9 +171,12 @@ struct ModelRouterTests {
         #expect(small.displayName == "Small 2B")
         #expect(router.servedModel(named: "small-2b-fast")?.id == Fixture.small.id)
         #expect(router.servedModel(named: "nothing-fast") == nil)
-        #expect(router.servedModels.map(\.id) == [Fixture.alpha.id, Fixture.flash.id,
-                                                  Fixture.small.id, Fixture.dense.id,
-                                                  "\(Fixture.dense.id)@cpu"])
+        #expect(
+            router.servedModels.map(\.id) == [
+                Fixture.alpha.id, Fixture.flash.id,
+                Fixture.small.id, Fixture.dense.id,
+                "\(Fixture.dense.id)@cpu",
+            ])
     }
 
     @Test func theServerLevelIsFittedToEachModelAndLoadedThatWay() async throws {
@@ -281,7 +291,8 @@ struct ReasoningFallbackTests {
             ["--model", "/nonexistent", "--thinking", "on", "--reasoning-effort", "low"],
             environment: [:])
         // Nothing is read from disk: the path does not exist and this passes.
-        let settings = try arguments.singleModelReasoning(directory: URL(fileURLWithPath: "/nonexistent"))
+        let settings = try arguments.singleModelReasoning(
+            directory: URL(fileURLWithPath: "/nonexistent"))
         #expect(settings.thinking == .on)
         #expect(settings.effort == .low)
         #expect(arguments.requestedReasoningLevel == .low)

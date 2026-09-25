@@ -26,7 +26,7 @@ let tinytitanLanguageStandard: [SwiftSetting] = [
 let package = Package(
     name: "TinyTitan",
     platforms: [
-        .macOS(.v26),
+        .macOS(.v26)
     ],
     products: [
         .library(name: "TinyTitan", targets: ["TinyTitan"]),
@@ -82,15 +82,17 @@ let package = Package(
         .target(
             name: "TinyTitanKernelsC",
             path: "sources/TinyTitanKernelsC",
-            cSettings: [.unsafeFlags([
-                "-O2",
-                "-pedantic-errors",
-                "-Wall", "-Wextra",
-                "-Wshadow", "-Wconversion", "-Wsign-conversion", "-Wcast-qual",
-                "-Wwrite-strings", "-Wformat=2", "-Wstrict-prototypes",
-                "-Wmissing-prototypes",
-                "-Werror",
-            ])],
+            cSettings: [
+                .unsafeFlags([
+                    "-O2",
+                    "-pedantic-errors",
+                    "-Wall", "-Wextra",
+                    "-Wshadow", "-Wconversion", "-Wsign-conversion", "-Wcast-qual",
+                    "-Wwrite-strings", "-Wformat=2", "-Wstrict-prototypes",
+                    "-Wmissing-prototypes",
+                    "-Werror",
+                ])
+            ],
             swiftSettings: tinytitanLanguageStandard
         ),
         .target(
@@ -102,7 +104,7 @@ let package = Package(
             ],
             path: "sources/TinyTitan",
             resources: [
-                .copy("Metal"),
+                .copy("Metal")
             ],
             swiftSettings: tinytitanLanguageStandard
         ),
@@ -224,11 +226,16 @@ let package = Package(
         ),
         .testTarget(
             name: "TinyTitanTests",
-            dependencies: ["TinyTitan", "TinyTitanValidationSupport", "TinyTitanRepackCore", "TinyTitanCLICore"],
+            dependencies: [
+                "TinyTitan", "TinyTitanValidationSupport", "TinyTitanRepackCore",
+                "TinyTitanCLICore",
+            ],
             path: "tests/TinyTitan",
-            resources: [.copy("Tokenization/Fixtures"),
-                        .copy("Runtime/qwen38_tensor_names.txt"),
-                        .copy("Runtime/ple_golden.json")],
+            resources: [
+                .copy("Tokenization/Fixtures"),
+                .copy("Runtime/qwen38_tensor_names.txt"),
+                .copy("Runtime/ple_golden.json"),
+            ],
             swiftSettings: tinytitanLanguageStandard
         ),
         .testTarget(

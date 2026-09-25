@@ -36,7 +36,8 @@ extension RawCompletionLoopTests {
             config: GenerationConfig(maxNewTokens: 4, temperature: 0),
             context: context,
             scratch: scratch,
-            prefillConfig: .off) { _ in }
+            prefillConfig: .off
+        ) { _ in }
 
         #expect(producer.resetCalls == 1)
         #expect(producer.produceCalls > promptIDs.count)

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitanMemory
 
 /// Keys and scopes are the security boundary: both are chosen by the model
@@ -18,17 +19,17 @@ import Testing
     }
 
     @Test(arguments: [
-        "",                       // nothing to store under
-        "   ",                    // whitespace only
-        "/absolute",              // would look rooted to a backend
-        "../escape",              // traversal
-        "a/../../etc/passwd",     // traversal, deeper
-        "a//b",                   // empty segment
-        "a/./b",                  // relative segment
-        "with space",             // whitespace inside a segment
-        "colon:key",              // the backend's own separator
-        "new\nline",              // control character
-        "star*",                  // glob, which would widen a scan
+        "",  // nothing to store under
+        "   ",  // whitespace only
+        "/absolute",  // would look rooted to a backend
+        "../escape",  // traversal
+        "a/../../etc/passwd",  // traversal, deeper
+        "a//b",  // empty segment
+        "a/./b",  // relative segment
+        "with space",  // whitespace inside a segment
+        "colon:key",  // the backend's own separator
+        "new\nline",  // control character
+        "star*",  // glob, which would widen a scan
         "question?",
         "brace{a,b}",
     ])
@@ -77,8 +78,9 @@ import Testing
     }
 
     @Test func importanceAndConfidenceAreClamped() throws {
-        let record = MemoryRecord(key: try MemoryKey(validating: "k"),
-                                  value: "v", importance: 5, confidence: -1)
+        let record = MemoryRecord(
+            key: try MemoryKey(validating: "k"),
+            value: "v", importance: 5, confidence: -1)
         #expect(record.importance == 1)
         #expect(record.confidence == 0)
     }

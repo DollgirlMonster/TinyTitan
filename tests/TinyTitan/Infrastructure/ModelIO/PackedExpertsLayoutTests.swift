@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import TinyTitan
 
 @Suite struct PackedExpertsLayoutTests {
@@ -31,13 +32,13 @@ import Foundation
                                     "size": 4096,
                                     "dtype": "U32",
                                     "shape": [64, 64],
-                                    "bits": 4
+                                    "bits": 4,
                                 ],
                                 "gate_scales": [
                                     "offset": 4096,
                                     "size": 256,
                                     "dtype": "BF16",
-                                    "shape": [64, 1]
+                                    "shape": [64, 1],
                                 ],
                             ],
                         ],
@@ -52,18 +53,18 @@ import Foundation
                                     "size": 4096,
                                     "dtype": "U32",
                                     "shape": [64, 64],
-                                    "bits": 4
+                                    "bits": 4,
                                 ],
                                 "gate_scales": [
                                     "offset": 4096,
                                     "size": 256,
                                     "dtype": "BF16",
-                                    "shape": [64, 1]
+                                    "shape": [64, 1],
                                 ],
                             ],
                         ],
                     ],
-                ],
+                ]
             ],
         ]
         let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
@@ -109,14 +110,16 @@ import Foundation
     @Test func oversizedLayoutRejectsBeforeDecode() throws {
         let dir = try Self.writeToyLayout()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let layoutURL = dir
+        let layoutURL =
+            dir
             .appendingPathComponent("packed_experts")
             .appendingPathComponent("layout.json")
         try Data(repeating: 0x20, count: 64).write(to: layoutURL)
 
         #expect {
-            _ = try PackedExpertsLayoutReader.load(directoryURL: dir,
-                                                   maxBytes: 16)
+            _ = try PackedExpertsLayoutReader.load(
+                directoryURL: dir,
+                maxBytes: 16)
         } throws: { error in
             if case ModelError.indexCorrupt(let detail) = error {
                 return detail.contains("metadata cap")

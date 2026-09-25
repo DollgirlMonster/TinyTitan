@@ -16,7 +16,7 @@ public enum Quantization {
     @inline(always)
     public static func bf16Bits(_ x: Float) -> UInt16 {
         let bits = x.bitPattern
-        let lsb  = (bits >> 16) & 1
+        let lsb = (bits >> 16) & 1
         let roundingBias: UInt32 = 0x7FFF &+ lsb
         let rounded = (bits &+ roundingBias) >> 16
         return UInt16(truncatingIfNeeded: rounded)
@@ -33,7 +33,7 @@ public enum Quantization {
     /// group of 64. `scales` and `biases` carry BF16 bit patterns as `UInt16`
     /// so the same buffer can be uploaded to a Metal `device const bfloat*`.
     public struct Int4AffineRow {
-        public let packed: [UInt8]   // N / 2 bytes; low nibble = even index, high = odd
+        public let packed: [UInt8]  // N / 2 bytes; low nibble = even index, high = odd
         public let scales: [UInt16]  // N / 64 BF16 bits
         public let biases: [UInt16]  // N / 64 BF16 bits
 
@@ -48,8 +48,9 @@ public enum Quantization {
     /// Scale and bias are computed from per-group min/max, then rounded to BF16.
     /// Test-fixture only — the runtime importer never calls this.
     public static func quantizeInt4Affine(_ row: [Float]) -> Int4AffineRow {
-        precondition(row.count % groupSize == 0,
-                     "row length \(row.count) is not a multiple of \(groupSize)")
+        precondition(
+            row.count % groupSize == 0,
+            "row length \(row.count) is not a multiple of \(groupSize)")
 
         let nGroups = row.count / groupSize
         var packed = [UInt8](repeating: 0, count: row.count / 2)
@@ -57,7 +58,7 @@ public enum Quantization {
         var biases = [UInt16](repeating: 0, count: nGroups)
 
         for g in 0..<nGroups {
-            var wmin: Float =  .infinity
+            var wmin: Float = .infinity
             var wmax: Float = -.infinity
             for k in 0..<groupSize {
                 let w = row[g * groupSize + k]
@@ -66,13 +67,13 @@ public enum Quantization {
             }
             // Constant group: scale=1, bias=value preserves exact reconstruction.
             let scaleF: Float
-            let biasF:  Float
+            let biasF: Float
             if wmax == wmin {
                 scaleF = 1
-                biasF  = wmin
+                biasF = wmin
             } else {
                 scaleF = (wmax - wmin) / 15.0
-                biasF  = wmin
+                biasF = wmin
             }
             // Round through BF16 first, then quantize against the rounded
             // values so the runtime decode (which reads BF16) reproduces the
@@ -82,7 +83,7 @@ public enum Quantization {
             scales[g] = sBits
             biases[g] = bBits
             let scale = bf16ToFloat(sBits)
-            let bias  = bf16ToFloat(bBits)
+            let bias = bf16ToFloat(bBits)
             let invScale = scale == 0 ? Float(0) : 1.0 / scale
 
             for k in 0..<groupSize {
@@ -107,7 +108,7 @@ public enum Quantization {
         let nGroups = n / groupSize
         for g in 0..<nGroups {
             let scale = bf16ToFloat(r.scales[g])
-            let bias  = bf16ToFloat(r.biases[g])
+            let bias = bf16ToFloat(r.biases[g])
             for k in 0..<groupSize {
                 let byteIdx = g * (groupSize / 2) + (k / 2)
                 let b = r.packed[byteIdx]
@@ -121,7 +122,7 @@ public enum Quantization {
     // MARK: - INT8 affine
 
     public struct Int8AffineRow {
-        public let packed: [UInt8]   // N unsigned bytes
+        public let packed: [UInt8]  // N unsigned bytes
         public let scales: [UInt16]  // N / 64 BF16 bits
         public let biases: [UInt16]  // N / 64 BF16 bits
 
@@ -133,8 +134,9 @@ public enum Quantization {
     }
 
     public static func quantizeInt8Affine(_ row: [Float]) -> Int8AffineRow {
-        precondition(row.count % groupSize == 0,
-                     "row length \(row.count) is not a multiple of \(groupSize)")
+        precondition(
+            row.count % groupSize == 0,
+            "row length \(row.count) is not a multiple of \(groupSize)")
 
         let nGroups = row.count / groupSize
         var packed = [UInt8](repeating: 0, count: row.count)
@@ -142,7 +144,7 @@ public enum Quantization {
         var biases = [UInt16](repeating: 0, count: nGroups)
 
         for g in 0..<nGroups {
-            var wmin: Float =  .infinity
+            var wmin: Float = .infinity
             var wmax: Float = -.infinity
             for k in 0..<groupSize {
                 let w = row[g * groupSize + k]
@@ -150,20 +152,20 @@ public enum Quantization {
                 if w > wmax { wmax = w }
             }
             let scaleF: Float
-            let biasF:  Float
+            let biasF: Float
             if wmax == wmin {
                 scaleF = 1
-                biasF  = wmin
+                biasF = wmin
             } else {
                 scaleF = (wmax - wmin) / 255.0
-                biasF  = wmin
+                biasF = wmin
             }
             let sBits = bf16Bits(scaleF)
             let bBits = bf16Bits(biasF)
             scales[g] = sBits
             biases[g] = bBits
             let scale = bf16ToFloat(sBits)
-            let bias  = bf16ToFloat(bBits)
+            let bias = bf16ToFloat(bBits)
             let invScale = scale == 0 ? Float(0) : 1.0 / scale
 
             for k in 0..<groupSize {
@@ -182,7 +184,7 @@ public enum Quantization {
         let nGroups = n / groupSize
         for g in 0..<nGroups {
             let scale = bf16ToFloat(r.scales[g])
-            let bias  = bf16ToFloat(r.biases[g])
+            let bias = bf16ToFloat(r.biases[g])
             for k in 0..<groupSize {
                 out[g * groupSize + k] = Float(r.packed[g * groupSize + k]) * scale + bias
             }

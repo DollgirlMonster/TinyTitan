@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContinuityCore
 @testable import TinyTitanMemory
 
@@ -36,15 +37,17 @@ import Testing
     /// stays and the disagreement is recorded.
     @Test func modelDoesNotOverwriteTheUser() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("characters/marcus/eyes", "grey", user: true),
-                                in: scope, guarding: true, flaggingReversions: true)
+        _ = try await store.set(
+            try record("characters/marcus/eyes", "grey", user: true),
+            in: scope, guarding: true, flaggingReversions: true)
         let outcome = try await store.set(
             try record("characters/marcus/eyes", "hazel", user: false),
             in: scope, guarding: true, flaggingReversions: true)
 
         #expect(outcome == .heldByGuard(existing: "grey"))
-        let held = try await store.get(try MemoryKey(validating: "characters/marcus/eyes"),
-                                       in: scope)
+        let held = try await store.get(
+            try MemoryKey(validating: "characters/marcus/eyes"),
+            in: scope)
         #expect(held?.value == "grey")
         #expect(held?.isDisputed == true, "the conflict must be visible, not silent")
     }
@@ -54,10 +57,12 @@ import Testing
     /// guard constrains the model, never the person.
     @Test func userSupersedesTheirOwnEarlierFact() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("state/inn", "standing", user: true),
-                                in: scope, guarding: true, flaggingReversions: true)
-        let outcome = try await store.set(try record("state/inn", "burned", user: true),
-                                          in: scope, guarding: true, flaggingReversions: true)
+        _ = try await store.set(
+            try record("state/inn", "standing", user: true),
+            in: scope, guarding: true, flaggingReversions: true)
+        let outcome = try await store.set(
+            try record("state/inn", "burned", user: true),
+            in: scope, guarding: true, flaggingReversions: true)
 
         #expect(outcome == .stored)
         let held = try await store.get(try MemoryKey(validating: "state/inn"), in: scope)
@@ -68,8 +73,9 @@ import Testing
     /// direction and changes nothing else.
     @Test func modelStillSupersedesModel() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("decisions/storage", "sqlite", user: false),
-                                in: scope, guarding: true, flaggingReversions: true)
+        _ = try await store.set(
+            try record("decisions/storage", "sqlite", user: false),
+            in: scope, guarding: true, flaggingReversions: true)
         let outcome = try await store.set(
             try record("decisions/storage", "a journal file", user: false),
             in: scope, guarding: true, flaggingReversions: true)
@@ -84,10 +90,12 @@ import Testing
     /// over nothing and put a false conflict in front of the next session.
     @Test func agreementIsNotAConflict() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("setting/town", "Ashgrove", user: true),
-                                in: scope, guarding: true, flaggingReversions: true)
-        let outcome = try await store.set(try record("setting/town", "ashgrove.", user: false),
-                                          in: scope, guarding: true, flaggingReversions: true)
+        _ = try await store.set(
+            try record("setting/town", "Ashgrove", user: true),
+            in: scope, guarding: true, flaggingReversions: true)
+        let outcome = try await store.set(
+            try record("setting/town", "ashgrove.", user: false),
+            in: scope, guarding: true, flaggingReversions: true)
 
         #expect(outcome == .stored, "fold-equal values are the same fact")
         let held = try await store.get(try MemoryKey(validating: "setting/town"), in: scope)
@@ -98,23 +106,26 @@ import Testing
     /// which is what makes shipping it off by default meaningful.
     @Test func guardOffIsTodaysBehaviour() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("characters/rosa/eyes", "hazel", user: true),
-                                in: scope, guarding: false, flaggingReversions: true)
+        _ = try await store.set(
+            try record("characters/rosa/eyes", "hazel", user: true),
+            in: scope, guarding: false, flaggingReversions: true)
         let outcome = try await store.set(
             try record("characters/rosa/eyes", "green", user: false),
             in: scope, guarding: false, flaggingReversions: true)
 
         #expect(outcome == .stored)
-        let held = try await store.get(try MemoryKey(validating: "characters/rosa/eyes"),
-                                       in: scope)
+        let held = try await store.get(
+            try MemoryKey(validating: "characters/rosa/eyes"),
+            in: scope)
         #expect(held?.value == "green", "without the guard the last write wins")
     }
 
     /// A first write has nothing to protect, whoever makes it.
     @Test func firstWriteIsAlwaysStored() async throws {
         let (store, scope) = try await store()
-        let outcome = try await store.set(try record("rules/weather", "never rains", user: false),
-                                          in: scope, guarding: true, flaggingReversions: true)
+        let outcome = try await store.set(
+            try record("rules/weather", "never rains", user: false),
+            in: scope, guarding: true, flaggingReversions: true)
         #expect(outcome == .stored)
     }
 
@@ -126,10 +137,12 @@ import Testing
     /// model's own invention. Protecting it protects the invention.
     @Test func aCompositeValueCannotCarryTheUsersAuthority() async throws {
         let (store, scope) = try await store()
-        let composite = "Rosa: hazel eyes, keeps the inn; raised a new inn from "
+        let composite =
+            "Rosa: hazel eyes, keeps the inn; raised a new inn from "
             + "charred walls in chapter 65 while keeping the old hearth."
-        _ = try await store.set(try record("characters/rosa", composite, user: true),
-                                in: scope, guarding: true, flaggingReversions: true)
+        _ = try await store.set(
+            try record("characters/rosa", composite, user: true),
+            in: scope, guarding: true, flaggingReversions: true)
         // The model may correct it, because nothing here is protected.
         let outcome = try await store.set(
             try record("characters/rosa", "Rosa: hazel eyes, keeps the inn.", user: false),
@@ -142,8 +155,9 @@ import Testing
     /// weakening the guard.
     @Test func anAtomicValueStillCarriesIt() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("characters/rosa/eyes", "hazel", user: true),
-                                in: scope, guarding: true, flaggingReversions: true)
+        _ = try await store.set(
+            try record("characters/rosa/eyes", "hazel", user: true),
+            in: scope, guarding: true, flaggingReversions: true)
         let outcome = try await store.set(
             try record("characters/rosa/eyes", "green", user: false),
             in: scope, guarding: true)
@@ -153,25 +167,31 @@ import Testing
     /// Each sign earns its place on the recorded corpus; each is tested.
     @Test func atomicityRecognisesEachShapeOfCompositeValue() {
         #expect(MemoryRecord.isAtomic("hazel"))
-        #expect(MemoryRecord.isAtomic("The inn burned in chapter 34."),
-                "one sentence, and a trailing full stop is not a second")
-        #expect(MemoryRecord.isAtomic("Marcus, grey eyes, lighthouse keeper's son"),
-                "commas are not clause boundaries; plenty of single facts have them")
+        #expect(
+            MemoryRecord.isAtomic("The inn burned in chapter 34."),
+            "one sentence, and a trailing full stop is not a second")
+        #expect(
+            MemoryRecord.isAtomic("Marcus, grey eyes, lighthouse keeper's son"),
+            "commas are not clause boundaries; plenty of single facts have them")
 
-        #expect(!MemoryRecord.isAtomic("Ines: green eyes; town archivist"),
-                "a semicolon caught every composite in the corpus")
-        #expect(!MemoryRecord.isAtomic("The inn burned. Rosa rebuilt it."),
-                "two sentences are two facts")
-        #expect(!MemoryRecord.isAtomic(String(repeating: "a", count: 121)),
-                "length is the backstop for a run-on with neither sign")
+        #expect(
+            !MemoryRecord.isAtomic("Ines: green eyes; town archivist"),
+            "a semicolon caught every composite in the corpus")
+        #expect(
+            !MemoryRecord.isAtomic("The inn burned. Rosa rebuilt it."),
+            "two sentences are two facts")
+        #expect(
+            !MemoryRecord.isAtomic(String(repeating: "a", count: 121)),
+            "length is the backstop for a run-on with neither sign")
     }
 
     /// A fact the model wrote is unaffected by any of this: the rule governs
     /// whether a *claim* of the person's authority stands, and the model
     /// makes no such claim.
     @Test func atomicityDoesNotTouchModelFacts() throws {
-        var model = try record("decisions/storage", "sqlite; with WAL; and a journal",
-                               user: false)
+        var model = try record(
+            "decisions/storage", "sqlite; with WAL; and a journal",
+            user: false)
         #expect(model.carriesUserAuthority == false)
         model.isUserAsserted = true
         #expect(model.carriesUserAuthority == false, "still composite")
@@ -185,8 +205,9 @@ import Testing
     /// very next session. Every writer goes through the rule now.
     @Test func aModelToolWriteDoesNotOverwriteTheUser() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("rules/language", "German", user: true),
-                                in: scope, guarding: true, flaggingReversions: true)
+        _ = try await store.set(
+            try record("rules/language", "German", user: true),
+            in: scope, guarding: true, flaggingReversions: true)
         let outcome = try await store.set(
             try record("rules/language", "English", user: false),
             in: scope, guarding: true)
@@ -200,10 +221,12 @@ import Testing
     /// failure as overwriting it, and gets the same answer.
     @Test func aModelToolDeleteDoesNotRemoveTheUsersFact() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("rules/ferry", "Sundays only", user: true),
-                                in: scope, guarding: true, flaggingReversions: true)
-        let outcome = try await store.delete(try MemoryKey(validating: "rules/ferry"),
-                                             in: scope, guarding: true)
+        _ = try await store.set(
+            try record("rules/ferry", "Sundays only", user: true),
+            in: scope, guarding: true, flaggingReversions: true)
+        let outcome = try await store.delete(
+            try MemoryKey(validating: "rules/ferry"),
+            in: scope, guarding: true)
 
         #expect(outcome == .heldByGuard)
         let kept = try await store.get(try MemoryKey(validating: "rules/ferry"), in: scope)
@@ -214,10 +237,12 @@ import Testing
     /// A fact the model wrote is the model's to delete.
     @Test func aModelToolDeleteRemovesTheModelsOwnFact() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("state/draft", "chapter 3", user: false),
-                                in: scope, guarding: true, flaggingReversions: true)
-        let outcome = try await store.delete(try MemoryKey(validating: "state/draft"),
-                                             in: scope, guarding: true)
+        _ = try await store.set(
+            try record("state/draft", "chapter 3", user: false),
+            in: scope, guarding: true, flaggingReversions: true)
+        let outcome = try await store.delete(
+            try MemoryKey(validating: "state/draft"),
+            in: scope, guarding: true)
         #expect(outcome == .deleted)
     }
 
@@ -227,14 +252,16 @@ import Testing
     /// good.
     @Test func authoritySurvivesAReadAndAnAppend() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("rules/style", "no semicolons", user: true),
-                                in: scope, guarding: true, flaggingReversions: true)
+        _ = try await store.set(
+            try record("rules/style", "no semicolons", user: true),
+            in: scope, guarding: true, flaggingReversions: true)
 
         let read = try await store.get(try MemoryKey(validating: "rules/style"), in: scope)
         #expect(read?.isUserAsserted == true, "a read must not launder authorship")
 
-        _ = try await store.append("and no tabs",
-                                   to: try MemoryKey(validating: "rules/style"), in: scope)
+        _ = try await store.append(
+            "and no tabs",
+            to: try MemoryKey(validating: "rules/style"), in: scope)
         let outcome = try await store.set(
             try record("rules/style", "semicolons everywhere", user: false),
             in: scope, guarding: true)
@@ -245,8 +272,9 @@ import Testing
     /// guard existed.
     @Test func guardOffLetsAToolWriteThrough() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("rules/language", "German", user: true),
-                                in: scope, guarding: false, flaggingReversions: true)
+        _ = try await store.set(
+            try record("rules/language", "German", user: true),
+            in: scope, guarding: false, flaggingReversions: true)
         let outcome = try await store.set(
             try record("rules/language", "English", user: false),
             in: scope, guarding: false)
@@ -258,8 +286,9 @@ import Testing
     /// challenged much later, must still be protected.
     @Test func authoritySurvivesForLaterWrites() async throws {
         let (store, scope) = try await store()
-        _ = try await store.set(try record("rules/ferry", "Sundays only", user: true),
-                                in: scope, guarding: true, flaggingReversions: true)
+        _ = try await store.set(
+            try record("rules/ferry", "Sundays only", user: true),
+            in: scope, guarding: true, flaggingReversions: true)
         for filler in 0..<5 {
             _ = try await store.set(
                 try record("state/chapter\(filler)", "written", user: false),

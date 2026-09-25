@@ -5,14 +5,16 @@ import Metal
 /// two-row kernels share the buffer layout and dispatch; only the pipeline
 /// selection and the alignment preconditions differ, and those stay at the
 /// call sites.
-func encodeTwoRowsShared(commandBuffer: MTLCommandBuffer,
-                         pipeline: MTLComputePipelineState,
-                         weights: MTLBuffer, weightsOffset: Int,
-                         scales: MTLBuffer, scalesOffset: Int,
-                         biases: MTLBuffer, biasesOffset: Int,
-                         x: MTLBuffer, xOffset: Int,
-                         y: MTLBuffer, yOffset: Int,
-                         m: UInt32, n: UInt32) throws {
+func encodeTwoRowsShared(
+    commandBuffer: MTLCommandBuffer,
+    pipeline: MTLComputePipelineState,
+    weights: MTLBuffer, weightsOffset: Int,
+    scales: MTLBuffer, scalesOffset: Int,
+    biases: MTLBuffer, biasesOffset: Int,
+    x: MTLBuffer, xOffset: Int,
+    y: MTLBuffer, yOffset: Int,
+    m: UInt32, n: UInt32
+) throws {
     guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
         throw MetalError.commandEncoderFailed
     }
@@ -28,10 +30,12 @@ func encodeTwoRowsShared(commandBuffer: MTLCommandBuffer,
     encoder.setBytes(&columns, length: MemoryLayout<UInt32>.size, index: 6)
     let rowsPerThreadgroup = 8
     encoder.dispatchThreadgroups(
-        MTLSize(width: (Int(m) + rowsPerThreadgroup - 1) / rowsPerThreadgroup,
-                height: 1, depth: 1),
-        threadsPerThreadgroup: MTLSize(width: 32 * rowsPerThreadgroup,
-                                       height: 1, depth: 1))
+        MTLSize(
+            width: (Int(m) + rowsPerThreadgroup - 1) / rowsPerThreadgroup,
+            height: 1, depth: 1),
+        threadsPerThreadgroup: MTLSize(
+            width: 32 * rowsPerThreadgroup,
+            height: 1, depth: 1))
     encoder.endEncoding()
 }
 
@@ -45,23 +49,31 @@ final class AffineQuantGEMV {
         self.weightBits = weightBits
         self.pipeline = try context.pipeline(
             "affine_quant_gemv_simd",
-            constants: [MetalFunctionConstant(index: 100,
-                                               value: .uint32(UInt32(weightBits)))],
+            constants: [
+                MetalFunctionConstant(
+                    index: 100,
+                    value: .uint32(UInt32(weightBits)))
+            ],
             maxTotalThreadsPerThreadgroup: 256)
         self.twoRowPipeline = try context.pipeline(
             "affine_quant_gemv2_simd",
-            constants: [MetalFunctionConstant(index: 100,
-                                               value: .uint32(UInt32(weightBits)))],
+            constants: [
+                MetalFunctionConstant(
+                    index: 100,
+                    value: .uint32(UInt32(weightBits)))
+            ],
             maxTotalThreadsPerThreadgroup: 256)
     }
 
-    func encode(commandBuffer: MTLCommandBuffer,
-                weights: MTLBuffer, weightsOffset: Int = 0,
-                scales: MTLBuffer, scalesOffset: Int = 0,
-                biases: MTLBuffer, biasesOffset: Int = 0,
-                x: MTLBuffer, xOffset: Int = 0,
-                y: MTLBuffer, yOffset: Int = 0,
-                m: UInt32, n: UInt32) throws {
+    func encode(
+        commandBuffer: MTLCommandBuffer,
+        weights: MTLBuffer, weightsOffset: Int = 0,
+        scales: MTLBuffer, scalesOffset: Int = 0,
+        biases: MTLBuffer, biasesOffset: Int = 0,
+        x: MTLBuffer, xOffset: Int = 0,
+        y: MTLBuffer, yOffset: Int = 0,
+        m: UInt32, n: UInt32
+    ) throws {
         precondition(n.isMultiple(of: UInt32(Quantization.groupSize)))
         precondition(weightsOffset.isMultiple(of: MemoryLayout<UInt32>.alignment))
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
@@ -79,30 +91,35 @@ final class AffineQuantGEMV {
         encoder.setBytes(&columns, length: MemoryLayout<UInt32>.size, index: 6)
         let rowsPerThreadgroup = 8
         encoder.dispatchThreadgroups(
-            MTLSize(width: (Int(m) + rowsPerThreadgroup - 1) / rowsPerThreadgroup,
-                    height: 1, depth: 1),
-            threadsPerThreadgroup: MTLSize(width: 32 * rowsPerThreadgroup,
-                                           height: 1, depth: 1))
+            MTLSize(
+                width: (Int(m) + rowsPerThreadgroup - 1) / rowsPerThreadgroup,
+                height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(
+                width: 32 * rowsPerThreadgroup,
+                height: 1, depth: 1))
         encoder.endEncoding()
     }
 
-    func encodeTwoRows(commandBuffer: MTLCommandBuffer,
-                       weights: MTLBuffer, weightsOffset: Int = 0,
-                       scales: MTLBuffer, scalesOffset: Int = 0,
-                       biases: MTLBuffer, biasesOffset: Int = 0,
-                       x: MTLBuffer, xOffset: Int = 0,
-                       y: MTLBuffer, yOffset: Int = 0,
-                       m: UInt32, n: UInt32) throws {
+    func encodeTwoRows(
+        commandBuffer: MTLCommandBuffer,
+        weights: MTLBuffer, weightsOffset: Int = 0,
+        scales: MTLBuffer, scalesOffset: Int = 0,
+        biases: MTLBuffer, biasesOffset: Int = 0,
+        x: MTLBuffer, xOffset: Int = 0,
+        y: MTLBuffer, yOffset: Int = 0,
+        m: UInt32, n: UInt32
+    ) throws {
         precondition(n.isMultiple(of: UInt32(Quantization.groupSize)))
         precondition(weightsOffset.isMultiple(of: MemoryLayout<UInt32>.alignment))
-        try encodeTwoRowsShared(commandBuffer: commandBuffer,
-                                pipeline: twoRowPipeline,
-                                weights: weights, weightsOffset: weightsOffset,
-                                scales: scales, scalesOffset: scalesOffset,
-                                biases: biases, biasesOffset: biasesOffset,
-                                x: x, xOffset: xOffset,
-                                y: y, yOffset: yOffset,
-                                m: m, n: n)
+        try encodeTwoRowsShared(
+            commandBuffer: commandBuffer,
+            pipeline: twoRowPipeline,
+            weights: weights, weightsOffset: weightsOffset,
+            scales: scales, scalesOffset: scalesOffset,
+            biases: biases, biasesOffset: biasesOffset,
+            x: x, xOffset: xOffset,
+            y: y, yOffset: yOffset,
+            m: m, n: n)
     }
 }
 
@@ -115,17 +132,22 @@ final class AffineQuantEmbeddingLookup {
         self.weightBits = weightBits
         self.pipeline = try context.pipeline(
             "affine_quant_embedding_lookup",
-            constants: [MetalFunctionConstant(index: 100,
-                                               value: .uint32(UInt32(weightBits)))])
+            constants: [
+                MetalFunctionConstant(
+                    index: 100,
+                    value: .uint32(UInt32(weightBits)))
+            ])
     }
 
-    func encode(commandBuffer: MTLCommandBuffer,
-                table: MTLBuffer, tableOffset: Int = 0,
-                scales: MTLBuffer, scalesOffset: Int = 0,
-                biases: MTLBuffer, biasesOffset: Int = 0,
-                out: MTLBuffer, outOffset: Int = 0,
-                tokenId: UInt32, d: UInt32, outScale: Float,
-                vocab: UInt32) throws {
+    func encode(
+        commandBuffer: MTLCommandBuffer,
+        table: MTLBuffer, tableOffset: Int = 0,
+        scales: MTLBuffer, scalesOffset: Int = 0,
+        biases: MTLBuffer, biasesOffset: Int = 0,
+        out: MTLBuffer, outOffset: Int = 0,
+        tokenId: UInt32, d: UInt32, outScale: Float,
+        vocab: UInt32
+    ) throws {
         precondition(d.isMultiple(of: UInt32(Quantization.groupSize)))
         precondition(tableOffset.isMultiple(of: MemoryLayout<UInt32>.alignment))
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
@@ -145,9 +167,11 @@ final class AffineQuantEmbeddingLookup {
         encoder.setBytes(&scale, length: MemoryLayout<Float>.size, index: 6)
         encoder.setBytes(&vocabCount, length: MemoryLayout<UInt32>.size, index: 7)
         let width = min(pipeline.maxTotalThreadsPerThreadgroup, 256)
-        encoder.dispatchThreads(MTLSize(width: Int(d), height: 1, depth: 1),
-                                threadsPerThreadgroup: MTLSize(width: width,
-                                                               height: 1, depth: 1))
+        encoder.dispatchThreads(
+            MTLSize(width: Int(d), height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(
+                width: width,
+                height: 1, depth: 1))
         encoder.endEncoding()
     }
 }

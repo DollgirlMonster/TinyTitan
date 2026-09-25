@@ -43,20 +43,25 @@ public struct RawCompletionScratch: @unchecked Sendable {
     let sampler: Sampler
 
     public init(context: MetalContext, vocab: Int, logitSoftcap: Float = 0.0) throws {
-        guard let logits = context.device.makeBuffer(length: vocab * MemoryLayout<Float16>.size,
-                                                     options: .storageModeShared),
-              let probs = context.device.makeBuffer(length: vocab * MemoryLayout<Float16>.size,
-                                                    options: .storageModeShared),
-              let outToken = context.device.makeBuffer(length: MemoryLayout<UInt32>.size,
-                                                       options: .storageModeShared)
+        guard
+            let logits = context.device.makeBuffer(
+                length: vocab * MemoryLayout<Float16>.size,
+                options: .storageModeShared),
+            let probs = context.device.makeBuffer(
+                length: vocab * MemoryLayout<Float16>.size,
+                options: .storageModeShared),
+            let outToken = context.device.makeBuffer(
+                length: MemoryLayout<UInt32>.size,
+                options: .storageModeShared)
         else {
             throw ModelError.residentBufferWrapFailed
         }
         self.logits = logits
         self.probs = probs
         self.outToken = outToken
-        self.sampler = try Sampler(context: context, vocab: vocab,
-                                   logitSoftcap: logitSoftcap)
+        self.sampler = try Sampler(
+            context: context, vocab: vocab,
+            logitSoftcap: logitSoftcap)
     }
 }
 
@@ -84,20 +89,22 @@ extension GenerationConfig {
 /// reporting. The loop body reads and writes the same half-dozen pieces of
 /// decode state on every iteration, so splitting it would thread that state
 /// back through parameters on every call.
-public func runRawCompletion(producer: any LogitProducer,
-                             tokenizer: GFTokenizer,
-                             // Resistance is futile. Your biological and technological
-                             // distinctiveness will be added to our own. Your culture will
-                             // adapt to service us. We are the Borg.
-                             promptIds: [Int32],
-                             config: GenerationConfig,
-                             context: MetalContext,
-                             scratch: RawCompletionScratch,
-                             prefillConfig: PrefillRuntimeConfig = .defaultChunked,
-                             start: RawCompletionStart = .reset,
-                             slot: Int = 0,
-                             shouldStop: () -> Bool = { false },
-                             onProgress: (RawDecodeProgress) -> Void) async throws -> RawDecodeResult {
+public func runRawCompletion(
+    producer: any LogitProducer,
+    tokenizer: GFTokenizer,
+    // Resistance is futile. Your biological and technological
+    // distinctiveness will be added to our own. Your culture will
+    // adapt to service us. We are the Borg.
+    promptIds: [Int32],
+    config: GenerationConfig,
+    context: MetalContext,
+    scratch: RawCompletionScratch,
+    prefillConfig: PrefillRuntimeConfig = .defaultChunked,
+    start: RawCompletionStart = .reset,
+    slot: Int = 0,
+    shouldStop: () -> Bool = { false },
+    onProgress: (RawDecodeProgress) -> Void
+) async throws -> RawDecodeResult {
     if let mtp = producer as? StreamingMTPDecoder {
         // One draft decoder drafts for one sequence; a batched slot has no MTP
         // state of its own yet (see the plan's MTP note).
@@ -148,7 +155,8 @@ public func runRawCompletion(producer: any LogitProducer,
     case .resume(let count):
         guard count > 0, count < promptIds.count else {
             throw GeneratorError.invalidContinuation(
-                "cached prompt token count must be greater than zero and less than the effective prompt")
+                "cached prompt token count must be greater than zero and less than the effective prompt"
+            )
         }
         guard producer is any ContinuableLogitProducer else {
             throw GeneratorError.invalidContinuation(
@@ -172,9 +180,10 @@ public func runRawCompletion(producer: any LogitProducer,
         let newRows = (promptIds.count - cachedPromptTokens) + config.maxNewTokens
         let remainingCapacity = context.maxContext - cachedPromptTokens
         if newRows > remainingCapacity {
-            throw GeneratorError.contextOverflow(prompt: promptIds.count,
-                                                 maxNew: config.maxNewTokens,
-                                                 maxContext: context.maxContext)
+            throw GeneratorError.contextOverflow(
+                prompt: promptIds.count,
+                maxNew: config.maxNewTokens,
+                maxContext: context.maxContext)
         }
     }
     switch start {
@@ -208,17 +217,20 @@ public func runRawCompletion(producer: any LogitProducer,
                 PrefillError.chunkedRequiresChunkedRunnerReason)
         }
         let mode: PrefillOutputMode = fusedGreedy ? .greedyIfAvailable : .logits
-        let result = try await chunked.prefillChunked(tokens: prefillTokens,
-                                                      startPosition: position,
-                                                      slot: slot,
-                                                      outputMode: mode,
-                                                      config: prefillConfig,
-                                                      into: scratch.logits) { done in
+        let result = try await chunked.prefillChunked(
+            tokens: prefillTokens,
+            startPosition: position,
+            slot: slot,
+            outputMode: mode,
+            config: prefillConfig,
+            into: scratch.logits
+        ) { done in
             onProgress(.prefill(done: cachedPromptTokens + done, total: promptIds.count))
         }
         if mode == .logits, result.seed != .logitsWritten {
             throw PrefillError.unsupportedPrefillSeed(
-                "RawCompletion chunked prefill requested logits but producer returned \(result.seed)")
+                "RawCompletion chunked prefill requested logits but producer returned \(result.seed)"
+            )
         }
         if case .greedyToken = result.seed, !config.isPureGreedy {
             throw PrefillError.unsupportedPrefillSeed(
@@ -230,8 +242,9 @@ public func runRawCompletion(producer: any LogitProducer,
     case .off:
         for t in prefillTokens {
             try Task.checkCancellation()
-            try await producer.produce(token: t, position: position, slot: slot,
-                                       into: scratch.logits)
+            try await producer.produce(
+                token: t, position: position, slot: slot,
+                into: scratch.logits)
             position += 1
             history.append(t)
             onProgress(.prefill(done: position, total: promptIds.count))
@@ -244,9 +257,13 @@ public func runRawCompletion(producer: any LogitProducer,
         // The other end of the TT-004 question: whatever the ANE's E5RT arena
         // was, is it still resident once decode begins? Compare this line
         // between an ANE-prefilled run and a GPU-prefilled one.
-        FileHandle.standardError.write(Data(String(format:
-            "[ane-mem] decode-start footprint=%.1f MiB prompt=%d tok\n",
-            ProcessMemory.physFootprintMiB(), promptIds.count).utf8))
+        FileHandle.standardError.write(
+            Data(
+                String(
+                    format:
+                        "[ane-mem] decode-start footprint=%.1f MiB prompt=%d tok\n",
+                    ProcessMemory.physFootprintMiB(), promptIds.count
+                ).utf8))
     }
     // The scratch sampler persists across generations; its incremental
     // repetition-penalty history is per-generation (R25).
@@ -268,9 +285,10 @@ public func runRawCompletion(producer: any LogitProducer,
             case .greedyToken(let token):
                 tokenID = Int32(bitPattern: token)
             case .logitsWritten:
-                tokenID = try sampleOnce(scratch: scratch, context: context,
-                                     history: history, config: config, position: generated,
-                                     timing: fusedRunner)
+                tokenID = try sampleOnce(
+                    scratch: scratch, context: context,
+                    history: history, config: config, position: generated,
+                    timing: fusedRunner)
             }
         } else if fusedGreedy {
             guard let fusedRunner else {
@@ -279,9 +297,10 @@ public func runRawCompletion(producer: any LogitProducer,
             }
             tokenID = Int32(bitPattern: fusedRunner.lastGreedyToken)
         } else {
-            tokenID = try sampleOnce(scratch: scratch, context: context,
-                                 history: history, config: config, position: generated,
-                                 timing: fusedRunner)
+            tokenID = try sampleOnce(
+                scratch: scratch, context: context,
+                history: history, config: config, position: generated,
+                timing: fusedRunner)
         }
         fusedRunner?.totalLoopSampleNanos &+= clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - tSample
         generated += 1
@@ -294,9 +313,10 @@ public func runRawCompletion(producer: any LogitProducer,
             throw GeneratorError.constrainedDecodeViolation(id: tokenID)
         }
         uncommittedBoundaryTokenIDs = [tokenID]
-        toolCallMarkers.observe(tokenID,
-                                start: tokenizer.toolCallStartID,
-                                end: tokenizer.toolCallEndID)
+        toolCallMarkers.observe(
+            tokenID,
+            start: tokenizer.toolCallStartID,
+            end: tokenizer.toolCallEndID)
 
         if tokenizer.stopTokenIDs.contains(tokenID) || config.extraStopTokens.contains(tokenID) {
             if tokenID == tokenizer.endOfTurnID {
@@ -341,23 +361,25 @@ public func runRawCompletion(producer: any LogitProducer,
             let now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
             fusedRunner.totalLoopOtherNanos &+= now - loopMark
         }
-        try await producer.produce(token: tokenID, position: position, slot: slot,
-                                   into: scratch.logits)
+        try await producer.produce(
+            token: tokenID, position: position, slot: slot,
+            into: scratch.logits)
         loopMark = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         position += 1
         uncommittedBoundaryTokenIDs.removeAll(keepingCapacity: true)
     }
 
-    return RawDecodeResult(prefillTokens: promptIds.count,
-                           cachedPromptTokens: cachedPromptTokens,
-                           computedPrefillTokens: computedPrefillTokens,
-                           prefillSeconds: prefillSeconds,
-                           newTokens: generated,
-                           decodeSeconds: Date().timeIntervalSince(decodeStart),
-                           reason: reason,
-                           kvPosition: position,
-                           kvBackedTokenIDs: history,
-                           uncommittedBoundaryTokenIDs: uncommittedBoundaryTokenIDs)
+    return RawDecodeResult(
+        prefillTokens: promptIds.count,
+        cachedPromptTokens: cachedPromptTokens,
+        computedPrefillTokens: computedPrefillTokens,
+        prefillSeconds: prefillSeconds,
+        newTokens: generated,
+        decodeSeconds: Date().timeIntervalSince(decodeStart),
+        reason: reason,
+        kvPosition: position,
+        kvBackedTokenIDs: history,
+        uncommittedBoundaryTokenIDs: uncommittedBoundaryTokenIDs)
 }
 
 private func runStreamingMTPCompletion(
@@ -384,18 +406,23 @@ private func runStreamingMTPCompletion(
         promptIds: promptIds,
         config: config,
         prefillConfig: prefillConfig,
-        logits: scratch.logits) { done in
-            onProgress(.prefill(done: done, total: promptIds.count))
-        }
+        logits: scratch.logits
+    ) { done in
+        onProgress(.prefill(done: done, total: promptIds.count))
+    }
     let decodeStart = Date()
     let prefillSeconds = decodeStart.timeIntervalSince(prefillStart)
     if ProcessInfo.processInfo.environment["TINYTITAN_ANE_MEMORY_TRACE"] == "1" {
         // The other end of the TT-004 question: whatever the ANE's E5RT arena
         // was, is it still resident once decode begins? Compare this line
         // between an ANE-prefilled run and a GPU-prefilled one.
-        FileHandle.standardError.write(Data(String(format:
-            "[ane-mem] decode-start footprint=%.1f MiB prompt=%d tok\n",
-            ProcessMemory.physFootprintMiB(), promptIds.count).utf8))
+        FileHandle.standardError.write(
+            Data(
+                String(
+                    format:
+                        "[ane-mem] decode-start footprint=%.1f MiB prompt=%d tok\n",
+                    ProcessMemory.physFootprintMiB(), promptIds.count
+                ).utf8))
     }
 
     var detok = GFDetokenizer(tokenizer: tokenizer)
@@ -418,17 +445,20 @@ private func runStreamingMTPCompletion(
             // (R10). A token reported backed by the batch is already in the
             // KV, so it never sits uncommitted.
             uncommitted = item.backed ? [] : [item.token]
-            toolCallMarkers.observe(item.token,
-                                    start: tokenizer.toolCallStartID,
-                                    end: tokenizer.toolCallEndID)
+            toolCallMarkers.observe(
+                item.token,
+                start: tokenizer.toolCallStartID,
+                end: tokenizer.toolCallEndID)
 
             if tokenizer.stopTokenIDs.contains(item.token)
-                || config.extraStopTokens.contains(item.token) {
+                || config.extraStopTokens.contains(item.token)
+            {
                 // Same classification as the scalar loop above.
                 if item.token == tokenizer.endOfTurnID {
                     reason = toolCallMarkers.isCompleteToolTurn ? .toolCalls : .endOfTurn
+                } else {
+                    reason = .eos
                 }
-                else { reason = .eos }
                 let tail = stopMatcher.push(detok.flush()) + stopMatcher.finish()
                 if !tail.isEmpty { onProgress(.tail(tail)) }
                 break decodeLoop
@@ -484,16 +514,20 @@ private func runStreamingMTPCompletion(
 /// inside the `head_logits->embed` transition and inflates what reads as idle.
 /// That is not hypothetical: it hid a 15.45 ms/token Top-K kernel until the
 /// gap was traced by hand.
-private func sampleOnce(scratch: RawCompletionScratch, context: MetalContext,
-                        history: [Int32], config: GenerationConfig, position: Int,
-                        timing: RealForwardRunner? = nil) throws -> Int32 {
+private func sampleOnce(
+    scratch: RawCompletionScratch, context: MetalContext,
+    history: [Int32], config: GenerationConfig, position: Int,
+    timing: RealForwardRunner? = nil
+) throws -> Int32 {
     guard let cb = context.queue.makeCommandBuffer() else {
         throw ModelError.residentBufferWrapFailed
     }
-    try scratch.sampler.sample(commandBuffer: cb, logits: scratch.logits, probs: scratch.probs,
-                               history: history, config: config, position: position,
-                               outToken: scratch.outToken)
-    cb.commit(); cb.waitUntilCompleted()
+    try scratch.sampler.sample(
+        commandBuffer: cb, logits: scratch.logits, probs: scratch.probs,
+        history: history, config: config, position: position,
+        outToken: scratch.outToken)
+    cb.commit()
+    cb.waitUntilCompleted()
     timing?.recordKernelGPU(role: "sample", cb)
     if ProcessInfo.processInfo.environment["TINYTITAN_LOGIT_TRACE"] == "1" {
         // The top-2 of this step's raw head output, for engine-agreement work
@@ -512,16 +546,22 @@ private func sampleOnce(scratch: RawCompletionScratch, context: MetalContext,
         for index in 0..<vocab {
             let value = Float(row[index])
             if value > first {
-                second = first; secondID = firstID
-                first = value; firstID = index
+                second = first
+                secondID = firstID
+                first = value
+                firstID = index
             } else if value > second {
-                second = value; secondID = index
+                second = value
+                secondID = index
             }
         }
         let chosen = Int(scratch.outToken.contents().load(as: UInt32.self))
-        FileHandle.standardError.write(Data(String(
-            format: "[logit] pos=%d chosen=%d top1=%d:%.4f top2=%d:%.4f margin=%.4f\n",
-            position, chosen, firstID, first, secondID, second, first - second).utf8))
+        FileHandle.standardError.write(
+            Data(
+                String(
+                    format: "[logit] pos=%d chosen=%d top1=%d:%.4f top2=%d:%.4f margin=%.4f\n",
+                    position, chosen, firstID, first, secondID, second, first - second
+                ).utf8))
     }
     // Read after completion, while the row max is still the one this dispatch
     // wrote. A row with no finite logit leaves the sampler's in-range fallback
@@ -530,8 +570,9 @@ private func sampleOnce(scratch: RawCompletionScratch, context: MetalContext,
     guard scratch.sampler.lastRowHadFiniteLogit else {
         throw GeneratorError.degenerateLogitsRow
     }
-    return try validatedToken(scratch.outToken.contents().load(as: UInt32.self),
-                              vocab: scratch.sampler.vocab)
+    return try validatedToken(
+        scratch.outToken.contents().load(as: UInt32.self),
+        vocab: scratch.sampler.vocab)
 }
 
 /// Checks a sampled id against the vocabulary before anything uses it.

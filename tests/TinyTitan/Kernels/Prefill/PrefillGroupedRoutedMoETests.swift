@@ -1,7 +1,8 @@
 import Metal
 import Testing
-@testable import TinyTitan
 import TinyTitanValidationSupport
+
+@testable import TinyTitan
 
 @Suite struct PrefillGroupedRoutedMoETests {
     static func measuredPressureRoutes() throws -> PrefillMoEGroupedRoutes {
@@ -17,9 +18,11 @@ import TinyTitanValidationSupport
         var pairs: [PrefillTokenExpertPair] = []
         pairs.reserveCapacity(256)
         for i in 0..<256 {
-            pairs.append(Self.pair(token: UInt32(i / 8),
-                                   expert: expertAssignments[i],
-                                   rank: UInt32(i % 8)))
+            pairs.append(
+                Self.pair(
+                    token: UInt32(i / 8),
+                    expert: expertAssignments[i],
+                    rank: UInt32(i % 8)))
         }
         return try PrefillMoEGrouping.groupTokenExpertPairs(
             pairs,
@@ -30,27 +33,32 @@ import TinyTitanValidationSupport
     }
 
     static func pair(token: UInt32, expert: UInt32, rank: UInt32) -> PrefillTokenExpertPair {
-        PrefillTokenExpertPair(token: token,
-                               expert: expert,
-                               rank: rank,
-                               weight: Float16(0.125 + Float(rank) * 0.0625))
+        PrefillTokenExpertPair(
+            token: token,
+            expert: expert,
+            rank: rank,
+            weight: Float16(0.125 + Float(rank) * 0.0625))
     }
 
     static func fakeTensorViews(device: MTLDevice, count: Int) throws -> [TensorView] {
-        guard let buffer = device.makeBuffer(length: max(count, 1) * 64,
-                                             options: .storageModeShared) else {
+        guard
+            let buffer = device.makeBuffer(
+                length: max(count, 1) * 64,
+                options: .storageModeShared)
+        else {
             throw PrefillGroupedRoutedMoEError.allocationFailed("fake tensor view buffer")
         }
         return (0..<count).map { index in
-            TensorView(buffer: buffer,
-                       offset: UInt64(index * 64),
-                       length: 64,
-                       scaleOffset: 0,
-                       scaleLength: 0,
-                       biasOffset: 0,
-                       biasLength: 0,
-                       shape: (0, UInt32(index), 0, 0),
-                       dtype: 0)
+            TensorView(
+                buffer: buffer,
+                offset: UInt64(index * 64),
+                length: 64,
+                scaleOffset: 0,
+                scaleLength: 0,
+                biasOffset: 0,
+                biasLength: 0,
+                shape: (0, UInt32(index), 0, 0),
+                dtype: 0)
         }
     }
 
@@ -77,9 +85,11 @@ import TinyTitanValidationSupport
             .load(as: UInt8.self)
     }
 
-    static func streamedViewsWithNonzeroOffsets(device: MTLDevice,
-                                                        pool: SyntheticExpertPool,
-                                                        expertIDs: [Int]) throws -> [TensorView] {
+    static func streamedViewsWithNonzeroOffsets(
+        device: MTLDevice,
+        pool: SyntheticExpertPool,
+        expertIDs: [Int]
+    ) throws -> [TensorView] {
         try expertIDs.enumerated().map { index, expertID in
             let start = expertID * pool.stride
             let end = start + pool.stride
@@ -88,20 +98,24 @@ import TinyTitanValidationSupport
             var bytes = [UInt8](repeating: 0xA5, count: prefix)
             bytes.append(contentsOf: pool.bytes[start..<end])
             bytes.append(contentsOf: repeatElement(UInt8(0x5A), count: suffix))
-            guard let buffer = device.makeBuffer(bytes: bytes,
-                                                 length: bytes.count,
-                                                 options: .storageModeShared) else {
+            guard
+                let buffer = device.makeBuffer(
+                    bytes: bytes,
+                    length: bytes.count,
+                    options: .storageModeShared)
+            else {
                 throw PrefillGroupedRoutedMoEError.allocationFailed("streamed expert \(expertID)")
             }
-            return TensorView(buffer: buffer,
-                              offset: UInt64(prefix),
-                              length: UInt64(pool.stride),
-                              scaleOffset: 0,
-                              scaleLength: 0,
-                              biasOffset: 0,
-                              biasLength: 0,
-                              shape: (0, UInt32(expertID), 0, 0),
-                              dtype: 0)
+            return TensorView(
+                buffer: buffer,
+                offset: UInt64(prefix),
+                length: UInt64(pool.stride),
+                scaleOffset: 0,
+                scaleLength: 0,
+                biasOffset: 0,
+                biasLength: 0,
+                shape: (0, UInt32(expertID), 0, 0),
+                dtype: 0)
         }
     }
 
@@ -112,10 +126,12 @@ import TinyTitanValidationSupport
         let weightBits: Int
     }
 
-    static func makeSyntheticExpertPool(numExperts: Int,
-                                        d: Int,
-                                        f: Int,
-                                        weightBits: Int = 4) -> SyntheticExpertPool {
+    static func makeSyntheticExpertPool(
+        numExperts: Int,
+        d: Int,
+        f: Int,
+        weightBits: Int = 4
+    ) -> SyntheticExpertPool {
         precondition([4, 8].contains(weightBits))
         precondition(numExperts > 0, "a pool needs at least one expert to have offsets")
         var allBytes: [UInt8] = []
@@ -124,62 +140,72 @@ import TinyTitanValidationSupport
         for expert in 0..<numExperts {
             var bytes: [UInt8] = []
             let gateWOff = UInt32(bytes.count)
-            Self.appendProjection(rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 0),
-                                  to: &bytes,
-                                  component: .packed,
-                                  weightBits: weightBits)
+            Self.appendProjection(
+                rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 0),
+                to: &bytes,
+                component: .packed,
+                weightBits: weightBits)
             let gateSOff = UInt32(bytes.count)
-            Self.appendProjection(rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 0),
-                                  to: &bytes,
-                                  component: .scales,
-                                  weightBits: weightBits)
+            Self.appendProjection(
+                rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 0),
+                to: &bytes,
+                component: .scales,
+                weightBits: weightBits)
             let gateBOff = UInt32(bytes.count)
-            Self.appendProjection(rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 0),
-                                  to: &bytes,
-                                  component: .biases,
-                                  weightBits: weightBits)
+            Self.appendProjection(
+                rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 0),
+                to: &bytes,
+                component: .biases,
+                weightBits: weightBits)
 
             let upWOff = UInt32(bytes.count)
-            Self.appendProjection(rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 1),
-                                  to: &bytes,
-                                  component: .packed,
-                                  weightBits: weightBits)
+            Self.appendProjection(
+                rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 1),
+                to: &bytes,
+                component: .packed,
+                weightBits: weightBits)
             let upSOff = UInt32(bytes.count)
-            Self.appendProjection(rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 1),
-                                  to: &bytes,
-                                  component: .scales,
-                                  weightBits: weightBits)
+            Self.appendProjection(
+                rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 1),
+                to: &bytes,
+                component: .scales,
+                weightBits: weightBits)
             let upBOff = UInt32(bytes.count)
-            Self.appendProjection(rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 1),
-                                  to: &bytes,
-                                  component: .biases,
-                                  weightBits: weightBits)
+            Self.appendProjection(
+                rows: Self.syntheticRows(rows: f, cols: d, expert: expert, role: 1),
+                to: &bytes,
+                component: .biases,
+                weightBits: weightBits)
 
             let downWOff = UInt32(bytes.count)
-            Self.appendProjection(rows: Self.syntheticRows(rows: d, cols: f, expert: expert, role: 2),
-                                  to: &bytes,
-                                  component: .packed,
-                                  weightBits: weightBits)
+            Self.appendProjection(
+                rows: Self.syntheticRows(rows: d, cols: f, expert: expert, role: 2),
+                to: &bytes,
+                component: .packed,
+                weightBits: weightBits)
             let downSOff = UInt32(bytes.count)
-            Self.appendProjection(rows: Self.syntheticRows(rows: d, cols: f, expert: expert, role: 2),
-                                  to: &bytes,
-                                  component: .scales,
-                                  weightBits: weightBits)
+            Self.appendProjection(
+                rows: Self.syntheticRows(rows: d, cols: f, expert: expert, role: 2),
+                to: &bytes,
+                component: .scales,
+                weightBits: weightBits)
             let downBOff = UInt32(bytes.count)
-            Self.appendProjection(rows: Self.syntheticRows(rows: d, cols: f, expert: expert, role: 2),
-                                  to: &bytes,
-                                  component: .biases,
-                                  weightBits: weightBits)
+            Self.appendProjection(
+                rows: Self.syntheticRows(rows: d, cols: f, expert: expert, role: 2),
+                to: &bytes,
+                component: .biases,
+                weightBits: weightBits)
 
-            let currentOffsets = MoEExpertOffsets(gateWOff: gateWOff,
-                                                  gateSOff: gateSOff,
-                                                  gateBOff: gateBOff,
-                                                  upWOff: upWOff,
-                                                  upSOff: upSOff,
-                                                  upBOff: upBOff,
-                                                  downWOff: downWOff,
-                                                  downSOff: downSOff,
-                                                  downBOff: downBOff)
+            let currentOffsets = MoEExpertOffsets(
+                gateWOff: gateWOff,
+                gateSOff: gateSOff,
+                gateBOff: gateBOff,
+                upWOff: upWOff,
+                upSOff: upSOff,
+                upBOff: upBOff,
+                downWOff: downWOff,
+                downSOff: downSOff,
+                downBOff: downBOff)
             if offsets == nil {
                 offsets = currentOffsets
                 stride = bytes.count
@@ -193,10 +219,11 @@ import TinyTitanValidationSupport
         guard let poolOffsets = offsets else {
             preconditionFailure("numExperts > 0 was checked above")
         }
-        return SyntheticExpertPool(bytes: allBytes,
-                                   offsets: poolOffsets,
-                                   stride: stride,
-                                   weightBits: weightBits)
+        return SyntheticExpertPool(
+            bytes: allBytes,
+            offsets: poolOffsets,
+            stride: stride,
+            weightBits: weightBits)
     }
 
     enum ProjectionComponent {
@@ -205,10 +232,12 @@ import TinyTitanValidationSupport
         case biases
     }
 
-    static func appendProjection(rows: [[Float]],
-                                         to bytes: inout [UInt8],
-                                         component: ProjectionComponent,
-                                         weightBits: Int = 4) {
+    static func appendProjection(
+        rows: [[Float]],
+        to bytes: inout [UInt8],
+        component: ProjectionComponent,
+        weightBits: Int = 4
+    ) {
         let quantized = rows.map { Self.quantizeAffine($0, bits: weightBits) }
         switch component {
         case .packed:
@@ -256,8 +285,11 @@ import TinyTitanValidationSupport
             let bias = Quantization.bf16ToFloat(biasBits)
             for local in 0..<Quantization.groupSize {
                 let column = start + local
-                let q = max(0, min(Int(levels),
-                    Int(((row[column] - bias) / scale).rounded())))
+                let q = max(
+                    0,
+                    min(
+                        Int(levels),
+                        Int(((row[column] - bias) / scale).rounded())))
                 let bitOffset = column * bits
                 let byteOffset = bitOffset / 8
                 let shift = bitOffset % 8
@@ -297,13 +329,15 @@ import TinyTitanValidationSupport
         UInt16(bytes[offset]) | (UInt16(bytes[offset + 1]) << 8)
     }
 
-    static func cpuSyntheticRoutePartials(routes: PrefillMoEGroupedRoutes,
-                                                  hidden: [Float16],
-                                                  hiddenStride: Int,
-                                                  pool: SyntheticExpertPool,
-                                                  topK: Int,
-                                                  d: Int,
-                                                  f: Int) -> [Float16] {
+    static func cpuSyntheticRoutePartials(
+        routes: PrefillMoEGroupedRoutes,
+        hidden: [Float16],
+        hiddenStride: Int,
+        pool: SyntheticExpertPool,
+        topK: Int,
+        d: Int,
+        f: Int
+    ) -> [Float16] {
         var out = [Float16](repeating: -99, count: routes.queryCount * topK * d)
         for pair in routes.sortedPairs {
             let expertBase = Int(pair.expert) * pool.stride
@@ -311,53 +345,58 @@ import TinyTitanValidationSupport
             let x = (0..<d).map { Float(hidden[xBase + $0]) }
             var act = [Float16](repeating: 0, count: f)
             for row in 0..<f {
-                let gate = Self.cpuAffineDot(bytes: pool.bytes,
-                                           base: expertBase,
-                                           wOff: Int(pool.offsets.gateWOff),
-                                           sOff: Int(pool.offsets.gateSOff),
-                                           bOff: Int(pool.offsets.gateBOff),
-                                           row: row,
-                                           n: d,
-                                           x: x,
-                                           bits: pool.weightBits)
-                let up = Self.cpuAffineDot(bytes: pool.bytes,
-                                         base: expertBase,
-                                         wOff: Int(pool.offsets.upWOff),
-                                         sOff: Int(pool.offsets.upSOff),
-                                         bOff: Int(pool.offsets.upBOff),
-                                         row: row,
-                                         n: d,
-                                         x: x,
-                                         bits: pool.weightBits)
+                let gate = Self.cpuAffineDot(
+                    bytes: pool.bytes,
+                    base: expertBase,
+                    wOff: Int(pool.offsets.gateWOff),
+                    sOff: Int(pool.offsets.gateSOff),
+                    bOff: Int(pool.offsets.gateBOff),
+                    row: row,
+                    n: d,
+                    x: x,
+                    bits: pool.weightBits)
+                let up = Self.cpuAffineDot(
+                    bytes: pool.bytes,
+                    base: expertBase,
+                    wOff: Int(pool.offsets.upWOff),
+                    sOff: Int(pool.offsets.upSOff),
+                    bOff: Int(pool.offsets.upBOff),
+                    row: row,
+                    n: d,
+                    x: x,
+                    bits: pool.weightBits)
                 act[row] = Float16(MoeRef.geluTanh([gate])[0] * up)
             }
             let actFloat = act.map { Float($0) }
             let outBase = (Int(pair.token) * topK + Int(pair.rank)) * d
             for row in 0..<d {
-                let value = Self.cpuAffineDot(bytes: pool.bytes,
-                                            base: expertBase,
-                                            wOff: Int(pool.offsets.downWOff),
-                                            sOff: Int(pool.offsets.downSOff),
-                                            bOff: Int(pool.offsets.downBOff),
-                                            row: row,
-                                            n: f,
-                                            x: actFloat,
-                                            bits: pool.weightBits)
+                let value = Self.cpuAffineDot(
+                    bytes: pool.bytes,
+                    base: expertBase,
+                    wOff: Int(pool.offsets.downWOff),
+                    sOff: Int(pool.offsets.downSOff),
+                    bOff: Int(pool.offsets.downBOff),
+                    row: row,
+                    n: f,
+                    x: actFloat,
+                    bits: pool.weightBits)
                 out[outBase + row] = Float16(value)
             }
         }
         return out
     }
 
-    static func cpuAffineDot(bytes: [UInt8],
-                                   base: Int,
-                                   wOff: Int,
-                                   sOff: Int,
-                                   bOff: Int,
-                                   row: Int,
-                                   n: Int,
-                                   x: [Float],
-                                   bits: Int) -> Float {
+    static func cpuAffineDot(
+        bytes: [UInt8],
+        base: Int,
+        wOff: Int,
+        sOff: Int,
+        bOff: Int,
+        row: Int,
+        n: Int,
+        x: [Float],
+        bits: Int
+    ) -> Float {
         let groups = n / Quantization.groupSize
         let rowBytes = n * bits / 8
         let mask = UInt32((1 << bits) - 1)

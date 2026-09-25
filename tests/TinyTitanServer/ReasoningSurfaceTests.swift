@@ -37,8 +37,9 @@ private actor ThinkingBackend: ServerInferenceBackend {
         onEvent(.content("swer."))
         return ServerCompletion(
             content: "Answer.", toolCalls: [], finishReason: "stop",
-            usage: OpenAIUsage(promptTokens: 5, completionTokens: 9, totalTokens: 14,
-                               reasoningTokens: 4),
+            usage: OpenAIUsage(
+                promptTokens: 5, completionTokens: 9, totalTokens: 14,
+                reasoningTokens: 4),
             reasoning: thinks ? "Weigh it." : "")
     }
 }
@@ -77,11 +78,14 @@ private func object(_ data: Data) throws -> [String: Any] {
     try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 }
 
-private func withServer<T>(_ backend: any ServerInferenceBackend,
-                           profile: ServerReasoningProfile = .default,
-                           _ body: (Int) async throws -> T) async throws -> T {
-    let server = TinyTitanHTTPServer(modelID: "test-model", queueLimit: 2,
-                                 backend: backend, reasoningProfile: profile)
+private func withServer<T>(
+    _ backend: any ServerInferenceBackend,
+    profile: ServerReasoningProfile = .default,
+    _ body: (Int) async throws -> T
+) async throws -> T {
+    let server = TinyTitanHTTPServer(
+        modelID: "test-model", queueLimit: 2,
+        backend: backend, reasoningProfile: profile)
     let channel = try await server.start(port: 0)
     let port = try #require(channel.localAddress?.port)
     do {
@@ -123,9 +127,13 @@ struct ChatReasoningTests {
                 (($0.object["choices"] as? [[String: Any]])?.first)?["delta"] as? [String: Any]
             }
             let keys = deltas.map { $0.keys.sorted() }
-            #expect(keys == [["role"], ["reasoning_content"], ["reasoning_content"],
-                             ["content"], ["content"], []])
-            #expect(deltas.compactMap { $0["reasoning_content"] as? String }.joined() == "Weigh it.")
+            #expect(
+                keys == [
+                    ["role"], ["reasoning_content"], ["reasoning_content"],
+                    ["content"], ["content"], [],
+                ])
+            #expect(
+                deltas.compactMap { $0["reasoning_content"] as? String }.joined() == "Weigh it.")
             #expect(deltas.compactMap { $0["content"] as? String }.joined() == "Answer.")
         }
     }
@@ -136,7 +144,8 @@ struct ChatReasoningTests {
             let choices = try #require(try object(data)["choices"] as? [[String: Any]])
             let message = try #require(choices[0]["message"] as? [String: Any])
             #expect(message.keys.sorted() == ["content", "role"])
-            let (stream, _) = try await post(port, "/v1/chat/completions", body + #","stream":true}"#)
+            let (stream, _) = try await post(
+                port, "/v1/chat/completions", body + #","stream":true}"#)
             #expect(!stream.lossyUTF8String.contains("reasoning"))
         }
     }
@@ -146,12 +155,14 @@ struct ChatReasoningTests {
     @Test func replayedReasoningContentIsAcceptedAndIgnored() async throws {
         let backend = ThinkingBackend()
         try await withServer(backend) { port in
-            let (_, status) = try await post(port, "/v1/chat/completions", """
-            {"model":"test-model","messages":[
-              {"role":"user","content":"a"},
-              {"role":"assistant","content":"b","reasoning_content":"old thought"},
-              {"role":"user","content":"c"}]}
-            """)
+            let (_, status) = try await post(
+                port, "/v1/chat/completions",
+                """
+                {"model":"test-model","messages":[
+                  {"role":"user","content":"a"},
+                  {"role":"assistant","content":"b","reasoning_content":"old thought"},
+                  {"role":"user","content":"c"}]}
+                """)
             #expect(status == 200)
             let seen = try #require(backend.seen.all.first).messages
             #expect(seen.map(\.role) == [.user, .assistant, .user])
@@ -162,7 +173,8 @@ struct ChatReasoningTests {
 
 @Suite("Reasoning on the Anthropic Messages surface", .serialized)
 struct AnthropicReasoningTests {
-    private let body = #"{"model":"test-model","max_tokens":64,"messages":[{"role":"user","content":"hi"}]"#
+    private let body =
+        #"{"model":"test-model","max_tokens":64,"messages":[{"role":"user","content":"hi"}]"#
 
     @Test func aThinkingBlockPrecedesTheText() async throws {
         try await withServer(ThinkingBackend()) { port in
@@ -181,17 +193,21 @@ struct AnthropicReasoningTests {
             let (data, _) = try await post(port, "/v1/messages", body + #","stream":true}"#)
             let events = try sseEvents(data)
             let types = events.compactMap { $0.object["type"] as? String }
-            #expect(types == ["message_start",
-                              "content_block_start", "content_block_delta", "content_block_delta",
-                              "content_block_delta", "content_block_stop",
-                              "content_block_start", "content_block_delta", "content_block_delta",
-                              "content_block_stop", "message_delta", "message_stop"])
+            #expect(
+                types == [
+                    "message_start",
+                    "content_block_start", "content_block_delta", "content_block_delta",
+                    "content_block_delta", "content_block_stop",
+                    "content_block_start", "content_block_delta", "content_block_delta",
+                    "content_block_stop", "message_delta", "message_stop",
+                ])
             let start = try #require(events[1].object["content_block"] as? [String: Any])
             #expect(start["type"] as? String == "thinking")
             #expect(events[1].object["index"] as? Int == 0)
             let deltas = events[2...4].compactMap { $0.object["delta"] as? [String: Any] }
-            #expect(deltas.map { $0["type"] as? String }
-                        == ["thinking_delta", "thinking_delta", "signature_delta"])
+            #expect(
+                deltas.map { $0["type"] as? String }
+                    == ["thinking_delta", "thinking_delta", "signature_delta"])
             #expect(deltas[0]["thinking"] as? String == "Weigh ")
             #expect(deltas[2]["signature"] as? String == "")
             #expect(events[5].object["index"] as? Int == 0)
@@ -205,9 +221,12 @@ struct AnthropicReasoningTests {
         try await withServer(ThinkingBackend(thinks: false)) { port in
             let (data, _) = try await post(port, "/v1/messages", body + #","stream":true}"#)
             let types = try sseEvents(data).compactMap { $0.object["type"] as? String }
-            #expect(types == ["message_start", "content_block_start", "content_block_delta",
-                              "content_block_delta", "content_block_stop", "message_delta",
-                              "message_stop"])
+            #expect(
+                types == [
+                    "message_start", "content_block_start", "content_block_delta",
+                    "content_block_delta", "content_block_stop", "message_delta",
+                    "message_stop",
+                ])
             let (plain, _) = try await post(port, "/v1/messages", body + "}")
             let content = try #require(try object(plain)["content"] as? [[String: Any]])
             #expect(content.map { $0["type"] as? String } == ["text"])
@@ -222,29 +241,38 @@ struct AnthropicReasoningTests {
     /// applied is what generation receives.
     @Test func requestThinkingOverridesTheLoadedProfile() async throws {
         let backend = ThinkingBackend()
-        let loaded = ServerReasoningProfile(family: .qwen38flash, thinkingMode: .on,
-                                            reasoningEffort: .low)
+        let loaded = ServerReasoningProfile(
+            family: .qwen38flash, thinkingMode: .on,
+            reasoningEffort: .low)
         try await withServer(backend, profile: loaded) { port in
-            let asked = #"{"model":"test-model","max_tokens":65536,"messages":[{"role":"user","content":"hi"}]"#
+            let asked =
+                #"{"model":"test-model","max_tokens":65536,"messages":[{"role":"user","content":"hi"}]"#
             let (_, plainStatus) = try await post(port, "/v1/messages", asked + "}")
             #expect(plainStatus == 200)
-            #expect(backend.seen.all.last?.reasoning
-                        == RequestReasoning(thinkingMode: .on, effort: .low),
-                    "a request that names no level keeps the loaded one")
+            #expect(
+                backend.seen.all.last?.reasoning
+                    == RequestReasoning(thinkingMode: .on, effort: .low),
+                "a request that names no level keeps the loaded one")
 
-            let (_, onStatus) = try await post(port, "/v1/messages", asked
-                + #","thinking":{"type":"enabled","budget_tokens":32768}}"#)
+            let (_, onStatus) = try await post(
+                port, "/v1/messages",
+                asked
+                    + #","thinking":{"type":"enabled","budget_tokens":32768}}"#)
             #expect(onStatus == 200)
-            #expect(backend.seen.all.last?.reasoning
-                        == RequestReasoning(thinkingMode: .on, effort: .xhigh),
-                    "an enabled budget raises the level above the loaded low")
+            #expect(
+                backend.seen.all.last?.reasoning
+                    == RequestReasoning(thinkingMode: .on, effort: .xhigh),
+                "an enabled budget raises the level above the loaded low")
 
-            let (_, offStatus) = try await post(port, "/v1/messages", asked
-                + #","thinking":{"type":"disabled"}}"#)
+            let (_, offStatus) = try await post(
+                port, "/v1/messages",
+                asked
+                    + #","thinking":{"type":"disabled"}}"#)
             #expect(offStatus == 200)
-            #expect(backend.seen.all.last?.reasoning
-                        == RequestReasoning(thinkingMode: .off, effort: nil),
-                    "disabled is a real off on a server that was loaded thinking on")
+            #expect(
+                backend.seen.all.last?.reasoning
+                    == RequestReasoning(thinkingMode: .off, effort: nil),
+                "disabled is a real off on a server that was loaded thinking on")
         }
     }
 
@@ -253,15 +281,17 @@ struct AnthropicReasoningTests {
     @Test func historyCarryingThinkingBlocksIsAccepted() async throws {
         let backend = ThinkingBackend()
         try await withServer(backend) { port in
-            let (_, status) = try await post(port, "/v1/messages", """
-            {"model":"test-model","max_tokens":64,"messages":[
-              {"role":"user","content":"a"},
-              {"role":"assistant","content":[
-                {"type":"thinking","thinking":"old thought","signature":""},
-                {"type":"redacted_thinking","data":"opaque"},
-                {"type":"text","text":"b"}]},
-              {"role":"user","content":"c"}]}
-            """)
+            let (_, status) = try await post(
+                port, "/v1/messages",
+                """
+                {"model":"test-model","max_tokens":64,"messages":[
+                  {"role":"user","content":"a"},
+                  {"role":"assistant","content":[
+                    {"type":"thinking","thinking":"old thought","signature":""},
+                    {"type":"redacted_thinking","data":"opaque"},
+                    {"type":"text","text":"b"}]},
+                  {"role":"user","content":"c"}]}
+                """)
             #expect(status == 200)
             let seen = try #require(backend.seen.all.first).messages
             #expect(seen.map(\.role) == [.user, .assistant, .user])
@@ -274,8 +304,9 @@ struct AnthropicReasoningTests {
 struct ResponsesReasoningTests {
     @Test func aReasoningItemPrecedesTheMessage() async throws {
         try await withServer(ThinkingBackend()) { port in
-            let (data, status) = try await post(port, "/v1/responses",
-                                                #"{"model":"test-model","input":"hi"}"#)
+            let (data, status) = try await post(
+                port, "/v1/responses",
+                #"{"model":"test-model","input":"hi"}"#)
             #expect(status == 200)
             let output = try #require(try object(data)["output"] as? [[String: Any]])
             #expect(output.map { $0["type"] as? String } == ["reasoning", "message"])
@@ -289,21 +320,24 @@ struct ResponsesReasoningTests {
 
     @Test func reasoningStreamsAndClosesBeforeTheMessageOpens() async throws {
         try await withServer(ThinkingBackend()) { port in
-            let (data, _) = try await post(port, "/v1/responses",
-                                           #"{"model":"test-model","input":"hi","stream":true}"#)
+            let (data, _) = try await post(
+                port, "/v1/responses",
+                #"{"model":"test-model","input":"hi","stream":true}"#)
             let events = try sseEvents(data)
             let types = events.compactMap { $0.object["type"] as? String }
-            #expect(types == [
-                "response.created", "response.in_progress",
-                "response.output_item.added", "response.reasoning_summary_part.added",
-                "response.reasoning_summary_text.delta", "response.reasoning_summary_text.delta",
-                "response.reasoning_summary_text.done", "response.reasoning_summary_part.done",
-                "response.output_item.done",
-                "response.output_item.added", "response.content_part.added",
-                "response.output_text.delta", "response.output_text.delta",
-                "response.output_text.done", "response.content_part.done",
-                "response.output_item.done", "response.completed",
-            ])
+            #expect(
+                types == [
+                    "response.created", "response.in_progress",
+                    "response.output_item.added", "response.reasoning_summary_part.added",
+                    "response.reasoning_summary_text.delta",
+                    "response.reasoning_summary_text.delta",
+                    "response.reasoning_summary_text.done", "response.reasoning_summary_part.done",
+                    "response.output_item.done",
+                    "response.output_item.added", "response.content_part.added",
+                    "response.output_text.delta", "response.output_text.delta",
+                    "response.output_text.done", "response.content_part.done",
+                    "response.output_item.done", "response.completed",
+                ])
             #expect(events[4].object["delta"] as? String == "Weigh ")
             #expect(events[4].object["output_index"] as? Int == 0)
             #expect(events[6].object["text"] as? String == "Weigh it.")
@@ -318,12 +352,14 @@ struct ResponsesReasoningTests {
 
     @Test func withThinkingOffThereIsNoReasoningItem() async throws {
         try await withServer(ThinkingBackend(thinks: false)) { port in
-            let (data, _) = try await post(port, "/v1/responses",
-                                           #"{"model":"test-model","input":"hi"}"#)
+            let (data, _) = try await post(
+                port, "/v1/responses",
+                #"{"model":"test-model","input":"hi"}"#)
             let output = try #require(try object(data)["output"] as? [[String: Any]])
             #expect(output.map { $0["type"] as? String } == ["message"])
-            let (stream, _) = try await post(port, "/v1/responses",
-                                             #"{"model":"test-model","input":"hi","stream":true}"#)
+            let (stream, _) = try await post(
+                port, "/v1/responses",
+                #"{"model":"test-model","input":"hi","stream":true}"#)
             #expect(!stream.lossyUTF8String.contains("reasoning_summary"))
         }
     }
@@ -366,9 +402,10 @@ struct ResponsesReasoningTests {
         let sink = Sink()
         var observed: [String] = []
         var thought: [String] = []
-        var output = AssistantOutput(stops: ["STOP"], onEvent: { sink.append($0) },
-                                     observeVisible: { observed.append($0) },
-                                     observeReasoning: { thought.append($0) })
+        var output = AssistantOutput(
+            stops: ["STOP"], onEvent: { sink.append($0) },
+            observeVisible: { observed.append($0) },
+            observeReasoning: { thought.append($0) })
         output.publish([.reasoning("I could say STOP here.")])
         #expect(!output.isStopped, "a stop string in a thought does not end the answer")
         output.publish([.content("Fine. STOP and more")])

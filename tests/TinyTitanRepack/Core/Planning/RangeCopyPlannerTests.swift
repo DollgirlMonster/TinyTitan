@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Testing
+
 @testable import TinyTitanRepackCore
 
 @Suite
@@ -72,7 +73,8 @@ struct RangeCopyPlannerTests {
     @Test func normalizedRelativePathRejectsEscape() throws {
         let root = temporaryRoot("escape")
         defer { try? FileManager.default.removeItem(atPath: root) }
-        let outside = (root as NSString).deletingLastPathComponent
+        let outside =
+            (root as NSString).deletingLastPathComponent
             + "/outside.bin"
 
         #expect(throws: RepackError.self) {

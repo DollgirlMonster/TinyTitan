@@ -261,9 +261,11 @@ final class StreamState: @unchecked Sendable {
         lock.withLock { started }
     }
 
-    func start(eventLoop: EventLoop,
-               interval: TimeAmount,
-               ping: @escaping @Sendable () -> Void) -> Bool {
+    func start(
+        eventLoop: EventLoop,
+        interval: TimeAmount,
+        ping: @escaping @Sendable () -> Void
+    ) -> Bool {
         lock.withLock {
             guard !started else { return false }
             started = true
@@ -271,10 +273,11 @@ final class StreamState: @unchecked Sendable {
             startFuture = nil
             heartbeat = eventLoop.scheduleRepeatedTask(
                 initialDelay: interval,
-                delay: interval) { [weak self] _ in
-                    guard self?.shouldPing == true else { return }
-                    ping()
-                }
+                delay: interval
+            ) { [weak self] _ in
+                guard self?.shouldPing == true else { return }
+                ping()
+            }
             return true
         }
     }

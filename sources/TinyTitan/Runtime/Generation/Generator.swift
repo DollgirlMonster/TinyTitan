@@ -45,7 +45,8 @@ public enum GeneratorError: Error, CustomStringConvertible, Equatable {
     public var description: String {
         switch self {
         case .contextOverflow(let prompt, let maxNew, let maxContext):
-            return "context overflow: prompt \(prompt) + maxNew \(maxNew) exceeds maxContext \(maxContext)"
+            return
+                "context overflow: prompt \(prompt) + maxNew \(maxNew) exceeds maxContext \(maxContext)"
         case .invalidGenerationConfig(let reason):
             return reason
         case .invalidContinuation(let reason):

@@ -37,14 +37,16 @@ public struct HuggingFaceRemoteSource: Sendable {
     public let tempDirectory: String
     public let retryPolicy: RemoteRetryPolicy
 
-    public init(repoID: String,
-                requestedRevision: String,
-                resolvedCommit: String? = nil,
-                token: String? = nil,
-                downloadSession: RemoteDownloadSession = RemoteDownloadSession(),
-                baseURL: URL = RemoteBaseURL.huggingFace,
-                tempDirectory: String = NSTemporaryDirectory(),
-                retryPolicy: RemoteRetryPolicy = RemoteRetryPolicy()) {
+    public init(
+        repoID: String,
+        requestedRevision: String,
+        resolvedCommit: String? = nil,
+        token: String? = nil,
+        downloadSession: RemoteDownloadSession = RemoteDownloadSession(),
+        baseURL: URL = RemoteBaseURL.huggingFace,
+        tempDirectory: String = NSTemporaryDirectory(),
+        retryPolicy: RemoteRetryPolicy = RemoteRetryPolicy()
+    ) {
         self.repoID = repoID
         self.requestedRevision = requestedRevision
         self.resolvedCommit = resolvedCommit
@@ -56,14 +58,15 @@ public struct HuggingFaceRemoteSource: Sendable {
     }
 
     public func pinned(commit: String) -> HuggingFaceRemoteSource {
-        HuggingFaceRemoteSource(repoID: repoID,
-                                requestedRevision: requestedRevision,
-                                resolvedCommit: commit,
-                                token: token,
-                                downloadSession: downloadSession,
-                                baseURL: baseURL,
-                                tempDirectory: tempDirectory,
-                                retryPolicy: retryPolicy)
+        HuggingFaceRemoteSource(
+            repoID: repoID,
+            requestedRevision: requestedRevision,
+            resolvedCommit: commit,
+            token: token,
+            downloadSession: downloadSession,
+            baseURL: baseURL,
+            tempDirectory: tempDirectory,
+            retryPolicy: retryPolicy)
     }
 
     public func fileURL(filename: String) throws -> URL {
@@ -82,11 +85,15 @@ public struct HuggingFaceRemoteSource: Sendable {
         return url
     }
 
-    public func resolveFileInfo(filename: String,
-                                audit: RepackAudit? = nil) async throws -> RemoteFileInfo {
-        try await withRemoteRetries(retryPolicy,
-                                    label: "resolveFileInfo:\(filename)",
-                                    audit: audit) {
+    public func resolveFileInfo(
+        filename: String,
+        audit: RepackAudit? = nil
+    ) async throws -> RemoteFileInfo {
+        try await withRemoteRetries(
+            retryPolicy,
+            label: "resolveFileInfo:\(filename)",
+            audit: audit
+        ) {
             try await resolveFileInfoOnce(filename: filename)
         }
     }
@@ -108,34 +115,41 @@ public struct HuggingFaceRemoteSource: Sendable {
         }
         let commit = remoteHeader(http, "X-Repo-Commit") ?? resolvedCommit
         guard let commit, commit.count == 40 else {
-            throw RepackError.remoteProtocolInvalid(detail: "missing full X-Repo-Commit for \(filename)")
+            throw RepackError.remoteProtocolInvalid(
+                detail: "missing full X-Repo-Commit for \(filename)")
         }
         let size = try remoteSize(http: http, filename: filename)
         let etag = remoteHeader(http, "X-Linked-ETag") ?? remoteHeader(http, "ETag")
-        return RemoteFileInfo(filename: filename,
-                              resolvedCommit: commit,
-                              size: size,
-                              etag: etag,
-                              xetHash: remoteHeader(http, "X-Xet-Hash"),
-                              acceptsRanges: (remoteHeader(http, "Accept-Ranges") ?? "")
-                                  .lowercased().contains("bytes"))
+        return RemoteFileInfo(
+            filename: filename,
+            resolvedCommit: commit,
+            size: size,
+            etag: etag,
+            xetHash: remoteHeader(http, "X-Xet-Hash"),
+            acceptsRanges: (remoteHeader(http, "Accept-Ranges") ?? "")
+                .lowercased().contains("bytes"))
     }
 
-    public func fetchSmallFile(filename: String,
-                               info: RemoteFileInfo,
-                               capBytes: UInt64,
-                               outputPath: String,
-                               audit: RepackAudit? = nil) async throws {
+    public func fetchSmallFile(
+        filename: String,
+        info: RemoteFileInfo,
+        capBytes: UInt64,
+        outputPath: String,
+        audit: RepackAudit? = nil
+    ) async throws {
         guard info.size <= capBytes else {
             throw RepackError.remoteFileTooLarge(path: filename, size: info.size, cap: capBytes)
         }
-        try await withRemoteRetries(retryPolicy,
-                                    label: "fetchSmallFile:\(filename)",
-                                    audit: audit) {
-            let tmp = try await downloadRangeToTempFileOnce(filename: filename,
-                                                           info: info,
-                                                           offset: 0,
-                                                           length: Int(info.size))
+        try await withRemoteRetries(
+            retryPolicy,
+            label: "fetchSmallFile:\(filename)",
+            audit: audit
+        ) {
+            let tmp = try await downloadRangeToTempFileOnce(
+                filename: filename,
+                info: info,
+                offset: 0,
+                length: Int(info.size))
             do {
                 try Posix.mkdirP((outputPath as NSString).deletingLastPathComponent)
                 let kind = try Posix.entryKind(outputPath)
@@ -164,16 +178,20 @@ public struct HuggingFaceRemoteSource: Sendable {
         }
     }
 
-    public func downloadRangeToTempFile(filename: String,
-                                        info: RemoteFileInfo,
-                                        offset: UInt64,
-                                        length: Int,
-                                        targetPath: String? = nil,
-                                        progress: @escaping @Sendable (UInt64) -> Void = { _ in },
-                                        audit: RepackAudit? = nil) async throws -> TemporaryRangeFile {
-        try await withRemoteRetries(retryPolicy,
-                                    label: "downloadRangeToTempFile:\(filename)",
-                                    audit: audit) {
+    public func downloadRangeToTempFile(
+        filename: String,
+        info: RemoteFileInfo,
+        offset: UInt64,
+        length: Int,
+        targetPath: String? = nil,
+        progress: @escaping @Sendable (UInt64) -> Void = { _ in },
+        audit: RepackAudit? = nil
+    ) async throws -> TemporaryRangeFile {
+        try await withRemoteRetries(
+            retryPolicy,
+            label: "downloadRangeToTempFile:\(filename)",
+            audit: audit
+        ) {
             progress(0)
             return try await downloadRangeToTempFileOnce(
                 filename: filename,
@@ -185,26 +203,33 @@ public struct HuggingFaceRemoteSource: Sendable {
         }
     }
 
-    private func downloadRangeToTempFileOnce(filename: String,
-                                             info: RemoteFileInfo,
-                                             offset: UInt64,
-                                             length: Int,
-                                             targetPath: String? = nil,
-                                             progress: @escaping @Sendable (UInt64) -> Void = { _ in })
-        async throws -> TemporaryRangeFile {
+    private func downloadRangeToTempFileOnce(
+        filename: String,
+        info: RemoteFileInfo,
+        offset: UInt64,
+        length: Int,
+        targetPath: String? = nil,
+        progress: @escaping @Sendable (UInt64) -> Void = { _ in }
+    )
+        async throws -> TemporaryRangeFile
+    {
         guard length >= 0 else {
             throw RepackError.remoteProtocolInvalid(detail: "negative range length")
         }
         if length == 0 {
-            let path = targetPath ?? (tempDirectory as NSString)
+            let path =
+                targetPath
+                ?? (tempDirectory as NSString)
                 .appendingPathComponent("tinytitan-range-\(UUID().uuidString).tmp")
             FileManager.default.createFile(atPath: path, contents: Data())
-            return TemporaryRangeFile(path: path,
-                                      byteCount: 0)
+            return TemporaryRangeFile(
+                path: path,
+                byteCount: 0)
         }
         let end = offset + UInt64(length) - 1
         guard end < info.size else {
-            throw RepackError.remoteProtocolInvalid(detail: "range \(offset)-\(end) exceeds \(info.filename)")
+            throw RepackError.remoteProtocolInvalid(
+                detail: "range \(offset)-\(end) exceeds \(info.filename)")
         }
         let url = try pinned(commit: info.resolvedCommit).fileURL(filename: filename)
         var request = URLRequest(url: url)
@@ -213,7 +238,9 @@ public struct HuggingFaceRemoteSource: Sendable {
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         applyHeaders(to: &request)
         try Posix.mkdirP(tempDirectory)
-        let target = targetPath ?? (tempDirectory as NSString)
+        let target =
+            targetPath
+            ?? (tempDirectory as NSString)
             .appendingPathComponent("tinytitan-range-\(UUID().uuidString).tmp")
         let result = try await downloadSession.transfer(
             request: request,
@@ -225,8 +252,9 @@ public struct HuggingFaceRemoteSource: Sendable {
                 totalSize: info.size,
                 xetHash: info.xetHash),
             progress: progress)
-        return TemporaryRangeFile(path: result.path,
-                                  byteCount: result.byteCount)
+        return TemporaryRangeFile(
+            path: result.path,
+            byteCount: result.byteCount)
     }
 
     private func applyHeaders(to request: inout URLRequest) {
@@ -246,10 +274,11 @@ private func validateRepoID(_ repoID: String) throws {
 
 private func validateFilename(_ filename: String) throws {
     guard !filename.isEmpty,
-          !filename.hasPrefix("/"),
-          !filename.contains(".."),
-          !filename.contains("?"),
-          !filename.contains("#") else {
+        !filename.hasPrefix("/"),
+        !filename.contains(".."),
+        !filename.contains("?"),
+        !filename.contains("#")
+    else {
         throw RepackError.configurationInvalid(detail: "invalid remote filename \(filename)")
     }
 }
@@ -267,8 +296,9 @@ private func remoteSize(http: HTTPURLResponse, filename: String) throws -> UInt6
         return size
     }
     if (200..<300).contains(http.statusCode),
-       let contentLength = remoteHeader(http, "Content-Length"),
-       let size = UInt64(contentLength) {
+        let contentLength = remoteHeader(http, "Content-Length"),
+        let size = UInt64(contentLength)
+    {
         return size
     }
     throw RepackError.remoteProtocolInvalid(detail: "missing remote size for \(filename)")

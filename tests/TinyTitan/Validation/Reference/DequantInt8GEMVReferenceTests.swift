@@ -1,5 +1,5 @@
-import Testing
 import Foundation
+import Testing
 import TinyTitan
 import TinyTitanValidationSupport
 
@@ -20,12 +20,14 @@ import TinyTitanValidationSupport
         return y
     }
 
-    @Test("vDSP ref matches scalar", arguments: [
-        (4, 128, UInt64(0x141)),
-        (8, 256, UInt64(0x142)),
-        (16, 512, UInt64(0x143)),
-        (128, 2816, UInt64(0x144)),
-    ])
+    @Test(
+        "vDSP ref matches scalar",
+        arguments: [
+            (4, 128, UInt64(0x141)),
+            (8, 256, UInt64(0x142)),
+            (16, 512, UInt64(0x143)),
+            (128, 2816, UInt64(0x144)),
+        ])
     func vDSPMatchesScalar(m: Int, n: Int, seed: UInt64) {
         var rng = SeedTree(seed).key("int8-gemv-ref-m\(m)-n\(n)")
         var rows: [Quantization.Int8AffineRow] = []
@@ -58,8 +60,9 @@ import TinyTitanValidationSupport
             let bound = scale + 1e-4
             for k in 0..<Quantization.groupSize {
                 let i = g * Quantization.groupSize + k
-                #expect(abs(recovered[i] - raw[i]) <= bound,
-                        "group=\(g) k=\(k) diff=\(abs(recovered[i] - raw[i])) bound=\(bound)")
+                #expect(
+                    abs(recovered[i] - raw[i]) <= bound,
+                    "group=\(g) k=\(k) diff=\(abs(recovered[i] - raw[i])) bound=\(bound)")
             }
         }
     }

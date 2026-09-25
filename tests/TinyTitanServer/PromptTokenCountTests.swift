@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import TinyTitan
 @testable import TinyTitanServerCore
 
@@ -15,8 +16,10 @@ import Testing
 /// wrong in whichever direction its configuration happens to be.
 @Suite("Prompt token counting")
 struct PromptTokenCountTests {
-    private func request(system: String? = "You are a coding agent with a long preamble.",
-                         strip: Bool = false) -> ValidatedChatRequest {
+    private func request(
+        system: String? = "You are a coding agent with a long preamble.",
+        strip: Bool = false
+    ) -> ValidatedChatRequest {
         var messages: [GFTokenizer.Message] = []
         if let system {
             messages.append(GFTokenizer.Message(role: .system, content: system))
@@ -32,28 +35,38 @@ struct PromptTokenCountTests {
             stripCLIPrompt: strip)
     }
 
-    private func count(_ request: ValidatedChatRequest,
-                       concise: String? = nil) async throws -> Int {
-        let tokenizer = try await GFTokenizer.load(from: try TokenizerFixture.folder(),
-                                                  thinkingMode: .off)
-        return try ServerModelSession.promptTokenCount(request,
-                                                       tokenizer: tokenizer,
-                                                       concisePrompt: concise)
+    private func count(
+        _ request: ValidatedChatRequest,
+        concise: String? = nil
+    ) async throws -> Int {
+        let tokenizer = try await GFTokenizer.load(
+            from: try TokenizerFixture.folder(),
+            thinkingMode: .off)
+        return try ServerModelSession.promptTokenCount(
+            request,
+            tokenizer: tokenizer,
+            concisePrompt: concise)
     }
 
     @Test func theStripReducesTheCount() async throws {
         let plain = try await count(request())
         let stripped = try await count(request(strip: true))
-        #expect(stripped < plain, Comment(rawValue:
-                "the CLI strip is not reflected: \(stripped) stripped vs \(plain) plain. "
+        #expect(
+            stripped < plain,
+            Comment(
+                rawValue:
+                    "the CLI strip is not reflected: \(stripped) stripped vs \(plain) plain. "
                     + "The count must be the render generation would use."))
     }
 
     @Test func theConcisePromptIncreasesTheCount() async throws {
         let plain = try await count(request())
         let concise = try await count(request(), concise: ConcisePrompt.standard)
-        #expect(concise > plain, Comment(rawValue:
-                "the concise system prompt is not counted: \(concise) vs \(plain). "
+        #expect(
+            concise > plain,
+            Comment(
+                rawValue:
+                    "the concise system prompt is not counted: \(concise) vs \(plain). "
                     + "Generation appends it, so the count has to include it."))
     }
 
