@@ -1,22 +1,24 @@
-# Handover: after release 5.10, the engine and its loopback server
+# Handover: after release 5.11, the engine and its loopback server
 
 **Paste this into the next session:**
 
 > Continue the TinyTitan work in this checkout. Read `AGENTS.md`, then
-> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.10 is cut and
-> published** (`v5.10` → `a89255e`; `tinytitan-5.10-macos-arm64.tar.gz`, 15,367,433
-> bytes, sha256 `1a505ac7e7faae36d8547925dd56781deb365491de0584603383a2f9360d48fe`,
-> 2026-09-24) and **`main` sits one commit past it** — this brief; the release notes
-> are `docs/release-notes-v5.10.md`. The product is the engine plus its loopback
+> `docs/handover-tinytitan.md`, then the wiki `Project-Tracker`. **5.11 is cut and
+> published** (`v5.11` → `6e7cfc3`; `tinytitan-5.11-macos-arm64.tar.gz`, 15,370,253
+> bytes, sha256 `01b86323d99fdac4a5e72607d2ebbca20b6ed7ea3cc6f33f0754a5d78b860ed0`,
+> 2026-09-25) and **`main` sits one commit past it** — this brief; the release notes
+> are `docs/release-notes-v5.11.md`. The product is the engine plus its loopback
 > server — the Mac app is gone — and `tools/install_tinytitan.sh` downloads a built
-> release instead of compiling one. The eight installs under `models/` have
+> release instead of compiling one; the browser chat window arrives the same way,
+> from the release tag's source archive, with no registry account on either side.
+> The eight installs under `models/` have
 > receipts **valid for this folder**, because a rename invalidates them; re-issue
 > with `--verify-install` if the folder moves again. **Verification uses only the
 > installs already under `models/`** — never download, convert, repack or re-install
 > a model to make a gate pass, and never fetch one of the installs the operator
 > deleted. Report measurements, not assurances.
 
-This is the only current brief; the 5.9 handover it replaces is superseded. The
+This is the only current brief; the 5.10 handover it replaces is superseded. The
 traps that one named still bite and are folded in below.
 
 > **The product shape changed: the GUI is gone.** The Mac app, the out-of-process
@@ -63,17 +65,34 @@ traps that one named still bite and are folded in below.
 | --- | --- |
 | Repository | `Pummelchen/TinyTitan` (renamed 2026-09-14; the old URL redirects) |
 | Checkout folder | `~/Downloads/TinyTitan` — **renamed from `~/Downloads/NVMAI`**, which invalidated every receipt and `.build`'s debug half |
-| `main` | level with `origin/main`, one commit past `v5.10` (this brief); the release commit is `a89255e` |
-| Release | **5.10 published** 2026-09-24 — `tinytitan-5.10-macos-arm64.tar.gz`, 15,367,433 bytes, sha256 `1a505ac7…` with its `.sha256` beside it |
+| `main` | level with `origin/main`, one commit past `v5.11` (this brief); the release commit is `6e7cfc3` |
+| Release | **5.11 published** 2026-09-25 — `tinytitan-5.11-macos-arm64.tar.gz`, 15,370,253 bytes, sha256 `01b86323…` with its `.sha256` beside it |
 | Models | **8 installs, 244 GB**; every receipt bound to this path, so all load |
 | Goldens stored | 16; **7 checked** here (qwen38-125b-4bit, qwen36-{4,8}, qwen35-{4b,9b}-{4,8}); the nine with no install — `ornith-{4,8}`, `qwen38-8`, `agentworld-{4,8}`, `katcoder-{4,8}`, `qwen35-2b-{4,8}` — are reported *not checked* and named in the notes |
-| `.build` | release rebuilt for 5.10; a clean scratch release build is part of each dry run |
+| `.build` | release rebuilt for 5.11; a clean scratch release build is part of each dry run |
 | Wiki | `.qwen/wiki`, remote `TinyTitan.wiki.git`, level with `origin/master` |
-| DeepSeek Harness | pinned `0.1.6-alpha.2` and **enforced**; both plugins refuse any other version; the global harness runs the gate, the private one is refreshed but idle until its next start. The private bundle is isolated down to the caches: npm's cache/logs/user config, pnpm's home and the XDG cache/state all live under `~/.tinytitan/dsh`, so a run adds nothing to `~/.npm`, `~/Library/pnpm`, `~/.cache` or `~/.local/state` (`benchmark/test_dsh_isolation.py` pins it; verified in a simulated factory-new HOME) |
-| CI | every `main` push runs both jobs including `thread-sanitizer`; the 5.10 push is the run to watch (`gh run list`) |
+| DeepSeek Harness | pinned `0.1.6-alpha.2` and **enforced**; both plugins refuse any other version; the global harness runs the gate, the private one is refreshed but idle until its next start. The private bundle is isolated down to the caches: npm's cache/logs/user config, pnpm's home and the XDG cache/state all live under `~/.tinytitan/dsh`, so a run adds nothing to `~/.npm`, `~/Library/pnpm`, `~/.cache` or `~/.local/state` (`benchmark/test_dsh_isolation.py` pins it; verified in a simulated factory-new HOME). Since 5.11 the bundle is the delivery — the installer's source archive carries `plugins/`, and the route writer and the launcher both resolve the installed layout (`../bin`, `../models`) instead of a checkout's |
+| CI | every `main` push runs both jobs including `thread-sanitizer`; the 5.11 push is the run to watch (`gh run list`) |
 
 ## What has landed
 
+- **5.11** (`6e7cfc3`) — the DSH bundle is the delivery: the installer's source
+  archive carries `plugins/`, the bundle is added from there with a `file:`
+  install and no registry account exists on either side, the private harness
+  keeps npm's cache/logs/user config, pnpm's home and the XDG cache/state inside
+  `~/.tinytitan/dsh`, and both installed-layout resolutions are fixed
+  (`dsh_route.sh` checks `../bin`/`../models`; `dsh_local.sh` resolves the models
+  directory once and prints it in `paths`). The model installer refuses a download
+  that cannot finish (staging: size × 1.25 + 12 GB; models: size + 3 GB, both
+  printed, `TINYTITAN_SKIP_DISK_CHECK=1` to override), stages under the install
+  root rather than the caller's cwd, reclaims staging as widths complete, and an
+  EOF at the model menu no longer installs anything. Memory distillation is
+  chained per scope, so a later session reads memory only after the earlier one
+  wrote (TT-035). `--ram` help now says it accepts any whole GB from 4.
+  Gates: six lint gates clean (2,031 functions, 20 scripts), **1,493 tests in 223
+  suites**, 7 goldens byte-identical, a warning-free scratch build, and a 4B
+  speed record with every metric inside the 10% gate and none regressed
+  (`docs/release-notes-v5.11.md`).
 - **5.10** (`a89255e`) — `--ram` is a target for the whole server process rather
   than the expert cache alone (4 GB floor, printed estimate; `--ram 8` now buys 32
   slots and `--ram 12` reproduces the old 64), Qwen3.8's two sampling rows are
@@ -164,10 +183,11 @@ on other people:
   numbers must be in the notes, so the sequence is: commit prep → tag → dry run →
   fill in `### Verification` → commit → `git tag -f` → `git push --force origin
   vX.Y` → `--publish`. `--publish` re-runs every gate and rebuilds the archive,
-  so **the published digest and size are never the dry run's** (5.10: 15,367,456
-  bytes dry, 15,367,433 published; 5.9: 15,437,771 dry, 15,437,857 published;
-  5.8: 15,436,743 dry, 15,436,730 published; 5.5: 26,093,424 dry, 26,094,346
-  published) — that is what the placeholders are for.
+  so **the published digest and size are never the dry run's** (5.11: 15,370,277
+  bytes dry, 15,370,253 published; 5.10: 15,367,456 dry, 15,367,433 published;
+  5.9: 15,437,771 dry, 15,437,857 published; 5.8: 15,436,743 dry, 15,436,730
+  published; 5.5: 26,093,424 dry, 26,094,346 published) — that is what the
+  placeholders are for.
 - **A fire-and-forget registration can race the observer that awaits it.** The
   T7 schedule closure in `MemoryService` handed the question to an unstructured
   `Task { await hinter.register(…) }` and returned, so `waitForRetrievalHints()`
