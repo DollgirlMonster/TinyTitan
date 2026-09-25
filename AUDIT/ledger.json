@@ -429,6 +429,23 @@
       "evidence_after": "`tools/lint.sh sendable` -> ok (0 undocumented, 0 new). Not weakened: a probe class with `@unchecked Sendable` and no note still fails (`NEW: sources/TinyTitan/ZZAuditSendableProbe.swift:ZzAuditUndocumented`, exit 1), and removing the probe returns the gate to clean.",
       "commit": "7016b7c",
       "blocked_reason": ""
+    },
+    {
+      "id": "AUD-026",
+      "severity": "S1",
+      "tier": "B",
+      "project": "build/CI",
+      "location": ".github/workflows/audit-verification.yml (Python suite step); benchmark/requirements.txt",
+      "title": "The Phase E host could not run the Python suite: three dependencies were never installed",
+      "category": "verification/CI",
+      "status": "DONE",
+      "host": "mac-mini-m3 (primary)",
+      "discovered_by": "Phase E convergence pass (gh run view 36130126195 --log-failed)",
+      "evidence_before": "Every Audit verification run failed one step *before* the ledger gate, so Phase E had never actually been reached. The Python suite step ended `FAILED (failures=1, skipped=147)`: `test_prepare_qwen38.FinishedOutputGuardTests.test_a_finished_directory_is_refused` asserted `already holds a finished snapshot` but received `missing dependency: No module named 'ml_dtypes'` - the runner's Python 3.13 had none of numpy/safetensors/ml_dtypes, so that test failed and 147 others skipped. The step ran `python3 -m unittest discover` with no install. `ci.yml`'s converter gate built its own venv with the three packages, so the gap was specific to the Phase E workflow, and the unpinned install there meant the two workflows could resolve different versions.",
+      "fix_summary": "Added `benchmark/requirements.txt` pinning the three versions the local baseline runs them under (numpy 2.5.3, safetensors 0.8.0, ml_dtypes 0.6.0; cp313 macOS arm64 wheels verified for the runner's interpreter). The Phase E workflow installs from that file (user-site, into the same 3.13 interpreter the suite runs under) before `unittest discover`, and `ci.yml`'s converter venv installs from the same file instead of a bare package list, so the two cannot drift. With a requirements file present, \u00a71's pip-audit applies: pip-audit 2.10.1 against it reports no known vulnerabilities.",
+      "evidence_after": "The same command that failed on CI passes locally with the pinned set: `Ran 299 tests ... OK (skipped=52)` (vs `failures=1, skipped=147` without the deps). `pip-audit -r benchmark/requirements.txt` -> No known vulnerabilities found. The next Audit verification run is the first one to reach the ledger gate.",
+      "commit": "1078c77",
+      "blocked_reason": ""
     }
   ]
 }

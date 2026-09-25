@@ -2,12 +2,13 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**25 tasks — done 25, open 0, blocked 0.**
+**26 tasks — done 26, open 0, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | DONE | mac-mini-m3 (primary) |
 | AUD-023 | S1 | C | TinyTitanFleet | `tests/TinyTitanFleet/ScannerTests.swift:178 (aSecondScanReportsWhatJoined)` | A fleet-scanner test asserted nothing (`|| true`), so the joined-members path was never covered | DONE | mac-mini-m3 (primary) |
+| AUD-026 | S1 | B | build/CI | `.github/workflows/audit-verification.yml (Python suite step); benchmark/requirements.txt` | The Phase E host could not run the Python suite: three dependencies were never installed | DONE | mac-mini-m3 (primary) |
 | AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | DONE | mac-mini-m3 (primary) |
 | AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | DONE | mac-mini-m3 (primary) |
 | AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | DONE | mac-mini-m3 (primary) |
@@ -54,6 +55,17 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: The test now scans a one-host fleet as a baseline (asserting the group is that host and `newMembers` is empty), adds Node3 to the transport's inventory and to the seed's peer list, scans again and asserts `newMembers == ["Node3"]`, then scans a third time and keeps the existing 'nothing joined between two identical scans' check. The `HostTransport` test actor gains `setInventory` so the fleet can change between scans, and the baseline assertion documents why the first scan reports nothing.
 - evidence (after): Both directions run: with the join disabled (empty peer list) the new assertion fails with `ScannerTests.swift:192:9: Expectation failed: await scanner.current().newMembers == ["Node3"]`; with the join in place the test passes. Full suite: 1,493 tests in 223 suites passed, 0 issues.
 - commit: 8bca11f
+- blocked: —
+
+### AUD-026 — The Phase E host could not run the Python suite: three dependencies were never installed
+
+- severity **S1**, tier B, project build/CI, status **DONE**
+- location: `.github/workflows/audit-verification.yml (Python suite step); benchmark/requirements.txt`
+- discovered by: Phase E convergence pass (gh run view 36130126195 --log-failed)
+- evidence (before): Every Audit verification run failed one step *before* the ledger gate, so Phase E had never actually been reached. The Python suite step ended `FAILED (failures=1, skipped=147)`: `test_prepare_qwen38.FinishedOutputGuardTests.test_a_finished_directory_is_refused` asserted `already holds a finished snapshot` but received `missing dependency: No module named 'ml_dtypes'` - the runner's Python 3.13 had none of numpy/safetensors/ml_dtypes, so that test failed and 147 others skipped. The step ran `python3 -m unittest discover` with no install. `ci.yml`'s converter gate built its own venv with the three packages, so the gap was specific to the Phase E workflow, and the unpinned install there meant the two workflows could resolve different versions.
+- fix: Added `benchmark/requirements.txt` pinning the three versions the local baseline runs them under (numpy 2.5.3, safetensors 0.8.0, ml_dtypes 0.6.0; cp313 macOS arm64 wheels verified for the runner's interpreter). The Phase E workflow installs from that file (user-site, into the same 3.13 interpreter the suite runs under) before `unittest discover`, and `ci.yml`'s converter venv installs from the same file instead of a bare package list, so the two cannot drift. With a requirements file present, §1's pip-audit applies: pip-audit 2.10.1 against it reports no known vulnerabilities.
+- evidence (after): The same command that failed on CI passes locally with the pinned set: `Ran 299 tests ... OK (skipped=52)` (vs `failures=1, skipped=147` without the deps). `pip-audit -r benchmark/requirements.txt` -> No known vulnerabilities found. The next Audit verification run is the first one to reach the ledger gate.
+- commit: 1078c77
 - blocked: —
 
 ### AUD-002 — Swift warnings-as-errors is not enforced by the build config
