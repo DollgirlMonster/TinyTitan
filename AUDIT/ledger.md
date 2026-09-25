@@ -2,11 +2,12 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**22 tasks — done 21, open 1, blocked 0.**
+**25 tasks — done 25, open 0, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | DONE | mac-mini-m3 (primary) |
+| AUD-023 | S1 | C | TinyTitanFleet | `tests/TinyTitanFleet/ScannerTests.swift:178 (aSecondScanReportsWhatJoined)` | A fleet-scanner test asserted nothing (`|| true`), so the joined-members path was never covered | DONE | mac-mini-m3 (primary) |
 | AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | DONE | mac-mini-m3 (primary) |
 | AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | DONE | mac-mini-m3 (primary) |
 | AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | DONE | mac-mini-m3 (primary) |
@@ -18,7 +19,8 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-019 | S2 | A | Swift | `sources/ (171 sites, 44 files)` | force_unwrapping in sources: 171 sites that crashed instead of failing | DONE | mac-mini-m3 (primary) |
 | AUD-020 | S2 | A | Swift | `sources/ + tests/ + benchmark/` | 96 remaining SwiftLint findings across 11 rules (data/string conversion, casts, type checking, style) | DONE | mac-mini-m3 (primary) |
 | AUD-021 | S2 | C | Tests | `tests/ (136 sites) + benchmark/ (3 sites)` | force_unwrapping in test fixtures: 139 sites that crash the test process | DONE | mac-mini-m3 (primary) |
-| AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
+| AUD-025 | S2 | B | build | `tools/lint.sh (check_unchecked_sendable scanner)` | unchecked-sendable scanner missed the invariant comment on wrapped declarations | DONE | mac-mini-m3 (primary) |
+| AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | DONE | mac-mini-m3 (primary) |
 | AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | DONE | mac-mini-m3 (primary) |
 | AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | DONE | mac-mini-m3 (primary) |
 | AUD-010 | S3 | C | tools | `tools/*.sh (14 shellcheck warnings)` | shellcheck reports 14 warnings across the shell tools | DONE | mac-mini-m3 (primary) |
@@ -28,6 +30,7 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-016 | S3 | C | tests | `tests/TinyTitanFleet/DashboardTests.swift:88,105,108` | Warnings surfaced by warnings-as-errors: redundant #require on an optional and an unused shadowed binding | DONE | mac-mini-m3 (primary) |
 | AUD-018 | S3 | B | build | `.swiftlint.yml` | SwiftLint rule-set decision: what is enforced, configured, or delegated, and why | DONE | mac-mini-m3 (primary) |
 | AUD-022 | S3 | B | JS plugins | `plugins/dsh-tinytitan/src/catalog-scan.js; plugins/dsh-lan-manager/src/{api,index,peers}.js; tests in both packages` | 10 ESLint findings in the plugin packages, found by the newly wired linter | DONE | mac-mini-m3 (primary) |
+| AUD-024 | S3 | B | build | `tools/func-length-baseline.txt` | The AUD-004 formatter sweep pushed 14 functions past the 120-line ratchet | DONE | mac-mini-m3 (primary) |
 
 ## Detail
 
@@ -40,6 +43,17 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: Pin swift-nio at 2.100.0 (the advisory fix version); Package.resolved re-resolved, only swift-nio changed.
 - evidence (after): osv-scanner: 'No issues found' (was 3). swift test --no-parallel: 1,493 tests in 223 suites passed, exit 0; the only build warnings are the pre-existing CompactionTests.swift:328 one; Swift 6 mode/strict concurrency unchanged (AUDIT/tool-coverage.md).
 - commit: 6786b6b
+- blocked: —
+
+### AUD-023 — A fleet-scanner test asserted nothing (`|| true`), so the joined-members path was never covered
+
+- severity **S1**, tier C, project TinyTitanFleet, status **DONE**
+- location: `tests/TinyTitanFleet/ScannerTests.swift:178 (aSecondScanReportsWhatJoined)`
+- discovered by: AUD-004 (swift-format EndOfLineComment flagged the trailing comment on the vacuous line)
+- evidence (before): `#expect(await scanner.current().newMembers.isEmpty == false || true)` is a tautology - `X || true` is always true - so the test could not fail, and the test whose name is 'aSecondScanReportsWhatJoined' never created a join: both scanners scanned a fixed fleet, and `FleetScanner.scan()` reports nothing new on a first scan by design (`state.scannedAt != nil` is required for `appeared`).
+- fix: The test now scans a one-host fleet as a baseline (asserting the group is that host and `newMembers` is empty), adds Node3 to the transport's inventory and to the seed's peer list, scans again and asserts `newMembers == ["Node3"]`, then scans a third time and keeps the existing 'nothing joined between two identical scans' check. The `HostTransport` test actor gains `setInventory` so the fleet can change between scans, and the baseline assertion documents why the first scan reports nothing.
+- evidence (after): Both directions run: with the join disabled (empty peer list) the new assertion fails with `ScannerTests.swift:192:9: Expectation failed: await scanner.current().newMembers == ["Node3"]`; with the join in place the test passes. Full suite: 1,493 tests in 223 suites passed, 0 issues.
+- commit: 8bca11f
 - blocked: —
 
 ### AUD-002 — Swift warnings-as-errors is not enforced by the build config
@@ -163,15 +177,26 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - commit: eab2a5a 1514796 f35f44f e2415ed
 - blocked: —
 
+### AUD-025 — unchecked-sendable scanner missed the invariant comment on wrapped declarations
+
+- severity **S2**, tier B, project build, status **DONE**
+- location: `tools/lint.sh (check_unchecked_sendable scanner)`
+- discovered by: tools/lint.sh sendable (after the AUD-004 sweep)
+- evidence (before): After the formatter wrapped two long inheritance clauses, the gate reported `NEW: sources/TinyTitan/Runtime/Inference/RealForwardRunner.swift:line142` and `NEW: sources/TinyTitan/Repack/Core/Remote/RemoteRangeTransfer.swift:line69` even though both declarations carry an `unchecked-invariant:` note directly above them. The scanner collected only the comment block touching the `@unchecked Sendable` line, and the wrap put a non-comment declaration line between the note and the token.
+- fix: The scanner now walks the whole contiguous non-blank block above the `@unchecked Sendable` line and collects its comments, so a declaration that wraps still associates with its note. The marker (`unchecked-invariant:`) is still mandatory; only the distance from the token changed.
+- evidence (after): `tools/lint.sh sendable` -> ok (0 undocumented, 0 new). Not weakened: a probe class with `@unchecked Sendable` and no note still fails (`NEW: sources/TinyTitan/ZZAuditSendableProbe.swift:ZzAuditUndocumented`, exit 1), and removing the probe returns the gate to clean.
+- commit: 7016b7c
+- blocked: —
+
 ### AUD-004 — No committed swift-format config
 
-- severity **S3**, tier B, project build, status **OPEN**
+- severity **S3**, tier B, project build, status **DONE**
 - location: `repo root`
 - discovered by: tool inventory (AUDIT/environment.md)
 - evidence (before): swift-format 603.0.0 is installed but there is no .swift-format or .swift-format.json in the tree, so formatting is not enforceable or reproducible.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Committed `.swift-format` with two decisions and the rest at the formatter's defaults: `indentation.spaces` 4 (the tree's actual style; the default 2 accounted for ~94k findings by itself) and `AlwaysUseLowerCamelCase` off, because the 112 names it wanted renamed are the numerical vocabulary (`D`, `N`, `Dv`, `FmoE`) and the model constants (`qwen36_8bit`, `ornith15_8bit`) that the AUD-018 identifier_name decision already records - casing stays enforced by SwiftLint's identifier_name. `swift-format format --in-place --recursive sources tests benchmark Package.swift` resolved the 29,277 mechanically fixable findings across 442 files in one pass; the 123 it cannot fix were fixed by hand: three `.forEach` closures became `for`-in loops, four calls that mixed a closure argument with a trailing closure now pass the last by label (`onProgress:`, `op:`, `load:`), and four over-long end-of-line comments moved above their line. `tools/lint.sh` gains `check_swift_format` (eleventh gate) running `xcrun swift-format lint --strict`; the binary ships with the pinned Xcode 27 / Swift 6.4 toolchain, so the toolchain pin is the version pin. Both CI workflow labels now say eleven gates. Two consequences are carried by their own tasks: AUD-024 (14 functions crossed the 120-line ratchet from formatting alone) and AUD-025 (the unchecked-sendable scanner missed invariant comments on wrapped declarations).
+- evidence (after): `swift-format lint --strict` over sources, tests, benchmark and Package.swift -> 0 findings (from 109,539 under the default config / 29,400 with 4-space indentation); `tools/lint.sh` -> all eleven gates ok; `swift build --build-tests` warning-free; `swift test --no-parallel` -> 1,493 tests in 223 suites passed, 0 issues; `swiftlint --strict` still 0 findings. A badly formatted probe in a real source file failed the new gate with `[AddLines]` / `[Indentation]` errors and exited 1; removing it exited 0 (AUDIT/tool-coverage.md L10/T12).
+- commit: 7016b7c
 - blocked: —
 
 ### AUD-008 — SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions
@@ -271,5 +296,16 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: Two dead initializers removed (`let childStat` / `let entries` assigned in the try, used after it), the unused re-exported-elsewhere import dropped, three unused test bindings and parameters removed, the two regexes written with `{n}` quantifiers (eslint --fix), and mount.test.js's env save/restore moved into a synchronous `restoreEnv` helper so the assignment no longer sits across the `await`. peers.js keeps the rest-sibling idiom and the rule is configured with `ignoreRestSiblings: true` and the reason in the config. Behavior unchanged.
 - evidence (after): `eslint .` clean in both packages; both plugin suites pass (66 tests / 1 skipped; 107 tests); `tools/lint.sh javascript` green and the temporary probe fails it (AUDIT/tool-coverage.md T11).
 - commit: b24edf0
+- blocked: —
+
+### AUD-024 — The AUD-004 formatter sweep pushed 14 functions past the 120-line ratchet
+
+- severity **S3**, tier B, project build, status **DONE**
+- location: `tools/func-length-baseline.txt`
+- discovered by: tools/lint.sh func-length (after the AUD-004 sweep)
+- evidence (before): The ratchet baseline was empty and the gate reported 0 new over 2,042 scanned functions before the sweep; after it the gate listed 14 NEW functions (encodeSplit, runStreamingMTPCompletion, validateLayerTensors, advanceMTP, encodeAffineProjection, TinyTitanBench.main, GTurboPackedExpertsLayoutV1.validate, GTurboResidentIndexV1.decodeRegion, storeConsolidation, GTurboLayoutValidator.validate, chatRequest, handleMessages, handleResponses, route), all between 121 and 138 lines. No logic was added: the formatter expanded dense one-liners (`AddLines`, `DoNotUseSemicolons`, `OneCasePerLine`).
+- fix: The gate's documented remedy for exactly this case is a baseline row with a reason, so `tools/func-length-baseline.txt` now carries the 14 keys with 'AUD-024: the AUD-004 formatter sweep expanded this body past 120 lines; no logic was added'. The ratchet still ratchets: the gate fails on any NEW function and its stale check forces the row to be dropped once a function is decomposed below the limit.
+- evidence (after): `tools/lint.sh func-length` -> ok (14 baselined, 0 new, 2,042 scanned). Full suite green (1,493 tests, 223 suites); no behavior changed.
+- commit: 7016b7c
 - blocked: —
 
