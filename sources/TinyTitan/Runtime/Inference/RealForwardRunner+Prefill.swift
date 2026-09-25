@@ -549,7 +549,7 @@ extension RealForwardRunner {
                     m: UInt32(rows),
                     n: UInt32(columns))
             } else {
-                try affine!.encodeTwoRows(
+                try requireAffine().encodeTwoRows(
                     commandBuffer: commandBuffer,
                     weights: weights.buffer,
                     weightsOffset: Int(weights.offset),
@@ -967,7 +967,7 @@ extension RealForwardRunner {
         var prefillRouteEnd = prefillLayerStart
         var prefillTileEnd = prefillLayerStart
         let perExpertScale: (buffer: any MTLBuffer, offset: Int) =
-            (onesPerExpertScale!, 0)
+            (try requireOnesPerExpertScale(), 0)
         try prefillRouter.encodeBlock(
                     commandBuffer: cb,
                     weights: routerView.buffer,
@@ -1081,7 +1081,7 @@ extension RealForwardRunner {
                 if cfg.sharedExpertGated {
                     // out = sigmoid(shared_expert_gate(moeX)) * shared_mlp(moeX),
                     // per chunk row.
-                    let gateView = sharedProj.scalarGate!
+                    let gateView = try requireTensorView(sharedProj.scalarGate, "shared-expert scalar gate")
                     let halfBytes = MemoryLayout<Float16>.stride
                     for row in 0..<t {
                         try encodeScalarGate(

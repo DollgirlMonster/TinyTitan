@@ -52,7 +52,11 @@ package final class GTurboDirectoryAccess {
             }
             directoryFD = next
         }
-        let fd = openat(directoryFD, components.last!,
+        guard let lastComponent = components.last else {
+            throw RepackError.configurationInvalid(
+                detail: "\(relativePath) has no last path component to open")
+        }
+        let fd = openat(directoryFD, lastComponent,
                         O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
         let savedErrno = errno
         close(directoryFD)
@@ -94,9 +98,10 @@ package final class GTurboDirectoryAccess {
         var data = Data(count: Int(size))
         if !data.isEmpty {
             try data.withUnsafeMutableBytes {
+                guard let base = $0.baseAddress else { return }
                 try Posix.preadAll(
                     fd: fd, path: "\(rootPath)/\(relativePath)",
-                    buf: $0.baseAddress!, count: $0.count, offset: 0)
+                    buf: base, count: $0.count, offset: 0)
             }
         }
         return data
@@ -121,9 +126,10 @@ package final class GTurboDirectoryAccess {
         var data = Data(count: Int(wanted))
         if !data.isEmpty {
             try data.withUnsafeMutableBytes {
+                guard let base = $0.baseAddress else { return }
                 try Posix.preadAll(
                     fd: fd, path: "\(rootPath)/\(relativePath)",
-                    buf: $0.baseAddress!, count: $0.count, offset: 0)
+                    buf: base, count: $0.count, offset: 0)
             }
         }
         return data

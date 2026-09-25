@@ -187,8 +187,12 @@ public final class CPUQwen35 {
         var out = [Float](repeating: 0, count: matrix.rows)
         x.withUnsafeBufferPointer { input in
             out.withUnsafeMutableBufferPointer { output in
-                CPUOps.gemv(matrix, x: input.baseAddress!,
-                            out: output.baseAddress!, threads: threads)
+                // An empty input or a zero-row matrix has no base address and
+                // nothing to compute; the force unwrap made that a crash.
+                guard let inputBase = input.baseAddress, let outputBase = output.baseAddress else {
+                    return
+                }
+                CPUOps.gemv(matrix, x: inputBase, out: outputBase, threads: threads)
             }
         }
         return out
@@ -265,9 +269,16 @@ public final class CPUQwen35 {
         var key = project(try matrix(stem + "k_proj.weight"), x)
         let value = project(try matrix(stem + "v_proj.weight"), x)
 
-        CPUOps.rmsNormPerSlice(&query, width: dim, gamma: queryNorm[layer]!,
+        // The per-layer norm weights must be in the snapshot; the force
+        // unwraps below made a missing tensor a crash instead of an error.
+        guard let queryNormWeights = queryNorm[layer],
+              let keyNormWeights = keyNorm[layer] else {
+            throw ModelError.internalInconsistency(
+                detail: "attention layer \(layer) is missing its query/key norm weights")
+        }
+        CPUOps.rmsNormPerSlice(&query, width: dim, gamma: queryNormWeights,
                                epsilon: configuration.normEpsilon)
-        CPUOps.rmsNormPerSlice(&key, width: dim, gamma: keyNorm[layer]!,
+        CPUOps.rmsNormPerSlice(&key, width: dim, gamma: keyNormWeights,
                                epsilon: configuration.normEpsilon)
         CPUOps.applyRoPE(&query, headDim: dim, rotaryDim: configuration.rotaryDim,
                          position: position, theta: configuration.ropeTheta)
@@ -337,15 +348,25 @@ public final class CPUQwen35 {
 
         let mixed = project(try matrix(stem + "in_proj_qkv.weight"), x)
         let z = project(try matrix(stem + "in_proj_z.weight"), x)
-        let a = dense(deltaA[layer]!, rows: hv, x: x)
-        let b = dense(deltaB[layer]!, rows: hv, x: x)
+        // Every per-layer tensor this path needs, checked once: the force
+        // unwraps below made a missing tensor a crash.
+        guard let deltaWeightsA = deltaA[layer],
+              let deltaWeightsB = deltaB[layer],
+              let taps = convTaps[layer],
+              let decayLog = aLog[layer],
+              let decayBias = dtBias[layer],
+              let normGamma = gdnNorm[layer] else {
+            throw ModelError.internalInconsistency(
+                detail: "linear-attention layer \(layer) is missing delta-rule or norm weights")
+        }
+        let a = dense(deltaWeightsA, rows: hv, x: x)
+        let b = dense(deltaWeightsB, rows: hv, x: x)
         let convDim = mixed.count
 
         // Causal depthwise convolution over the last `kernel` tokens. Tap
         // `k` reads `kernel - 1 - k` positions back, so the last tap is this
         // token.
         var tail = convolution[layer] ?? [Float](repeating: 0, count: (kernel - 1) * convDim)
-        let taps = convTaps[layer]!
         var convolved = [Float](repeating: 0, count: convDim)
         for channel in 0..<convDim {
             var total: Float = 0
@@ -378,8 +399,8 @@ public final class CPUQwen35 {
         for head in 0..<hv {
             let keyHead = head / repeats
             let beta = CPUOps.sigmoid(b[head])
-            let decay = expf(-expf(aLog[layer]![head])
-                             * CPUOps.softplus(a[head] + dtBias[layer]![head]))
+            let decay = expf(-expf(decayLog[head])
+                             * CPUOps.softplus(a[head] + decayBias[head]))
             let stateBase = head * dv * dk
             let keyBase = keyHead * dk
             for row in 0..<dv {
@@ -407,7 +428,7 @@ public final class CPUQwen35 {
 
         let inverse = 1 / Float(dv).squareRoot()
         for index in readout.indices { readout[index] *= inverse }
-        CPUOps.rmsNormPerSlice(&readout, width: dv, gamma: gdnNorm[layer]!,
+        CPUOps.rmsNormPerSlice(&readout, width: dv, gamma: normGamma,
                                epsilon: configuration.normEpsilon)
         // SiLU, not sigmoid. The gate is `silu` in this lineage and
         // `sigmoid` in Qwen3.8-Flash-Next; getting it wrong produces a model
@@ -461,15 +482,22 @@ public final class CPUQwen35 {
         let wordsPerRow = matrix.columns / lanes
         let groupsPerRow = matrix.columns / matrix.groupSize
         var out = [Float](repeating: 0, count: matrix.columns)
-        let words = matrix.weights.baseAddress!.assumingMemoryBound(to: UInt32.self)
-        for word in 0..<wordsPerRow {
-            let packed = words[row * wordsPerRow + word]
-            for lane in 0..<lanes {
-                let column = word * lanes + lane
-                let level = Float((packed >> (matrix.bits * lane)) & mask)
-                let group = row * groupsPerRow + column / matrix.groupSize
-                out[column] = level * bfloat(matrix.scales[group])
-                    + bfloat(matrix.biases[group])
+        // The words are read through the buffer's own lifetime rather than an
+        // escaping base address, and an empty weights block leaves `out` zero
+        // instead of trapping.
+        matrix.weights.withUnsafeBytes { raw in
+            guard let words = raw.baseAddress?.assumingMemoryBound(to: UInt32.self) else {
+                return
+            }
+            for word in 0..<wordsPerRow {
+                let packed = words[row * wordsPerRow + word]
+                for lane in 0..<lanes {
+                    let column = word * lanes + lane
+                    let level = Float((packed >> (matrix.bits * lane)) & mask)
+                    let group = row * groupsPerRow + column / matrix.groupSize
+                    out[column] = level * bfloat(matrix.scales[group])
+                        + bfloat(matrix.biases[group])
+                }
             }
         }
         return out

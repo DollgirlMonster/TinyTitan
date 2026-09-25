@@ -9,6 +9,28 @@
 
 import Foundation
 import Metal
+
+/// A Metal object the harness needs but could not create. The benchmark
+/// harnesses used to force-unwrap these, so a machine under memory pressure
+/// crashed instead of reporting which allocation failed.
+enum BenchHarnessError: Error, CustomStringConvertible {
+    case metalObjectUnavailable(String)
+
+    var description: String {
+        switch self {
+        case .metalObjectUnavailable(let what):
+            return "could not create the Metal \(what) for this benchmark"
+        }
+    }
+}
+
+/// A command buffer from the queue, or a named error.
+func requireCommandBuffer(_ queue: MTLCommandQueue) throws -> MTLCommandBuffer {
+    guard let cb = queue.makeCommandBuffer() else {
+        throw BenchHarnessError.metalObjectUnavailable("command buffer")
+    }
+    return cb
+}
 import TinyTitan
 
 extension TinyTitanBench {
@@ -60,15 +82,17 @@ extension TinyTitanBench {
         let downBOff = downSOff + groups
         let blobBytes = downBOff + groups
 
-        func makeBuffer(_ bytes: Int, _ value: UInt8) -> MTLBuffer {
-            let buf = device.makeBuffer(length: bytes,
-                                        options: .storageModeShared)!
+        func makeBuffer(_ bytes: Int, _ value: UInt8) throws -> MTLBuffer {
+            guard let buf = device.makeBuffer(length: bytes,
+                                              options: .storageModeShared) else {
+                throw BenchHarnessError.metalObjectUnavailable("buffer of \(bytes) bytes")
+            }
             memset(buf.contents(), Int32(value), bytes)
             return buf
         }
         var blobs: [MTLBuffer] = []
         for i in 0..<Int(topK) {
-            let blob = makeBuffer(blobBytes, UInt8(0x11 + i))
+            let blob = try makeBuffer(blobBytes, UInt8(0x11 + i))
             // Scale/bias regions as bf16 0x3C3C (~0.011) rather than the
             // byte pattern (~1e-38), so the activations are non-zero and
             // acts_fnv actually compares kernel variants.
@@ -79,15 +103,15 @@ extension TinyTitanBench {
         }
         // Non-uniform activation pattern so staging/indexing bugs surface:
         // the uniform fill used before masked wrong-element reads.
-        let x = device.makeBuffer(length: Int(D) * 2, options: .storageModeShared)!
+        let x = try makeBuffer(Int(D) * 2, 0)
         let xPtr = x.contents().assumingMemoryBound(to: UInt16.self)
         for i in 0..<Int(D) {
             xPtr[i] = Float16(Float(i + 1) * 0.001).bitPattern
         }
-        let acts = makeBuffer(Int(topK) * Int(F) * 2, 0)
-        let routingW = makeBuffer(Int(topK) * 2, 0x3F)
-        let residual = makeBuffer(Int(D) * 2, 0x33)
-        let y = makeBuffer(Int(D) * 2, 0)
+        let acts = try makeBuffer(Int(topK) * Int(F) * 2, 0)
+        let routingW = try makeBuffer(Int(topK) * 2, 0x3F)
+        let residual = try makeBuffer(Int(D) * 2, 0x33)
+        let y = try makeBuffer(Int(D) * 2, 0)
 
         // RoutedBlobs arg buffer: 8 device pointers (shared memory, so the
         // host address is the GPU address).
@@ -171,7 +195,7 @@ extension TinyTitanBench {
         var Fv = F
         var TK = topK
 
-        let cb = context.queue.makeCommandBuffer()!
+        let cb = try requireCommandBuffer(context.queue)
         guard let enc = cb.makeComputeCommandEncoder() else {
             fatalError("could not create compute encoder")
         }
@@ -291,32 +315,34 @@ extension TinyTitanBench {
         let N: UInt32 = qwen38 ? 2560 : 2048
         let groupCount = Int(N) / 64
 
-        func makeBuffer(_ bytes: Int, _ value: UInt8) -> MTLBuffer {
-            let buf = device.makeBuffer(length: bytes, options: .storageModeShared)!
+        func makeBuffer(_ bytes: Int, _ value: UInt8) throws -> MTLBuffer {
+            guard let buf = device.makeBuffer(length: bytes, options: .storageModeShared) else {
+                throw BenchHarnessError.metalObjectUnavailable("buffer of \(bytes) bytes")
+            }
             memset(buf.contents(), Int32(value), bytes)
             return buf
         }
-        let qkvW = makeBuffer(Int(qkvRows) * Int(N) / 2, 0x12)
-        let qkvS = makeBuffer(Int(qkvRows) * groupCount * 2, 0x01)
-        let qkvB = makeBuffer(Int(qkvRows) * groupCount * 2, 0x00)
-        let zW = makeBuffer(Int(zRows) * Int(N) / 2, 0x34)
-        let zS = makeBuffer(Int(zRows) * groupCount * 2, 0x01)
-        let zB = makeBuffer(Int(zRows) * groupCount * 2, 0x00)
-        let aW = makeBuffer(Int(abRows) * Int(N) / 2, 0x56)
-        let aS = makeBuffer(Int(abRows) * groupCount * 2, 0x01)
-        let aB = makeBuffer(Int(abRows) * groupCount * 2, 0x00)
-        let bW = makeBuffer(Int(abRows) * Int(N) / 2, 0x78)
-        let bS = makeBuffer(Int(abRows) * groupCount * 2, 0x01)
-        let bB = makeBuffer(Int(abRows) * groupCount * 2, 0x00)
-        let x = device.makeBuffer(length: Int(N) * 2, options: .storageModeShared)!
+        let qkvW = try makeBuffer(Int(qkvRows) * Int(N) / 2, 0x12)
+        let qkvS = try makeBuffer(Int(qkvRows) * groupCount * 2, 0x01)
+        let qkvB = try makeBuffer(Int(qkvRows) * groupCount * 2, 0x00)
+        let zW = try makeBuffer(Int(zRows) * Int(N) / 2, 0x34)
+        let zS = try makeBuffer(Int(zRows) * groupCount * 2, 0x01)
+        let zB = try makeBuffer(Int(zRows) * groupCount * 2, 0x00)
+        let aW = try makeBuffer(Int(abRows) * Int(N) / 2, 0x56)
+        let aS = try makeBuffer(Int(abRows) * groupCount * 2, 0x01)
+        let aB = try makeBuffer(Int(abRows) * groupCount * 2, 0x00)
+        let bW = try makeBuffer(Int(abRows) * Int(N) / 2, 0x78)
+        let bS = try makeBuffer(Int(abRows) * groupCount * 2, 0x01)
+        let bB = try makeBuffer(Int(abRows) * groupCount * 2, 0x00)
+        let x = try makeBuffer(Int(N) * 2, 0)
         let xPtr = x.contents().assumingMemoryBound(to: UInt16.self)
         for i in 0..<Int(N) {
             xPtr[i] = Float16(Float(i + 1) * 0.001).bitPattern
         }
-        let qkvY = makeBuffer(Int(qkvRows) * 2, 0)
-        let zY = makeBuffer(Int(zRows) * 2, 0)
-        let aY = makeBuffer(Int(abRows) * 2, 0)
-        let bY = makeBuffer(Int(abRows) * 2, 0)
+        let qkvY = try makeBuffer(Int(qkvRows) * 2, 0)
+        let zY = try makeBuffer(Int(zRows) * 2, 0)
+        let aY = try makeBuffer(Int(abRows) * 2, 0)
+        let bY = try makeBuffer(Int(abRows) * 2, 0)
 
         let kernelName2: String
         let rowsPerTG: Int
@@ -362,15 +388,15 @@ extension TinyTitanBench {
         let gatedNormPSO = try context.pipeline(
             "gdn_gated_norm",
             constants: [MetalFunctionConstant(index: 95, value: .uint32(128))])
-        let convTail = makeBuffer(3 * Int(qkvRows), 0x44)          // [K-1, qkvDim] halfs
-        let convW = makeBuffer(Int(qkvRows) * 4 * 2, 0x55)         // [qkvDim, K] bfloat
-        let convOut = makeBuffer(Int(qkvRows) * 2, 0)
-        let aLog = makeBuffer(Int(abRows) * 2, 0x60)
-        let dtBias = makeBuffer(Int(abRows) * 2, 0x60)
-        let state = makeBuffer(Int(abRows) * 128 * 128 * 4, 0)     // FP32 [Hv, Dv, Dk]
-        let deltaY = makeBuffer(Int(zRows) * 2, 0)
-        let gatedW = makeBuffer(Int(zRows) * 2, 0x66)
-        let gatedOut = makeBuffer(Int(zRows) * 2, 0)
+        let convTail = try makeBuffer(3 * Int(qkvRows), 0x44)          // [K-1, qkvDim] halfs
+        let convW = try makeBuffer(Int(qkvRows) * 4 * 2, 0x55)         // [qkvDim, K] bfloat
+        let convOut = try makeBuffer(Int(qkvRows) * 2, 0)
+        let aLog = try makeBuffer(Int(abRows) * 2, 0x60)
+        let dtBias = try makeBuffer(Int(abRows) * 2, 0x60)
+        let state = try makeBuffer(Int(abRows) * 128 * 128 * 4, 0)     // FP32 [Hv, Dv, Dk]
+        let deltaY = try makeBuffer(Int(zRows) * 2, 0)
+        let gatedW = try makeBuffer(Int(zRows) * 2, 0x66)
+        let gatedOut = try makeBuffer(Int(zRows) * 2, 0)
 
         let totalRows = Int(qkvRows + zRows + 2 * abRows)
         let bytes = UInt64(Int(qkvRows) * Int(N) / 2 + Int(zRows) * Int(N) / 2
@@ -380,7 +406,7 @@ extension TinyTitanBench {
         var abVar = abRows
         var nVar = N
 
-        let cb = context.queue.makeCommandBuffer()!
+        let cb = try requireCommandBuffer(context.queue)
         guard let enc = cb.makeComputeCommandEncoder() else {
             fatalError("could not create compute encoder")
         }
@@ -509,18 +535,20 @@ extension TinyTitanBench {
         default: bits = 8; kernel = "affine_quant_gemv_simd"
         }
         let rowBytes = Int(n) * bits / 8
-        func makeBuffer(_ bytes: Int, _ value: UInt8) -> MTLBuffer {
-            let buf = device.makeBuffer(length: bytes, options: .storageModeShared)!
+        func makeBuffer(_ bytes: Int, _ value: UInt8) throws -> MTLBuffer {
+            guard let buf = device.makeBuffer(length: bytes, options: .storageModeShared) else {
+                throw BenchHarnessError.metalObjectUnavailable("buffer of \(bytes) bytes")
+            }
             memset(buf.contents(), Int32(value), bytes)
             return buf
         }
-        let w = makeBuffer(Int(rows) * rowBytes, 0x5A)
-        let s = makeBuffer(Int(rows) * groupCount * 2, 0x3C)
-        let bb = makeBuffer(Int(rows) * groupCount * 2, 0x00)
-        let x = device.makeBuffer(length: Int(n) * 2, options: .storageModeShared)!
+        let w = try makeBuffer(Int(rows) * rowBytes, 0x5A)
+        let s = try makeBuffer(Int(rows) * groupCount * 2, 0x3C)
+        let bb = try makeBuffer(Int(rows) * groupCount * 2, 0x00)
+        let x = try makeBuffer(Int(n) * 2, 0)
         let xPtr = x.contents().assumingMemoryBound(to: UInt16.self)
         for i in 0..<Int(n) { xPtr[i] = Float16(Float(i % 97 + 1) * 0.001).bitPattern }
-        let y = makeBuffer(Int(rows) * 2, 0)
+        let y = try makeBuffer(Int(rows) * 2, 0)
         let constants = kernel.hasPrefix("affine")
             ? [MetalFunctionConstant(index: 100, value: .uint32(UInt32(bits)))] : []
         let pso = try context.pipeline(kernel, constants: constants,
@@ -528,8 +556,13 @@ extension TinyTitanBench {
         var rowsVar = rows
         var nVar = n
         let threadgroups = (Int(rows) + 7) / 8
-        let cb = context.queue.makeCommandBuffer()!
-        let enc = cb.makeComputeCommandEncoder()!
+        let cb = try requireCommandBuffer(context.queue)
+        let enc = try {
+            guard let enc = cb.makeComputeCommandEncoder() else {
+                throw BenchHarnessError.metalObjectUnavailable("compute encoder")
+            }
+            return enc
+        }()
         enc.setComputePipelineState(pso)
         enc.setBuffer(w, offset: 0, index: 0)
         enc.setBuffer(s, offset: 0, index: 1)

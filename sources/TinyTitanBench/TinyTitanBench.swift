@@ -66,25 +66,27 @@ struct TinyTitanBench {
             constants: [],
             maxTotalThreadsPerThreadgroup: 512)
 
-        func makeBuffer(_ bytes: Int, _ value: UInt8) -> MTLBuffer {
-            let buf = device.makeBuffer(length: bytes,
-                                        options: .storageModeShared)!
+        func makeBuffer(_ bytes: Int, _ value: UInt8) throws -> MTLBuffer {
+            guard let buf = device.makeBuffer(length: bytes,
+                                              options: .storageModeShared) else {
+                throw BenchHarnessError.metalObjectUnavailable("buffer of \(bytes) bytes")
+            }
             memset(buf.contents(), Int32(value), bytes)
             return buf
         }
-        let qW = makeBuffer(Int(qRows) * rowBytes, 0x12)
-        let qS = makeBuffer(Int(qRows) * groupCount * 2, 0x01)
-        let qB = makeBuffer(Int(qRows) * groupCount * 2, 0x00)
-        let kW = makeBuffer(Int(kvRows) * rowBytes, 0x34)
-        let kS = makeBuffer(Int(kvRows) * groupCount * 2, 0x01)
-        let kB = makeBuffer(Int(kvRows) * groupCount * 2, 0x00)
-        let vW = makeBuffer(Int(kvRows) * rowBytes, 0x56)
-        let vS = makeBuffer(Int(kvRows) * groupCount * 2, 0x01)
-        let vB = makeBuffer(Int(kvRows) * groupCount * 2, 0x00)
-        let x = makeBuffer(Int(n) * 2, 0x77)
-        let qOut = makeBuffer(Int(qRows) * 2, 0)
-        let kOut = makeBuffer(Int(kvRows) * 2, 0)
-        let vOut = makeBuffer(Int(kvRows) * 2, 0)
+        let qW = try makeBuffer(Int(qRows) * rowBytes, 0x12)
+        let qS = try makeBuffer(Int(qRows) * groupCount * 2, 0x01)
+        let qB = try makeBuffer(Int(qRows) * groupCount * 2, 0x00)
+        let kW = try makeBuffer(Int(kvRows) * rowBytes, 0x34)
+        let kS = try makeBuffer(Int(kvRows) * groupCount * 2, 0x01)
+        let kB = try makeBuffer(Int(kvRows) * groupCount * 2, 0x00)
+        let vW = try makeBuffer(Int(kvRows) * rowBytes, 0x56)
+        let vS = try makeBuffer(Int(kvRows) * groupCount * 2, 0x01)
+        let vB = try makeBuffer(Int(kvRows) * groupCount * 2, 0x00)
+        let x = try makeBuffer(Int(n) * 2, 0x77)
+        let qOut = try makeBuffer(Int(qRows) * 2, 0)
+        let kOut = try makeBuffer(Int(kvRows) * 2, 0)
+        let vOut = try makeBuffer(Int(kvRows) * 2, 0)
 
         let totalRows = Int(qRows + 2 * kvRows)
         let rowsPerThreadgroup = 8
@@ -95,7 +97,7 @@ struct TinyTitanBench {
         var kvVar = kvRows
         var nVar = n
 
-        let cb = context.queue.makeCommandBuffer()!
+        let cb = try requireCommandBuffer(context.queue)
         guard let enc = cb.makeComputeCommandEncoder() else {
             fatalError("could not create compute encoder")
         }

@@ -235,7 +235,7 @@ extension RealForwardRunner {
             let residencyResources = (!denseFFN && decodeExpertExecution == .gpuResidency)
                 ? try model.routedExpertResidency(layer: L) : nil
             let perExpertScale: (buffer: any MTLBuffer, offset: Int) =
-                (onesPerExpertScale!, 0)
+                (try requireOnesPerExpertScale(), 0)
 
             let tCb1Start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
             // Attention+router split into measured sub-command-buffers
@@ -1027,15 +1027,15 @@ extension RealForwardRunner {
                           scratchAct: denseScratchAct)
         if cfg.sharedExpertGated {
             // out = sigmoid(shared_expert_gate(moeX)) * shared_mlp(moeX)
-            let gateView = sharedProj.scalarGate!
+            let gateView = try requireTensorView(sharedProj.scalarGate, "shared-expert scalar gate")
             try encodeScalarGate(commandBuffer: sharedCB,
                                  view: gateView,
                                  x: routedX,
-                                 y: sharedScalarGateBuf!,
+                                 y: try requireBuffer(sharedScalarGateBuf, "shared-expert gate buffer"),
                                  n: D)
             try requireElementwise().encodeSigmoidScalarMul(commandBuffer: sharedCB,
                                                 y: h1Buf,
-                                                gate: sharedScalarGateBuf!,
+                                                gate: try requireBuffer(sharedScalarGateBuf, "shared-expert gate buffer"),
                                                 count: cfg.hiddenSize)
         }
         completionClock?.track(sharedCB)

@@ -200,7 +200,7 @@ enum ServerMemory {
             byNamespace[namespace(of: record.key.rawValue), default: []].append(record.key.rawValue)
         }
         for name in byNamespace.keys.sorted() {
-            let keys = byNamespace[name]!.sorted()
+            let keys = (byNamespace[name] ?? []).sorted()
             if touched.contains(name), listed + keys.count <= maximumListed {
                 lines.append(contentsOf: keys.map { "- \($0)" })
                 listed += keys.count

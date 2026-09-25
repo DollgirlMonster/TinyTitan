@@ -342,10 +342,10 @@ extension RealForwardRunner {
             if gpuMask != cpuMask {
                 let diff = zip(gpuMask, cpuMask).enumerated().filter { $0.element.0 != $0.element.1 }
                 FileHandle.standardError.write(
-                    "TinyTitan qsa_select_verify MISMATCH layer=\(layer) position=\(position) cells=\(diff.count) first=\(diff.prefix(4).map { $0.offset })\n".data(using: .utf8)!)
+                    Data("TinyTitan qsa_select_verify MISMATCH layer=\(layer) position=\(position) cells=\(diff.count) first=\(diff.prefix(4).map { $0.offset })\n".utf8))
             } else if position % 64 == 0 {
                 FileHandle.standardError.write(
-                    "TinyTitan qsa_select_verify ok layer=\(layer) position=\(position)\n".data(using: .utf8)!)
+                    Data("TinyTitan qsa_select_verify ok layer=\(layer) position=\(position)\n".utf8))
             }
             return mask
         }
@@ -685,14 +685,14 @@ extension RealForwardRunner {
                           y: MTLBuffer, yOffset: Int = 0,
                           n: UInt32) throws {
         if view.dtype == 1 {
-            try bf16ScalarGate!.encode(commandBuffer: commandBuffer,
+            try requireBF16ScalarGate().encode(commandBuffer: commandBuffer,
                                        weights: view.buffer,
                                        weightsOffset: Int(view.offset),
                                        x: x, xOffset: xOffset,
                                        y: y, yOffset: yOffset,
                                        m: 1, n: n)
         } else {
-            try int8ScalarGate!.encode(commandBuffer: commandBuffer,
+            try requireInt8ScalarGate().encode(commandBuffer: commandBuffer,
                                        weights: view.buffer,
                                        weightsOffset: Int(view.offset),
                                        scales: view.buffer,

@@ -189,6 +189,59 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         }
         return elementwise
     }
+
+    // Checked accessors for the other optional kernels and buffers a path
+    // needs. Each is nil exactly when the model's profile does not dispatch
+    // that path; the call sites used to force-unwrap them, so a profile
+    // mismatch crashed instead of naming what was missing.
+
+    func requireAffine() throws -> AffineQuantGEMV {
+        guard let affine else {
+            throw ModelError.internalInconsistency(
+                detail: "the affine GEMV kernel is required here but the profile did not create one")
+        }
+        return affine
+    }
+
+    func requireOnesPerExpertScale() throws -> MTLBuffer {
+        try requireBuffer(onesPerExpertScale, "expert per-expert scale buffer")
+    }
+
+    func requireSharedScalarGateBuffer() throws -> MTLBuffer {
+        try requireBuffer(sharedScalarGateBuf, "shared-expert gate buffer")
+    }
+
+    func requireBF16ScalarGate() throws -> BF16GEMV {
+        guard let bf16ScalarGate else {
+            throw ModelError.internalInconsistency(
+                detail: "the bf16 scalar-gate kernel is required here but the profile did not create one")
+        }
+        return bf16ScalarGate
+    }
+
+    func requireInt8ScalarGate() throws -> DequantInt8GEMV {
+        guard let int8ScalarGate else {
+            throw ModelError.internalInconsistency(
+                detail: "the int8 scalar-gate kernel is required here but the profile did not create one")
+        }
+        return int8ScalarGate
+    }
+
+    func requireBuffer(_ buffer: MTLBuffer?, _ what: String) throws -> MTLBuffer {
+        guard let buffer else {
+            throw ModelError.internalInconsistency(
+                detail: "the \(what) is required here but the model profile did not create it")
+        }
+        return buffer
+    }
+
+    func requireTensorView(_ view: TensorView?, _ what: String) throws -> TensorView {
+        guard let view else {
+            throw ModelError.internalInconsistency(
+                detail: "the \(what) is required here but this layer does not carry it")
+        }
+        return view
+    }
     /// The Gated Residual, for families that carry one. Owns its own scratch,
     /// so a family without hyper-connections allocates nothing.
     /// Set by `TINYTITAN_ACT_DUMP`; nil disables every dump call site.

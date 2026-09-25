@@ -222,7 +222,7 @@ public struct DefaultContextAssembler: ContextAssembler {
         for namespace in grouped.keys.sorted() {
             lines.append("")
             lines.append("### \(namespace)")
-            for item in grouped[namespace]!.sorted(by: { $0.key < $1.key }) {
+            for item in (grouped[namespace] ?? []).sorted(by: { $0.key < $1.key }) {
                 let marker = item.status == .disputed ? " [disputed]" : ""
                 lines.append("- \(item.key) (v\(item.version))\(marker): \(flatten(item.value))")
             }

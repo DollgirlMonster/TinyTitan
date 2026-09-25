@@ -273,7 +273,11 @@ public func runRawCompletion(producer: any LogitProducer,
                                      timing: fusedRunner)
             }
         } else if fusedGreedy {
-            tokenID = Int32(bitPattern: fusedRunner!.lastGreedyToken)
+            guard let fusedRunner else {
+                throw ModelError.internalInconsistency(
+                    detail: "greedy fused decoding needs the fused runner")
+            }
+            tokenID = Int32(bitPattern: fusedRunner.lastGreedyToken)
         } else {
             tokenID = try sampleOnce(scratch: scratch, context: context,
                                  history: history, config: config, position: generated,

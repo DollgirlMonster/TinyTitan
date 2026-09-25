@@ -141,7 +141,11 @@ public final class MetalExpertReader: @unchecked Sendable {
         }
         condition.lock()
         while result == nil { condition.wait() }
-        let outcome = result!
+        guard let outcome = result else {
+            condition.unlock()
+            throw ModelError.internalInconsistency(
+                detail: "the parallel expert read finished without a result")
+        }
         condition.unlock()
         try outcome.get()
     }

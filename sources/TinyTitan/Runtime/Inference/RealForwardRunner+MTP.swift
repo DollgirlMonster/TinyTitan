@@ -267,8 +267,9 @@ extension RealForwardRunner {
             .assumingMemoryBound(to: UInt8.self), count: expectedBytes)
         let ids = tokens.map { UInt32(bitPattern: $0) }
         ids.withUnsafeBytes { bytes in
-            tokenBuffer.contents().copyMemory(from: bytes.baseAddress!,
-                                              byteCount: bytes.count)
+            // An empty id list has no base address and nothing to copy.
+            guard let base = bytes.baseAddress else { return }
+            tokenBuffer.contents().copyMemory(from: base, byteCount: bytes.count)
         }
         guard let cb = ctx.queue.makeCommandBuffer() else {
             throw ModelError.residentBufferWrapFailed
@@ -501,7 +502,7 @@ extension RealForwardRunner {
         let FmoE = UInt32(cfg.moeIntermediateSize)
         let halfBytes = MemoryLayout<Float16>.stride
         let perExpertScale: (buffer: any MTLBuffer, offset: Int) =
-            (onesPerExpertScale!, 0)
+            (try requireOnesPerExpertScale(), 0)
         // The MTP draft verifies against a MoE target and has no dense sibling,
         // so its stage always has a router; the view is optional because the
         // dense family shares the view type.
@@ -577,7 +578,7 @@ extension RealForwardRunner {
                                             xStrideElements: D,
                                             yStrideElements: D)
         if cfg.sharedExpertGated {
-            let gateView = sharedProj.scalarGate!
+            let gateView = try requireTensorView(sharedProj.scalarGate, "shared-expert scalar gate")
             for row in 0..<t {
                 try encodeScalarGate(
                     commandBuffer: sharedCB,
@@ -649,7 +650,8 @@ extension RealForwardRunner {
             rowBufs.reserveCapacity(cfg.topKExperts)
             rowOffsets.reserveCapacity(cfg.topKExperts)
             for expert in rowExperts[row] {
-                let view = blobs[unionIndex[expert]!]
+                guard let blobIndex = unionIndex[expert] else { continue }
+                let view = blobs[blobIndex]
                 rowBufs.append(view.buffer)
                 rowOffsets.append(Int(view.offset))
             }

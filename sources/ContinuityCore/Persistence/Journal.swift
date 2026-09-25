@@ -268,9 +268,11 @@ public actor FileJournal: ContinuityJournal {
     private func writeFully(_ data: Data) throws {
         guard descriptor >= 0 else { throw JournalError.writeFailed(url, errno: EBADF) }
         try data.withUnsafeBytes { buffer in
+            // An empty write has no base address and nothing to write.
+            guard let base = buffer.baseAddress else { return }
             var offset = 0
             while offset < buffer.count {
-                let written = write(descriptor, buffer.baseAddress!.advanced(by: offset),
+                let written = write(descriptor, base.advanced(by: offset),
                                     buffer.count - offset)
                 if written < 0 {
                     if errno == EINTR { continue }
@@ -510,9 +512,11 @@ public actor FileJournal: ContinuityJournal {
 
     private static func writeFully(_ data: Data, to descriptor: Int32, url: URL) throws {
         try data.withUnsafeBytes { buffer in
+            // An empty write has no base address and nothing to write.
+            guard let base = buffer.baseAddress else { return }
             var offset = 0
             while offset < buffer.count {
-                let written = write(descriptor, buffer.baseAddress!.advanced(by: offset),
+                let written = write(descriptor, base.advanced(by: offset),
                                     buffer.count - offset)
                 if written < 0 {
                     if errno == EINTR { continue }
