@@ -85,7 +85,11 @@ private func dashboard() -> FleetDashboard {
     @Test func theSelectedRowIsReportedForHighlighting() {
         var state = dashboard()
         let frame = FleetDashboardView.render(state, width: 100, height: 20)
-        let selected = try? #require(frame.selectedLine)
+        // `selectedLine` is `Int?`; `try? #require(...)` on it was reported as a
+        // redundant require and `try?` then doubled the optional. Reading it
+        // directly keeps the assertion identical: a nil selection fails the
+        // comparison below.
+        let selected = frame.selectedLine
         #expect(selected == 2, "the first row after the title and the headings")
 
         state.move(by: 1)
@@ -102,10 +106,12 @@ private func dashboard() -> FleetDashboard {
         state.apply(group: FleetGroup(group: "g", nodes: many))
         for _ in 0..<35 { state.move(by: 1) }
         let frame = FleetDashboardView.render(state, width: 100, height: 10)
-        let line = try? #require(frame.selectedLine)
-        #expect(line != nil)
+        // The old shape bound `try? #require(...)` and then shadowed it in an
+        // `if let` whose binding was never used. The checks below are the same
+        // ones, with the presence check written once.
+        #expect(frame.selectedLine != nil)
         #expect((frame.lines.count - 4) > 0)
-        if let line, let index = frame.selectedLine {
+        if let index = frame.selectedLine {
             #expect(index > 1 && index < frame.lines.count - 2, "the cursor stays inside the table, not in the footer")
             #expect(frame.lines[index].contains("node-35"))
         }
