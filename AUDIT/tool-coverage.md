@@ -9,7 +9,7 @@ and records what it said. Scratch files live in `/tmp` and are not committed.
 | # | Standard | Violation | Result |
 | --- | --- | --- | --- |
 | L1 | Swift 6 language mode + complete strict concurrency | non-Sendable class instance captured in a `@Sendable` closure **and** used afterwards, inside `sources/TinyTitanFormat` (temporary file) | **enforced**: `swift build --target TinyTitanFormat` failed with `error: capture of 'value' with non-Sendable type 'AuditNotSendable' in a '@Sendable' closure [#SendableClosureCaptures]`, exit 1 |
-| L2 | Swift warnings-as-errors | `func f() { let unusedValue = 41 }` in `sources/TinyTitanFormat` (temporary file) | **not enforced**: build printed `warning: initialization of immutable value 'unusedValue' was never used [#NoUsage]` and exited 0 → AUD-002 |
+| L2 | Swift warnings-as-errors | `func f() { let unusedValue = 41 }` in `sources/TinyTitanFormat` (temporary file) | **enforced after AUD-002**: `swift build --target TinyTitanFormat` failed with `error: initialization of immutable value 'unusedValue' was never used [#NoUsage]`, exit 1 (before the fix: warning, exit 0) |
 | L3 | Swift force-unwrap rejected by SwiftLint `--strict` | `let x: Int? = 1; print(x!)` | **pending**: no committed SwiftLint config yet (AUD-005); proved in that task |
 | L4 | C99: implicit declaration | `int main(void) { return undeclared_function(1); }` | **enforced by the flags**: `clang -std=c99 -pedantic-errors -Werror` → `error: call to undeclared function 'undeclared_function'; ISO C99 and later do not support implicit function declarations`, exit 1 |
 | L5 | C99: GNU extension (`typeof`) | `typeof(x) y = 2;` | **enforced**: same flags → `error: call to undeclared function 'typeof'` + `expected ';' after expression` |

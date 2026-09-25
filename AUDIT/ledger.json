@@ -30,13 +30,13 @@
       "location": "Package.swift (tinytitanLanguageStandard)",
       "title": "Swift warnings-as-errors is not enforced by the build config",
       "category": "standards",
-      "status": "OPEN",
+      "status": "DONE",
       "host": "mac-mini-m3 (primary)",
       "discovered_by": "language-standard proof (AUDIT/tool-coverage.md)",
       "evidence_before": "A probe file with `let unusedValue = 41` built successfully: warning `initialization of immutable value 'unusedValue' was never used [#NoUsage]`, exit 0. release.sh scans the build log for warnings, so the release path is covered, but a plain `swift build`/`swift test` does not fail \u2014 the standard is not in force.",
-      "fix_summary": "",
-      "evidence_after": "",
-      "commit": "",
+      "fix_summary": "-warnings-as-errors added to tinytitanLanguageStandard, the swiftSettings array all 23 targets carry.",
+      "evidence_after": "Probe with an unused value fails the build (`error: initialization of immutable value 'unusedValue' was never used [#NoUsage]`, exit 1; before: warning, exit 0). `swift build --build-tests` 0 warnings; `swift test --no-parallel` 1,493 tests / 223 suites passed.",
+      "commit": "6b23c96",
       "blocked_reason": ""
     },
     {
@@ -149,13 +149,13 @@
       "location": "tests/TinyTitanServer/CompactionTests.swift:328",
       "title": "Swift test warning: result of `contains` is unused inside #expect",
       "category": "warning",
-      "status": "OPEN",
+      "status": "DONE",
       "host": "mac-mini-m3 (primary)",
       "discovered_by": "swift test build log",
       "evidence_before": "`warning: result of call to 'contains' is unused [#NoUsage]` when building TinyTitanServerTests; it blocks AUD-002 (warnings-as-errors) for the test targets.",
-      "fix_summary": "",
-      "evidence_after": "",
-      "commit": "",
+      "fix_summary": "Bound the replay message (`let replayContent = ...`) so Testing's macro no longer emits a bare `contains` call; assertion unchanged.",
+      "evidence_after": "`swift build --build-tests` -> 0 warning lines (was 1); `swift test --filter Compaction` -> 15 tests in 1 suite passed.",
+      "commit": "252a6ab",
       "blocked_reason": ""
     },
     {
@@ -258,6 +258,23 @@
       "fix_summary": "",
       "evidence_after": "",
       "commit": "",
+      "blocked_reason": ""
+    },
+    {
+      "id": "AUD-016",
+      "severity": "S3",
+      "tier": "C",
+      "project": "tests",
+      "location": "tests/TinyTitanFleet/DashboardTests.swift:88,105,108",
+      "title": "Warnings surfaced by warnings-as-errors: redundant #require on an optional and an unused shadowed binding",
+      "category": "warning/test-quality",
+      "status": "DONE",
+      "host": "mac-mini-m3 (primary)",
+      "discovered_by": "AUD-002 (enabling -warnings-as-errors)",
+      "evidence_before": "`try? #require(frame.selectedLine)` reported as a redundant require and doubled the optional; the second test bound `try? #require(...)` and then shadowed it in an `if let` whose binding was never used (`immutable value 'line' was never used`). Three diagnostics, all build failures under -warnings-as-errors.",
+      "fix_summary": "Read `selectedLine` directly; replaced the presence check with `#expect(frame.selectedLine != nil)` and kept the same bounds and content assertions.",
+      "evidence_after": "`swift build --build-tests` clean (0 warnings); `swift test --no-parallel` 1,493 tests / 223 suites passed.",
+      "commit": "4ba3973",
       "blocked_reason": ""
     }
   ]

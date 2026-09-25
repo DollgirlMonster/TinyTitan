@@ -2,12 +2,12 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**15 tasks — done 3, open 12, blocked 0.**
+**16 tasks — done 6, open 10, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AUD-001 | S1 | A | TinyTitanServer | `Package.swift:55 (swift-nio exact 2.99.0)` | swift-nio 2.99.0 carries three known CVEs, fixed in 2.100.0 | DONE | mac-mini-m3 (primary) |
-| AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | OPEN | mac-mini-m3 (primary) |
+| AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | DONE | mac-mini-m3 (primary) |
 | AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | DONE | mac-mini-m3 (primary) |
 | AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | OPEN | mac-mini-m3 (primary) |
 | AUD-006 | S2 | C | benchmark/tools Python | `repo root (no ruff config)` | No pinned Ruff config; 386 findings under the default rule set | OPEN | mac-mini-m3 (primary) |
@@ -16,11 +16,12 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | OPEN | mac-mini-m3 (primary) |
 | AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
 | AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | OPEN | mac-mini-m3 (primary) |
-| AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | OPEN | mac-mini-m3 (primary) |
+| AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | DONE | mac-mini-m3 (primary) |
 | AUD-010 | S3 | C | tools | `tools/*.sh (14 shellcheck warnings)` | shellcheck reports 14 warnings across the shell tools | OPEN | mac-mini-m3 (primary) |
 | AUD-011 | S3 | C | plugins | `plugins/*/package.json` | Secret scan reports 3 false positives; no gitleaks config | OPEN | mac-mini-m3 (primary) |
 | AUD-014 | S3 | B | tests | `tests/ (no coverage run)` | No coverage measurement exists in the baseline | OPEN | mac-mini-m3 (primary) |
 | AUD-015 | S3 | B | CI | `.github/workflows/ci.yml:27,28,135; codeql.yml:51,54,94` | CI actions are pinned by mutable major tag, and checkouts disagree (v4 vs v7) | OPEN | mac-mini-m3 (primary) |
+| AUD-016 | S3 | C | tests | `tests/TinyTitanFleet/DashboardTests.swift:88,105,108` | Warnings surfaced by warnings-as-errors: redundant #require on an optional and an unused shadowed binding | DONE | mac-mini-m3 (primary) |
 
 ## Detail
 
@@ -37,13 +38,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-002 — Swift warnings-as-errors is not enforced by the build config
 
-- severity **S2**, tier B, project build, status **OPEN**
+- severity **S2**, tier B, project build, status **DONE**
 - location: `Package.swift (tinytitanLanguageStandard)`
 - discovered by: language-standard proof (AUDIT/tool-coverage.md)
 - evidence (before): A probe file with `let unusedValue = 41` built successfully: warning `initialization of immutable value 'unusedValue' was never used [#NoUsage]`, exit 0. release.sh scans the build log for warnings, so the release path is covered, but a plain `swift build`/`swift test` does not fail — the standard is not in force.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: -warnings-as-errors added to tinytitanLanguageStandard, the swiftSettings array all 23 targets carry.
+- evidence (after): Probe with an unused value fails the build (`error: initialization of immutable value 'unusedValue' was never used [#NoUsage]`, exit 1; before: warning, exit 0). `swift build --build-tests` 0 warnings; `swift test --no-parallel` 1,493 tests / 223 suites passed.
+- commit: 6b23c96
 - blocked: —
 
 ### AUD-003 — C target does not enforce strict C99 or the hardening warning set
@@ -136,13 +137,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-009 — Swift test warning: result of `contains` is unused inside #expect
 
-- severity **S3**, tier C, project tests, status **OPEN**
+- severity **S3**, tier C, project tests, status **DONE**
 - location: `tests/TinyTitanServer/CompactionTests.swift:328`
 - discovered by: swift test build log
 - evidence (before): `warning: result of call to 'contains' is unused [#NoUsage]` when building TinyTitanServerTests; it blocks AUD-002 (warnings-as-errors) for the test targets.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Bound the replay message (`let replayContent = ...`) so Testing's macro no longer emits a bare `contains` call; assertion unchanged.
+- evidence (after): `swift build --build-tests` -> 0 warning lines (was 1); `swift test --filter Compaction` -> 15 tests in 1 suite passed.
+- commit: 252a6ab
 - blocked: —
 
 ### AUD-010 — shellcheck reports 14 warnings across the shell tools
@@ -187,5 +188,16 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: —
 - evidence (after): —
 - commit: —
+- blocked: —
+
+### AUD-016 — Warnings surfaced by warnings-as-errors: redundant #require on an optional and an unused shadowed binding
+
+- severity **S3**, tier C, project tests, status **DONE**
+- location: `tests/TinyTitanFleet/DashboardTests.swift:88,105,108`
+- discovered by: AUD-002 (enabling -warnings-as-errors)
+- evidence (before): `try? #require(frame.selectedLine)` reported as a redundant require and doubled the optional; the second test bound `try? #require(...)` and then shadowed it in an `if let` whose binding was never used (`immutable value 'line' was never used`). Three diagnostics, all build failures under -warnings-as-errors.
+- fix: Read `selectedLine` directly; replaced the presence check with `#expect(frame.selectedLine != nil)` and kept the same bounds and content assertions.
+- evidence (after): `swift build --build-tests` clean (0 warnings); `swift test --no-parallel` 1,493 tests / 223 suites passed.
+- commit: 4ba3973
 - blocked: —
 
