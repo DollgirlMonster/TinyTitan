@@ -2,7 +2,7 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**16 tasks — done 6, open 10, blocked 0.**
+**17 tasks — done 8, open 9, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -10,10 +10,11 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-002 | S2 | B | build | `Package.swift (tinytitanLanguageStandard)` | Swift warnings-as-errors is not enforced by the build config | DONE | mac-mini-m3 (primary) |
 | AUD-003 | S2 | B | build | `Package.swift:68 (TinyTitanKernelsC cSettings)` | C target does not enforce strict C99 or the hardening warning set | DONE | mac-mini-m3 (primary) |
 | AUD-005 | S2 | B | build | `repo root` | No committed SwiftLint config run with --strict | OPEN | mac-mini-m3 (primary) |
-| AUD-006 | S2 | C | benchmark/tools Python | `repo root (no ruff config)` | No pinned Ruff config; 386 findings under the default rule set | OPEN | mac-mini-m3 (primary) |
+| AUD-006 | S2 | C | benchmark/tools Python | `repo root (no ruff config)` | No pinned Ruff config; 386 findings under the default rule set | DONE | mac-mini-m3 (primary) |
 | AUD-007 | S2 | C | benchmark | `benchmark/tinytitan_mtp_phases.py:77,130` | Undefined name `pathlib` (F821) used in annotations; module never imports it | DONE | mac-mini-m3 (primary) |
 | AUD-012 | S2 | B | plugins | `plugins/dsh-tinytitan, plugins/dsh-lan-manager` | JavaScript packages have no formatter, linter or lockfile | OPEN | mac-mini-m3 (primary) |
 | AUD-013 | S2 | A | process | `AUDIT/environment.md` | No independent host is available for the Phase E verification | OPEN | mac-mini-m3 (primary) |
+| AUD-017 | S2 | A | Python tooling/CI | `pyproject.toml; .github/workflows/ci.yml; tools/lint.sh` | Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned | DONE | mac-mini-m3 (primary) |
 | AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
 | AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | OPEN | mac-mini-m3 (primary) |
 | AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | DONE | mac-mini-m3 (primary) |
@@ -71,13 +72,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-006 — No pinned Ruff config; 386 findings under the default rule set
 
-- severity **S2**, tier C, project benchmark/tools Python, status **OPEN**
+- severity **S2**, tier C, project benchmark/tools Python, status **DONE**
 - location: `repo root (no ruff config)`
 - discovered by: ruff 0.16.7 check --statistics
 - evidence (before): No pyproject.toml/ruff.toml for the scripts. Default run: 386 findings, 131 auto-fixable; ruff format --check would reformat 104 of 108 files. Includes F821 undefined-name x4, F841 unused-variable x6, DTZ005 datetime-now-without-tzinfo x8, S110 try-except-pass x1, PLW1508 invalid-envvar-default x4. The required rule families (B, E722, S101, PT) are not pinned anywhere.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Root pyproject.toml pins target py313, line-length 100 and select E4/E7/E9/F/W/B/E722/S101/PT, with PT009 and PT027 excluded for the unittest suite (reason in the config). Swept with `ruff format .` (105 files), `ruff check --fix` (37) and hand fixes: S101 assert -> explicit raises, B023 loop-variable binding in export_ane_prefill/expert_cache_slots, B904 `from None`, B905 explicit strict, B007/E741/E731/F841. Wired into the build: `tools/lint.sh python` runs check+format with RUFF_PIN 0.16.7 and FAILS if ruff is missing or differs; CI installs that version.
+- evidence (after): `ruff check .` All checks passed (183 findings when the config landed, 386 under defaults); `ruff format --check .` 188 files formatted; proof T7 (a bare except makes the gate exit 1); `tools/lint.sh` all seven gates green; `python3 -m unittest discover` 299 tests OK (52 skipped).
+- commit: 4c33f30 1b03728
 - blocked: —
 
 ### AUD-007 — Undefined name `pathlib` (F821) used in annotations; module never imports it
@@ -111,6 +112,17 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: —
 - evidence (after): —
 - commit: —
+- blocked: —
+
+### AUD-017 — Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned
+
+- severity **S2**, tier A, project Python tooling/CI, status **DONE**
+- location: `pyproject.toml; .github/workflows/ci.yml; tools/lint.sh`
+- discovered by: AUD-006 (reviewing the format sweep's diff)
+- evidence (before): `ruff format` with target-version py314 rewrote `except (A, B):` to PEP 758 `except A, B:` in 10 files / 18 sites (including tools/prepare_qwen38.py and tools/internal-speeds.py). That parses only on 3.14; CI's python3 was whatever the runner ships, and the converter gate runs `python3 -m venv`.
+- fix: target-version py313 with parentheses restored; CI pins Python 3.13 via actions/setup-python@v5; `tools/lint.sh python` parses every script at feature_version (3,13) so the floor is enforced.
+- evidence (after): The floor check reported 10 files before the fix and 0 after; proof T8 in AUDIT/tool-coverage.md; ruff check/format clean; 299 Python tests OK (52 skipped).
+- commit: 29e7ab2
 - blocked: —
 
 ### AUD-004 — No committed swift-format config

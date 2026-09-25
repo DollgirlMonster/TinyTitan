@@ -98,13 +98,13 @@
       "location": "repo root (no ruff config)",
       "title": "No pinned Ruff config; 386 findings under the default rule set",
       "category": "standards/tooling",
-      "status": "OPEN",
+      "status": "DONE",
       "host": "mac-mini-m3 (primary)",
       "discovered_by": "ruff 0.16.7 check --statistics",
       "evidence_before": "No pyproject.toml/ruff.toml for the scripts. Default run: 386 findings, 131 auto-fixable; ruff format --check would reformat 104 of 108 files. Includes F821 undefined-name x4, F841 unused-variable x6, DTZ005 datetime-now-without-tzinfo x8, S110 try-except-pass x1, PLW1508 invalid-envvar-default x4. The required rule families (B, E722, S101, PT) are not pinned anywhere.",
-      "fix_summary": "",
-      "evidence_after": "",
-      "commit": "",
+      "fix_summary": "Root pyproject.toml pins target py313, line-length 100 and select E4/E7/E9/F/W/B/E722/S101/PT, with PT009 and PT027 excluded for the unittest suite (reason in the config). Swept with `ruff format .` (105 files), `ruff check --fix` (37) and hand fixes: S101 assert -> explicit raises, B023 loop-variable binding in export_ane_prefill/expert_cache_slots, B904 `from None`, B905 explicit strict, B007/E741/E731/F841. Wired into the build: `tools/lint.sh python` runs check+format with RUFF_PIN 0.16.7 and FAILS if ruff is missing or differs; CI installs that version.",
+      "evidence_after": "`ruff check .` All checks passed (183 findings when the config landed, 386 under defaults); `ruff format --check .` 188 files formatted; proof T7 (a bare except makes the gate exit 1); `tools/lint.sh` all seven gates green; `python3 -m unittest discover` 299 tests OK (52 skipped).",
+      "commit": "4c33f30 1b03728",
       "blocked_reason": ""
     },
     {
@@ -275,6 +275,23 @@
       "fix_summary": "Read `selectedLine` directly; replaced the presence check with `#expect(frame.selectedLine != nil)` and kept the same bounds and content assertions.",
       "evidence_after": "`swift build --build-tests` clean (0 warnings); `swift test --no-parallel` 1,493 tests / 223 suites passed.",
       "commit": "4ba3973",
+      "blocked_reason": ""
+    },
+    {
+      "id": "AUD-017",
+      "severity": "S2",
+      "tier": "A",
+      "project": "Python tooling/CI",
+      "location": "pyproject.toml; .github/workflows/ci.yml; tools/lint.sh",
+      "title": "Ruff's py314 target emitted Python-3.14-only except syntax, and no Python version was pinned",
+      "category": "standards/compatibility",
+      "status": "DONE",
+      "host": "mac-mini-m3 (primary)",
+      "discovered_by": "AUD-006 (reviewing the format sweep's diff)",
+      "evidence_before": "`ruff format` with target-version py314 rewrote `except (A, B):` to PEP 758 `except A, B:` in 10 files / 18 sites (including tools/prepare_qwen38.py and tools/internal-speeds.py). That parses only on 3.14; CI's python3 was whatever the runner ships, and the converter gate runs `python3 -m venv`.",
+      "fix_summary": "target-version py313 with parentheses restored; CI pins Python 3.13 via actions/setup-python@v5; `tools/lint.sh python` parses every script at feature_version (3,13) so the floor is enforced.",
+      "evidence_after": "The floor check reported 10 files before the fix and 0 after; proof T8 in AUDIT/tool-coverage.md; ruff check/format clean; 299 Python tests OK (52 skipped).",
+      "commit": "29e7ab2",
       "blocked_reason": ""
     }
   ]
