@@ -133,7 +133,9 @@ on changing facts it is a wash, and it is 1.7× the cost with twice the stale
 answers. What it does reliably is hold *invariant* facts that the baseline
 summary drops outright — worth enabling where that failure mode matters, not as
 a default. Nothing here justifies removing the code; it justifies leaving it
-opt-in and fixing TT-035 before any further claim.
+opt-in. TT-035's structural defect is fixed and pinned (below); the score
+figures above still come from the runs that had it, so a claim about the size
+of the improvement awaits a re-run.
 
 ## Defects this suite exposed
 
@@ -156,13 +158,31 @@ Each was found because the numbers looked wrong, and each is fixed and pinned:
    sibling of `message` inside each choice, not a field of the message, so every
    reply looked as if it had none and truncation could not be told from a missing
    quiz.
-4. **TT-035 — consolidation keeps an amended fact beside the original.** On
-   `contract`, sessions distilled the same facts under different prefixes
-   (`mga/*`, then `msa/calder/*`; in the fresh run `msa/*`, then `agreement/*`),
-   so no supersession can fire and both values stay live. The defect is
-   structural and reproducible in the logs, but its score impact is noisy:
-   `contract`'s memory foundation was 33%, 33%, 83% across the three runs.
-   Tracked in the wiki Project Tracker.
+4. **TT-035 — consolidation keeps an amended fact beside the original**
+   (`d6d2cc3`). On `contract`, sessions distilled the same facts under
+   different prefixes (`mga/*`, then `msa/calder/*`; in the fresh run `msa/*`,
+   then `agreement/*`), so no supersession could fire and both values stayed
+   live. The logs show why, and it was not the router: the two distillations of
+   a run overlapped. Session 2's extraction was requested at 04:44:57 and wrote
+   at 04:46:54; session 3's was requested at the same minute, built its prompt
+   from a store that was still empty, and wrote `agreement/*` at 04:52:42 —
+   which is why `consolidation routed …` appears nowhere in any of the three
+   runs. `MemoryBackend` now chains distillations per scope, so a later one
+   reads memory only after every earlier one in that scope has written. The
+   decision the row asked for: do **not** loosen `ServerMemory.reconcile` to
+   resolve prefixes by shared segments — a rule that matches on the last
+   segment alone routes `characters/tomas/location` onto `setting/location` and
+   `characters/ines/knows_photo_content` onto a different character's fact, the
+   false positive the router was narrowed to prevent. Where the model renames a
+   path's *shape* (`state/msa/notice_days` against
+   `msa/commercial/termination_notice_days`) no mechanical rule is safe; the
+   side-engine duplicate check is the guard there, and the extraction's
+   instruction already requires reuse. Pinned by
+   `MemoryV3Tests/aLaterConsolidationReadsMemoryOnlyAfterTheEarlierOneWrote`
+   (which reproduces two live addresses without the chain) and
+   `.../anAmendedFactUnderANewPrefixLandsOnTheExistingKey`. Its score impact
+   stays noisy and unmeasured — `contract`'s memory foundation was 33%, 33%,
+   83% across the three runs above, all of them with the defect.
 
 The suite also gained `benchmark/memory_master.py stats` (`81f1219`), which
 computes both aggregates from the same scorer the reports use, so every number
