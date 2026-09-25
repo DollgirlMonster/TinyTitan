@@ -122,8 +122,8 @@ struct PLEBlockTests {
                   let ob = Fp16Buffer.make(ctx.device, count: T * C) else {
                 Issue.record("alloc"); return
             }
-            wBits.withUnsafeBufferPointer {
-                wb.contents().copyMemory(from: $0.baseAddress!,
+            try wBits.withUnsafeBufferPointer { buffer in
+                wb.contents().copyMemory(from: try #require(buffer.baseAddress),
                                          byteCount: wBits.count * 2)
             }
             let cb = try #require(ctx.queue.makeCommandBuffer())

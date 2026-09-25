@@ -164,10 +164,9 @@ extension ModelLoaderTests {
     try Self.mutateReceipt(directoryURL: dir) { root in
       root["manifestSha256"] = String(repeating: "0", count: 64)
       var files = root["files"] as! [String: Any]
-      files["manifest.json"] = [
-        "size": (files["manifest.json"] as! [String: Any])["size"]!,
-        "sha256": String(repeating: "0", count: 64),
-      ]
+      var manifest = files["manifest.json"] as! [String: Any]
+      manifest["sha256"] = String(repeating: "0", count: 64)
+      files["manifest.json"] = manifest
       root["files"] = files
     }
     let device = try #require(MTLCreateSystemDefaultDevice())

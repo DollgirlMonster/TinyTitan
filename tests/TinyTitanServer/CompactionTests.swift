@@ -316,9 +316,12 @@ struct CompactionTests {
             let output = try #require(try object(data)["output"] as? [[String: Any]])
             let item = try #require(output.first { $0["type"] as? String == "compaction" })
 
+            let itemJSON = try #require(
+                String(data: try JSONSerialization.data(withJSONObject: item),
+                       encoding: .utf8))
             let replay = """
             {"model":"test-model","input":[
-              \(String(data: try JSONSerialization.data(withJSONObject: item), encoding: .utf8)!),
+              \(itemJSON),
               {"type":"message","role":"user","content":"What did we decide?"}
             ]}
             """

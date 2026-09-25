@@ -325,8 +325,8 @@ import Metal
 
         let totalBytes = Int(alignedIndexBytes + residentSize)
         var fileBuf = [UInt8](repeating: 0, count: totalBytes)
-        fileBuf.withUnsafeMutableBytes { raw in
-            let base = raw.baseAddress!
+        try fileBuf.withUnsafeMutableBytes { raw in
+            let base = try #require(raw.baseAddress)
             GTurboBinary.writeIndexHeader(into: base,
                                           indexSize: alignedIndexBytes,
                                           residentSize: residentSize,
@@ -336,15 +336,19 @@ import Metal
                 GTurboBinary.writeIndexEntry(into: dst, entry: e,
                                              nameOffset: nameAbsOffsets[i])
             }
-            _ = stringTable.withUnsafeBytes { sb in
-                memcpy(base.advanced(by: stringTableBase), sb.baseAddress!, stringTable.count)
+            stringTable.withUnsafeBytes { sb in
+                // An empty table has nothing to copy; the source pointer is only
+                // meaningful when there is a byte to read.
+                if let source = sb.baseAddress {
+                    memcpy(base.advanced(by: stringTableBase), source, stringTable.count)
+                }
             }
             // Recognizable resident payload pattern in the final-norm region
             // only; other payload bytes stay zero except quantized scale
             // regions.
-            let normEntry = entries.first {
+            let normEntry = try #require(entries.first {
                 $0.name == "language_model.model.norm.weight"
-            }!
+            })
             let normStart = Int(normEntry.fileOffset)
             for i in 0..<Int(normEntry.sizeBytes) {
                 base.advanced(by: normStart + i)

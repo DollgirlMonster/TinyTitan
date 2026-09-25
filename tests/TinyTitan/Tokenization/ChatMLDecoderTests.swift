@@ -128,9 +128,9 @@ struct ChatMLDecoderTests {
     func byteBarrierBeforeThought() throws {
         let d = decoder()
         let events = try d.consume(
-            tokenID: tok.thinkStartID!, delta: "\u{FFFD}<think>")
+            tokenID: try #require(tok.thinkStartID), delta: "\u{FFFD}<think>")
         #expect(events == [.content("\u{FFFD}")])
-        _ = try d.consume(tokenID: tok.thinkEndID!, delta: "</think>")
+        _ = try d.consume(tokenID: try #require(tok.thinkEndID), delta: "</think>")
         try d.finish()
     }
 
@@ -138,7 +138,7 @@ struct ChatMLDecoderTests {
     func tailRespectsChannel() throws {
         let d = decoder()
         #expect(try d.consumeTail("visible") == [.content("visible")])
-        _ = try d.consume(tokenID: tok.thinkStartID!, delta: "<think>")
+        _ = try d.consume(tokenID: try #require(tok.thinkStartID), delta: "<think>")
         #expect(try d.consumeTail("unfinished thought") == [.reasoning("unfinished thought")])
         try d.finish()
     }
@@ -270,7 +270,8 @@ struct ChatMLDecoderTests {
     func malformedBoundaryFails() {
         let d = decoder()
         #expect(throws: ToolCallParserError.malformed) {
-            _ = try d.consume(tokenID: tok.thinkStartID!, delta: "missing marker")
+            _ = try d.consume(tokenID: try #require(tok.thinkStartID),
+                              delta: "missing marker")
         }
     }
 }

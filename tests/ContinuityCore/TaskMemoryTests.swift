@@ -188,7 +188,8 @@ import Testing
                                value: "native swift actors",
                                dependencies: ["constraint.in_process"])
 
-        let seed = await memory.item(taskID: task, namespace: "decision", key: "storage")!
+        let seed = try #require(
+            await memory.item(taskID: task, namespace: "decision", key: "storage"))
         let resolved = await memory.dependencies(taskID: task, of: [seed])
         #expect(Set(resolved.map(\.address)) == ["constraint.in_process",
                                                  "constraint.no_network"])

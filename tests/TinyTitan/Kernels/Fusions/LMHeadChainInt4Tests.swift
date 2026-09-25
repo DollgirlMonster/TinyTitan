@@ -11,7 +11,7 @@ import TinyTitanValidationSupport
                                   normWeightBF16: [UInt16],
                                   rows: [Quantization.Int4AffineRow],
                                   d: Int,
-                                  v: Int) -> UInt32 {
+                                  v: Int) throws -> UInt32 {
         let hidden = hiddenFp16.map(Float.init)
         let normWeight = normWeightBF16.map(Quantization.bf16ToFloat)
         let normed = RmsNormRef.apply(x: hidden, weight: normWeight, eps: rmsEps)
@@ -22,10 +22,10 @@ import TinyTitanValidationSupport
         for row in 0..<v {
             let dequantized = Quantization.dequantizeInt4Affine(rows[row], n: d)
             var dot: Float = 0
-            dequantized.withUnsafeBufferPointer { weights in
-                normed.withUnsafeBufferPointer { input in
-                    vDSP_dotpr(weights.baseAddress!, 1,
-                               input.baseAddress!, 1,
+            try dequantized.withUnsafeBufferPointer { weights in
+                try normed.withUnsafeBufferPointer { input in
+                    vDSP_dotpr(try #require(weights.baseAddress), 1,
+                               try #require(input.baseAddress), 1,
                                &dot,
                                vDSP_Length(d))
                 }
@@ -120,7 +120,7 @@ import TinyTitanValidationSupport
             Quantization.quantizeInt4Affine((0..<d).map { _ in rng.uniform(-1, 1) })
         }
 
-        let reference = Self.cpuGreedy(hiddenFp16: hidden,
+        let reference = try Self.cpuGreedy(hiddenFp16: hidden,
                                        normWeightBF16: norm,
                                        rows: rows,
                                        d: d,
@@ -161,7 +161,7 @@ import TinyTitanValidationSupport
             return Quantization.quantizeInt4Affine([Float](repeating: value, count: d))
         }
 
-        let reference = Self.cpuGreedy(hiddenFp16: hidden,
+        let reference = try Self.cpuGreedy(hiddenFp16: hidden,
                                        normWeightBF16: norm,
                                        rows: rows,
                                        d: d,

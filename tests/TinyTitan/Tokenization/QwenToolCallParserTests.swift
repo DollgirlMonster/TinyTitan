@@ -55,13 +55,15 @@ struct QwenToolCallParserTests {
         </function>
 
         """)
+        let ratio = try #require(
+            Decimal(string: "0.5", locale: Locale(identifier: "en_US_POSIX")))
         #expect(call.arguments == .object([
             "limit": .integer(25),
             "filters": .object([
                 "active": .bool(true),
                 "tags": .array([.string("a"), .string("b")]),
             ]),
-            "ratio": .decimal(Decimal(string: "0.5", locale: Locale(identifier: "en_US_POSIX"))!),
+            "ratio": .decimal(ratio),
             "verbose": .bool(true),
             "cursor": .null,
             "query": .string("SELECT * FROM t"),

@@ -41,7 +41,9 @@ struct NgramTableReaderTests {
         let r = try Self.reader(url)
         let want: [UInt32] = [7, 0, 63, 31, 7]
         var out = [Float16](repeating: 0, count: want.count * Self.rowDim)
-        try out.withUnsafeMutableBytes { try r.gather(rows: want, into: $0.baseAddress!) }
+        try out.withUnsafeMutableBytes { buffer in
+            try r.gather(rows: want, into: try #require(buffer.baseAddress))
+        }
         for (i, row) in want.enumerated() {
             for lane in 0..<Self.rowDim {
                 #expect(out[i * Self.rowDim + lane] == Float16(row),
@@ -57,8 +59,9 @@ struct NgramTableReaderTests {
         let r = try Self.reader(url)
         var out = [Float16](repeating: 0, count: Self.rowDim)
         #expect(throws: NgramTableReader.Failure.self) {
-            try out.withUnsafeMutableBytes {
-                try r.gather(rows: [UInt32(Self.rowCount)], into: $0.baseAddress!)
+            try out.withUnsafeMutableBytes { buffer in
+                try r.gather(rows: [UInt32(Self.rowCount)],
+                             into: try #require(buffer.baseAddress))
             }
         }
     }

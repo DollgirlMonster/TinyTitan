@@ -1,4 +1,5 @@
 import Foundation
+import Testing
 import TinyTitanFormat
 @testable import TinyTitan
 @testable import TinyTitanRepackCore
@@ -195,8 +196,8 @@ enum QwenToySynthetic {
 
         let totalBytes = Int(alignedIndexBytes + residentSize)
         var fileBuf = [UInt8](repeating: 0, count: totalBytes)
-        fileBuf.withUnsafeMutableBytes { raw in
-            let base = raw.baseAddress!
+        try fileBuf.withUnsafeMutableBytes { raw in
+            let base = try #require(raw.baseAddress)
             GTurboBinary.writeIndexHeader(into: base,
                                           indexSize: alignedIndexBytes,
                                           residentSize: residentSize,
@@ -206,8 +207,12 @@ enum QwenToySynthetic {
                 GTurboBinary.writeIndexEntry(into: dst, entry: e,
                                              nameOffset: nameAbsOffsets[i])
             }
-            _ = stringTable.withUnsafeBytes { sb in
-                memcpy(base.advanced(by: stringTableBase), sb.baseAddress!, stringTable.count)
+            stringTable.withUnsafeBytes { sb in
+                // An empty table has nothing to copy; the source pointer is only
+                // meaningful when there is a byte to read.
+                if let source = sb.baseAddress {
+                    memcpy(base.advanced(by: stringTableBase), source, stringTable.count)
+                }
             }
             // Quantized tensors: weight bytes 0x11 (nibbles/bytes of small
             // positive codes), scales 0.01, biases zero. BF16 tensors: 1.0.
@@ -558,8 +563,8 @@ enum QwenToySynthetic {
         let residentSize = alignedCursor(payloadCursor) - alignedIndexBytes
         let totalBytes = Int(alignedIndexBytes + residentSize)
         var fileBuf = [UInt8](repeating: 0, count: totalBytes)
-        fileBuf.withUnsafeMutableBytes { raw in
-            let base = raw.baseAddress!
+        try fileBuf.withUnsafeMutableBytes { raw in
+            let base = try #require(raw.baseAddress)
             GTurboBinary.writeIndexHeader(into: base,
                                           indexSize: alignedIndexBytes,
                                           residentSize: residentSize,
@@ -569,8 +574,12 @@ enum QwenToySynthetic {
                 GTurboBinary.writeIndexEntry(into: dst, entry: e,
                                              nameOffset: nameAbsOffsets[i])
             }
-            _ = stringTable.withUnsafeBytes { sb in
-                memcpy(base.advanced(by: stringTableBase), sb.baseAddress!, stringTable.count)
+            stringTable.withUnsafeBytes { sb in
+                // An empty table has nothing to copy; the source pointer is only
+                // meaningful when there is a byte to read.
+                if let source = sb.baseAddress {
+                    memcpy(base.advanced(by: stringTableBase), source, stringTable.count)
+                }
             }
             for entry in entries where entry.dtype == 0 {
                 memset(base.advanced(by: Int(entry.fileOffset)), 0x11, Int(entry.sizeBytes))

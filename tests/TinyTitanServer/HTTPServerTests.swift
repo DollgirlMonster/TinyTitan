@@ -907,9 +907,13 @@ private func writeAll(socket: Int32, text: String) throws {
     let bytes = Array(text.utf8)
     var written = 0
     while written < bytes.count {
-        let count = bytes.withUnsafeBytes {
-            Darwin.send(socket, $0.baseAddress!.advanced(by: written),
-                        bytes.count - written, 0)
+        let count = bytes.withUnsafeBytes { buffer -> Int in
+            // The loop condition guarantees a byte remains, so the base address
+            // is present; -1 reports the impossible case through the error path
+            // below rather than trapping inside the socket helper.
+            guard let base = buffer.baseAddress else { return -1 }
+            return Darwin.send(socket, base.advanced(by: written),
+                               bytes.count - written, 0)
         }
         guard count > 0 else {
             throw RawSocketError.systemCall("send", errno)

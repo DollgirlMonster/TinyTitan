@@ -96,10 +96,19 @@ import TinyTitanValidationSupport
             x.withUnsafeBufferPointer { xp in
                 scratch.withUnsafeMutableBufferPointer { sp in
                     out.withUnsafeMutableBufferPointer { op in
+                        // The fixture arrays are non-empty by construction; an
+                        // empty one would leave the output untouched rather than
+                        // reading through a nil base address.
+                        guard let expert = raw.baseAddress, let xBase = xp.baseAddress,
+                              let scratchBase = sp.baseAddress,
+                              let outBase = op.baseAddress else {
+                            Issue.record("empty expert-FFN fixture buffer")
+                            return
+                        }
                         CPUExpertFFN.accumulate(
-                            expert: raw.baseAddress!, offsets: offsets,
-                            x: xp.baseAddress!, d: d, f: f, routeWeight: 1.0,
-                            scratch: sp.baseAddress!, out: op.baseAddress!)
+                            expert: expert, offsets: offsets,
+                            x: xBase, d: d, f: f, routeWeight: 1.0,
+                            scratch: scratchBase, out: outBase)
                     }
                 }
             }
@@ -129,10 +138,18 @@ import TinyTitanValidationSupport
                 x.withUnsafeBufferPointer { xp in
                     scratch.withUnsafeMutableBufferPointer { sp in
                         out.withUnsafeMutableBufferPointer { op in
+                            // See the guard above: fixture buffers are never
+                            // empty, and a nil base address must not be read.
+                            guard let expert = raw.baseAddress, let xBase = xp.baseAddress,
+                                  let scratchBase = sp.baseAddress,
+                                  let outBase = op.baseAddress else {
+                                Issue.record("empty expert-FFN fixture buffer")
+                                return
+                            }
                             CPUExpertFFN.accumulate(
-                                expert: raw.baseAddress!, offsets: offsets,
-                                x: xp.baseAddress!, d: d, f: f, routeWeight: weight,
-                                scratch: sp.baseAddress!, out: op.baseAddress!)
+                                expert: expert, offsets: offsets,
+                                x: xBase, d: d, f: f, routeWeight: weight,
+                                scratch: scratchBase, out: outBase)
                         }
                     }
                 }

@@ -203,9 +203,8 @@ import Testing
         let assembler = DefaultContextAssembler(preamble: "Use the state below as fact.")
         let snapshot = try assembler.assemble(request([], budget: ContextBudget()))
         let text = snapshot.renderedContext
-        let preambleIndex = text.range(of: "Use the state below")?.lowerBound
-        let objectiveIndex = text.range(of: "## Objective")?.lowerBound
-        #expect(preambleIndex != nil && objectiveIndex != nil)
-        #expect(preambleIndex! < objectiveIndex!)
+        let preambleIndex = try #require(text.range(of: "Use the state below")?.lowerBound)
+        let objectiveIndex = try #require(text.range(of: "## Objective")?.lowerBound)
+        #expect(preambleIndex < objectiveIndex)
     }
 }

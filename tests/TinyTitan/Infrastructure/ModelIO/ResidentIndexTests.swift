@@ -59,8 +59,8 @@ import TinyTitanFormat
         ]
 
         var fileBuf = [UInt8](repeating: 0, count: alignedIndexBytes + residentBytes)
-        fileBuf.withUnsafeMutableBytes { raw in
-            let base = raw.baseAddress!
+        try fileBuf.withUnsafeMutableBytes { raw in
+            let base = try #require(raw.baseAddress)
             GTurboBinary.writeIndexHeader(into: base,
                                           indexSize: UInt64(alignedIndexBytes),
                                           residentSize: UInt64(residentBytes),
@@ -71,7 +71,11 @@ import TinyTitanFormat
                                              nameOffset: nameOffsets[i])
             }
             stringTable.withUnsafeBytes { sb in
-                _ = memcpy(base.advanced(by: stringTableBase), sb.baseAddress!, stringTable.count)
+                // An empty table has nothing to copy; the source pointer is only
+                // meaningful when there is a byte to read.
+                if let source = sb.baseAddress {
+                    _ = memcpy(base.advanced(by: stringTableBase), source, stringTable.count)
+                }
             }
             // Entry 1 payload (32 bytes at offset + 64).
             memset(base.advanced(by: Int(UInt64(alignedIndexBytes) + 64)), 0x22, 32)
@@ -132,8 +136,8 @@ extension ResidentIndexTests {
             & ~(GTurboFormatV1.alignmentBytes - 1)))
         // The file is exactly the index; the header claims a payload after it.
         var buf = [UInt8](repeating: 0, count: aligned)
-        buf.withUnsafeMutableBytes { raw in
-            let base = raw.baseAddress!
+        try buf.withUnsafeMutableBytes { raw in
+            let base = try #require(raw.baseAddress)
             GTurboBinary.writeIndexHeader(into: base,
                                           indexSize: UInt64(aligned),
                                           residentSize: 4096,
@@ -148,10 +152,10 @@ extension ResidentIndexTests {
                     sourceWeight: Self.dummySource(name),
                     sourceScales: nil, sourceBiases: nil),
                 nameOffset: UInt32(stringTableBase))
-            Array(name.utf8).withUnsafeBytes { src in
-                _ = memcpy(base.advanced(by: stringTableBase),
-                           src.baseAddress!, src.count)
-            }
+            // The name is a non-empty literal; passing the array straight to
+            // memcpy avoids a nil base address entirely.
+            memcpy(base.advanced(by: stringTableBase), Array(name.utf8),
+                   name.utf8.count)
         }
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("gturbo-overrun-\(UUID().uuidString).bin")

@@ -75,12 +75,13 @@ struct RemoteInstallCheckpointTests {
         try Posix.mkdirP(root)
         let descriptor = try Posix.openCreateRW(path)
         var bytes = [UInt8](repeating: 7, count: 16)
-        try bytes.withUnsafeBytes {
+        try bytes.withUnsafeBytes { buffer in
+            let base = try #require(buffer.baseAddress)
             try Posix.pwriteAll(
                 fd: descriptor,
                 path: path,
-                buf: $0.baseAddress!,
-                count: $0.count,
+                buf: base,
+                count: buffer.count,
                 offset: 0)
         }
         close(descriptor)
@@ -113,11 +114,12 @@ struct RemoteInstallCheckpointTests {
 
         let writeDescriptor = try Posix.openExistingRW(path)
         bytes[0] = 8
-        try bytes.withUnsafeBytes {
+        try bytes.withUnsafeBytes { buffer in
+            let base = try #require(buffer.baseAddress)
             try Posix.pwriteAll(
                 fd: writeDescriptor,
                 path: path,
-                buf: $0.baseAddress!,
+                buf: base,
                 count: 1,
                 offset: 0)
         }

@@ -117,6 +117,7 @@ import TinyTitanValidationSupport
                                         f: Int,
                                         weightBits: Int = 4) -> SyntheticExpertPool {
         precondition([4, 8].contains(weightBits))
+        precondition(numExperts > 0, "a pool needs at least one expert to have offsets")
         var allBytes: [UInt8] = []
         var offsets: MoEExpertOffsets?
         var stride = 0
@@ -182,15 +183,18 @@ import TinyTitanValidationSupport
             if offsets == nil {
                 offsets = currentOffsets
                 stride = bytes.count
-            } else {
+            } else if let existing = offsets {
                 #expect(stride == bytes.count)
-                #expect(offsets!.gateWOff == currentOffsets.gateWOff)
-                #expect(offsets!.downBOff == currentOffsets.downBOff)
+                #expect(existing.gateWOff == currentOffsets.gateWOff)
+                #expect(existing.downBOff == currentOffsets.downBOff)
             }
             allBytes.append(contentsOf: bytes)
         }
+        guard let poolOffsets = offsets else {
+            preconditionFailure("numExperts > 0 was checked above")
+        }
         return SyntheticExpertPool(bytes: allBytes,
-                                   offsets: offsets!,
+                                   offsets: poolOffsets,
                                    stride: stride,
                                    weightBits: weightBits)
     }
@@ -238,8 +242,11 @@ import TinyTitanValidationSupport
         for group in 0..<groups {
             let start = group * Quantization.groupSize
             let values = row[start..<(start + Quantization.groupSize)]
-            let minimum = values.min()!
-            let maximum = values.max()!
+            // A group slice is never empty (`row.count` is a multiple of
+            // `groupSize` and `groupSize` is positive), so the reductions below
+            // always see at least one value.
+            let minimum = values.reduce(Float.greatestFiniteMagnitude) { Swift.min($0, $1) }
+            let maximum = values.reduce(-Float.greatestFiniteMagnitude) { Swift.max($0, $1) }
             let scaleBits = Quantization.bf16Bits(
                 maximum == minimum ? 1 : (maximum - minimum) / levels)
             let biasBits = Quantization.bf16Bits(minimum)

@@ -37,7 +37,7 @@ import TinyTitanValidationSupport
     ///   [scalesOff, scalesOff + scalesBytes) BF16 scales, row-major
     ///   [biasesOff, biasesOff + biasesBytes) BF16 biases, row-major
     private static func buildExpertBlob(weightsFp32: [[Float]],
-                                        pageSize: Int)
+                                        pageSize: Int) throws
         -> (blob: [UInt8], scalesOffset: Int, biasesOffset: Int, blobSize: Int)
     {
         precondition(weightsFp32.count == Sizes.M)
@@ -60,15 +60,16 @@ import TinyTitanValidationSupport
         let blobSize     = roundUp(biasesOffset + Sizes.biasesBytes, to: pageSize)
 
         var blob = [UInt8](repeating: 0, count: blobSize)
-        blob.withUnsafeMutableBufferPointer { ptr in
-            _ = memcpy(ptr.baseAddress!, packed, Sizes.packedBytes)
-            scales.withUnsafeBufferPointer { sptr in
-                _ = memcpy(ptr.baseAddress!.advanced(by: scalesOffset),
-                           sptr.baseAddress!, Sizes.scalesBytes)
+        try blob.withUnsafeMutableBufferPointer { ptr in
+            let blobBase = try #require(ptr.baseAddress)
+            _ = memcpy(blobBase, packed, Sizes.packedBytes)
+            try scales.withUnsafeBufferPointer { sptr in
+                _ = memcpy(blobBase.advanced(by: scalesOffset),
+                           try #require(sptr.baseAddress), Sizes.scalesBytes)
             }
-            biases.withUnsafeBufferPointer { bptr in
-                _ = memcpy(ptr.baseAddress!.advanced(by: biasesOffset),
-                           bptr.baseAddress!, Sizes.biasesBytes)
+            try biases.withUnsafeBufferPointer { bptr in
+                _ = memcpy(blobBase.advanced(by: biasesOffset),
+                           try #require(bptr.baseAddress), Sizes.biasesBytes)
             }
         }
         return (blob, scalesOffset, biasesOffset, blobSize)
@@ -103,7 +104,7 @@ import TinyTitanValidationSupport
         // ----- Build fake .gturbo on disk -----
         let pageSize = Int(getpagesize())
         let (blob, scalesOffset, biasesOffset, blobSize) =
-            Self.buildExpertBlob(weightsFp32: weights, pageSize: pageSize)
+            try Self.buildExpertBlob(weightsFp32: weights, pageSize: pageSize)
 
         let headerSize = pageSize
         let fileSize   = headerSize + blobSize

@@ -174,9 +174,9 @@ struct TokenizerTests {
         // The compact fixture keeps its base ByteLevel vocabulary dense and
         // the production added-token IDs sparse. Exercise both sets without ever
         // sampling one of the intentionally absent padded rows.
-        let denseCount = (0..<tok.vocabSize).first {
+        let denseCount = try #require((0..<tok.vocabSize).first {
             tok.tokenizer.convertIdToToken($0) == nil
-        }!
+        })
         let validIDs = Array(0..<denseCount).map(Int32.init)
             + tok.byteLevelDecoderConfiguration.addedTokens.keys
         for _ in 0..<64 {

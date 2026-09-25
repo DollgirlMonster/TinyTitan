@@ -439,22 +439,24 @@ struct QwenRepackPlannerTests {
         let fd = try Posix.openRead(path)
         defer { close(fd) }
         var headerSize: UInt64 = 0
-        try withUnsafeMutableBytes(of: &headerSize) {
+        try withUnsafeMutableBytes(of: &headerSize) { buffer in
+            let base = try #require(buffer.baseAddress)
             try Posix.preadAll(
                 fd: fd,
                 path: path,
-                buf: $0.baseAddress!,
+                buf: base,
                 count: 8,
                 offset: 0)
         }
         headerSize = UInt64(littleEndian: headerSize)
         var headerData = Data(count: Int(headerSize))
-        try headerData.withUnsafeMutableBytes {
+        try headerData.withUnsafeMutableBytes { buffer in
+            let base = try #require(buffer.baseAddress)
             try Posix.preadAll(
                 fd: fd,
                 path: path,
-                buf: $0.baseAddress!,
-                count: $0.count,
+                buf: base,
+                count: buffer.count,
                 offset: 8)
         }
         return try Safetensors.parseHeaderBytes(
