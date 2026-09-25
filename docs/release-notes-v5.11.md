@@ -130,11 +130,49 @@ of which reproduces two live addresses if the chain is removed.
 ### Performance
 
 Measured on this commit for this release against the 5.10 record
-(`benchmark/internal-speeds/v5.11.json`): PENDING.
+(`benchmark/internal-speeds/v5.11.json`), on the 4B dense install
+(`models/qwen3.5_4B_4Bit`) the gate records, with residual background load
+(load average 2.4–3.0, one Chrome renderer near 77%):
+
+- **GPU** QKV GEMV **74.1 GB/s** (+9.9%), routed MoE **41.8 GB/s** (+1.0%), GDN
+  in-projection **82.2 GB/s** (+7.0%);
+- **CPU** int8 affine GEMV **60.8 GB/s** (+11.2%);
+- **generation** prefill **28.0 tok/s** (+8.0%), decode **28.3 tok/s** (+8.5%),
+  effective decode **76.6 GB/s** (+8.4%), first token **0.25 s** (−7.4%);
+- **ANE prefill 52.1 tok/s** (+4.1%);
+- the greedy response is **byte-identical to 5.10** (`quality.response_sha256`
+  unchanged, `e69b5e29…`), and so are coverage (0.417) and trigram repetition
+  (0.0958).
+
+Every metric is inside the 10% gate and none regressed. Nothing in this release
+touches the kernels or the arithmetic — the greedy response hash, coverage and
+trigram repetition are all unchanged — so the uniformly better readings are this
+machine's condition rather than a code change, and the table should be read that
+way: it records that 5.11 did not regress, not that it sped the engine up.
 
 ### Verification
 
-Measured on this commit by the release dry run: PENDING.
+Measured on this commit by the release dry run:
+
+- six lint gates clean, **2,031 functions** scanned, the shell gate over 20
+  scripts on bash 3.2.57;
+- **1,493 tests in 223 suites**, all passing (serial, `--no-parallel`);
+- **7 golden baselines byte-identical** — qwen36-4, qwen36-8, qwen38-4,
+  qwen35-4b-4, qwen35-4b-8, qwen35-9b-4, qwen35-9b-8;
+- a clean scratch release build with the compiler-warning scan clean (131.05 s),
+  and the archive staged and packaged from that tree (in this dry run, 15,370,277
+  bytes — the published archive is rebuilt and its size and digest are below);
+- the engine's speeds recorded against the 5.10 baseline and committed
+  (`benchmark/internal-speeds/v5.11.json`), every metric inside the 10% gate and
+  none regressed, with the greedy response byte-identical — see
+  `### Performance`.
+
+The chat window's delivery path is pinned by tests rather than by a manual run:
+`benchmark/test_dsh_route.py` (13 tests) drives the real route writer against a
+stub engine that records its arguments, and `benchmark/test_dsh_isolation.py`
+(13 tests) pins the private-cache redirects, the resolved models directory in
+both layouts, and refuses the hard-coded export. Both plugin suites run in CI on
+this commit.
 
 **Nine golden targets are not checked**, because their install is not under
 `models/` and nothing may be fetched to change that: `ornith-8`, `ornith-4`,
