@@ -24,11 +24,11 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: xcode-27
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           # The Python floor the scripts are written to and that `tools/lint.sh`
           # verifies by parsing every file at this version. Without this, the
@@ -145,6 +145,6 @@ jobs:
       # still has a TinyTitan top frame, so a real race still fails this job.
       TSAN_OPTIONS: suppressions=${{ github.workspace }}/tools/tsan-suppressions.txt
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Run serial tests under ThreadSanitizer
         run: swift test --no-parallel --sanitize=thread
