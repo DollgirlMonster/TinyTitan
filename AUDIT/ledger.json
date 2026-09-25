@@ -446,6 +446,23 @@
       "evidence_after": "The same command that failed on CI passes locally with the pinned set: `Ran 299 tests ... OK (skipped=52)` (vs `failures=1, skipped=147` without the deps). `pip-audit -r benchmark/requirements.txt` -> No known vulnerabilities found. The next Audit verification run is the first one to reach the ledger gate.",
       "commit": "1078c77",
       "blocked_reason": ""
+    },
+    {
+      "id": "AUD-027",
+      "severity": "S2",
+      "tier": "B",
+      "project": "build/CI",
+      "location": ".github/workflows/ci.yml (Check Markdown links step)",
+      "title": "The merged audit work turned main's Markdown link check red: node_modules was scanned",
+      "category": "verification/CI",
+      "status": "DONE",
+      "host": "mac-mini-m3 (primary)",
+      "discovered_by": "CI on main after the PR #18 merge (run 36136457247)",
+      "evidence_before": "The first CI run on the merge commit failed exactly one step, `Check Markdown links`: 461 broken links (e.g. `plugins/dsh-tinytitan/node_modules/word-wrap/README.md:149: broken link '.verb.md'`). The audit's AUD-012 work installs each plugin's toolchain with `npm ci` before the gates, so `plugins/dsh-*/node_modules/` now exists on the runner; the link check walks `**/*.md` and only skipped `/.build/` and `/.qwen/`, so it began reading vendored dependency READMEs whose relative links point inside their own repositories. Every other step on that run was green.",
+      "fix_summary": "`/node_modules/` joins the exclusion list in the link check, with the reason written next to it: installed dependencies are build output exactly like `/.build/`, and a vendored README's relative links are not this repository's to satisfy. Reproduced with the workflow's own script against the local tree before the fix (576 checked, 461 failures, all under node_modules) and after it (checked=41, failures=0).",
+      "evidence_after": "`checked=41 failures=0` with the fixed script locally; the fix is commit cda30a9 on main. This landed after the Phase E run on the merge commit, so it is recorded here rather than in that run's evidence.",
+      "commit": "cda30a9",
+      "blocked_reason": ""
     }
   ]
 }

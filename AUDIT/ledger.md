@@ -2,7 +2,7 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**26 tasks — done 26, open 0, blocked 0.**
+**27 tasks — done 27, open 0, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -21,6 +21,7 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-020 | S2 | A | Swift | `sources/ + tests/ + benchmark/` | 96 remaining SwiftLint findings across 11 rules (data/string conversion, casts, type checking, style) | DONE | mac-mini-m3 (primary) |
 | AUD-021 | S2 | C | Tests | `tests/ (136 sites) + benchmark/ (3 sites)` | force_unwrapping in test fixtures: 139 sites that crash the test process | DONE | mac-mini-m3 (primary) |
 | AUD-025 | S2 | B | build | `tools/lint.sh (check_unchecked_sendable scanner)` | unchecked-sendable scanner missed the invariant comment on wrapped declarations | DONE | mac-mini-m3 (primary) |
+| AUD-027 | S2 | B | build/CI | `.github/workflows/ci.yml (Check Markdown links step)` | The merged audit work turned main's Markdown link check red: node_modules was scanned | DONE | mac-mini-m3 (primary) |
 | AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | DONE | mac-mini-m3 (primary) |
 | AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | DONE | mac-mini-m3 (primary) |
 | AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | DONE | mac-mini-m3 (primary) |
@@ -198,6 +199,17 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - fix: The scanner now walks the whole contiguous non-blank block above the `@unchecked Sendable` line and collects its comments, so a declaration that wraps still associates with its note. The marker (`unchecked-invariant:`) is still mandatory; only the distance from the token changed.
 - evidence (after): `tools/lint.sh sendable` -> ok (0 undocumented, 0 new). Not weakened: a probe class with `@unchecked Sendable` and no note still fails (`NEW: sources/TinyTitan/ZZAuditSendableProbe.swift:ZzAuditUndocumented`, exit 1), and removing the probe returns the gate to clean.
 - commit: 7016b7c
+- blocked: —
+
+### AUD-027 — The merged audit work turned main's Markdown link check red: node_modules was scanned
+
+- severity **S2**, tier B, project build/CI, status **DONE**
+- location: `.github/workflows/ci.yml (Check Markdown links step)`
+- discovered by: CI on main after the PR #18 merge (run 36136457247)
+- evidence (before): The first CI run on the merge commit failed exactly one step, `Check Markdown links`: 461 broken links (e.g. `plugins/dsh-tinytitan/node_modules/word-wrap/README.md:149: broken link '.verb.md'`). The audit's AUD-012 work installs each plugin's toolchain with `npm ci` before the gates, so `plugins/dsh-*/node_modules/` now exists on the runner; the link check walks `**/*.md` and only skipped `/.build/` and `/.qwen/`, so it began reading vendored dependency READMEs whose relative links point inside their own repositories. Every other step on that run was green.
+- fix: `/node_modules/` joins the exclusion list in the link check, with the reason written next to it: installed dependencies are build output exactly like `/.build/`, and a vendored README's relative links are not this repository's to satisfy. Reproduced with the workflow's own script against the local tree before the fix (576 checked, 461 failures, all under node_modules) and after it (checked=41, failures=0).
+- evidence (after): `checked=41 failures=0` with the fixed script locally; the fix is commit cda30a9 on main. This landed after the Phase E run on the merge commit, so it is recorded here rather than in that run's evidence.
+- commit: cda30a9
 - blocked: —
 
 ### AUD-004 — No committed swift-format config
