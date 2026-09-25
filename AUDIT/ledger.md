@@ -2,7 +2,7 @@
 
 Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b43`. Generated from `AUDIT/ledger.json` by `AUDIT/render_ledger.py` — do not edit by hand.
 
-**20 tasks — done 13, open 7, blocked 0.**
+**20 tasks — done 14, open 6, blocked 0.**
 
 | id | sev | tier | project | location | title | status | host |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -20,7 +20,7 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 | AUD-004 | S3 | B | build | `repo root` | No committed swift-format config | OPEN | mac-mini-m3 (primary) |
 | AUD-008 | S3 | C | tests | `tests/ (18 force_cast, 32 optional_data_string_conversion)` | SwiftLint correctness-adjacent rules fire in tests: force casts and optional data-string conversions | DONE | mac-mini-m3 (primary) |
 | AUD-009 | S3 | C | tests | `tests/TinyTitanServer/CompactionTests.swift:328` | Swift test warning: result of `contains` is unused inside #expect | DONE | mac-mini-m3 (primary) |
-| AUD-010 | S3 | C | tools | `tools/*.sh (14 shellcheck warnings)` | shellcheck reports 14 warnings across the shell tools | OPEN | mac-mini-m3 (primary) |
+| AUD-010 | S3 | C | tools | `tools/*.sh (14 shellcheck warnings)` | shellcheck reports 14 warnings across the shell tools | DONE | mac-mini-m3 (primary) |
 | AUD-011 | S3 | C | plugins | `plugins/*/package.json` | Secret scan reports 3 false positives; no gitleaks config | DONE | mac-mini-m3 (primary) |
 | AUD-014 | S3 | B | tests | `tests/ (no coverage run)` | No coverage measurement exists in the baseline | DONE | mac-mini-m3 (primary) |
 | AUD-015 | S3 | B | CI | `.github/workflows/ci.yml:27,28,135; codeql.yml:51,54,94` | CI actions are pinned by mutable major tag, and checkouts disagree (v4 vs v7) | DONE | mac-mini-m3 (primary) |
@@ -133,10 +133,10 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 - severity **S2**, tier A, project Swift, status **OPEN**
 - location: `sources/ (70), tests/ (317), benchmark/ (3)`
 - discovered by: AUD-005 (force_unwrapping enabled)
-- evidence (before): 390 force unwraps under the committed config: 70 in sources/ (production), 317 in tests/, 3 in benchmark/. Reasons include `MTLCommandQueue.makeCommandBuffer()!`, `URL(string: literal)!`, `tokenizer.encode(...).first!`, `UnsafeMutableRawPointer.baseAddress!` and dictionary lookups.
-- fix: —
-- evidence (after): —
-- commit: —
+- evidence (before): 390 force unwraps under the committed config: **171 in sources/** (production: 44 files), 216 in tests/, 3 in benchmark/. Clusters: `MTLCommandQueue.makeCommandBuffer()!`, `MTLDevice.makeBuffer(...)!`, `views.q!/qNorm!` optional tensor views, `elementwise!` optional kernel bundles, `tokenizer.encode(...).first!`, `UnsafeMutableRawPointer.baseAddress!` in vDSP/IO paths, `streamersBox.streamers[layer]!`, dictionary lookups, and URL literals in tests. (The first ledger entry said 70/317/3 — that bucketing was wrong; the corrected counts are from a path-prefix match.)
+- fix: Batch 1 (51aef05): 45 sites. Validation references (LogitSoftcapSoftmax 6, Attention 5, RmsNorm 2, DequantInt4/8 2) now return the empty result for empty input and bind base addresses with guards; the 16 lazy routed-expert streamer lookups in ModelExpertIO/Model went through a new throwing `openStreamer(for:)` that reports `ModelError.internalInconsistency` instead of crashing. 345 remain: 126 sources, 216 tests, 3 benchmark.
+- evidence (after): `swift build` clean (warnings-as-errors); sources force_unwrapping 171 -> 126; whole-tree 488 -> 443 (`swiftlint lint --strict --no-cache`).
+- commit: 51aef05 (batch 1; task open)
 - blocked: —
 
 ### AUD-020 — 98 remaining SwiftLint findings across 12 rules (data/string conversion, casts, type checking, style)
@@ -185,13 +185,13 @@ Repository `Pummelchen/TinyTitan`, branch `audit/2026-09-25`, base commit `e952b
 
 ### AUD-010 — shellcheck reports 14 warnings across the shell tools
 
-- severity **S3**, tier C, project tools, status **OPEN**
+- severity **S3**, tier C, project tools, status **DONE**
 - location: `tools/*.sh (14 shellcheck warnings)`
 - discovered by: shellcheck 0.11.0 -S warning tools/*.sh
 - evidence (before): SC2034 x9 (unused variable), SC2115 x2, SC2088 x2, SC2194, SC2164, SC2155, SC2120. No shellcheck config or gate in tools/lint.sh.
-- fix: —
-- evidence (after): —
-- commit: —
+- fix: Real defects fixed: unguarded `rm -rf "$MODELS/$dir"` -> `${MODELS:?}/${dir:?}`; ane_sidecars' constant-word case -> membership loop; release.sh's bare cd -> `|| die`. Plus two dead variables removed, two unused read fields renamed, dsh_local passing its args through, lint.sh declare-then-export, and documented `disable=SC2034` for the five cross-file API variables. Gate: `tools/lint.sh shellcheck` over all 20 scripts, SHELLCHECK_PIN 0.11.0, installed in CI from the pinned release binary.
+- evidence (after): shellcheck 0.11.0 over tools+benchmark+docs: 0 warnings (was 14). Proof T9 in AUDIT/tool-coverage.md (temporary script with unguarded cd + unused var -> gate exit 1). All eight lint gates green; Python suite 299 tests OK (52 skipped).
+- commit: c199467
 - blocked: —
 
 ### AUD-011 — Secret scan reports 3 false positives; no gitleaks config

@@ -166,13 +166,13 @@
       "location": "tools/*.sh (14 shellcheck warnings)",
       "title": "shellcheck reports 14 warnings across the shell tools",
       "category": "tooling",
-      "status": "OPEN",
+      "status": "DONE",
       "host": "mac-mini-m3 (primary)",
       "discovered_by": "shellcheck 0.11.0 -S warning tools/*.sh",
       "evidence_before": "SC2034 x9 (unused variable), SC2115 x2, SC2088 x2, SC2194, SC2164, SC2155, SC2120. No shellcheck config or gate in tools/lint.sh.",
-      "fix_summary": "",
-      "evidence_after": "",
-      "commit": "",
+      "fix_summary": "Real defects fixed: unguarded `rm -rf \"$MODELS/$dir\"` -> `${MODELS:?}/${dir:?}`; ane_sidecars' constant-word case -> membership loop; release.sh's bare cd -> `|| die`. Plus two dead variables removed, two unused read fields renamed, dsh_local passing its args through, lint.sh declare-then-export, and documented `disable=SC2034` for the five cross-file API variables. Gate: `tools/lint.sh shellcheck` over all 20 scripts, SHELLCHECK_PIN 0.11.0, installed in CI from the pinned release binary.",
+      "evidence_after": "shellcheck 0.11.0 over tools+benchmark+docs: 0 warnings (was 14). Proof T9 in AUDIT/tool-coverage.md (temporary script with unguarded cd + unused var -> gate exit 1). All eight lint gates green; Python suite 299 tests OK (52 skipped).",
+      "commit": "c199467",
       "blocked_reason": ""
     },
     {
@@ -322,10 +322,10 @@
       "status": "OPEN",
       "host": "mac-mini-m3 (primary)",
       "discovered_by": "AUD-005 (force_unwrapping enabled)",
-      "evidence_before": "390 force unwraps under the committed config: 70 in sources/ (production), 317 in tests/, 3 in benchmark/. Reasons include `MTLCommandQueue.makeCommandBuffer()!`, `URL(string: literal)!`, `tokenizer.encode(...).first!`, `UnsafeMutableRawPointer.baseAddress!` and dictionary lookups.",
-      "fix_summary": "",
-      "evidence_after": "",
-      "commit": "",
+      "evidence_before": "390 force unwraps under the committed config: **171 in sources/** (production: 44 files), 216 in tests/, 3 in benchmark/. Clusters: `MTLCommandQueue.makeCommandBuffer()!`, `MTLDevice.makeBuffer(...)!`, `views.q!/qNorm!` optional tensor views, `elementwise!` optional kernel bundles, `tokenizer.encode(...).first!`, `UnsafeMutableRawPointer.baseAddress!` in vDSP/IO paths, `streamersBox.streamers[layer]!`, dictionary lookups, and URL literals in tests. (The first ledger entry said 70/317/3 \u2014 that bucketing was wrong; the corrected counts are from a path-prefix match.)",
+      "fix_summary": "Batch 1 (51aef05): 45 sites. Validation references (LogitSoftcapSoftmax 6, Attention 5, RmsNorm 2, DequantInt4/8 2) now return the empty result for empty input and bind base addresses with guards; the 16 lazy routed-expert streamer lookups in ModelExpertIO/Model went through a new throwing `openStreamer(for:)` that reports `ModelError.internalInconsistency` instead of crashing. 345 remain: 126 sources, 216 tests, 3 benchmark.",
+      "evidence_after": "`swift build` clean (warnings-as-errors); sources force_unwrapping 171 -> 126; whole-tree 488 -> 443 (`swiftlint lint --strict --no-cache`).",
+      "commit": "51aef05 (batch 1; task open)",
       "blocked_reason": ""
     },
     {

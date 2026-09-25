@@ -31,7 +31,7 @@ remote host.
 | C/Swift deps | osv-scanner | 2.6.0 (osv-scalibr 0.5.2) | Homebrew | dependency/CVE scan |
 | all | gitleaks | 8.30.1 | Homebrew | secret scan, full history |
 | all | trufflehog | present | Homebrew | second secret scanner (not required; gitleaks used) |
-| shell | shellcheck | 0.11.0 | Homebrew | shell linter |
+| shell | shellcheck | 0.11.0 | Homebrew locally; the pinned release binary in CI | linter; `tools/lint.sh shellcheck` pins SHELLCHECK_PIN and fails on a version mismatch |
 | shell | shfmt | present | Homebrew | shell formatter (not yet wired) |
 
 Not installed, and why: `eslint`/`prettier` (the JS packages have zero

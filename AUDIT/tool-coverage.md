@@ -39,3 +39,4 @@ and records what it said. Scratch files live in `/tmp` and are not committed.
   `tests/` stay in scope and are the 4,478 findings that must be swept.
 - The Python rule set is pinned in Phase C (AUD-006); the proofs above show the
   rules fire under `ruff --isolated`, so pinning them cannot mask a finding.
+| T9 | The shell gate is wired and pinned | `tools/lint.sh shellcheck` (shellcheck 0.11.0) | `tools/ZZShellGateProbe.sh` with an unguarded `cd /tmp` and an unused variable (temporary file) | **covered**: the gate printed `SC2164` and `SC2034` for the probe and exited 1; removing it exits 0. The gate also fails when shellcheck is absent or a different version. |
