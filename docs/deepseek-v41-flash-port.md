@@ -675,6 +675,37 @@ tensor, so a reader can never unpack an FP8 or FP4 tensor as affine.
 
 ## 7. The eight wiring points
 
+### 7.0 The integration surface, subsystem by subsystem
+
+`adding-a-model.md` frames the work as "wiring job or runtime job", and the
+answer here is runtime — but it is clearer to say exactly which existing type
+each DeepSeek subsystem extends, parallels, or has no counterpart for. Every path
+below exists in this tree today unless marked **new**.
+
+| DeepSeek subsystem | Nearest existing asset | What has to happen |
+| --- | --- | --- |
+| CSA2 window rings + compressed caches + indexer publication | `Kernels/Attention/QSAIndexer.swift`, `Metal/Attention/qsa.metal`, `Runtime/Family/QSAExactness.swift` (Qwen3.8's global indexer) | **Extend.** QSA selects globally per layer; CSA2 needs per-layer windows, four shared ratio-scaled caches, publish-before-consume ordering and a two-level candidate filter. `QSAExactness.swift` is the closest prior art for the verification shape, not for the mechanism |
+| Engram lookup, hashing, gate | nothing | **New.** No hashing, no bucket table, no streamed embedding band exists. `Kernels/Quant/EmbedLookupInt4.swift` is an affine int4 lookup, not FP8, and is resident-only |
+| Sinkhorn mHC | `Runtime/Family/Qwen38FlashFamily.swift`, `ModelProfile.hcFused` | **Extend.** Same idea, different constants (20 iterations, eps 1e-6) and a different sub-block scheduling order — check the ordering before reusing anything |
+| MoE routing (`sqrtsoftplus`, `noaux_tc`, top-6 of 384, `swiglu_limit`) | `Kernels/MoE/`, `sources/TinyTitan/Kernels/Prefill/MoE/` | **Extend.** The existing families are softmax→topk at top-8; scoring, the selection-vs-weight bias split, and the SwiGLU clamp are new |
+| Block-FP8 GEMV | `Kernels/Quant/DequantInt8GEMV.swift`, `Metal/Quant/dequant_affine.metal` | **New kernel + Swift binding.** The affine kernel is group-64 with scale *and* bias; FP8 is per-32×32 with an E8M0 exponent |
+| Packed-FP4 E2M1 GEMV | `Kernels/Quant/DequantInt4GEMV.swift` (`dequant_int4.metal`) | **New kernel + Swift binding.** Int4 affine ≠ FP4 E2M1; the E2M1 range is ±6.0 and the scale is a power-of-two exponent |
+| Native KV formats (FP4 E2M1/E4M3-16, FP4 E8M0/32, FP8) | `Kernels/Quant/KVCacheQuantizer.swift` | **Extend.** A different scheme at a different granularity; a cache written by the affine quantizer would pass shape checks and change every attention output |
+| Engine family dispatch | `Runtime/Family/TensorSchema.swift`, `Infrastructure/ModelIO/ModelTypes.swift` (`ModelFamily`) | **Extend.** Add `deepseekV41` to `ModelFamily` and `TensorSchema`, plus a **new** `Runtime/Family/DeepseekV41Family.swift` for the forward |
+| Manifest arch + quant scheme | `TinyTitanRepack/Core/Format/ArchInfo.swift` (`loadQwen4Exp` is the first-of-family precedent), `GTurboJSON.swift`, `GTurboEncoders.swift` | **Extend.** A `loadDeepseekV41` branch, a `RepackModelFamily.deepseekV41` case, and `scheme`/`scaleType` values for non-affine formats. `GTurboBinary` stays the single writer |
+| Engram streaming band | `Runtime/Inference/ModelExpertIO.swift`, `RealForwardRunner+Decode.swift` (expert streaming and prefetch) | **Extend.** The mechanism is right; the working set and the row-grained access pattern are not |
+| Per-install tuning row | `Runtime/Configuration/ModelProfile.swift` (`table`, keyed by model id + width) | **Extend.** Note the key carries a width, and §6.6 says this model has none — the row's key is a decision, not a default |
+| Served id → name | `TinyTitanServer/Core/ModelCatalog.swift` (`displayNames`) | **Extend.** Same width caveat |
+| Converter | `tools/prepare_agentworld.py`, `prepare_qwen38.py` | **New** `tools/prepare_dsv41.py`. The checkpoint's bare `layers.N.*` / `embed.weight` names match none of the namespaces the existing converters know |
+| Install catalogue and launcher | `tools/install_models.sh`, `tools/tinytitan_models.sh`, `tools/server_launcher.sh` | **Extend.** One row, not two — there is no width pair |
+
+Read the table as the answer to "how much of this is new": two kernels, one
+family, one converter, one streamed band, and extensions to eight existing
+types. That is the shape of a multi-phase runtime project, which is why §9
+sequences it instead of scheduling it.
+
+### 7.1 The eight wiring points themselves
+
 Same eight as `adding-a-model.md`, with what each one costs here.
 
 | # | Where | What changes |
