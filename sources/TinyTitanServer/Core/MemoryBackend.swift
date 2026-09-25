@@ -57,6 +57,19 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
     /// on every pause. Only turns after this index are read now, plus the
     /// one before them for context.
     private var consolidatedThrough: [String: Int] = [:]
+    /// The distillation in flight for each scope, so a later one can wait for
+    /// it before reading what memory holds.
+    ///
+    /// The extraction is shown the addresses memory already uses and told to
+    /// reuse them; that prompt is built from a read of the store. Two sessions
+    /// in one scope are routinely in flight together -- a rolled-over session
+    /// is distilled while the new one's idle timer runs -- and a later prompt
+    /// built before an earlier write sees an empty store, invents a parallel
+    /// namespace, and leaves two live values for one fact. On the `contract`
+    /// benchmark this is exactly what happened: session 3's extraction ran
+    /// with an empty key list and wrote `agreement/*` beside session 2's
+    /// `msa/*`, although the two were requested four seconds apart (TT-035).
+    private var consolidationChain: [MemoryScope: Task<Void, Never>] = [:]
     /// One generation at a time through this backend.
     ///
     /// The HTTP layer admits one request at a time, but a consolidation is
@@ -325,6 +338,29 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
         await consolidate(pending)
     }
 
+    /// Distils a finished session into memory, after every earlier
+    /// distillation in the same scope has finished writing.
+    ///
+    /// The chaining is the whole point: `runConsolidation` reads what memory
+    /// holds to build its prompt, and a read that overtakes an earlier write
+    /// is how two sessions came to name one fact under two addresses
+    /// (TT-035). Waiting here is cheap — the earlier generation was going to
+    /// occupy the one generation gate anyway — and it makes the order of the
+    /// reads the order of the writes.
+    private func consolidate(_ context: MemorySessionContext) async {
+        let scope = context.scope
+        let previous = consolidationChain[scope]
+        let current = Task { [weak self] in
+            await previous?.value
+            await self?.runConsolidation(context)
+        }
+        consolidationChain[scope] = current
+        await current.value
+        if consolidationChain[scope] == current {
+            consolidationChain[scope] = nil
+        }
+    }
+
     /// Distils a finished session into memory.
     ///
     /// This is the engine writing, not the model choosing to. Measured on a
@@ -336,7 +372,7 @@ public actor MemoryBackend: ServerInferenceBackend, PromptTokenCounting, Residen
     /// what lets a later change supersede an earlier state instead of the
     /// note copying the old state forward, which is how the summary lost
     /// every plot event one session after it happened.
-    private func consolidate(_ context: MemorySessionContext) async {
+    private func runConsolidation(_ context: MemorySessionContext) async {
         let scope = context.scope
         if unconsolidated[scope]?.session.id == context.session.id {
             unconsolidated[scope] = nil

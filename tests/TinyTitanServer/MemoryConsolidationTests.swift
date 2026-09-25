@@ -575,6 +575,50 @@ import ContinuityCore
         var requests: [ValidatedChatRequest] { lock.withLock { seen } }
     }
 
+    /// Answers each generation from the request itself, and blocks the first
+    /// consolidation generation until the test releases it. Holding one
+    /// generation under the backend's gate is what makes "a second session
+    /// distils while the first is still writing" deterministic instead of a
+    /// race. Content is derived from the request rather than taken from a
+    /// queue, because which generation arrives first is the thing under test.
+    private final class HeldBackend: ServerInferenceBackend, @unchecked Sendable {
+        private let responder: @Sendable (ValidatedChatRequest) -> String
+        private var seen: [ValidatedChatRequest] = []
+        private var heldOne = false
+        private var released = false
+        private let lock = NSLock()
+        init(responder: @escaping @Sendable (ValidatedChatRequest) -> String) {
+            self.responder = responder
+        }
+
+        private static func extraction(_ request: ValidatedChatRequest) -> Bool {
+            request.messages.count == 2
+                && request.messages.first?.content?.hasPrefix("You distil") == true
+        }
+
+        func generate(_ request: ValidatedChatRequest,
+                      onEvent: @escaping @Sendable (ServerInferenceEvent) -> Void) async throws
+            -> ServerCompletion {
+            let (holdThisOne, content) = lock.withLock { () -> (Bool, String) in
+                seen.append(request)
+                let text = responder(request)
+                guard Self.extraction(request), !heldOne else { return (false, text) }
+                heldOne = true
+                return (true, text)
+            }
+            while holdThisOne, !lock.withLock({ released }) {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            return ServerCompletion(content: content, toolCalls: [], finishReason: "stop",
+                                    usage: OpenAIUsage(promptTokens: 1, completionTokens: 1,
+                                                       totalTokens: 2))
+        }
+
+        func release() { lock.withLock { released = true } }
+        var requests: [ValidatedChatRequest] { lock.withLock { seen } }
+        var extractions: [ValidatedChatRequest] { lock.withLock { seen.filter(Self.extraction) } }
+    }
+
     private func completion(_ content: String) -> ServerCompletion {
         ServerCompletion(content: content, toolCalls: [], finishReason: "stop",
                          usage: OpenAIUsage(promptTokens: 1, completionTokens: 1, totalTokens: 2))
@@ -704,6 +748,109 @@ import ContinuityCore
         #expect(third.contains("write chapter three"))
         #expect(third.contains("write chapter two"))
         #expect(third.contains("write chapter one") == false)
+        await backend.shutDown()
+    }
+
+    // MARK: TT-035
+
+    /// A later session that names an amended fact under a new prefix must land
+    /// on the address already holding it, not beside it. This is the shape the
+    /// `contract` world produced: session 1 distilled `msa/governing_law`,
+    /// session 2 distilled `agreement/governing_law`, and both stayed live, so
+    /// no supersession could fire.
+    @Test func anAmendedFactUnderANewPrefixLandsOnTheExistingKey() async throws {
+        let inner = ScriptedBackend([
+            completion("Drafted the MSA."),
+            completion("[{\"key\": \"msa/governing_law\", \"value\": \"singapore\", "
+                       + "\"importance\": 0.9, \"source\": \"user\"}]"),
+            completion("Amended the governing law."),
+            completion("[{\"key\": \"agreement/governing_law\", \"value\": \"england\", "
+                       + "\"importance\": 0.9, \"source\": \"user\"}]"),
+        ])
+        var configuration = configuration()
+        // The durable path, not the injected in-memory store: the two differ in
+        // how a consolidation reads back what it already holds, and that read
+        // is what this test is about.
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tt035-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        configuration.storage.directory = directory
+        let service = MemoryService(configuration: configuration)
+        let backend = MemoryBackend(wrapping: inner, service: service, configuration: configuration)
+        func turn(_ text: String) -> ValidatedChatRequest {
+            ValidatedChatRequest(messages: [GFTokenizer.Message(role: .user, content: text)],
+                                 tools: [], stream: false, includeUsage: false,
+                                 generationConfig: GenerationConfig(maxNewTokens: 32),
+                                 maximumCompletionTokens: 32)
+        }
+        _ = try await backend.generate(turn("draft the master services agreement"),
+                                       onEvent: { _ in })
+        try await waitForConsolidations(inner, atLeast: 1)
+        _ = try await backend.generate(turn("the client proposed an amendment to the agreement"),
+                                       onEvent: { _ in })
+        try await waitForConsolidations(inner, atLeast: 2)
+
+        let scope = try #require(configuration.scope())
+        let facts = await service.recordedFacts(in: scope, limit: 50)
+        let keys = facts.map(\.key.rawValue)
+        #expect(keys.contains("msa/governing_law"))
+        #expect(keys.contains("agreement/governing_law") == false)
+        #expect(facts.first { $0.key.rawValue == "msa/governing_law" }?.value == "england")
+        await backend.shutDown()
+    }
+
+    /// The other half of TT-035: two sessions in one scope may be in flight
+    /// together, and the later extraction must not read memory before the
+    /// earlier one has written. Here session 1's distillation is held open
+    /// while session 2's is requested, which is the state the `contract`
+    /// benchmark reached for real (its two prompts were built four seconds
+    /// apart and both saw an empty store). The later prompt must list
+    /// `msa/governing_law`, and the amendment must land on it.
+    @Test func aLaterConsolidationReadsMemoryOnlyAfterTheEarlierOneWrote() async throws {
+        let held = HeldBackend { request in
+            let user = request.messages.last?.content ?? ""
+            let isExtraction = request.messages.first?.content?.hasPrefix("You distil") == true
+            guard isExtraction else { return "Noted." }
+            return user.contains("master services agreement")
+                ? "[{\"key\": \"msa/governing_law\", \"value\": \"singapore\", "
+                    + "\"importance\": 0.9, \"source\": \"user\"}]"
+                : "[{\"key\": \"agreement/governing_law\", \"value\": \"england\", "
+                    + "\"importance\": 0.9, \"source\": \"user\"}]"
+        }
+        var configuration = configuration()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tt035-race-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        configuration.storage.directory = directory
+        let service = MemoryService(configuration: configuration)
+        let backend = MemoryBackend(wrapping: held, service: service, configuration: configuration)
+
+        // Both turns land before the first idle timer fires, so both
+        // distillations are requested while neither has written: session
+        // one's on the rollover, session two's on its own idle timer. Session
+        // two names the subject of the fact it amends, so the address the
+        // earlier session wrote is one the extraction is shown.
+        _ = try await backend.generate(request("draft the master services agreement"),
+                                       onEvent: { _ in })
+        _ = try await backend.generate(
+            request("the client proposed an amendment to the governing law of the agreement"),
+            onEvent: { _ in })
+        try await Task.sleep(for: .milliseconds(400))
+        held.release()
+        for _ in 0..<400 where held.extractions.count < 2 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        let extractions = held.extractions
+        #expect(extractions.count == 2)
+        #expect(extractions[1].messages.last?.content?.contains("msa/governing_law") == true)
+
+        let scope = try #require(configuration.scope())
+        let facts = await service.recordedFacts(in: scope, limit: 50)
+        let keys = facts.map(\.key.rawValue)
+        #expect(keys.contains("msa/governing_law"))
+        #expect(keys.contains("agreement/governing_law") == false)
+        #expect(facts.first { $0.key.rawValue == "msa/governing_law" }?.value == "england")
         await backend.shutDown()
     }
 
