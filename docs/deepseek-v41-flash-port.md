@@ -23,6 +23,13 @@ of the shards that carry the interesting tensors) or from the official
 than read is labelled **inferred**. Anything unverified is listed as an open
 unknown in §12 rather than guessed at.
 
+The full fact base behind this plan — every tensor family with its shapes and
+encodings, the reference forward's algorithm, the chat and tool-call encoding,
+the vision tower, the KV-cache design, the community quantizations and the
+unresolved questions — is kept separately in
+[`deepseek-v41-flash-reference.md`](deepseek-v41-flash-reference.md). Read that
+for facts; this document is the plan that follows from them.
+
 The conclusion, stated up front so it is not buried: **this is not a wiring
 job.** It is not a `MODELS` row in `prepare_agentworld.py`, and it is not a
 sibling of the Qwen3.8-Flash-Next port. Four of its subsystems — Engram,
