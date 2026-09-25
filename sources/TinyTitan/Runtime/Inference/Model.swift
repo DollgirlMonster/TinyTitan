@@ -666,8 +666,7 @@ public struct Model {
     /// touches reuse the open backend. The backend resolves the expert to an
     /// cache-slot `(MTLBuffer, offset)` pair.
     public func routedExpert(layer L: Int, expert E: Int) throws -> TensorView {
-        try ensureLayerOpened(L)
-        let backend = streamersQueue.sync { streamersBox.streamers[L]! }
+        let backend = try openStreamer(for: L)
         // The streamer is per-layer: `openLayerLocked(L)` bound it to layer
         // L's file with `expertOffsets = layers[L].experts.map(\.offset)`, and
         // `StreamLayout.expertOffset(layer: 0, ...)` is the branch that
@@ -690,6 +689,21 @@ public struct Model {
         try streamersQueue.sync {
             try openLayerLocked(L)
         }
+    }
+
+    /// The open streamer for a layer, after making sure the layer is open.
+    ///
+    /// `ensureLayerOpened` either leaves a streamer in the box or throws, so
+    /// the lookup below cannot be nil in practice. It is a thrown
+    /// `internalInconsistency` rather than a force unwrap so a broken
+    /// invariant fails loudly without crashing the process.
+    func openStreamer(for layer: Int) throws -> PreadExpertStreamer {
+        try ensureLayerOpened(layer)
+        guard let streamer = streamersQueue.sync(execute: { streamersBox.streamers[layer] }) else {
+            throw ModelError.internalInconsistency(
+                detail: "routed-expert streamer for layer \(layer) missing after ensureLayerOpened")
+        }
+        return streamer
     }
 
     /// Best-effort overlap hook for prefill: starts the same lazy layer open on

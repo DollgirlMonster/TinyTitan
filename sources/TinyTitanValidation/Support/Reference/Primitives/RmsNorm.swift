@@ -14,30 +14,27 @@ public enum RmsNormRef {
     public static func apply(x: [Float], weight: [Float], eps: Float) -> [Float] {
         precondition(x.count == weight.count, "x and weight must match length")
         let d = x.count
+        // Nothing to normalise, and no base address to read: the empty case
+        // used to reach the force unwrap below.
+        guard d > 0 else { return [] }
 
         var sumSq: Float = 0
-        x.withUnsafeBufferPointer { p in
-            vDSP_svesq(p.baseAddress!, 1, &sumSq, vDSP_Length(d))
+        x.withUnsafeBufferPointer { pBuffer in
+            guard let p = pBuffer.baseAddress else { return }
+            vDSP_svesq(p, 1, &sumSq, vDSP_Length(d))
         }
         let invRms = 1.0 / (sumSq / Float(d) + eps).squareRoot()
 
         var y = [Float](repeating: 0, count: d)
-        x.withUnsafeBufferPointer { px in
-            weight.withUnsafeBufferPointer { pw in
-                y.withUnsafeMutableBufferPointer { py in
-                    vDSP_vmul(
-                        px.baseAddress!, 1,
-                        pw.baseAddress!, 1,
-                        py.baseAddress!, 1,
-                        vDSP_Length(d)
-                    )
+        x.withUnsafeBufferPointer { pxBuffer in
+            weight.withUnsafeBufferPointer { pwBuffer in
+                y.withUnsafeMutableBufferPointer { pyBuffer in
+                    guard let px = pxBuffer.baseAddress,
+                          let pw = pwBuffer.baseAddress,
+                          let py = pyBuffer.baseAddress else { return }
+                    vDSP_vmul(px, 1, pw, 1, py, 1, vDSP_Length(d))
                     var s = invRms
-                    vDSP_vsmul(
-                        py.baseAddress!, 1,
-                        &s,
-                        py.baseAddress!, 1,
-                        vDSP_Length(d)
-                    )
+                    vDSP_vsmul(py, 1, &s, py, 1, vDSP_Length(d))
                 }
             }
         }

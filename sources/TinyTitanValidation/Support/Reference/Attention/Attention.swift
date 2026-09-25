@@ -48,14 +48,16 @@ public enum AttentionRef {
             let qBase = qh * headDim
 
             var scores = [Float](repeating: 0, count: seqLen - kvStart)
-            q.withUnsafeBufferPointer { pq in
+            q.withUnsafeBufferPointer { pqBuffer in
+                guard let pq = pqBuffer.baseAddress else { return }
                 for p in kvStart..<seqLen {
                     let kBase = (p * numKVHeads + kvHead) * headDim
                     var dot: Float = 0
-                    k.withUnsafeBufferPointer { pk in
+                    k.withUnsafeBufferPointer { pkBuffer in
+                        guard let pk = pkBuffer.baseAddress else { return }
                         vDSP_dotpr(
-                            pq.baseAddress! + qBase, 1,
-                            pk.baseAddress! + kBase, 1,
+                            pq + qBase, 1,
+                            pk + kBase, 1,
                             &dot, vDSP_Length(headDim)
                         )
                     }
@@ -70,33 +72,37 @@ public enum AttentionRef {
             var mx = scores[0]
             for s in scores { if s > mx { mx = s } }
             var negMax = -mx
-            scores.withUnsafeMutableBufferPointer { ps in
-                vDSP_vsadd(ps.baseAddress!, 1, &negMax,
-                           ps.baseAddress!, 1, vDSP_Length(ps.count))
+            scores.withUnsafeMutableBufferPointer { psBuffer in
+                guard let ps = psBuffer.baseAddress else { return }
+                vDSP_vsadd(ps, 1, &negMax, ps, 1, vDSP_Length(psBuffer.count))
             }
             scores = vForce.exp(scores)
             var sum: Float = 0
-            scores.withUnsafeBufferPointer { ps in
-                vDSP_sve(ps.baseAddress!, 1, &sum, vDSP_Length(ps.count))
+            scores.withUnsafeBufferPointer { psBuffer in
+                guard let ps = psBuffer.baseAddress else { return }
+                vDSP_sve(ps, 1, &sum, vDSP_Length(psBuffer.count))
             }
             var invSum = 1.0 / sum
-            scores.withUnsafeMutableBufferPointer { ps in
-                vDSP_vsmul(ps.baseAddress!, 1, &invSum,
-                           ps.baseAddress!, 1, vDSP_Length(ps.count))
+            scores.withUnsafeMutableBufferPointer { psBuffer in
+                guard let ps = psBuffer.baseAddress else { return }
+                vDSP_vsmul(ps, 1, &invSum, ps, 1, vDSP_Length(psBuffer.count))
             }
 
             // Output[qh, d] = sum_p probs[p] * V[p, kvHead, d]
             // = dot of probs against V's column d (strided by numKVHeads*headDim).
             for d in 0..<headDim {
                 var acc: Float = 0
-                scores.withUnsafeBufferPointer { ps in
-                    v.withUnsafeBufferPointer { pv in
+                scores.withUnsafeBufferPointer { psBuffer in
+                    v.withUnsafeBufferPointer { pvBuffer in
+                        guard let ps = psBuffer.baseAddress, let pv = pvBuffer.baseAddress else {
+                            return
+                        }
                         let vColumnStart = (kvStart * numKVHeads + kvHead) * headDim + d
                         let stride = numKVHeads * headDim
                         vDSP_dotpr(
-                            ps.baseAddress!, 1,
-                            pv.baseAddress! + vColumnStart, vDSP_Stride(stride),
-                            &acc, vDSP_Length(ps.count)
+                            ps, 1,
+                            pv + vColumnStart, vDSP_Stride(stride),
+                            &acc, vDSP_Length(psBuffer.count)
                         )
                     }
                 }

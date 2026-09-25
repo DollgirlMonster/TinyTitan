@@ -26,14 +26,11 @@ public enum DequantInt4GemvRef {
         for row in 0..<m {
             let wRow = Quantization.dequantizeInt4Affine(weightRows[row], n: n)
             var dot: Float = 0
-            wRow.withUnsafeBufferPointer { pw in
-                x.withUnsafeBufferPointer { px in
-                    vDSP_dotpr(
-                        pw.baseAddress!, 1,
-                        px.baseAddress!, 1,
-                        &dot,
-                        vDSP_Length(n)
-                    )
+            wRow.withUnsafeBufferPointer { pwBuffer in
+                x.withUnsafeBufferPointer { pxBuffer in
+                    guard let pw = pwBuffer.baseAddress,
+                          let px = pxBuffer.baseAddress else { return }
+                    vDSP_dotpr(pw, 1, px, 1, &dot, vDSP_Length(n))
                 }
             }
             y[row] = dot
