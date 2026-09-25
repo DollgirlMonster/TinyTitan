@@ -9,10 +9,18 @@ import PackageDescription
 /// added later cannot quietly opt out. The ones deliberately *not* adopted
 /// (and why, with their measured diagnostic counts) are recorded in
 /// `docs/swift-language-standard.md`.
+///
+/// `-warnings-as-errors` is part of the standard, not a preference: a warning
+/// that only appears in a build log is a check nobody runs, and the release
+/// script's log scan did not cover `swift test` at all. Every target carries
+/// this array (23 of 23 at the time of writing), so the flag cannot be dodged
+/// by a new target either. The tree builds and tests clean with it
+/// (`swift build --build-tests`, `swift test --no-parallel`).
 let tinytitanLanguageStandard: [SwiftSetting] = [
     .enableUpcomingFeature("InferIsolatedConformances"),
     .enableUpcomingFeature("ImmutableWeakCaptures"),
     .enableUpcomingFeature("MemberImportVisibility"),
+    .unsafeFlags(["-warnings-as-errors"]),
 ]
 
 let package = Package(
