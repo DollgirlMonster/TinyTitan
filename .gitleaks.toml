@@ -1,0 +1,28 @@
+# gitleaks configuration.
+#
+# The bundled ruleset is kept (`useDefault = true`), because the scan's value is
+# the community rule set; this file only records the identifiers that rule fires
+# on and that are provably not credentials, by exact value. Nothing here disables
+# a rule and nothing excludes a path: the scanner still reads every commit and
+# every file, so a real credential in any of these files is still caught.
+#
+# The three entries were found by the full-history scan on 2026-09-25 (1,035
+# commits, ~14.3 MB) and each was read before being recorded:
+#   * `gotchas/ferry`             — a memory-scope key in a test's stub engine
+#   * `characters/halvorsen/eyes` — a memory key in a test fixture (historical path)
+#   * `ornith-1.5-35b-a3b`        — a model identifier in a benchmark script
+# All three are matched by `generic-api-key` only because they look like long
+# opaque tokens. The values are literal, not shape-based, so no future secret
+# that happens to be shaped like a path or a model id is hidden.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Benign identifiers matched by generic-api-key (see the file header)."
+regexTarget = "secret"
+regexes = [
+  '''^gotchas/ferry$''',
+  '''^characters/halvorsen/eyes$''',
+  '''^ornith-1\.5-35b-a3b$''',
+]
