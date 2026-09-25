@@ -556,7 +556,19 @@ The runtime's only weight format today is affine: `dequant_affine.metal` binds
 scale **and a `bfloat` bias** per group, shared by int4 and int8. There is no
 block-scaled FP8 decode and no FP4 E2M1 decode in the tree. Preserving the
 quants therefore buys fidelity at the cost of new kernels, and this is the
-accepted trade:
+accepted trade. There is also a trap that will catch a careless converter: it is
+tempting to "reuse" the affine path for the tensors whose shapes happen to fit.
+They do not fit — `w1`/`w3` are `[2304, 2560]` with a `[2304, 160]` E8M0 scale
+where 160 = 5120/32, and `w2` is `[5120, 1152]` with `[5120, 72]` where
+72 = 2304/32. Those scale shapes are the **per-32-block** count, not a
+group-of-64 count, and **2304 is not a multiple of 64** — the group size every
+affine path in this tree assumes. A converter that reshapes these into affine
+groups because the arithmetic happens to divide will produce a file that loads,
+passes shape checks and is wrong (`docs/gturbo-format.md`'s failure mode). The
+`--plan` mode must therefore report every scale shape it sees and refuse on any
+tensor it cannot classify, rather than sizing bytes and dividing.
+
+The work, in order:
 
 1. **A block-FP8 GEMV** — decode E4M3 with a per-32×32 E8M0 exponent into fp16
    or bf16, accumulate in fp32. E8M0 is a power of two, so scale application is
@@ -753,6 +765,16 @@ fidelity upgrade at the end, they are on the critical path from Phase 1.
 - **Phase 0 — unblock the front door.** Derive `chat_template.jinja` from
   `encoding/` and prove it against the reference's own test cases. Nothing else
   can be installed without it. Small, exacting, and independent of the model.
+  The two things it must not get wrong, both from
+  [`deepseek-v41-flash-reference.md`](deepseek-v41-flash-reference.md) §9.2:
+  the **V4.1 tool-call dialect** — `<｜DSML｜ calls>` with a **leading space**,
+  where V4 used `<｜DSML｜tool_calls>` without one, with
+  `<｜DSML｜ parameter … string="true|false">` distinguishing a raw string from a
+  JSON value — and the **two thinking modes**, since chat mode emits `</think>`
+  immediately after `<｜Assistant｜>` while thinking mode wraps the reasoning and
+  injects the one-time `<｜System｜>Reasoning Effort: {budget} …` line. There is
+  no upstream template to diff against, so the reference's `encoding/` tests are
+  the only oracle.
 - **Phase 1 — a bit-exact container, no forward.** A new `prepare_dsv41.py`
   with a `--plan` mode that fetches only `config.json` and the index, classifies
   every tensor, and refuses on anything it cannot map. Then the conversion
@@ -871,8 +893,9 @@ The preserve decision (§6) is taken; these are the consequences.
       the expert set is largely resident, §6.5 — or a different host)
 - [ ] Gating, pinned sha, geometry, rope block, tie-embeddings and EOS ids read
       from the source — **done, §1**
-- [ ] `--plan` classifies every tensor, and every group-size hazard is reported
-      rather than reshaped away (§6.2's alignment note)
+- [ ] `--plan` classifies every tensor, and every scale shape is reported and
+      read as a per-32 block count rather than reshaped into affine groups
+      (§6.3)
 - [ ] **Gate 1: byte-exact container** — every stored quantized value and E8M0
       exponent matches the source safetensors (§8)
 - [ ] **Gate 2: block-FP8 and packed-FP4 E2M1 GEMV kernels** plus the FP8

@@ -24,10 +24,19 @@ fetched with ranged requests. Each item below is tagged:
 
 Nothing is guessed. Where two sources disagree, both are recorded (§13).
 
-**Naming caution, read this before quoting any key.** The repository ships
-**two** config files with *different names for the same fields*:
+**Naming: one convention in this project, one mapping table.** The repository
+ships **two** config files that use *different names for the same fields* — root
+`config.json` (transformers naming, and the published contract) and
+`inference/config.json` (the reference implementation's own naming).
 
-| Field | Root `config.json` (transformers naming) | `inference/config.json` (reference naming) |
+**This project uses the root `config.json` names everywhere**, in documentation
+and in any code written from it. That is the file the checkpoint actually ships
+and the file a converter reads. The reference names are quoted only where the
+behaviour being described lives in the reference code, and never as an
+alternative name for the same field. The mapping, with which side is
+authoritative:
+
+| Field | **Authoritative** — root `config.json` | Reference-only alias — `inference/config.json` |
 | --- | --- | --- |
 | rope dim | `qk_rope_head_dim` | `rope_head_dim` |
 | window | `sliding_window` | `window_size` |
@@ -41,11 +50,30 @@ Nothing is guessed. Where two sources disagree, both are recorded (§13).
 | top-k experts | `num_experts_per_tok` | `n_activated_experts` |
 | engram pad | `engram_pad_token_id` | `engram_pad_id` |
 | draft top-k | `dspark_num_experts_per_tok` | `dspark_n_activated_experts` |
+| KV sharing, per layer | `kv_source_layer_ids` (list) | `kv_source_layer` (scalar, reference-internal) |
 | quantization | `quantization_config` object | hardcoded constants in `model.py` |
 | topk method | `topk_method: "noaux_tc"` | field absent |
 
-This document uses **root `config.json` names** when describing the published
-model, and says "reference names" when quoting the reference code.
+Rules that follow, so the two files cannot be confused again:
+
+1. A field's authority is the **root `config.json`**. If a value ever disagrees
+   between the two files, the root file wins and the discrepancy is a bug to
+   record, not a choice to make.
+2. `inference/config.json` exists to configure the reference *script*; it is not
+   a second description of the model. Never read a geometry value out of it
+   without checking the root file.
+3. `quantization_config` has **no counterpart** in the reference config; the
+   reference hardcodes the same values as constants in `model.py` (§7).
+4. `topk_method` is absent from the reference entirely; its semantics are
+   implemented in `Gate` and documented in §4.
+5. `kv_source_layer` (singular) is a reference-internal scalar, not a rename of
+   `kv_source_layer_ids`. The same applies to `candidate_source_layer`,
+   `index_source_layers` and `candidate_topk_blocks`.
+
+Upstream is unchanged by any of this: the two files are published artefacts, and
+this section is a reader's convention, not an edit to them. If the two naming
+schemes are ever a problem for the checkpoint itself, that is DeepSeek's call,
+not this project's.
 
 ---
 
@@ -100,13 +128,51 @@ Shard sizes (bytes): one 970 MB, one 1.32 GB, thirty-eight ≈ 7.39 GB, one
 | card claim, backbone | "552B backbone parameters" | card — **CONFIRMED as a claim** |
 | card claim, Engram | "196B parameters" | card — **CONFIRMED as a claim** |
 | card claim, active | "8B active per token during prefill and 16B during decode" | card — **CONFIRMED as a claim** |
-| 552 + 196 | 748 B | **does not equal** the metadata's 763.2 B; **neither source reconciles it** (§13) |
+| 552 + 196 | 748 B | card's two figures; the metadata's 763.2 B is **15.2 B higher** — reduced but not closed, see the subsection above |
 
 **INFERRED:** the `I8` bucket is the routed experts stored as packed FP4,
 because `557,171,343,360 = 384·3·5120·2304·40 + 128·3·5120·2304·3` exactly — the
 routed-expert value count for 40 backbone layers × 384 experts plus 3 MTP layers
-× 128 experts. The `F8_E4M3` bucket is consistent with the Engram tables being
-≈ 196.6 B of it.
+× 128 experts.
+
+### The 15.2 B gap, reduced as far as the published data allows
+
+The card claims 552 B backbone + 196 B Engram. The metadata reports 763.2 B.
+`552 + 196 = 748`, so **15.2 B is unaccounted for**. What can be established:
+
+- **The card's 196 B Engram figure is exactly reconstructible** from the
+  published tensor shapes — it matches Engram *values* to **0.6%**:
+
+  | Engram component | Count |
+  | --- | ---: |
+  | `2 × 384M rows × 256` values | 196.6 B |
+  | `2 × 384M rows × 8` E8M0 scales | 6.1 B |
+  | `2 × ([25600, 6144] + [800, 192])` | 0.3 B |
+  | **values + scales** | **203.0 B** |
+
+  So the "196 B" counts **values only**, excluding the per-block scales, and the
+  reconstruction confirms it to within rounding. That also means a reader adding
+  Engram to a backbone figure must not add the scales twice.
+- **The vision tower is not the gap.** `vision.*` + `aligner.*` is **0.485 B**
+  elements (measured from the shard-1 safetensors header: 411,842,560 +
+  73,410,560), which is far too small.
+- **The metadata's per-dtype buckets do not sum to the card's components**, so
+  the two are not two views of one count: the `F8_E4M3` bucket alone is 204 B,
+  while Engram values are 196.6 B — leaving only 7.4 B for every attention,
+  shared-expert and MTP projection. Those projections measure ≈ 8.3 B elements
+  from their own shapes (13 per layer × 40 layers ≈ 6.09 B, plus MTP and shared
+  experts), so the buckets do not reconcile with the tensor inventory either.
+
+**Conclusion, and it is deliberately limited:** the card's Engram figure is
+verifiable and correct on its own terms; the backbone figure is not
+reconstructible from published shapes by the same counting method; and the
+metadata's dtype buckets disagree with both. The discrepancy is **in the
+published figures**, not in this document's measurements — the file sizes
+(510.3 GB total, 288.8 GB experts, 202.8 GB Engram) reconcile exactly with the
+shard layout and are the authoritative quantities. Reading 763.2 B as the model's
+parameter count and 510.3 GB as its size are both safe; building an arithmetic
+argument on 552 vs 748 vs 763.2 is not. The tech report is the only source that
+could settle it and it is unreadable (§13).
 
 ---
 
@@ -743,11 +809,14 @@ report and numbers"; #43 deployment on 4× A100 80GB; #28 "Running on 4x RTX PRO
 | Engram bytes per token | ≈ 12.7 KB |
 | KV cache | ≈ 890 bytes/token |
 | Context | 1,048,576 tokens |
+| Vision tower + aligner elements | 485,253,120 (0.485 B) |
 | Weighted average precision | ≈ 5.9 bits/parameter (510.3 GB ÷ 763.2 B) |
 
 The last row is **INFERRED** arithmetic, not a stated figure: it is what the
-published file averages, given 204.0 B FP8 values and 557.2 B FP4-packed values
-plus scales and bf16/f32 tensors.
+published file averages across 204.0 B FP8 values, 557.2 B FP4-packed values,
+and the bf16/f32 tensors and scales. It is a size-to-parameter ratio, and it is
+the reason an affine 8-bit re-encoding of this checkpoint comes out *larger*
+than the checkpoint (see the port document's §2).
 
 ---
 
@@ -757,8 +826,11 @@ Recorded so they are not silently filled in later.
 
 1. **The parameter count does not reconcile.** The card says 552 B backbone +
    196 B Engram = **748 B**; the safetensors metadata says **763.2 B**; the gap
-   is 15.2 B and **neither source explains it**. The tech report that plausibly
-   would is unreadable (§1).
+   is 15.2 B. Reduced as far as published data allows in §1: the Engram figure
+   is exactly reconstructible (values only, scales excluded), the vision tower
+   is only 0.485 B and is not the gap, and the metadata's own dtype buckets
+   disagree with the tensor inventory. Only the tech report could close it, and
+   it is unreadable.
 2. **The tech report is unreadable.** `DeepSeek_V41_Tech_Report.pdf` is an
    LFS pointer. Anything only in it is unknown.
 3. **`bias_vl`.** The router carries a second bias vector used "when vision is
