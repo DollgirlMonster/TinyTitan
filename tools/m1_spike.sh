@@ -53,6 +53,7 @@ MAX_NEW=64
 COOLDOWN=20
 ARMS="base coalesce qqmm hcfused qsagpu combo split"
 SKIP_BUILD=0
+GPU_CLOCK=0
 SKIP_TESTS=0
 FULL_TESTS=0
 DRY_RUN=0
@@ -75,6 +76,10 @@ Options:
   --skip-tests         skip the model-free tests
   --full-tests         run the whole suite instead of the suites this branch touched
   --dry-run            print the plan and the commands, run nothing
+  --gpu-clock          sample the GPU clock and residency with powermetrics
+                       during every run (asks for your password once) and
+                       report GPU gigacycles: busy time x clock, the kernel
+                       work independent of throttling
 USAGE
 }
 
@@ -96,6 +101,7 @@ while [ $# -gt 0 ]; do
     --skip-tests) SKIP_TESTS=1; shift ;;
     --full-tests) FULL_TESTS=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --gpu-clock) GPU_CLOCK=1; shift ;;
     -h | --help) usage; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
@@ -246,7 +252,31 @@ fi
 
 results="$OUT/results.tsv"
 [ "$DRY_RUN" -eq 1 ] \
-  || printf 'round\tarm\tprefill_tok\tprefill_s\tprefill_tps\tdecode_tps\toccupancy_pct\tdecode_hit_pct\tdecode_gib\tmax_rss_gib\tswap_mb_delta\toutput_sha\texit\n' >"$results"
+  || printf 'round\tarm\tprefill_tok\tprefill_s\tprefill_tps\tdecode_tps\toccupancy_pct\tdecode_hit_pct\tdecode_gib\tmax_rss_gib\tswap_mb_delta\toutput_sha\texit\tgpu_mhz\tgpu_residency_pct\tgpu_busy_s\tgpu_gcycles\n' >"$results"
+
+# --- GPU clock sampling (--gpu-clock) ----------------------------------------
+# The GPU steps between 972 and 1,296 MHz under sustained load, which moved an
+# unchanged arm 12% between two runs. Busy time x clock is the work itself.
+SUDO_KEEPALIVE=""
+stop_keepalive() {
+  if [ -n "$SUDO_KEEPALIVE" ]; then kill "$SUDO_KEEPALIVE" 2>/dev/null || true; fi
+}
+if [ "$GPU_CLOCK" -eq 1 ] && [ "$DRY_RUN" -eq 0 ]; then
+  echo "powermetrics needs root; sudo asks once, then stays warm for the run."
+  sudo -v || die "--gpu-clock needs sudo for powermetrics"
+  (while true; do sudo -n true 2>/dev/null || true; sleep 50; done) &
+  SUDO_KEEPALIVE=$!
+  trap stop_keepalive EXIT
+fi
+
+# Mean clock and residency over the samples where the GPU was mostly busy,
+# i.e. the prefill, not the model load or the cooldown around it.
+gpu_clock_stats() {
+  awk '/GPU HW active frequency/ { f = $5 }
+       /GPU HW active residency/ { r = $5; sub("%", "", r)
+                                   if (r + 0 >= 50) { sf += f; sr += r; n++ } }
+       END { if (n) printf "%.0f %.1f", sf / n, sr / n }' "$1" 2>/dev/null || true
+}
 
 swap_used_mb() {
   (sysctl -n vm.swapusage || true) | sed -n 's/.*used = \([0-9.]*\)M.*/\1/p'
@@ -277,12 +307,21 @@ run_arm() {
   swap_before="$(swap_used_mb)"
   # A failed run is recorded, not fatal; `|| code=$?` keeps both -e and the
   # ERR trap out of it.
+  local gpufile="$OUT/r${round}-${arm}.gpu.txt" pm_pid=""
+  if [ "$GPU_CLOCK" -eq 1 ]; then
+    sudo -n powermetrics --samplers gpu_power -i 2000 -o "$gpufile" >/dev/null 2>&1 &
+    pm_pid=$!
+  fi
   code=0
   /usr/bin/time -l env ${envs[@]+"${envs[@]}"} "$CLI" \
     --model "$MODEL" --prompt "$(cat "$prompt_file")" \
     --max-new "$MAX_NEW" --temperature 0 --seed 1 --max-context 65536 \
     ${extra[@]+"${extra[@]}"} >"$out" 2>"$log" || code=$?
   swap_after="$(swap_used_mb)"
+  if [ -n "$pm_pid" ]; then
+    sudo -n pkill -INT -f "powermetrics --samplers gpu_power -i 2000 -o $gpufile" || true
+    wait "$pm_pid" 2>/dev/null || true
+  fi
 
   # The loader says "trusted install receipt invalid: model directory
   # mismatch"; match the part that names the cause, not the exact wording.
@@ -310,12 +349,25 @@ Either move it back to the path above, or re-issue the receipt in place:
   rss="$(awk '/maximum resident set size/ { printf "%.1f", $1 / 1073741824 }' "$log")"
   sha="$(shasum -a 256 "$out" | cut -c1-12)"
   swap_delta="$(awk -v a="${swap_before:-0}" -v b="${swap_after:-0}" 'BEGIN { printf "%.0f", b - a }')"
+  local busy_ms gpu_mhz="" gpu_res="" busy_s gcycles=""
+  busy_ms="$(sed -n 's/.*busy \([0-9]*\) ms of.*/\1/p' "$log" | tail -1)"
+  busy_s="$(awk -v b="${busy_ms:-0}" 'BEGIN { if (b > 0) printf "%.1f", b / 1000 }')"
+  if [ -n "$pm_pid" ]; then
+    read -r gpu_mhz gpu_res <<<"$(gpu_clock_stats "$gpufile")" || true
+    if [ -n "$gpu_mhz" ] && [ -n "$busy_ms" ]; then
+      gcycles="$(awk -v b="$busy_ms" -v f="$gpu_mhz" 'BEGIN { printf "%.1f", b * f / 1000000 }')"
+    fi
+  fi
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$round" "$arm" "${prefill_tok:--}" "${prefill_s:--}" "${prefill_tps:--}" \
     "${decode_tps:--}" "${occ:--}" "${hit:--}" "${gib:--}" "${rss:--}" \
-    "$swap_delta" "$sha" "$code" >>"$results"
+    "$swap_delta" "$sha" "$code" \
+    "${gpu_mhz:--}" "${gpu_res:--}" "${busy_s:--}" "${gcycles:--}" >>"$results"
   echo "   exit $code  ${footer:-no footer (see $log)}  occupancy ${occ:-?}%  rss ${rss:-?} GiB  swap +${swap_delta} MB"
+  if [ -n "$pm_pid" ]; then
+    echo "   gpu ${gpu_mhz:-?} MHz at ${gpu_res:-?}% residency, busy ${busy_s:-?} s = ${gcycles:-?} Gcycles"
+  fi
   if [ "$code" -ne 0 ]; then
     echo "   arm failed: $(grep -m1 '^error:' "$log" || echo "no error line; see $log")" >&2
     # The first run failing means the model or the binary is the problem, and
@@ -374,6 +426,9 @@ fi
       sh[arm] = sh[arm] (sh[arm] == "" ? "" : " ") $12
       if ($13 != 0) failed[arm]++
       if ($4 + 0 > 0) { sum[arm] += $4; k[arm]++ }
+      mz[arm] = mz[arm] (mz[arm] == "" ? "" : " ") $14
+      gc[arm] = gc[arm] (gc[arm] == "" ? "" : " ") $17
+      if ($17 + 0 > 0) { gsum[arm] += $17; gk[arm]++; anyclock = 1 }
     }
     END {
       printf "%-12s %-18s %-14s %-13s %-9s %-11s %-10s %-9s %s\n", \
@@ -395,6 +450,24 @@ fi
           if (a == "base" || k[a] == 0) continue
           printf "  %-12s prefill %+.1f%% vs base\n", a, 100 * (sum[a] / k[a] - b) / b
         }
+      }
+      if (anyclock) {
+        print ""
+        print "GPU work, independent of the clock (--gpu-clock): busy s x MHz = Gcycles"
+        printf "%-12s %-18s %s\n", "arm", "GPU MHz", "Gcycles"
+        for (i = 1; i <= n; i++) {
+          a = order[i]
+          printf "%-12s %-18s %s\n", a, mz[a], gc[a]
+        }
+        if (gk["base"] > 0) {
+          gb = gsum["base"] / gk["base"]
+          for (i = 1; i <= n; i++) {
+            a = order[i]
+            if (a == "base" || gk[a] == 0) continue
+            printf "  %-12s GPU work %+.1f%% vs base\n", a, 100 * (gsum[a] / gk[a] - gb) / gb
+          }
+        }
+        print "Compare kernels by Gcycles: prefill seconds also move with the clock."
       }
       print ""
       print "How to read it:"
