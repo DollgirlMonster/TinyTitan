@@ -691,12 +691,6 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             context: context,
             weightBits: model.attentionWeightBits)
         self.prefillMPPAffineInt4 = prefillMPP
-        if ProcessInfo.processInfo.environment["TINYTITAN_RUNNER_STATS"] != nil
-            || ProcessInfo.processInfo.environment["TINYTITAN_KERNEL_STATS"] != nil
-        {
-            FileHandle.standardError.write(
-                Data(("TinyTitan " + Self.prefillPathSummary(model: model, mpp: prefillMPP) + "\n").utf8))
-        }
         self.prefillQKVEpilogue = try PrefillQKVEpilogue(
             context: context,
             yarn: yarnParameters)
@@ -704,10 +698,22 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         self.prefillRouter = try PrefillRouter(
             context: context,
             weightBits: model.effectiveRouterWeightBits)
-        self.prefillSharedExpert = try PrefillSharedExpert(
+        let sharedExpert = try PrefillSharedExpert(
             context: context,
             weightBits: model.ffnWeightBits,
-            siluActivation: silu)
+            siluActivation: silu,
+            batchedMPP: Self.prefillWideMPP)
+        self.prefillSharedExpert = sharedExpert
+        if ProcessInfo.processInfo.environment["TINYTITAN_RUNNER_STATS"] != nil
+            || ProcessInfo.processInfo.environment["TINYTITAN_KERNEL_STATS"] != nil
+        {
+            FileHandle.standardError.write(
+                Data(
+                    ("TinyTitan "
+                        + Self.prefillPathSummary(
+                            model: model, mpp: prefillMPP,
+                            sharedBatched: sharedExpert.batchedAvailable) + "\n").utf8))
+        }
         self.prefillGroupedMoE = try PrefillGroupedRoutedMoE(
             context: context,
             siluActivation: silu,
@@ -1119,11 +1125,22 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     static let prefillSplitTiming =
         ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_SPLIT"] == "1"
 
+    /// Spike switch: the batched prefill projections that still run on the
+    /// scalar `prefillQMM` (hyper-connection gates, QSA indexer) go to the MPP
+    /// tensor-op QMM when this GPU has it, and the shared expert runs as three
+    /// GEMMs over the chunk instead of the decode path once per token. The
+    /// GEMMs sum in a different order, so the output can change: off until a
+    /// quality check says otherwise.
+    static let prefillWideMPP =
+        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_MPP_WIDE"] == "1"
+
     /// Which kernel each prefill projection family takes on this GPU, for the
     /// stats log. The MPP tensor-op path is optional: it may not compile on an
     /// older GPU, and every family it does not take falls back to the policy
     /// below it -- for `.q` that is one GEMV per token.
-    static func prefillPathSummary(model: Model, mpp: MPPPrefillInt4QMM) -> String {
+    static func prefillPathSummary(
+        model: Model, mpp: MPPPrefillInt4QMM, sharedBatched: Bool
+    ) -> String {
         let chunk = PrefillRuntimeConfig.maxChunkTokens
         func path(_ family: PrefillProjectionFamily, bits: Int) -> String {
             if bits == 4, mpp.isAvailable { return "mpp" }
@@ -1136,13 +1153,22 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             return prefillCoalescedRows ? "gemv-per-token(coalesced)" : "gemv-per-token"
         }
         let mppState = mpp.isAvailable ? "available" : "unavailable(\(mpp.unavailableSummary))"
-        return "prefill paths: mpp_int4=\(mppState) "
-            + "attn_q=\(path(.q, bits: model.qoProjectionWeightBits))/\(model.qoProjectionWeightBits)b "
-            + "gdn_in=\(path(.q, bits: model.gdnProjectionWeightBits))/\(model.gdnProjectionWeightBits)b "
-            + "kv=\(path(.kv, bits: model.attentionWeightBits))/\(model.attentionWeightBits)b "
-            + "o=\(path(.o, bits: model.qoProjectionWeightBits))/\(model.qoProjectionWeightBits)b "
-            + "coalesce=\(prefillCoalescedRows) q_qmm=\(PrefillProjectionDispatchPolicy.qUsesQMM) "
-            + "split=\(prefillSplitTiming)"
+        let wide = prefillWideMPP && mpp.isAvailable ? "mpp" : "qmm"
+        let shared = sharedBatched ? "batched-mpp" : "per-token"
+        let fields: [String] = [
+            "prefill paths: mpp_int4=\(mppState)",
+            "attn_q=\(path(.q, bits: model.qoProjectionWeightBits))/\(model.qoProjectionWeightBits)b",
+            "gdn_in=\(path(.q, bits: model.gdnProjectionWeightBits))/\(model.gdnProjectionWeightBits)b",
+            "kv=\(path(.kv, bits: model.attentionWeightBits))/\(model.attentionWeightBits)b",
+            "o=\(path(.o, bits: model.qoProjectionWeightBits))/\(model.qoProjectionWeightBits)b",
+            "hc_qsa=\(wide)",
+            "shared=\(shared)/\(model.ffnWeightBits)b",
+            "coalesce=\(prefillCoalescedRows)",
+            "q_qmm=\(PrefillProjectionDispatchPolicy.qUsesQMM)",
+            "mpp_wide=\(prefillWideMPP)",
+            "split=\(prefillSplitTiming)",
+        ]
+        return fields.joined(separator: " ")
     }
 
     /// Residual width for a config, before `self` is fully initialized.

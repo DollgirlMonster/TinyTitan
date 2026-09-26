@@ -168,7 +168,7 @@ extension RealForwardRunner {
                 }
                 return
             }
-            try prefillQMM.encode(
+            try encodePrefillBatchedProjection(
                 commandBuffer: commandBuffer,
                 weights: weights.weights,
                 weightsOffset: weights.weightsOffset,
@@ -177,7 +177,7 @@ extension RealForwardRunner {
                 biases: weights.biases,
                 biasesOffset: weights.biasesOffset,
                 x: x, y: y,
-                t: tokens, n: rows, k: columns)
+                tokens: tokens, rows: rows, columns: columns)
         }
     }
 
@@ -525,7 +525,7 @@ extension RealForwardRunner {
                     m: UInt32(rows), n: UInt32(columns))
             }
         } else {
-            try prefillQMM.encode(
+            try encodePrefillBatchedProjection(
                 commandBuffer: commandBuffer,
                 weights: key.buffer,
                 weightsOffset: Int(key.offset),
@@ -536,9 +536,7 @@ extension RealForwardRunner {
                 x: blockInput,
                 y: destination.buffer,
                 yOffset: destination.offset,
-                t: tokens,
-                n: indexer.headDim,
-                k: Int(key.shape.1))
+                tokens: tokens, rows: indexer.headDim, columns: Int(key.shape.1))
         }
         try indexer.encodePoolPrefill(
             commandBuffer: commandBuffer,
@@ -570,7 +568,7 @@ extension RealForwardRunner {
                     }
                     return
                 }
-                try self.prefillQMM.encode(
+                try self.encodePrefillBatchedProjection(
                     commandBuffer: cb,
                     weights: view.buffer,
                     weightsOffset: Int(view.offset),
@@ -579,7 +577,7 @@ extension RealForwardRunner {
                     biases: view.buffer,
                     biasesOffset: Int(view.biasOffset),
                     x: x, y: y,
-                    t: count, n: rows, k: columns)
+                    tokens: count, rows: rows, columns: columns)
             })
         // The selection is a host computation over the scores, so the chunk's
         // command buffer has to land first. The same barrier the routed MoE
@@ -729,7 +727,7 @@ extension RealForwardRunner {
                 }
                 return
             }
-            try prefillQMM.encode(
+            try encodePrefillBatchedProjection(
                 commandBuffer: cb,
                 weights: proj.weights,
                 weightsOffset: proj.weightsOffset,
@@ -738,7 +736,7 @@ extension RealForwardRunner {
                 biases: proj.biases,
                 biasesOffset: proj.biasesOffset,
                 x: x, y: y,
-                t: count, n: rows, k: columns)
+                tokens: count, rows: rows, columns: columns)
         }
     }
 
@@ -793,6 +791,39 @@ extension RealForwardRunner {
                 y: y, yOffset: yOffset,
                 m: 1, n: n)
         }
+    }
+
+    /// A batched prefill projection that the scalar `prefillQMM` serves by
+    /// default: the hyper-connection gates, the QSA indexer and the PLE block.
+    /// With `prefillWideMPP` it goes to the MPP tensor-op QMM when this GPU has
+    /// one and the shape fits (both kernels are built for the attention width),
+    /// and to `prefillQMM` otherwise.
+    func encodePrefillBatchedProjection(
+        commandBuffer: MTLCommandBuffer,
+        weights: MTLBuffer, weightsOffset: Int,
+        scales: MTLBuffer, scalesOffset: Int,
+        biases: MTLBuffer, biasesOffset: Int,
+        x: MTLBuffer, y: MTLBuffer, yOffset: Int = 0,
+        tokens: Int, rows: Int, columns: Int
+    ) throws {
+        if Self.prefillWideMPP, let mpp = prefillMPPAffineInt4,
+            try mpp.encode(
+                commandBuffer: commandBuffer,
+                weights: weights, weightsOffset: weightsOffset,
+                scales: scales, scalesOffset: scalesOffset,
+                biases: biases, biasesOffset: biasesOffset,
+                x: x, y: y, yOffset: yOffset,
+                m: tokens, n: rows, k: columns) == .affineThreadgroupF16
+        {
+            return
+        }
+        try prefillQMM.encode(
+            commandBuffer: commandBuffer,
+            weights: weights, weightsOffset: weightsOffset,
+            scales: scales, scalesOffset: scalesOffset,
+            biases: biases, biasesOffset: biasesOffset,
+            x: x, y: y, yOffset: yOffset,
+            t: tokens, n: rows, k: columns)
     }
 
     /// `encodeScalarGate` for a run of rows in one encoder (see `GEMVRows`).

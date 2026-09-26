@@ -90,6 +90,9 @@ struct PrefillChunkScratchLayout: Sendable, Equatable {
     var routeIDElements: Int { chunkTokens * topK }
     var routeWeightElements: Int { routeIDElements }
     var sharedExpertScratchElements: Int { sharedIntermediate }
+    /// One row per chunk token, for the batched shared expert
+    /// (`RealForwardRunner.prefillWideMPP`); the per-token path needs one row.
+    var sharedExpertBatchElements: Int { chunkTokens * sharedIntermediate }
     var routedGateUpActElements: Int { 3 * routedPairMicrobatchRows * routedIntermediate }
     var routedDownOutputElements: Int { routedPairMicrobatchRows * hiddenSize }
 
@@ -193,6 +196,11 @@ struct PrefillChunkScratchBuffers {
             buffer.label = label
             return buffer
         }
+        // The batched shared expert needs a row per token; the per-token path
+        // reuses one row, so the default allocation stays one row.
+        let sharedScratchElements =
+            RealForwardRunner.prefillWideMPP
+            ? layout.sharedExpertBatchElements : layout.sharedExpertScratchElements
 
         return PrefillChunkScratchBuffers(
             layout: layout,
@@ -217,13 +225,13 @@ struct PrefillChunkScratchBuffers {
                 layout.routeWeightElements * MemoryLayout<Float16>.stride,
                 label: "prefill.routeWeights"),
             sharedGateScratch: try privateBuffer(
-                layout.sharedExpertScratchElements,
+                sharedScratchElements,
                 label: "prefill.sharedGateScratch"),
             sharedUpScratch: try privateBuffer(
-                layout.sharedExpertScratchElements,
+                sharedScratchElements,
                 label: "prefill.sharedUpScratch"),
             sharedActScratch: try privateBuffer(
-                layout.sharedExpertScratchElements,
+                sharedScratchElements,
                 label: "prefill.sharedActScratch"),
             routedGateUpActScratch: try privateBuffer(
                 layout.routedGateUpActElements,

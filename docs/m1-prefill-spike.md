@@ -108,3 +108,27 @@ Where the GPU time goes (`TINYTITAN_PREFILL_SPLIT=1`, mean of two rounds, s):
 Outside the GPU: ~55-60 s of each ~200 s prefill, of which ~15 s precedes the
 first kernel. `TURBO_FIELDFARE_PHASES` (now on stderr, and on in every spike
 arm) splits the host side per chunk.
+
+## Spike 3: the scalar GEMMs onto MPP, and the attention kernel's shape
+
+Two findings from reading the code behind spike 2's split:
+
+- **The prefill shared expert is the decode path, once per token.**
+  `PrefillSharedExpert.encodeBlock` runs gate, up, activation and down for each
+  of a chunk's 4,096 tokens through a one-row scratch, so every token's four
+  dispatches wait on the previous token's. Coalescing never touched this loop,
+  which is why it did nothing for the 12.9 s. `TINYTITAN_PREFILL_MPP_WIDE=1` runs
+  it as three MPP GEMMs over the chunk plus one elementwise activation, and
+  routes the other projections still on the scalar `prefillQMM`
+  (hyper-connection gates, QSA indexer, PLE) to MPP. It sums in a different
+  order: `PrefillSharedExpertBatchedTests` holds it within 2% of the per-token
+  path, and a speed win still needs `benchmark/quant_perplexity_ab.py`.
+- **The QSA attention kernel repeats its key/value reads 12 times.** It runs one
+  threadgroup per (token, query head), but Qwen3.8's 24 query heads share 2
+  key/value heads and the QSA selection is per token, shared by every head: the
+  12 query heads of a KV head each re-read and re-dequantize the same ~2,048
+  selected K and V rows. One threadgroup per (token, KV head) covering its 12
+  query heads reads each row once, and its scores (12 x 256 by 256 x keys) and
+  output (12 x keys by keys x 256) are matrix-unit shapes. That is the next
+  kernel; the Apple10 tensor-ops attention path cannot help here, because a
+  selection is present for every 4,096-token chunk and forces the tiled kernel.

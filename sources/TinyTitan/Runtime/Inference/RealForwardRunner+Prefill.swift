@@ -624,6 +624,44 @@ extension RealForwardRunner {
             m: UInt32(rows), n: UInt32(columns))
     }
 
+    /// The shared-expert block for a chunk: three GEMMs over every token when
+    /// `prefillWideMPP` and the GPU allow it, else the per-token decode path.
+    func encodePrefillSharedExpertBlock(
+        commandBuffer: MTLCommandBuffer,
+        projections sharedProj: LayerSharedExpertProjections,
+        scratch: PrefillChunkScratchBuffers,
+        tokenCount t: Int, hiddenSize D: Int
+    ) throws {
+        if Self.prefillWideMPP,
+            try prefillSharedExpert.encodeBlockBatched(
+                commandBuffer: commandBuffer,
+                x: scratch.routedX, y: scratch.h1,
+                gate: sharedProj.gate, up: sharedProj.up, down: sharedProj.down,
+                scratchGate: scratch.sharedGateScratch,
+                scratchUp: scratch.sharedUpScratch,
+                scratchAct: scratch.sharedActScratch,
+                queryCount: t, d: D, intermediate: cfg.intermediateSize,
+                xStrideElements: D, yStrideElements: D)
+        {
+            return
+        }
+        try prefillSharedExpert.encodeBlock(
+            commandBuffer: commandBuffer,
+            x: scratch.routedX,
+            y: scratch.h1,
+            gate: sharedProj.gate,
+            up: sharedProj.up,
+            down: sharedProj.down,
+            scratchGate: scratch.sharedGateScratch,
+            scratchUp: scratch.sharedUpScratch,
+            scratchAct: scratch.sharedActScratch,
+            queryCount: t,
+            d: D,
+            intermediate: cfg.intermediateSize,
+            xStrideElements: D,
+            yStrideElements: D)
+    }
+
     /// With `prefillSplitTiming`, end the command buffer here and time what it
     /// holds under `role`; the layer continues in a fresh one. A no-op
     /// otherwise, so the default schedule is untouched.
@@ -1003,21 +1041,9 @@ extension RealForwardRunner {
             throw ModelError.residentBufferWrapFailed
         }
         let sharedProj = sharedExpertProjections[L]
-        try prefillSharedExpert.encodeBlock(
-            commandBuffer: sharedCB,
-            x: scratch.routedX,
-            y: scratch.h1,
-            gate: sharedProj.gate,
-            up: sharedProj.up,
-            down: sharedProj.down,
-            scratchGate: scratch.sharedGateScratch,
-            scratchUp: scratch.sharedUpScratch,
-            scratchAct: scratch.sharedActScratch,
-            queryCount: t,
-            d: D,
-            intermediate: cfg.intermediateSize,
-            xStrideElements: D,
-            yStrideElements: D)
+        try encodePrefillSharedExpertBlock(
+            commandBuffer: sharedCB, projections: sharedProj,
+            scratch: scratch, tokenCount: t, hiddenSize: D)
         sharedCB.commit()
         try waitForCompletion(sharedCB)
         recordKernelGPU(role: "prefill_shared_expert", sharedCB)
@@ -1181,21 +1207,9 @@ extension RealForwardRunner {
             throw ModelError.residentBufferWrapFailed
         }
         let sharedProj = sharedExpertProjections[L]
-        try prefillSharedExpert.encodeBlock(
-            commandBuffer: sharedCB,
-            x: scratch.routedX,
-            y: scratch.h1,
-            gate: sharedProj.gate,
-            up: sharedProj.up,
-            down: sharedProj.down,
-            scratchGate: scratch.sharedGateScratch,
-            scratchUp: scratch.sharedUpScratch,
-            scratchAct: scratch.sharedActScratch,
-            queryCount: t,
-            d: D,
-            intermediate: cfg.intermediateSize,
-            xStrideElements: D,
-            yStrideElements: D)
+        try encodePrefillSharedExpertBlock(
+            commandBuffer: sharedCB, projections: sharedProj,
+            scratch: scratch, tokenCount: t, hiddenSize: D)
         if cfg.sharedExpertGated {
             // out = sigmoid(shared_expert_gate(moeX)) * shared_mlp(moeX),
             // per chunk row.

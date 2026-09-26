@@ -24,6 +24,7 @@ import Testing
         #expect(layout.routeIDElements == 32 * 8)
         #expect(layout.routeWeightElements == 32 * 8)
         #expect(layout.sharedExpertScratchElements == 512)
+        #expect(layout.sharedExpertBatchElements == 32 * 512)
         #expect(layout.routedPairMicrobatchRows == 32)
         #expect(layout.routedGateUpActElements == 3 * 32 * 512)
         #expect(layout.routedDownOutputElements == 32 * 2048)

@@ -16,7 +16,14 @@
 #
 #   base         the install's profile defaults
 #
-# Spike 2 (the default set): per-token dispatch and switches already in the tree
+# Spike 3 (the default set): the scalar prefill GEMMs onto MPP
+#   mppwide      TINYTITAN_PREFILL_MPP_WIDE=1: hyper-connection, QSA-indexer and
+#                PLE projections on the MPP tensor-op QMM, and the shared expert
+#                as three GEMMs over the chunk; may change the output
+#   all          combo + mppwide
+# Run it with --gpu-clock: the clock moves more than most arms do.
+#
+# Spike 2: per-token dispatch and switches already in the tree
 #   coalesce     TINYTITAN_PREFILL_COALESCE=1: one encoder per per-token loop;
 #                must be bit-identical to base (output "same as base")
 #   qqmm         TINYTITAN_PREFILL_Q_QMM=1: batched QMM for q-family projections;
@@ -51,7 +58,7 @@ ROUNDS=2
 PROMPT_CHARS=28000
 MAX_NEW=64
 COOLDOWN=20
-ARMS="base coalesce qqmm hcfused qsagpu combo split"
+ARMS="base combo mppwide all"
 SKIP_BUILD=0
 GPU_CLOCK=0
 SKIP_TESTS=0
@@ -66,7 +73,8 @@ usage() {
 Options:
   --model <dir>        installed .gturbo model (default models/qwen3.8-flash-next_125B_A6B_4Bit)
   --rounds <n>         interleaved rounds per arm (default 2)
-  --arms "<list>"      any of: base coalesce qqmm hcfused qsagpu combo split
+  --arms "<list>"      any of: base combo mppwide all splitwide
+                       coalesce qqmm hcfused qsagpu split
                        s128 s256 nobound s256nobound c2048
   --prompt-chars <n>   prompt size in characters (default 28000, ~7-8K tokens)
   --max-new <n>        generated tokens per run (default 64)
@@ -136,6 +144,9 @@ arm_spec() {
     qsagpu) echo "qsagpu|TINYTITAN_QSA_GPU_SELECT=1|" ;;
     combo) echo "combo|TINYTITAN_PREFILL_COALESCE=1 TINYTITAN_HC_FUSED=1 TINYTITAN_QSA_GPU_SELECT=1|" ;;
     split) echo "split|TINYTITAN_PREFILL_SPLIT=1|" ;;
+    mppwide) echo "mppwide|TINYTITAN_PREFILL_MPP_WIDE=1|" ;;
+    all) echo "all|TINYTITAN_PREFILL_COALESCE=1 TINYTITAN_HC_FUSED=1 TINYTITAN_QSA_GPU_SELECT=1 TINYTITAN_PREFILL_MPP_WIDE=1|" ;;
+    splitwide) echo "splitwide|TINYTITAN_PREFILL_SPLIT=1 TINYTITAN_PREFILL_MPP_WIDE=1|" ;;
     *) return 1 ;;
   esac
 }
@@ -485,6 +496,10 @@ fi
       print "  qqmm/hcfused/qsagpu may differ; a faster arm that differs needs a quality check"
       print "     (benchmark/quant_perplexity_ab.py) before it becomes a default."
       print "  split is a diagnostic: read its prefill_split_* roles in r*-split.log, not its time."
+      print "Spike 3:"
+      print "  mppwide/all may differ from base (different summation order); faster AND"
+      print "     close is the bar, then benchmark/quant_perplexity_ab.py before a default."
+      print "  Read GPU work (Gcycles) first; prefill seconds move with the clock."
     }' "$results"
 } | tee "$OUT/summary.txt"
 
