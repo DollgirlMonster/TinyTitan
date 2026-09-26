@@ -2,10 +2,8 @@
 
 Status: **research only; nothing is wired.** Written 2026-09-26 from the
 `transformers` source (`src/transformers/models/gemma4/`, `main`) and this
-repository's own history. The checkpoint's `config.json` was *not* read --
-huggingface.co is outside this session's network policy -- so every 31B number
-below marked *unverified* has to be read from the source before anything is
-converted (`docs/adding-a-model.md` §0).
+repository's own history. The 31B's `config.json` and `generation_config.json`
+were read afterwards; see "The 31B's config".
 
 ## Why this is not a greenfield port
 
@@ -69,7 +67,42 @@ two-branch FFN (dense MLP + routed experts) with the dense MLP alone.
    `docs/adding-a-model.md`, and the scope line in `AGENTS.md`, which says
    Qwen-family only.
 
-## Features the config decides (read them from the 31B's `config.json`)
+## The 31B's config, read from the source
+
+`google/gemma-4-31B-it` at `842da3794eaa0b77d5f08bae87a17459d91ff475`, not gated,
+two safetensors shards, `chat_template.jinja` present.
+
+| field | value |
+| --- | --- |
+| hidden / layers / MLP width | 5376 / 60 / 21504, `gelu_pytorch_tanh` |
+| layer pattern | 5 sliding : 1 full, 10 full layers (5, 11, ... 59) |
+| heads | 32 query; sliding 16 KV x 256, full 4 KV x 512 |
+| `attention_k_eq_v` | true (full layers have no `v_proj`) |
+| sliding window | 1024 |
+| rope | sliding default theta 10k; full proportional, theta 1M, partial 0.25 |
+| PLE / KV sharing / double-wide MLP | off (`0` / `0` / false) |
+| vocab, tied, softcap | 262,144, tied, 30.0 |
+| sampling (`generation_config.json`) | temperature 1.0, top-k 64, top-p 0.95; EOS ids 1, 106, 50 |
+
+Every feature it turns on is one the removed 26B support already handled; the
+two that would have been new work (PLE, KV sharing) are off. Parameters: about
+29.3B in the layers (~480M per sliding layer, ~534M per full one) plus 1.41B
+of tied embedding.
+
+## Why the 31B does not stream
+
+The engine's SSD streaming works because a routed-expert model touches a
+small, repeating fraction of its weights per token. A dense model touches all
+of them: ~17.5 GB per decoded token at 4-bit. From the external drive
+(~2.3 GB/s measured in the M1 spikes) that is ~7.6 s per token; from an
+internal M1 Max SSD, ~3 s. Keeping only part resident does not change the
+shape -- every streamed byte is paid on every token. Prefill is the exception
+(a 16K chunk reads each weight once for 16K tokens), but decode sets the
+experience. The low-RAM Gemma for this engine is the 26B-A4B, the MoE the
+tree served before: 128 experts top-8, ~3B dense parameters resident and the
+~23B of experts streamed and cached.
+
+## Features the config decides (as defined by `transformers`)
 
 `transformers` defines these for every Gemma 4; which ones the 31B turns on is
 *unverified*:
