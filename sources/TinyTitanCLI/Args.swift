@@ -170,8 +170,8 @@ extension Args {
           --prefill-chunk <n|auto>  Prefill chunk tokens. Larger chunks reduce
                                     routed-expert file sweeps but use more GPU
                                     scratch. Allowed: 32, 64, 128, 256, 512,
-                                    1024, 2048, 4096; auto covers the prompt with
-                                    the smallest allowed chunk.
+                                    1024, 2048, 4096, 8192, 16384; auto covers
+                                    the prompt with the smallest allowed chunk.
           --kv-bits <4|8|16>        KV-cache storage precision (default 8).
           --concise                 Inject the per-quantization concise-mode
                                     system prompt (answers without preamble,

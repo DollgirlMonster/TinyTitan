@@ -203,8 +203,11 @@ public func run(
         case .auto:
             prefillChunkTokens =
                 RuntimeConfiguration.allowedPrefillChunkTokens
-                .first(where: { $0 >= promptIds.count })
-                ?? PrefillRuntimeConfig.maxChunkTokens
+                .first(where: {
+                    $0 >= promptIds.count
+                        && RuntimeConfiguration.prefillChunkFits(chunk: $0, maxContext: args.maxContext)
+                })
+                ?? RuntimeConfiguration.largestPrefillChunk(forContext: args.maxContext)
         case nil:
             // The (model, width) row first, so the CLI loads what the server
             // loads; the family switch below is the fallback for rows that
