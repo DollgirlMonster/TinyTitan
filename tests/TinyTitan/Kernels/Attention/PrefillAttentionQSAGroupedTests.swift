@@ -9,8 +9,8 @@ import Testing
 /// head. It keeps the per-head kernel's arithmetic -- the same dot helper, the
 /// same running max, the same weights and in-order sums -- so the claim tested
 /// here is byte equality with `attention_prefill_causal_qsa_tiled`, on Qwen3.8's
-/// shape (24 query heads over 2 KV heads, head dim 256, int8 KV) with a sparse
-/// per-token selection long enough to span several tiles.
+/// shape (24 query heads over 2 KV heads, head dim 256; int8 KV, then int4 and
+/// fp16) with a sparse per-token selection long enough to span several tiles.
 @Suite struct PrefillAttentionQSAGroupedTests {
     private struct LCG {
         var state: UInt64
@@ -30,30 +30,41 @@ import Testing
         return made
     }
 
-    /// One int8 KV cache in the runtime's row layout: the values of every KV
-    /// head, then a half scale and a half bias per affine group.
-    private static func int8Cache(
-        _ ctx: MetalContext, rows: Int, elementsPerRow: Int, groupSize: Int, rng: inout LCG
-    ) throws -> (buffer: MTLBuffer, strideBytes: Int) {
+    /// One KV cache in the runtime's row layout. Quantized (8 or 4 bits): the
+    /// values of every KV head, packed two to a byte at 4 bits, then a half
+    /// scale and a half bias per affine group. Unquantized (16): plain halves.
+    private static func kvCache(
+        _ ctx: MetalContext, bits: Int, rows: Int, elementsPerRow: Int, groupSize: Int,
+        rng: inout LCG
+    ) throws -> (buffer: MTLBuffer, strideBytes: Int, valueBytes: Int) {
+        if bits == 16 {
+            let values = (0..<(rows * elementsPerRow)).map { _ in Float16(rng.unit() * 0.8) }
+            let stride = elementsPerRow * MemoryLayout<Float16>.stride
+            return (try buffer(ctx, values), stride, stride)
+        }
+        let valueBytes = elementsPerRow * bits / 8
         let groups = (elementsPerRow + groupSize - 1) / groupSize
-        let stride = elementsPerRow + 2 * groups * MemoryLayout<Float16>.stride
+        let stride = valueBytes + 2 * groups * MemoryLayout<Float16>.stride
+        // Scale x the mid code is about 0.6 at either width, so the bias
+        // centres the values near zero.
+        let (scaleFloor, scaleSpread): (Float, Float) = bits == 8 ? (0.004, 0.006) : (0.06, 0.04)
         var bytes = [UInt8](repeating: 0, count: rows * stride)
         for row in 0..<rows {
             let base = row * stride
-            for e in 0..<elementsPerRow { bytes[base + e] = UInt8(rng.next() & 0xFF) }
+            for e in 0..<valueBytes { bytes[base + e] = UInt8(rng.next() & 0xFF) }
             for g in 0..<groups {
                 // Little-endian fp16, as the kernel reads them.
-                let scale = Float16(0.004 + abs(rng.unit()) * 0.006).bitPattern
+                let scale = Float16(scaleFloor + abs(rng.unit()) * scaleSpread).bitPattern
                 let bias = Float16(-0.6 + rng.unit() * 0.05).bitPattern
-                let scaleAt = base + elementsPerRow + g * 2
-                let biasAt = base + elementsPerRow + groups * 2 + g * 2
+                let scaleAt = base + valueBytes + g * 2
+                let biasAt = base + valueBytes + groups * 2 + g * 2
                 bytes[scaleAt] = UInt8(scale & 0xFF)
                 bytes[scaleAt + 1] = UInt8(scale >> 8)
                 bytes[biasAt] = UInt8(bias & 0xFF)
                 bytes[biasAt + 1] = UInt8(bias >> 8)
             }
         }
-        return (try buffer(ctx, bytes), stride)
+        return (try buffer(ctx, bytes), stride, valueBytes)
     }
 
     private struct Result {
@@ -61,7 +72,9 @@ import Testing
         let values: [Float16]
     }
 
-    private static func run(compacted: Bool) throws -> (perHead: Result, grouped: Result) {
+    private static func run(
+        compacted: Bool, kvBits: Int = 8
+    ) throws -> (perHead: Result, grouped: Result) {
         let ctx = try MetalContext()
         let attention = try PrefillAttention(context: ctx)
         let (qHeads, kvHeads, headDim) = (24, 2, 256)
@@ -70,10 +83,12 @@ import Testing
         let groupSize = KVCacheManager.quantizationGroupSize
         var rng = LCG(state: 38)
 
-        let kCache = try int8Cache(
-            ctx, rows: valid, elementsPerRow: kvHeads * headDim, groupSize: groupSize, rng: &rng)
-        let vCache = try int8Cache(
-            ctx, rows: valid, elementsPerRow: kvHeads * headDim, groupSize: groupSize, rng: &rng)
+        let kCache = try kvCache(
+            ctx, bits: kvBits, rows: valid, elementsPerRow: kvHeads * headDim,
+            groupSize: groupSize, rng: &rng)
+        let vCache = try kvCache(
+            ctx, bits: kvBits, rows: valid, elementsPerRow: kvHeads * headDim,
+            groupSize: groupSize, rng: &rng)
         let q = try buffer(ctx, (0..<(queries * qHeads * headDim)).map { _ in Float16(rng.unit() * 0.5) })
 
         // A sparse selection per query -- about a third of its visible keys,
@@ -108,9 +123,9 @@ import Testing
             qTokenStrideElements: UInt32(qHeads * headDim),
             oTokenStrideElements: UInt32(qHeads * headDim),
             scale: 0.0625,
-            kvBits: 8,
+            kvBits: UInt32(kvBits),
             kvTokenStrideBytes: UInt32(kCache.strideBytes),
-            kvValueBytes: UInt32(kvHeads * headDim),
+            kvValueBytes: UInt32(kCache.valueBytes),
             kvGroupSize: UInt32(groupSize))
 
         let outBytes = queries * qHeads * headDim * MemoryLayout<Float16>.stride
@@ -158,5 +173,12 @@ import Testing
 
     @Test func maskSelectionMatchesThePerHeadKernelExactly() throws {
         Self.check(try Self.run(compacted: false))
+    }
+
+    /// The grouped kernel is the default for every KV width, and the int4 and
+    /// fp16 caches take their own branches of the shared dot and load helpers.
+    @Test(arguments: [4, 16])
+    func otherKVWidthsMatchThePerHeadKernelExactly(_ kvBits: Int) throws {
+        Self.check(try Self.run(compacted: true, kvBits: kvBits))
     }
 }

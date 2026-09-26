@@ -76,11 +76,14 @@ final class PrefillAttention {
     /// selected K/V row is read once rather than once per query head.
     private let psoCausalQSAGQA: MTLComputePipelineState?
 
-    /// Spike switch for the grouped QSA kernel. Its per-head arithmetic is the
-    /// per-head kernel's, so the output is meant to be identical; off until a
-    /// run on real hardware shows that and the speed.
+    /// The grouped QSA kernel, on by default. It keeps the per-head kernel's
+    /// arithmetic, so the output is byte-identical
+    /// (`PrefillAttentionQSAGroupedTests`, and Qwen3.8 4-bit end to end on an
+    /// M1 Max, three rounds), and it halved `attn_core` there (54.2 -> 28.7 s
+    /// per 7.9K-token prefill). `TINYTITAN_PREFILL_QSA_GQA=0` restores the
+    /// per-head kernel for an A/B on one build.
     static let qsaGroupedQueryHeads =
-        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_QSA_GQA"] == "1"
+        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_QSA_GQA"] != "0"
     static let qsaGQAMaxGroup = 16
     static let qsaGQAMaxHeadDim = 256
     /// One byte, bound whenever no selection is in play; `useKeep` is what
