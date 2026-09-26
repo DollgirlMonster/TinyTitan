@@ -1355,6 +1355,243 @@ kernel void attention_prefill_causal_qsa_gqa(
     }
 }
 
+// ---- QSA grouped attention on the simdgroup matrix units ------------------
+//
+// `attention_prefill_causal_qsa_gqa` does its G x keys x HD products one FMA at
+// a time: ~0.2 TFLOPS on an M1 Max, the largest role of a Qwen3.8 prefill. Per
+// (token, KV head) the work is a small attention: Q [G x HD] against the
+// selected keys. Here Q is padded to 16 rows and held in registers, split over
+// four simdgroups by quarter of the head dimension; per tile of 16 selected
+// keys the keys are dequantized into threadgroup memory, the scores come off the
+// matrix units as four partial products summed in a fixed order, the online
+// softmax runs per head exactly as in the grouped kernel, the values replace the
+// keys in the same buffer, and P . V accumulates on the matrix units, each
+// simdgroup owning a quarter of the output columns. A head whose running max
+// rises has its output rows rescaled by a diagonal matrix product, so nothing
+// depends on how a simdgroup matrix spreads over its lanes. HD must be 256.
+constant constexpr uint kPrefillQSAMmaKeys = 16u;
+constant constexpr uint kPrefillQSAMmaHD = 256u;
+constant constexpr uint kPrefillQSAMmaRows = 16u;
+constant constexpr uint kPrefillQSAMmaThreads = 128u;
+
+[[kernel, max_total_threads_per_threadgroup(128)]]
+kernel void attention_prefill_causal_qsa_gqa_mma(
+    device const half* Q [[buffer(0)]],
+    device const uchar* K [[buffer(1)]],
+    device const uchar* V [[buffer(2)]],
+    device half* O [[buffer(3)]],
+    constant PrefillAttentionParams& p [[buffer(4)]],
+    device const uchar* keep [[buffer(5)]],
+    constant uint& useKeep [[buffer(6)]],
+    constant uint& keepStride [[buffer(7)]],
+    device const uint* keepIdx [[buffer(8)]],
+    device const uint* keepCount [[buffer(9)]],
+    constant uint& keepIdxStride [[buffer(10)]],
+    uint3 tg [[threadgroup_position_in_grid]],
+    uint lid [[thread_index_in_threadgroup]],
+    uint sg [[simdgroup_index_in_threadgroup]]
+) {
+    const uint t = tg.x;
+    const uint kvh = tg.y;
+    if (t >= p.queryCount || kvh >= p.numKVHeads) return;
+
+    // Q staging at the start, the K then V tile each step, O staging at the end.
+    threadgroup float kv[kPrefillQSAMmaKeys * kPrefillQSAMmaHD];
+    threadgroup float spart[4u * kPrefillQSAMmaRows * kPrefillQSAMmaKeys];
+    threadgroup float pw[kPrefillQSAMmaRows * kPrefillQSAMmaKeys];
+    threadgroup float diag[2u * 64u];
+    threadgroup uint  s_key[kPrefillQSAMmaKeys];
+    threadgroup uint  s_valid[kPrefillQSAMmaKeys];
+    threadgroup float s_row_max[kPrefillQSAMmaRows];
+    threadgroup float s_row_sum[kPrefillQSAMmaRows];
+    threadgroup uint  s_rescale;
+
+    const uint HD = kPrefillQSAMmaHD;
+    const uint G = p.numQHeads / p.numKVHeads;
+    const uint quarter = sg * (HD / 4u);
+    const uint abs_q = p.startPosition + t;
+    uint first = 0u;
+    if (p.slidingWindow != 0u && abs_q + 1u > p.slidingWindow) {
+        first = abs_q + 1u - p.slidingWindow;
+    }
+    const uint last_exclusive = min(p.kvValidCount, abs_q + 1u);
+    const bool compacted = (useKeep == 2u);
+    const uint iterations = compacted ? keepCount[t] : (last_exclusive - first);
+
+    // Q rows (G real, the rest zero) through threadgroup memory into registers.
+    for (uint i = lid; i < kPrefillQSAMmaRows * HD; i += kPrefillQSAMmaThreads) {
+        const uint r = i / HD;
+        const uint d = i % HD;
+        kv[i] = r < G ? float(Q[t * p.qTokenStrideElements + (kvh * G + r) * HD + d]) : 0.0f;
+    }
+    for (uint i = lid; i < 2u * 64u; i += kPrefillQSAMmaThreads) { diag[i] = 0.0f; }
+    if (lid < kPrefillQSAMmaRows) {
+        s_row_max[lid] = -INFINITY;
+        s_row_sum[lid] = 0.0f;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    simdgroup_float8x8 qf[2][8];
+    for (uint rb = 0u; rb < 2u; ++rb) {
+        for (uint kb = 0u; kb < 8u; ++kb) {
+            simdgroup_load(qf[rb][kb], kv + (rb * 8u) * HD + quarter + kb * 8u, HD);
+        }
+    }
+    simdgroup_float8x8 of[2][8];
+    for (uint rb = 0u; rb < 2u; ++rb) {
+        for (uint cb = 0u; cb < 8u; ++cb) {
+            of[rb][cb] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+        }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint base = 0u; base < iterations; base += kPrefillQSAMmaKeys) {
+        const uint n = min(kPrefillQSAMmaKeys, iterations - base);
+        if (lid < kPrefillQSAMmaKeys) {
+            const uint i = lid;
+            uint key = 0u;
+            bool valid = false;
+            if (i < n) {
+                const uint step = base + i;
+                if (compacted) {
+                    key = keepIdx[t * keepIdxStride + step];
+                    valid = (key >= first && key < last_exclusive);
+                } else {
+                    key = first + step;
+                    valid = (useKeep == 0u) || (keep[t * keepStride + key] != 0u);
+                }
+            }
+            s_key[i] = key;
+            s_valid[i] = valid ? 1u : 0u;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // Keys, dequantized once per KV head.
+        for (uint i = lid; i < kPrefillQSAMmaKeys * HD; i += kPrefillQSAMmaThreads) {
+            const uint j = i / HD;
+            kv[i] = s_valid[j] != 0u
+                ? prefill_load_kv(K, prefill_kv_slot(s_key[j]), kvh * HD + i % HD, p)
+                : 0.0f;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // This simdgroup's quarter of every (head, key) score.
+        simdgroup_float8x8 sacc[2][2];
+        for (uint rb = 0u; rb < 2u; ++rb) {
+            for (uint cb = 0u; cb < 2u; ++cb) {
+                sacc[rb][cb] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+            }
+        }
+        for (uint kb = 0u; kb < 8u; ++kb) {
+            for (uint cb = 0u; cb < 2u; ++cb) {
+                simdgroup_float8x8 kf;
+                // [d][key]: the key rows, loaded transposed.
+                simdgroup_load(kf, kv + (cb * 8u) * HD + quarter + kb * 8u, HD, ulong2(0, 0), true);
+                simdgroup_multiply_accumulate(sacc[0][cb], qf[0][kb], kf, sacc[0][cb]);
+                simdgroup_multiply_accumulate(sacc[1][cb], qf[1][kb], kf, sacc[1][cb]);
+            }
+        }
+        threadgroup float* mine = spart + sg * (kPrefillQSAMmaRows * kPrefillQSAMmaKeys);
+        for (uint rb = 0u; rb < 2u; ++rb) {
+            for (uint cb = 0u; cb < 2u; ++cb) {
+                simdgroup_store(
+                    sacc[rb][cb], mine + (rb * 8u) * kPrefillQSAMmaKeys + cb * 8u,
+                    kPrefillQSAMmaKeys);
+            }
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // The keys are done: values into the same buffer, and the four partial
+        // scores summed in a fixed order.
+        for (uint i = lid; i < kPrefillQSAMmaKeys * HD; i += kPrefillQSAMmaThreads) {
+            const uint j = i / HD;
+            kv[i] = s_valid[j] != 0u
+                ? prefill_load_kv(V, prefill_kv_slot(s_key[j]), kvh * HD + i % HD, p)
+                : 0.0f;
+        }
+        for (uint i = lid; i < kPrefillQSAMmaRows * kPrefillQSAMmaKeys; i += kPrefillQSAMmaThreads) {
+            const uint r = i / kPrefillQSAMmaKeys;
+            const uint c = i % kPrefillQSAMmaKeys;
+            const uint slab = kPrefillQSAMmaRows * kPrefillQSAMmaKeys;
+            const float dot = ((spart[i] + spart[slab + i]) + spart[2u * slab + i]) + spart[3u * slab + i];
+            const bool valid = r < G && c < n && s_valid[c] != 0u;
+            pw[i] = valid ? dot * p.scale : -INFINITY;
+        }
+        if (lid == 0u) { s_rescale = 0u; }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // The grouped kernel's online softmax, one thread per head row.
+        if (lid < kPrefillQSAMmaRows) {
+            const uint r = lid;
+            threadgroup float* row = pw + r * kPrefillQSAMmaKeys;
+            float old_scale = 1.0f;
+            if (r < G) {
+                float tile_max = -INFINITY;
+                for (uint c = 0u; c < kPrefillQSAMmaKeys; ++c) { tile_max = max(tile_max, row[c]); }
+                const float row_max = s_row_max[r];
+                const float row_sum = s_row_sum[r];
+                const float new_max = max(row_max, tile_max);
+                const bool contributes = isfinite(new_max);
+                old_scale = (row_sum > 0.0f && contributes)
+                    ? fast::exp(row_max - new_max) : (row_sum > 0.0f ? 1.0f : 0.0f);
+                float tile_sum = 0.0f;
+                for (uint c = 0u; c < kPrefillQSAMmaKeys; ++c) {
+                    const float w = (contributes && isfinite(row[c])) ? fast::exp(row[c] - new_max) : 0.0f;
+                    row[c] = w;
+                    tile_sum += w;
+                }
+                s_row_sum[r] = row_sum * old_scale + (contributes ? tile_sum : 0.0f);
+                if (contributes) { s_row_max[r] = new_max; }
+                if (old_scale != 1.0f) { s_rescale = 1u; }
+            } else {
+                for (uint c = 0u; c < kPrefillQSAMmaKeys; ++c) { row[c] = 0.0f; }
+            }
+            diag[(r / 8u) * 64u + (r % 8u) * 9u] = old_scale;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // O = diag(old_scale) . O where any head's max rose, then O += P . V
+        // over this simdgroup's quarter of the columns.
+        if (s_rescale != 0u) {
+            for (uint rb = 0u; rb < 2u; ++rb) {
+                simdgroup_float8x8 dm;
+                simdgroup_load(dm, diag + rb * 64u, 8u);
+                for (uint cb = 0u; cb < 8u; ++cb) {
+                    simdgroup_float8x8 scaled;
+                    simdgroup_multiply(scaled, dm, of[rb][cb]);
+                    of[rb][cb] = scaled;
+                }
+            }
+        }
+        for (uint kb = 0u; kb < 2u; ++kb) {
+            simdgroup_float8x8 p0;
+            simdgroup_float8x8 p1;
+            simdgroup_load(p0, pw + 0u * kPrefillQSAMmaKeys + kb * 8u, kPrefillQSAMmaKeys);
+            simdgroup_load(p1, pw + 8u * kPrefillQSAMmaKeys + kb * 8u, kPrefillQSAMmaKeys);
+            for (uint cb = 0u; cb < 8u; ++cb) {
+                simdgroup_float8x8 vf;
+                simdgroup_load(vf, kv + (kb * 8u) * HD + quarter + cb * 8u, HD);
+                simdgroup_multiply_accumulate(of[0][cb], p0, vf, of[0][cb]);
+                simdgroup_multiply_accumulate(of[1][cb], p1, vf, of[1][cb]);
+            }
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    for (uint rb = 0u; rb < 2u; ++rb) {
+        for (uint cb = 0u; cb < 8u; ++cb) {
+            simdgroup_store(of[rb][cb], kv + (rb * 8u) * HD + quarter + cb * 8u, HD);
+        }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint i = lid; i < G * HD; i += kPrefillQSAMmaThreads) {
+        const uint r = i / HD;
+        const uint d = i % HD;
+        const float row_sum = s_row_sum[r];
+        O[t * p.oTokenStrideElements + (kvh * G + r) * HD + d] =
+            row_sum > 0.0f ? half(kv[r * HD + d] / row_sum) : half(0.0f);
+    }
+}
+
 [[kernel, max_total_threads_per_threadgroup(512)]]
 kernel void attention_prefill_causal_tiled(
     device const half* Q [[buffer(0)]],

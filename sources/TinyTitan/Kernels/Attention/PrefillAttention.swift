@@ -75,6 +75,18 @@ final class PrefillAttention {
     /// per (token, KV head) serving all of that KV head's query heads, so each
     /// selected K/V row is read once rather than once per query head.
     private let psoCausalQSAGQA: MTLComputePipelineState?
+    /// The grouped QSA kernel on the simdgroup matrix units
+    /// (`attention_prefill_causal_qsa_gqa_mma`), head dim 256 only.
+    private let psoCausalQSAGQAMMA: MTLComputePipelineState?
+
+    /// Whether the matrix-unit QSA kernel compiled on this device.
+    var hasQSAMatrixUnitKernel: Bool { psoCausalQSAGQAMMA != nil }
+
+    /// Spike switch: the grouped QSA kernel's products on the matrix units. It
+    /// sums in a different order (and rescales per 16-key tile rather than 128),
+    /// so the output changes by rounding: judged by the surprisal A/B.
+    static let qsaMatrixUnits =
+        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_QSA_MMA"] == "1"
 
     /// The grouped QSA kernel, on by default. It keeps the per-head kernel's
     /// arithmetic, so the output is byte-identical
@@ -105,6 +117,9 @@ final class PrefillAttention {
         self.psoCausalQSAGQA =
             (try? context.pipeline(
                 "attention_prefill_causal_qsa_gqa"))
+        self.psoCausalQSAGQAMMA =
+            (try? context.pipeline(
+                "attention_prefill_causal_qsa_gqa_mma"))
         // Four bytes, not one: the kernels declare `keepIdx`/`keepIndices` as
         // `device const uint*`, and Metal's own validation aborts a binding
         // whose length is shorter than the argument it is bound to ("space for
@@ -150,19 +165,21 @@ final class PrefillAttention {
         keepIndexStride: Int = 0,
         keepCounts: MTLBuffer? = nil,
         path: RuntimePrefillAttentionPath = .causalTiled,
-        groupedQueryHeads: Bool = PrefillAttention.qsaGroupedQueryHeads
+        groupedQueryHeads: Bool = PrefillAttention.qsaGroupedQueryHeads,
+        matrixUnits: Bool = PrefillAttention.qsaMatrixUnits
     ) throws {
         validate(params)
 
-        let (pipeline, useTensorOps, usesGroupedQSA) = try selectPipeline(
+        let (pipeline, useTensorOps, usesGroupedQSA, fixedThreads) = try selectPipeline(
             params: params, kvRingCapacity: kvRingCapacity, keepMask: keepMask,
-            path: path, groupedQueryHeads: groupedQueryHeads)
+            path: path, groupedQueryHeads: groupedQueryHeads, matrixUnits: matrixUnits)
         let headDim = Int(params.headDim)
         let threadWidth = max(1, pipeline.threadExecutionWidth)
         let threadCount =
-            useTensorOps
-            ? 128
-            : roundUp(max(threadWidth, headDim), toMultipleOf: threadWidth)
+            fixedThreads
+            ?? (useTensorOps
+                ? 128
+                : roundUp(max(threadWidth, headDim), toMultipleOf: threadWidth))
         precondition(
             threadCount <= pipeline.maxTotalThreadsPerThreadgroup,
             "tiled prefill attention requires headDim <= maxTotalThreadsPerThreadgroup")
@@ -228,8 +245,11 @@ final class PrefillAttention {
         kvRingCapacity: UInt32,
         keepMask: MTLBuffer?,
         path: RuntimePrefillAttentionPath,
-        groupedQueryHeads: Bool
-    ) throws -> (pipeline: MTLComputePipelineState, tensorOps: Bool, groupedQSA: Bool) {
+        groupedQueryHeads: Bool,
+        matrixUnits: Bool
+    ) throws -> (
+        pipeline: MTLComputePipelineState, tensorOps: Bool, groupedQSA: Bool, threads: Int?
+    ) {
         let requestsTensorOps =
             path == .fullTensorOps2DPreferred
             || path == .fullTensorOps2DValidityV2
@@ -248,6 +268,7 @@ final class PrefillAttention {
         let useTensorOps = tensorOpsPipeline != nil
         let pipeline: MTLComputePipelineState
         var usesGroupedQSA = false
+        var fixedThreads: Int?
         if let tensorOpsPipeline {
             pipeline = tensorOpsPipeline
         } else if tensorOpsShape && path == .fullTensorOps2DValidityV2 {
@@ -267,7 +288,17 @@ final class PrefillAttention {
             let wantQSATiled =
                 keepMask != nil
                 && ProcessInfo.processInfo.environment["TINYTITAN_QSA_TILED"] != "0"
-            if wantQSATiled, kvRingCapacity == 0,
+            if wantQSATiled, kvRingCapacity == 0, matrixUnits, params.headDim == 256,
+                params.numQHeads / params.numKVHeads <= 16,
+                let mma = psoCausalQSAGQAMMA,
+                groupedQSAPipeline(params: params, requested: groupedQueryHeads) != nil
+            {
+                // The kernel pads the heads to 16 matrix rows.
+                // Same grid as the grouped kernel, a fixed four simdgroups.
+                pipeline = mma
+                usesGroupedQSA = true
+                fixedThreads = 128
+            } else if wantQSATiled, kvRingCapacity == 0,
                 let gqa = groupedQSAPipeline(params: params, requested: groupedQueryHeads)
             {
                 pipeline = gqa
@@ -278,7 +309,7 @@ final class PrefillAttention {
                 pipeline = causalTiledPipeline(kvRingCapacity: kvRingCapacity)
             }
         }
-        return (pipeline, useTensorOps, usesGroupedQSA)
+        return (pipeline, useTensorOps, usesGroupedQSA, fixedThreads)
     }
 
     /// The grouped QSA pipeline when it was asked for, compiled, and fits this

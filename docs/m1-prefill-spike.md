@@ -405,3 +405,25 @@ against 43.4 s of routed and shared GPU, so the drive is back on the path.
 
 Against spike 4's base on this prompt (419-451 s, already with the grouped QSA
 kernel): 2.03x. Against the original engine's estimated ~485 s: ~2.3x.
+
+## Spike 10 plan: the last compute on the GPU
+
+Spike 9's 214 s splits roughly: QSA attention ~71 s, GDN ~45 s, routed ~35 s,
+QSA indexer ~17 s, shared expert ~8.5 s, off-GPU ~45 s. Three switches, each
+arm adding one:
+
+- `c8192fast`: `TINYTITAN_QSA_SCORE_MMA=1`, the indexer's block scores
+  (`qsa_block_scores_rows_mma`) on the matrix units; previously ~26 GFLOPS.
+  Float sums in another order only.
+- `c16384fast`: the same at chunk 16,384. The ~16K prompt then sweeps the
+  routed experts twice instead of three times; this tells whether the
+  drive-bound tail chunk is worth the larger scratch.
+- `c8192attn` / `c16384attn`: plus `TINYTITAN_PREFILL_QSA_MMA=1`, QSA attention
+  (`attention_prefill_causal_qsa_gqa_mma`) on the matrix units. Q is padded
+  to 16 rows per KV head; for each 16 selected keys, QK^T and P.V run as 8x8
+  float matrix products over four simdgroups. The online softmax rescales every
+  16 keys rather than every 128, so the output moves by rounding; that needs
+  the surprisal A/B before it could become a default.
+
+The weights stay on the external drive: the drive is only worth moving if it
+remains the bottleneck after these.

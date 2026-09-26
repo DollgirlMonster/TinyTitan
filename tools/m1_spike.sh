@@ -40,6 +40,9 @@
 #                on the matrix units)
 #   c16384fast   c8192fast at chunk 16384: one routed-expert sweep fewer on a
 #                ~16K prompt, now that the tiles no longer hide the drive
+#   c8192attn    c8192fast + TINYTITAN_PREFILL_QSA_MMA=1 (QSA attention on the
+#                matrix units: rounding-level change, needs the surprisal A/B)
+#   c16384attn   c8192attn at chunk 16384
 # Chunking can change the output (the chunk boundaries move), so c8192/c16384
 # may legitimately differ from base; they are judged on speed and on staying
 # coherent, then on benchmark/quant_perplexity_ab.py before any default moves.
@@ -109,6 +112,7 @@ Options:
   --rounds <n>         interleaved rounds per arm (default 2)
   --arms "<list>"      any of: base c8192 c16384 c8192qsa c8192wide c8192sg
                        c8192routed c8192widerouted c8192fast c16384fast
+                       c8192attn c16384attn
                        wide16k pergqa
                        mppwide gqa wide splitwide all combo
                        coalesce qqmm hcfused qsagpu split
@@ -187,6 +191,8 @@ arm_spec() {
     c8192widerouted) echo "c8192widerouted|TINYTITAN_PREFILL_MPP_WIDE=1 TINYTITAN_PREFILL_ROUTED_MPP=1|--prefill-chunk 8192" ;;
     c8192fast) echo "c8192fast|TINYTITAN_PREFILL_MPP_WIDE=1 TINYTITAN_PREFILL_ROUTED_MPP=1 TINYTITAN_QSA_SCORE_MMA=1|--prefill-chunk 8192" ;;
     c16384fast) echo "c16384fast|TINYTITAN_PREFILL_MPP_WIDE=1 TINYTITAN_PREFILL_ROUTED_MPP=1 TINYTITAN_QSA_SCORE_MMA=1|--prefill-chunk 16384" ;;
+    c8192attn) echo "c8192attn|TINYTITAN_PREFILL_MPP_WIDE=1 TINYTITAN_PREFILL_ROUTED_MPP=1 TINYTITAN_QSA_SCORE_MMA=1 TINYTITAN_PREFILL_QSA_MMA=1|--prefill-chunk 8192" ;;
+    c16384attn) echo "c16384attn|TINYTITAN_PREFILL_MPP_WIDE=1 TINYTITAN_PREFILL_ROUTED_MPP=1 TINYTITAN_QSA_SCORE_MMA=1 TINYTITAN_PREFILL_QSA_MMA=1|--prefill-chunk 16384" ;;
     coalesce) echo "coalesce|TINYTITAN_PREFILL_COALESCE=1|" ;;
     qqmm) echo "qqmm|TINYTITAN_PREFILL_Q_QMM=1|" ;;
     hcfused) echo "hcfused|TINYTITAN_HC_FUSED=1|" ;;

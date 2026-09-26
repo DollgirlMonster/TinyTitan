@@ -72,8 +72,9 @@ import Testing
         let values: [Float16]
     }
 
+    /// `matrixUnits` runs the grouped side on the simdgroup-matrix kernel.
     private static func run(
-        compacted: Bool, kvBits: Int = 8
+        compacted: Bool, kvBits: Int = 8, matrixUnits: Bool = false
     ) throws -> (perHead: Result, grouped: Result) {
         let ctx = try MetalContext()
         let attention = try PrefillAttention(context: ctx)
@@ -129,7 +130,7 @@ import Testing
             kvGroupSize: UInt32(groupSize))
 
         let outBytes = queries * qHeads * headDim * MemoryLayout<Float16>.stride
-        func once(grouped: Bool) throws -> Result {
+        func once(grouped: Bool, mma: Bool) throws -> Result {
             guard let out = ctx.device.makeBuffer(length: outBytes, options: .storageModeShared),
                 let cb = ctx.queue.makeCommandBuffer()
             else { throw MetalError.commandEncoderFailed }
@@ -141,7 +142,8 @@ import Testing
                 keepIndices: compacted ? indexBuffer : nil,
                 keepIndexStride: valid,
                 keepCounts: compacted ? countBuffer : nil,
-                groupedQueryHeads: grouped)
+                groupedQueryHeads: grouped,
+                matrixUnits: mma)
             cb.commit()
             cb.waitUntilCompleted()
             #expect(cb.error == nil)
@@ -151,7 +153,7 @@ import Testing
                 bytes: Array(raw),
                 values: Array(UnsafeBufferPointer(start: values, count: outBytes / 2)))
         }
-        return (try once(grouped: false), try once(grouped: true))
+        return (try once(grouped: false, mma: false), try once(grouped: true, mma: matrixUnits))
     }
 
     private static func check(_ pair: (perHead: Result, grouped: Result)) {
@@ -165,6 +167,43 @@ import Testing
         #expect(
             pair.perHead.bytes == pair.grouped.bytes,
             "grouped differs from per-head: max |diff| \(maxDiff), max |ref| \(maxRef)")
+    }
+
+    /// The matrix-unit kernel sums in another order and rescales per 16-key
+    /// tile, so it is held to rounding, not bytes: four half ulps at the
+    /// reference's magnitude, with a floor near zero.
+    private static func checkClose(_ pair: (perHead: Result, grouped: Result)) {
+        var worst: Float = 0
+        var maxRef: Float = 0
+        var changed = 0
+        for (a, b) in zip(pair.perHead.values, pair.grouped.values) {
+            let ref = Float(a)
+            maxRef = max(maxRef, abs(ref))
+            if a != b { changed += 1 }
+            let allowed = max(Float(2e-3), 4 * Float(Float16(abs(ref)).ulp))
+            worst = max(worst, abs(Float(b) - ref) / allowed)
+        }
+        #expect(maxRef > 0.05, "the per-head output is too small to prove anything")
+        #expect(
+            worst <= 1,
+            "matrix units vs per-head: worst element \(worst)x its allowance, \(changed) differ, max |ref| \(maxRef)")
+    }
+
+    /// Compiled strictly here, so a Metal compiler error names itself instead
+    /// of the runtime quietly falling back to the scalar kernel.
+    @Test func matrixUnitKernelCompiles() throws {
+        let ctx = try MetalContext()
+        _ = try ctx.pipeline("attention_prefill_causal_qsa_gqa_mma")
+        #expect(try PrefillAttention(context: ctx).hasQSAMatrixUnitKernel)
+    }
+
+    @Test(arguments: [8, 4, 16])
+    func matrixUnitKernelTracksThePerHeadKernel(_ kvBits: Int) throws {
+        Self.checkClose(try Self.run(compacted: true, kvBits: kvBits, matrixUnits: true))
+    }
+
+    @Test func matrixUnitKernelTakesTheMaskSelection() throws {
+        Self.checkClose(try Self.run(compacted: false, matrixUnits: true))
     }
 
     @Test func compactedSelectionMatchesThePerHeadKernelExactly() throws {
