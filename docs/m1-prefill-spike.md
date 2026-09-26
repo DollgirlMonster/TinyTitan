@@ -239,3 +239,43 @@ show: "expert fetch + tiles" is the half the chunk count multiplies.
 | + MPP for the remaining GEMMs (opt-in, output differs) | ~151 | 52 | 1.33x |
 
 Rounds 2-3 of spike 3; round 1 of base read the model cold.
+
+## Spike 4 results (commit bd484b5, two rounds, 16,931-token prompt)
+
+| arm | chunks | prefill s (r1, r2) | tok/s | vs base | output |
+| --- | ---: | --- | ---: | ---: | --- |
+| base (4,096) | 5 | 451.5, 419.3 | 38.9 | -- | reference |
+| c8192 | 3 | 395.7, 391.9 | 43.0 | -9.5% | same as base |
+| c16384 | 2 | 401.8, 394.4 | 42.5 | -8.6% | same as base |
+
+GPU work is flat across the arms (+0.8% / +2.7% Gcycles), and the install
+now resolves its profile row (`tabled`, `keep_wired=true`). Decode, now that
+the runs generate 64 tokens: 3.8-4.1 tok/s on every arm.
+
+**Correction to the spike 3 reading.** "Expert fetch + tiles" scales with
+*tokens*, not with sweeps of the corpus: ~29.5 s per 4,096 tokens at base,
+~23 s at 8K and 16K. Its bulk is GPU -- routed tiles 66-69 s and the per-token
+shared expert 28-30 s over the prompt -- and the drive stall is what is left:
+~33 s at base, ~11 s at 16K. So the routed half was mostly GPU-bound; the
+drive cost ~2-3 s per extra chunk sweep, not the ~25 s spike 3 inferred from
+bandwidth alone. The bigger chunk is still a clean win (same output, less
+stall), just a smaller one.
+
+**The ~69 s nobody had named.** Every arm spent ~69 s of prefill outside the
+per-layer phases -- the same at 5, 3 and 2 chunks, and ~4.1 ms per token
+(spike 3's 7.9K prompt: ~31 s, the same rate). That is the PLE n-gram gather:
+16 uncached 320-byte `pread`s per token, issued one at a time, each a full
+round trip to the external drive. They are now issued together
+(`NgramTableReader.gatherConcurrently`); the bytes and where they land are
+unchanged, so the output is too.
+
+Where a 16.9K-token prefill goes at c16384 (round 2, 394 s):
+
+| part | s | note |
+| --- | ---: | --- |
+| dense layers on the GPU (attention + GDN + routers) | ~150 | |
+| host time inside the dense phase | ~68 | grows with context: QSA selection runs on the CPU |
+| routed tiles (GPU) | ~66 | |
+| shared expert, per-token path | ~28 | `TINYTITAN_PREFILL_MPP_WIDE=1` makes it ~10 |
+| drive stall in the routed phase | ~11 | |
+| PLE gather | ~69 | now concurrent |

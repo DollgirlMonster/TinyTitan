@@ -614,7 +614,8 @@ extension RealForwardRunner {
     ///
     /// A no-op for families without PLE. The gather is 16 rows of 320 bytes —
     /// 5 KiB — which is three orders of magnitude under one token's routed
-    /// expert traffic, so it is done inline rather than scheduled.
+    /// expert traffic, so it is done inline rather than scheduled; the 16
+    /// reads go out together, not one round trip each.
     func gatherPLERows(token: Int32) throws {
         guard let ple = pleBlock, let hash = pleHash, let table = ngramTable
         else { return }
@@ -623,7 +624,7 @@ extension RealForwardRunner {
             pleContext.removeLast(pleContext.count - hash.ngramSize)
         }
         let rows = hash.rows(context: pleContext)
-        try table.gather(rows: rows, into: ple.embedding.contents())
+        try table.gatherConcurrently(rows: rows, into: ple.embedding.contents())
     }
 
     /// Rewinds the n-gram block's carried state after a speculative pass whose
@@ -674,20 +675,26 @@ extension RealForwardRunner {
     /// Unlike decode, the context for row `i` is the chunk's own tokens plus
     /// whatever preceded the chunk, so this walks the chunk in order and
     /// leaves `pleContext` positioned for the next one.
+    ///
+    /// The row ids are hashed first, in order, because each token's context is
+    /// the tokens before it; then the whole chunk's rows are read together.
+    /// They land token-major, head order within a token -- where the one-token
+    /// gathers used to put them.
     func gatherPLERowsPrefill(tokens: ArraySlice<Int32>) throws {
         guard let ple = pleBlock, let hash = pleHash, let table = ngramTable
         else { return }
-        let rowBytes = hash.headCount * table.rowBytes
-        for (index, token) in tokens.enumerated() {
+        var rows: [UInt32] = []
+        rows.reserveCapacity(tokens.count * hash.headCount)
+        for token in tokens {
             pleContext.insert(token, at: 0)
             if pleContext.count > hash.ngramSize {
                 pleContext.removeLast(pleContext.count - hash.ngramSize)
             }
-            try table.gather(
-                rows: hash.rows(context: pleContext),
-                into: ple.embedding.contents()
-                    .advanced(by: index * rowBytes))
+            let tokenRows = hash.rows(context: pleContext)
+            precondition(tokenRows.count == hash.headCount, "PLE hash returned \(tokenRows.count) rows")
+            rows += tokenRows
         }
+        try table.gatherConcurrently(rows: rows, into: ple.embedding.contents())
     }
 
     /// Encodes the n-gram block over a whole prefill chunk.
