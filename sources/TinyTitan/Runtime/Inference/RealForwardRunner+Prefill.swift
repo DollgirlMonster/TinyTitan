@@ -1422,17 +1422,29 @@ extension RealForwardRunner {
             guard let tileCB = ctx.queue.makeCommandBuffer() else {
                 throw ModelError.residentBufferWrapFailed
             }
-            _ = try prefillGroupedMoE.encodeStreamedBatched(
-                commandBuffer: tileCB,
-                hidden: scratch.routedX,
-                sortedPairs: metadata.sortedPairs,
-                routePartials: scratch.routePartials,
-                gateUpActScratch: scratch.routedGateUpActScratch,
-                downScratch: scratch.routedDownScratch,
-                argumentBuffer: argumentBuffer,
-                binding: fetch.binding,
-                params: streamedParams,
-                pairMicrobatchRows: scratch.layout.routedPairMicrobatchRows)
+            let groupStart = Int(tile.groupStart)
+            let tookGroupedGEMM =
+                try prefillRoutedGEMM?.encodeTile(
+                    commandBuffer: tileCB,
+                    hidden: scratch.routedX, hiddenStrideElements: D,
+                    sortedPairs: metadata.sortedPairs, routePartials: scratch.routePartials,
+                    tile: tile,
+                    groups: routes.groups[groupStart..<(groupStart + Int(tile.groupCount))],
+                    binding: fetch.binding, offsets: routedOffsets,
+                    d: D, f: cfg.moeIntermediateSize, topK: cfg.topKExperts) ?? false
+            if !tookGroupedGEMM {
+                _ = try prefillGroupedMoE.encodeStreamedBatched(
+                    commandBuffer: tileCB,
+                    hidden: scratch.routedX,
+                    sortedPairs: metadata.sortedPairs,
+                    routePartials: scratch.routePartials,
+                    gateUpActScratch: scratch.routedGateUpActScratch,
+                    downScratch: scratch.routedDownScratch,
+                    argumentBuffer: argumentBuffer,
+                    binding: fetch.binding,
+                    params: streamedParams,
+                    pairMicrobatchRows: scratch.layout.routedPairMicrobatchRows)
+            }
             tileCB.commit()
             pendingTiles.append(
                 PendingPrefillTile(

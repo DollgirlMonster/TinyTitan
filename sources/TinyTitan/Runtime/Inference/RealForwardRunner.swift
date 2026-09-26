@@ -305,6 +305,9 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     let prefillMPPAffineInt4: MPPPrefillInt4QMM?
     /// The simdgroup-matrix QMM, built only when `prefillSimdgroupQMM` asks.
     let prefillSimdgroupQMMKernel: PrefillAffineSimdgroupQMM?
+    /// Routed tiles as grouped MPP GEMMs, built only when `prefillRoutedMPP`
+    /// asks and this GPU has the MPP QMM.
+    let prefillRoutedGEMM: PrefillRoutedExpertGEMM?
     let prefillQKVEpilogue: PrefillQKVEpilogue
     let prefillAttention: PrefillAttention
     let prefillRouter: PrefillRouter
@@ -709,6 +712,12 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             batchedMPP: Self.prefillWideMPP,
             batchedSimdgroup: Self.prefillSimdgroupQMM)
         self.prefillSharedExpert = sharedExpert
+        self.prefillRoutedGEMM =
+            Self.prefillRoutedMPP && model.config.numExperts > 0
+            ? try PrefillRoutedExpertGEMM(
+                context: context, weightBits: model.routedExpertWeightBits,
+                siluActivation: silu)
+            : nil
         if ProcessInfo.processInfo.environment["TINYTITAN_RUNNER_STATS"] != nil
             || ProcessInfo.processInfo.environment["TINYTITAN_KERNEL_STATS"] != nil
         {
@@ -1119,10 +1128,13 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
 
     /// One compute encoder per prefill per-token loop instead of one per token
     /// (see `GEMVRows`): same kernels, arguments and grids, so the output is
-    /// bit-identical by construction. Off until a spike has confirmed both
-    /// that and the speed.
+    /// bit-identical by construction -- `GEMVRowsTests`, and "same as base" on
+    /// Qwen3.8 4-bit end to end (M1 Max, spike 2). On by default since the
+    /// shared expert's GEMMs were batched: its scalar gate is then the rest of
+    /// the block, 2 x 8,192 one-token encoders per layer-chunk.
+    /// `TINYTITAN_PREFILL_COALESCE=0` restores one encoder per token.
     static let prefillCoalescedRows =
-        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_COALESCE"] == "1"
+        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_COALESCE"] != "0"
 
     /// Diagnostic only: commit, wait and time each stage of a prefill layer
     /// separately (`prefill_split_*` roles). The waits serialize the stages,
@@ -1147,6 +1159,15 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     /// `tools/prefill_surprisal_ab.sh` before it could become a default.
     static let prefillSimdgroupQMM =
         ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_SG_QMM"] == "1"
+
+    /// Spike switch: each streamed routed-expert tile runs as grouped MPP GEMMs
+    /// (`PrefillRoutedExpertGEMM`) instead of the one-output-per-thread tile
+    /// kernels, which spike 7 measured at ~1.2 TFLOPS against the MPP QMM's ~4
+    /// on the dense projections of an M1 Max. The MPP QMM rounds weights to
+    /// half, so the output can change: judged by
+    /// `tools/prefill_surprisal_ab.sh` before it could become a default.
+    static let prefillRoutedMPP =
+        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_ROUTED_MPP"] == "1"
 
     /// Whether the prefill shared expert runs as GEMMs over the chunk (on either
     /// QMM), which also decides the size of its scratch.
@@ -1186,6 +1207,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             "q_qmm=\(PrefillProjectionDispatchPolicy.qUsesQMM)",
             "mpp_wide=\(prefillWideMPP)",
             "sg_qmm=\(prefillSimdgroupQMM)",
+            "routed_mpp=\(prefillRoutedMPP)",
             "qsa_gqa=\(PrefillAttention.qsaGroupedQueryHeads)",
             "split=\(prefillSplitTiming)",
         ]

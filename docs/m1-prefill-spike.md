@@ -333,3 +333,28 @@ experts per layer for few tokens. Balanced chunks (16,931 as 2 x 8,466 under a
 16K ceiling) would remove it, but frontier checkpoints and split prefills
 assume chunk boundaries at whole multiples of the chunk size from the resume
 point, so it is not a planner-only change.
+
+## Spike 7 (commit d61a8b5, two rounds, 16,931-token prompt)
+
+| arm | prefill s (r1, r2) | tok/s | Gcycles |
+| --- | --- | ---: | ---: |
+| c8192 | 307.3, 302.9 | 55.5 | 333 |
+| c8192wide (MPP) | 245.1, 249.6 | 68.5 | 270 |
+| c8192sg (simdgroup QMM) | 262.8, 267.7 | 63.8 | 293 |
+
+The simdgroup-matrix QMM compiles and matches the scalar kernel, but it is
+slower than the MPP QMM here (GDN role 59.8 s against 47.3 s): it stays opt-in.
+
+**Correction to the efficiency reading behind it.** Dividing whole roles by
+their FLOPs put every GEMM at ~1 TFLOPS. Spike 2's per-stage split says
+otherwise for the dense projections: `gdn_in_proj` + `gdn_out_proj` did
+~33 TFLOP in 8.4 s at 7.9K tokens, ~3.9 TFLOPS on MPP. What is genuinely slow:
+
+- **the routed tiles**, ~80 TFLOP in ~70 s, ~1.2 TFLOPS: one output element
+  per thread, a full dot product each. `TINYTITAN_PREFILL_ROUTED_MPP=1`
+  (`PrefillRoutedExpertGEMM`) runs each tile as grouped MPP GEMMs instead --
+  gather the tile's token rows, gate and up per expert, one activation over
+  the tile, down per expert, scatter to the same route-partial slots.
+- **the shared expert's scalar gate**: ~2 GFLOP of work, but 2 x 8,192 one-token
+  encoders per layer-chunk, most of `shared_expert`'s ~11 s under MPP.
+  `TINYTITAN_PREFILL_COALESCE` (bit-identical, spike 2) is now on by default.

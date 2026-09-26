@@ -31,7 +31,11 @@
 #   c8192sg      c8192 + TINYTITAN_PREFILL_SG_QMM=1: every batched prefill
 #                projection and the shared expert on the simdgroup-matrix QMM
 #                instead of MPP or the scalar QMM; may differ in output (sum
-#                order), judged by tools/prefill_surprisal_ab.sh
+#                order), judged by tools/prefill_surprisal_ab.sh. Measured
+#                slower than MPP on an M1 Max (spike 7)
+#   c8192routed  c8192 + TINYTITAN_PREFILL_ROUTED_MPP=1: routed-expert tiles
+#                as grouped MPP GEMMs instead of one output per thread
+#   c8192widerouted  c8192wide + TINYTITAN_PREFILL_ROUTED_MPP=1
 # Chunking can change the output (the chunk boundaries move), so c8192/c16384
 # may legitimately differ from base; they are judged on speed and on staying
 # coherent, then on benchmark/quant_perplexity_ab.py before any default moves.
@@ -99,7 +103,8 @@ usage() {
 Options:
   --model <dir>        installed .gturbo model (default models/qwen3.8-flash-next_125B_A6B_4Bit)
   --rounds <n>         interleaved rounds per arm (default 2)
-  --arms "<list>"      any of: base c8192 c16384 c8192qsa c8192wide c8192sg wide16k pergqa
+  --arms "<list>"      any of: base c8192 c16384 c8192qsa c8192wide c8192sg
+                       c8192routed c8192widerouted wide16k pergqa
                        mppwide gqa wide splitwide all combo
                        coalesce qqmm hcfused qsagpu split
                        s128 s256 nobound s256nobound c2048
@@ -173,6 +178,8 @@ arm_spec() {
     c8192qsa) echo "c8192qsa|TINYTITAN_QSA_GPU_SELECT=1|--prefill-chunk 8192" ;;
     c8192wide) echo "c8192wide|TINYTITAN_PREFILL_MPP_WIDE=1|--prefill-chunk 8192" ;;
     c8192sg) echo "c8192sg|TINYTITAN_PREFILL_SG_QMM=1|--prefill-chunk 8192" ;;
+    c8192routed) echo "c8192routed|TINYTITAN_PREFILL_ROUTED_MPP=1|--prefill-chunk 8192" ;;
+    c8192widerouted) echo "c8192widerouted|TINYTITAN_PREFILL_MPP_WIDE=1 TINYTITAN_PREFILL_ROUTED_MPP=1|--prefill-chunk 8192" ;;
     coalesce) echo "coalesce|TINYTITAN_PREFILL_COALESCE=1|" ;;
     qqmm) echo "qqmm|TINYTITAN_PREFILL_Q_QMM=1|" ;;
     hcfused) echo "hcfused|TINYTITAN_HC_FUSED=1|" ;;
@@ -277,7 +284,7 @@ if [ "$SKIP_TESTS" -eq 0 ]; then
   else
     echo "== tests: the suites this branch touched, serial =="
     run swift test --no-parallel --filter \
-      'FrontierTracker|PrefillProgress|RawCompletionCapture|ServerPromptStateStore|ServerArgument|HTTPServer|PrefillAttentionQSAGrouped|PrefillSharedExpertBatched|GEMVRows|PrefillChunkScratch|PrefillRuntimeConfig|RuntimeConfiguration|ModelProfile|ModelIdentity|CLIArguments|OpenAIValidation|NgramTableReader|QSAPrefillSelection|ContinuationScore|PrefillAffineSimdgroupQMM'
+      'FrontierTracker|PrefillProgress|RawCompletionCapture|ServerPromptStateStore|ServerArgument|HTTPServer|PrefillAttentionQSAGrouped|PrefillSharedExpertBatched|GEMVRows|PrefillChunkScratch|PrefillRuntimeConfig|RuntimeConfiguration|ModelProfile|ModelIdentity|CLIArguments|OpenAIValidation|NgramTableReader|QSAPrefillSelection|ContinuationScore|PrefillAffineSimdgroupQMM|PrefillGroupedRoutedMoE'
   fi
 fi
 
