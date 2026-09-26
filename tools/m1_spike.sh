@@ -259,8 +259,12 @@ run_arm() {
     ${extra[@]+"${extra[@]}"} >"$out" 2>"$log" || code=$?
   swap_after="$(swap_used_mb)"
 
-  if grep -q 'trusted receipt invalid' "$log"; then
-    die "the model's install receipt does not match this path (it moved). Re-issue it in place:
+  # The loader says "trusted install receipt invalid: model directory
+  # mismatch"; match the part that names the cause, not the exact wording.
+  if grep -q 'model directory mismatch' "$log"; then
+    die "the model's install receipt names a different path (the model was moved).
+$(grep -m1 '^error:' "$log" || true)
+Either move it back to the path above, or re-issue the receipt in place:
   swift run -c release TinyTitanRepack --verify-install --input-gturbo \"$MODEL\""
   fi
 
@@ -282,10 +286,17 @@ run_arm() {
     "${decode_tps:--}" "${occ:--}" "${hit:--}" "${gib:--}" "${rss:--}" \
     "$swap_delta" "$sha" "$code" >>"$results"
   echo "   exit $code  ${footer:-no footer (see $log)}  occupancy ${occ:-?}%  rss ${rss:-?} GiB  swap +${swap_delta} MB"
-  [ "$code" -eq 0 ] || echo "   arm failed; the log is $log" >&2
+  if [ "$code" -ne 0 ]; then
+    echo "   arm failed: $(grep -m1 '^error:' "$log" || echo "no error line; see $log")" >&2
+    # The first run failing means the model or the binary is the problem, and
+    # every later run would fail the same way.
+    [ "$RUNS_DONE" -gt 0 ] || die "the first run failed, so the matrix stops here. Log: $log"
+  fi
+  RUNS_DONE=$((RUNS_DONE + 1))
 }
 
 # --- the matrix: arms interleaved, the order rotating each round -------------
+RUNS_DONE=0
 count="${#arm_list[@]}"
 round=1
 while [ "$round" -le "$ROUNDS" ]; do
