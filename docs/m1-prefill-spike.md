@@ -308,3 +308,28 @@ how much of the 40 s that was.
 
 Best measured so far on this prompt: `c8192wide`, 59.4 tok/s (output differs,
 MPP arithmetic); `c8192`, 49.8 tok/s with base's output.
+
+## Spike 6 (commit cbd6004, two rounds, 16,931-token prompt)
+
+| arm | prefill s (r1, r2) | tok/s | vs spike 5 | output |
+| --- | --- | ---: | ---: | --- |
+| base | 338.8, 314.8 | 51.9 | -10% | reference |
+| c8192 | 300.9, 297.4 | 56.6 | -12% | same as base |
+| c8192wide | 251.0, 246.0 | 68.2 | -13% | differs (MPP) |
+
+**The parallel prefill key selection measured:** the dense phase's host time
+fell from ~40 s to ~7 s (c8192, r2: 177.7 s of phase against 171.0 s of GPU),
+and GPU occupancy rose to 82-87%. Output unchanged.
+
+Against spike 4's base on this prompt (419-451 s, which already had the grouped
+QSA kernel), `c8192` is now 1.45x and `c8192wide` 1.75x. Prefill is now GPU-bound:
+of c8192's 297 s, 269 s is kernels -- attention layers 78, GDN layers 70,
+routed tiles 67, shared expert 28 (11 with MPP), QSA indexer 22 -- so the next
+wins are kernel work, not scheduling.
+
+One scheduling residue: the 547-token tail chunk costs ~20 s (13.7 s routed,
+6.9 s dense), about twice its share per token, because it still reads ~286
+experts per layer for few tokens. Balanced chunks (16,931 as 2 x 8,466 under a
+16K ceiling) would remove it, but frontier checkpoints and split prefills
+assume chunk boundaries at whole multiples of the chunk size from the resume
+point, so it is not a planner-only change.
