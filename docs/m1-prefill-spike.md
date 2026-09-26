@@ -138,7 +138,7 @@ Two findings from reading the code behind spike 2's split:
 `attention_prefill_causal_qsa_gqa` runs one threadgroup per (token, KV head) for
 all of its query heads (12 for Qwen3.8, at most 16, head dim at most 256). It
 loads the G query rows once, computes each (head, key) score with the same
-`prefill_qsa_dot` in phase A (G x 64 dots per tile over 256 threads, where the
+`prefill_qsa_dot` in phase A (G x 128 dots per tile over 256 threads, where the
 per-head kernel left half its threads idle), keeps each head's running max and
 sum in threadgroup memory updated by one thread per head in key order, writes
 each weight once, and in phase D loads every V element once and feeds it to the
@@ -148,3 +148,9 @@ output is meant to be byte-identical: `PrefillAttentionQSAGroupedTests` checks
 that on Qwen3.8's shape (24/2 heads, dim 256, int8 KV) for the compacted and the
 mask selection. K/V traffic per selected key falls 12x; the matrix units are not
 used yet -- the next step if this kernel is still the top role.
+
+First test run on the M1: both byte-equality tests failed by exactly one fp16
+ULP (max |diff| 0.000244 at values up to 0.503). The grouped kernel used 64-key
+tiles against the per-head kernel's 128, and the online softmax rescales at each
+tile boundary: the same sum, rounded at different points. The tile is now tied
+to `kPrefillQSATile`.

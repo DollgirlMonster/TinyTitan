@@ -1012,7 +1012,11 @@ kernel void attention_prefill_causal_qsa_tiled(
 constant constexpr uint kPrefillGQAMaxGroup = 16u;
 constant constexpr uint kPrefillGQAMaxHeadDim = 256u;
 constant constexpr uint kPrefillGQAGroupSums = kPrefillGQAMaxHeadDim / 16u + 1u;
-constant constexpr uint kPrefillGQATile = 64u;
+// The per-head kernel's tile, not a free choice: the running softmax rescales at
+// every tile boundary, so a different tile size is the same result rounded at
+// different points -- one fp16 ULP apart, measured. Byte identity needs these
+// equal. Threadgroup memory at 16 heads x 128 keys stays ~18 KB.
+constant constexpr uint kPrefillGQATile = kPrefillQSATile;
 
 /// `attention_prefill_causal_qsa_tiled` for every query head of one KV head at
 /// once: one threadgroup per (token, KV head) instead of per (token, query head).
