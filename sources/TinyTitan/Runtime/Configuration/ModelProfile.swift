@@ -198,7 +198,7 @@ public struct ModelProfile: Sendable, Equatable {
     ) -> ModelProfile {
         let familyTuning = RuntimeConfiguration.decodeTuning(family: family, weightBits: weightBits)
         var profile = ModelProfile(
-            key: Key(modelID, weightBits), family: family,
+            key: Key(tableModelID(modelID), weightBits), family: family,
             expertCacheBudgetBytes: familyTuning.expertCacheBudgetBytes,
             prefetchDepth: familyTuning.prefetchDepth,
             prefillChunkTokens: nil,
@@ -230,6 +230,18 @@ public struct ModelProfile: Sendable, Equatable {
         // loss (docs/qwen38-prefetch-predictor-study.md, Lever 5/8), so the
         // profile row's depth is the only source.
         return profile
+    }
+
+    /// The table's name for an install: the manifest id without the width
+    /// suffix the installer writes (`qwen3.8-flash-next-4bit`), because the
+    /// width is already the key's other half. Without this every installer-made
+    /// model missed its row and ran on its family's fallback -- on Qwen3.8 that
+    /// dropped the wired expert cache, 1.6-4.7 s per request.
+    public static func tableModelID(_ manifestModelID: String) -> String {
+        for suffix in ["-4bit", "-8bit", "-6bit"] where manifestModelID.hasSuffix(suffix) {
+            return String(manifestModelID.dropLast(suffix.count))
+        }
+        return manifestModelID
     }
 
     public static func resolve(identity: ManifestIdentity) -> ModelProfile {

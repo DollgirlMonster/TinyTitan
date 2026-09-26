@@ -87,6 +87,31 @@ import Testing
         }
     }
 
+    /// The ids the installer writes (`SupportedModelSource`, which this test
+    /// target cannot import) carry the width; they must still find their row.
+    @Test func installerIDsWithAWidthSuffixFindTheirRow() {
+        let installed: [(String, ModelFamily, Int, String)] = [
+            ("qwen3.6-35b-a3b-4bit", .qwen36, 4, "qwen3.6-35b-a3b"),
+            ("qwen3.6-35b-a3b-8bit", .qwen36, 8, "qwen3.6-35b-a3b"),
+            ("ornith-1.5-35b-a3b-4bit", .qwen36, 4, "ornith-1.5-35b-a3b"),
+            ("ornith-1.5-35b-a3b-8bit", .qwen36, 8, "ornith-1.5-35b-a3b"),
+            ("qwen3.8-flash-next-4bit", .qwen38flash, 4, "qwen3.8-flash-next"),
+        ]
+        for (id, family, bits, row) in installed {
+            let p = ModelProfile.resolve(
+                modelID: id, family: family, weightBits: bits, environment: [:])
+            #expect(p.isTabled, "\(id) falls back to its family")
+            #expect(p.key == ModelProfile.Key(row, bits))
+        }
+        let q38 = ModelProfile.resolve(
+            modelID: "qwen3.8-flash-next-4bit", family: .qwen38flash, weightBits: 4,
+            environment: [:])
+        #expect(q38.keepExpertCacheWired)
+        // Only a trailing width is stripped.
+        #expect(ModelProfile.tableModelID("qwen3.6-35b-a3b-mtp-4bit") == "qwen3.6-35b-a3b-mtp")
+        #expect(ModelProfile.tableModelID("some-4bit-model") == "some-4bit-model")
+    }
+
     @Test func unknownModelFallsBackToItsFamily() {
         let p = ModelProfile.resolve(
             modelID: "qwen3.6-35b-a3b-mtp-4bit", family: .qwen36MTP, weightBits: 4, environment: [:]

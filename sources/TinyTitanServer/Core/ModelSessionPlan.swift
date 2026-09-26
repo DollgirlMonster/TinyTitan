@@ -51,9 +51,9 @@ enum ServerModelIdentity {
         manifestModelID: String,
         family: ModelFamily
     ) -> String {
-        for suffix in ["-4bit", "-8bit", "-6bit"]
-        where manifestModelID.hasSuffix(suffix) {
-            return String(manifestModelID.dropLast(suffix.count))
+        let stripped = ModelProfile.tableModelID(manifestModelID)
+        if stripped != manifestModelID {
+            return stripped
         }
         if manifestModelID != "unknown/snapshot" {
             return manifestModelID
