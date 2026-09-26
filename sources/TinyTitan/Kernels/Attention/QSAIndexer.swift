@@ -42,12 +42,14 @@ final class QSAIndexer {
     private let scoreRowsPSO: MTLComputePipelineState
     private let scoreRowsMMAPSO: MTLComputePipelineState
 
-    /// Spike switch: score a prefill chunk's blocks on the simdgroup matrix
-    /// units (`qsa_block_scores_rows_mma`) instead of one thread per (query,
-    /// block). The scores differ by float rounding, which can move a block
-    /// across the budget cut, so it is judged by the surprisal A/B.
+    /// Score a prefill chunk's blocks on the simdgroup matrix units
+    /// (`qsa_block_scores_rows_mma`), on by default; `TINYTITAN_QSA_SCORE_MMA=0`
+    /// restores one thread per (query, block). The scores differ by float
+    /// rounding, which can move a block across the budget cut; the surprisal
+    /// A/B found no measurable change (docs/m1-prefill-spike.md, spike 10), and
+    /// it cut the indexer from 17.0 s to 1.3 s on a ~17K-token M1 Max prefill.
     static let prefillScoresOnMatrixUnits =
-        ProcessInfo.processInfo.environment["TINYTITAN_QSA_SCORE_MMA"] == "1"
+        ProcessInfo.processInfo.environment["TINYTITAN_QSA_SCORE_MMA"] != "0"
     /// Decode selection on the GPU; nil when the kernel is unavailable.
     private let selectPSO: MTLComputePipelineState?
     private let rms: RMSNorm

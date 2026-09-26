@@ -162,9 +162,11 @@ public struct ServerArguments: Equatable, Sendable {
                                  it from SSD.
           --prefill-chunk <tokens>
                                  Prefill chunk size: 32, 64, 128, 256, 512,
-                                 1024, 2048, 4096, 8192 or 16384 (default 4096
-                                 for supported 35B-A3B text models). A larger
-                                 chunk reads the streamed experts fewer times.
+                                 1024, 2048, 4096, 8192 or 16384 (default: the
+                                 model's profile row, 4096 for the 35B-A3B text
+                                 models and 16384 for Qwen3.8 4-bit, lowered to
+                                 what --max-context allows). A larger chunk
+                                 reads the streamed experts fewer times.
           --kv-bits <4|8|16>     KV-cache storage precision (default 8).
           --thinking <off|on>    Ornith/Qwen reasoning mode (default off, or
                                  TINYTITAN_THINKING_MODE). The model does not expose

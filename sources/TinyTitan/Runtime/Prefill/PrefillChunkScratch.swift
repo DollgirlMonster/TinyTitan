@@ -169,9 +169,12 @@ struct PrefillChunkScratchBuffers {
     let gdnY: MTLBuffer
     let sharedScalarGate: MTLBuffer
 
+    /// `batchedSharedExpert` sizes the shared-expert scratch for GEMMs over
+    /// the chunk (`RealForwardRunner.prefillBatchedSharedExpert`).
     static func allocate(
         device: MTLDevice,
-        layout: PrefillChunkScratchLayout
+        layout: PrefillChunkScratchLayout,
+        batchedSharedExpert: Bool = false
     ) throws -> PrefillChunkScratchBuffers {
         func privateBuffer(_ elements: Int, label: String) throws -> MTLBuffer {
             guard
@@ -199,7 +202,7 @@ struct PrefillChunkScratchBuffers {
         // The batched shared expert needs a row per token; the per-token path
         // reuses one row, so the default allocation stays one row.
         let sharedScratchElements =
-            RealForwardRunner.prefillBatchedSharedExpert
+            batchedSharedExpert
             ? layout.sharedExpertBatchElements : layout.sharedExpertScratchElements
 
         return PrefillChunkScratchBuffers(

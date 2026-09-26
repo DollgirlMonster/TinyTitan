@@ -442,7 +442,7 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     /// 8K and 16K exist for streamed-expert models on a slow drive: each chunk
     /// streams nearly the whole routed-expert corpus (432 of 512 experts per
     /// layer at 4,096 tokens on Qwen3.8), so the chunk count sets how many
-    /// times the corpus is read. Nothing defaults to them yet.
+    /// times the corpus is read. Qwen3.8 4-bit's profile row takes 16K.
     public static let allowedPrefillChunkTokens = [
         32, 64, 128, 256, 512, 1_024, 2_048, 4_096, 8_192, 16_384,
     ]
@@ -459,6 +459,16 @@ public struct RuntimeConfiguration: Sendable, Equatable {
     public static func largestPrefillChunk(forContext maxContext: Int) -> Int {
         allowedPrefillChunkTokens.last { prefillChunkFits(chunk: $0, maxContext: maxContext) }
             ?? allowedPrefillChunkTokens[0]
+    }
+
+    /// A profile row's chunk, lowered to the largest `maxContext` allows. A row
+    /// is tuned at the native context; a YaRN context (Qwen3.8's 16,384 against
+    /// 524,288, say) would otherwise refuse to load over a chunk nobody asked
+    /// for. An explicit `--prefill-chunk` is not capped: it still fails, naming
+    /// the chunk that fits.
+    public static func profilePrefillChunk(_ chunk: Int, forContext maxContext: Int) -> Int {
+        prefillChunkFits(chunk: chunk, maxContext: maxContext)
+            ? chunk : min(chunk, largestPrefillChunk(forContext: maxContext))
     }
     public static let qwenLongPrefillChunkTokens = 4_096
 

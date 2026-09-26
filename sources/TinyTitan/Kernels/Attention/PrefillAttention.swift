@@ -82,11 +82,14 @@ final class PrefillAttention {
     /// Whether the matrix-unit QSA kernel compiled on this device.
     var hasQSAMatrixUnitKernel: Bool { psoCausalQSAGQAMMA != nil }
 
-    /// Spike switch: the grouped QSA kernel's products on the matrix units. It
-    /// sums in a different order (and rescales per 16-key tile rather than 128),
-    /// so the output changes by rounding: judged by the surprisal A/B.
+    /// The grouped QSA kernel's products on the matrix units, on by default;
+    /// `TINYTITAN_PREFILL_QSA_MMA=0` restores the scalar grouped kernel. It sums
+    /// in a different order (and rescales per 16-key tile rather than 128), so
+    /// the output changes by rounding; the surprisal A/B found no measurable
+    /// change (docs/m1-prefill-spike.md, spike 10), and it cut the attention
+    /// layers' GPU time from 72 s to 45.5 s on a ~17K-token M1 Max prefill.
     static let qsaMatrixUnits =
-        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_QSA_MMA"] == "1"
+        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_QSA_MMA"] != "0"
 
     /// The grouped QSA kernel, on by default. It keeps the per-head kernel's
     /// arithmetic, so the output is byte-identical

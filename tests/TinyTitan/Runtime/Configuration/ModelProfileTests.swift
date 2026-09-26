@@ -49,6 +49,12 @@ import Testing
         #expect(q38b.prefetchDepth == 1)
         #expect(q38.sampling.temperature == 1.0 && q38.sampling.topP == 0.95)
         #expect(!q38.hcFused && !q38.qsaGPUSelect)
+        // Prefill, spike 10 and its surprisal A/B (docs/m1-prefill-spike.md).
+        #expect(q38.prefillChunkTokens == 16_384)
+        #expect(q38.prefillWideMPP && q38.prefillRoutedMPP)
+        // Not carried to 8-bit: no surprisal check has seen those weights.
+        #expect(q38b.prefillChunkTokens == 4_096)
+        #expect(!q38b.prefillWideMPP && !q38b.prefillRoutedMPP)
         let q36 = ModelProfile.resolve(
             modelID: "qwen3.6-35b-a3b", family: .qwen36, weightBits: 8, environment: [:])
         #expect(q36.expertCacheBudgetBytes == 12 << 30)
@@ -59,6 +65,20 @@ import Testing
         #expect(q36.prefetchDepth == 1)
         #expect(q36.prefillChunkTokens == 4_096)
         #expect(q36.sampling == GenerationDefaults.house)
+        #expect(!q36.prefillWideMPP && !q36.prefillRoutedMPP)
+    }
+
+    /// The prefill switches ship on one row only; every other row, and every
+    /// family fallback, keeps the default kernels.
+    @Test func prefillSwitchesShipOnlyOnTheQwen38FourBitRow() {
+        for (key, row) in ModelProfile.table {
+            let expected = key == ModelProfile.Key("qwen3.8-flash-next", 4)
+            #expect(row.wideMPP == expected, Comment(rawValue: key.modelID))
+            #expect(row.routedMPP == expected, Comment(rawValue: key.modelID))
+        }
+        let fallback = ModelProfile.resolve(
+            modelID: "unknown", family: .qwen36, weightBits: 4, environment: [:])
+        #expect(!fallback.prefillWideMPP && !fallback.prefillRoutedMPP)
     }
 
     @Test func samplingRowsFollowTheirSeries() {
@@ -139,6 +159,17 @@ import Testing
             modelID: "qwen3.8-flash-next", family: .qwen38flash, weightBits: 4,
             environment: ["TINYTITAN_PREDICTIVE_PREFETCH": "0"])
         #expect(off.prefetchDepth == 0)
+
+        // The prefill switches go both ways: off where a row ships them on,
+        // on where it does not.
+        let q38Off = ModelProfile.resolve(
+            modelID: "qwen3.8-flash-next", family: .qwen38flash, weightBits: 4,
+            environment: ["TINYTITAN_PREFILL_MPP_WIDE": "0", "TINYTITAN_PREFILL_ROUTED_MPP": "0"])
+        #expect(!q38Off.prefillWideMPP && !q38Off.prefillRoutedMPP)
+        let q36On = ModelProfile.resolve(
+            modelID: "qwen3.6-35b-a3b", family: .qwen36, weightBits: 4,
+            environment: ["TINYTITAN_PREFILL_MPP_WIDE": "1", "TINYTITAN_PREFILL_ROUTED_MPP": "1"])
+        #expect(q36On.prefillWideMPP && q36On.prefillRoutedMPP)
     }
 
     @Test func theRowDecidesWhetherTheCacheStaysWired() {
@@ -161,6 +192,7 @@ import Testing
         for needle in [
             "model=qwen-agentworld", "bits=8", "tabled", "budget=", "prefetch=1",
             "chunk=4096", "topk_simd=true", "hc_fused=false", "keep_wired=true",
+            "mpp_wide=false", "routed_mpp=false",
         ] {
             #expect(p.summary.contains(needle), Comment(rawValue: needle))
         }

@@ -653,7 +653,9 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
                 ?? ModelProfile.resolve(
                     modelID: model.modelID, family: model.config.family,
                     weightBits: model.routedExpertWeightBits
-                ).prefillChunkTokens
+                ).prefillChunkTokens.map {
+                    RuntimeConfiguration.profilePrefillChunk($0, forContext: maxContext)
+                }
                 ?? defaultPrefillChunkTokens(
                     family: model.config.family,
                     fallback: loadRuntime.prefillChunkTokens),

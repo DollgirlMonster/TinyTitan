@@ -825,7 +825,7 @@ extension RealForwardRunner {
                 t: tokens, n: rows, k: columns, bits: model.attentionWeightBits)
             return
         }
-        if Self.prefillWideMPP, let mpp = prefillMPPAffineInt4,
+        if prefillWideMPP, let mpp = prefillMPPAffineInt4,
             try mpp.encode(
                 commandBuffer: commandBuffer,
                 weights: weights, weightsOffset: weightsOffset,

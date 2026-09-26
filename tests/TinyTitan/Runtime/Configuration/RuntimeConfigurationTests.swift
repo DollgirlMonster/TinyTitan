@@ -147,4 +147,22 @@ import Testing
             prefillChunkTokens: 4_096, ropeScalingMode: .yarn, yarnContextTokens: 1_048_576
         ).validate(maxContext: 1_048_576)
     }
+
+    /// A profile row's chunk is lowered to what the context allows, never
+    /// raised, so the Qwen3.8 row's 16K still loads under YaRN.
+    @Test func aProfileChunkIsCappedToTheContext() throws {
+        #expect(RuntimeConfiguration.profilePrefillChunk(16_384, forContext: 262_144) == 16_384)
+        #expect(RuntimeConfiguration.profilePrefillChunk(16_384, forContext: 524_288) == 8_192)
+        #expect(RuntimeConfiguration.profilePrefillChunk(16_384, forContext: 1_048_576) == 4_096)
+        #expect(RuntimeConfiguration.profilePrefillChunk(4_096, forContext: 1_048_576) == 4_096)
+        #expect(RuntimeConfiguration.profilePrefillChunk(2_048, forContext: 65_536) == 2_048)
+        for context in [262_144, 524_288, 1_048_576] {
+            let chunk = RuntimeConfiguration.profilePrefillChunk(16_384, forContext: context)
+            let yarn = context > 262_144
+            try RuntimeConfiguration(
+                prefillChunkTokens: chunk, ropeScalingMode: yarn ? .yarn : .none,
+                yarnContextTokens: yarn ? context : RuntimeConfiguration.defaultYaRNContextTokens
+            ).validate(maxContext: context)
+        }
+    }
 }

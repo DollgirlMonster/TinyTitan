@@ -428,6 +428,11 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     let effectiveScaleBuffers: [MTLBuffer]
     /// The (model, width) tuning this runner was built with.
     let profile: ModelProfile
+    /// `profile.prefillWideMPP`: prefill's remaining scalar GEMMs on the MPP
+    /// tensor-op QMM and the shared expert as GEMMs over the chunk.
+    let prefillWideMPP: Bool
+    /// `profile.prefillRoutedMPP`: routed-expert tiles as grouped MPP GEMMs.
+    let prefillRoutedMPP: Bool
     let sharedExpertProjections: [LayerSharedExpertProjections]
 
     public let maxContext: Int
@@ -497,6 +502,8 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             modelID: model.modelID, family: cfg.family,
             weightBits: model.routedExpertWeightBits)
         self.profile = profile
+        self.prefillWideMPP = profile.prefillWideMPP
+        self.prefillRoutedMPP = profile.prefillRoutedMPP
         self.decodeExpertExecution = runtimeConfiguration.decodeExpertExecution
         self.expertIOSynchronization = runtimeConfiguration.expertIOSynchronization
         self.expertIOSubmission = runtimeConfiguration.expertIOSubmission
@@ -709,11 +716,11 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             context: context,
             weightBits: model.ffnWeightBits,
             siluActivation: silu,
-            batchedMPP: Self.prefillWideMPP,
+            batchedMPP: profile.prefillWideMPP,
             batchedSimdgroup: Self.prefillSimdgroupQMM)
         self.prefillSharedExpert = sharedExpert
         self.prefillRoutedGEMM =
-            Self.prefillRoutedMPP && model.config.numExperts > 0
+            profile.prefillRoutedMPP && model.config.numExperts > 0
             ? try PrefillRoutedExpertGEMM(
                 context: context, weightBits: model.routedExpertWeightBits,
                 siluActivation: silu)
@@ -726,7 +733,9 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
                     ("TinyTitan "
                         + Self.prefillPathSummary(
                             model: model, mpp: prefillMPP,
-                            sharedBatched: sharedExpert.batchedAvailable) + "\n").utf8))
+                            sharedBatched: sharedExpert.batchedAvailable,
+                            wideMPP: profile.prefillWideMPP,
+                            routedMPP: profile.prefillRoutedMPP) + "\n").utf8))
         }
         self.prefillGroupedMoE = try PrefillGroupedRoutedMoE(
             context: context,
@@ -1142,15 +1151,6 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     static let prefillSplitTiming =
         ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_SPLIT"] == "1"
 
-    /// Spike switch: the batched prefill projections that still run on the
-    /// scalar `prefillQMM` (hyper-connection gates, QSA indexer) go to the MPP
-    /// tensor-op QMM when this GPU has it, and the shared expert runs as three
-    /// GEMMs over the chunk instead of the decode path once per token. The
-    /// GEMMs sum in a different order, so the output can change: off until a
-    /// quality check says otherwise.
-    static let prefillWideMPP =
-        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_MPP_WIDE"] == "1"
-
     /// Spike switch: every batched prefill projection that would take the MPP
     /// tensor-op QMM or the scalar `prefillQMM` takes the simdgroup-matrix QMM
     /// instead (`PrefillAffineSimdgroupQMM`). Measured on an M1 Max, the MPP
@@ -1160,25 +1160,17 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     static let prefillSimdgroupQMM =
         ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_SG_QMM"] == "1"
 
-    /// Spike switch: each streamed routed-expert tile runs as grouped MPP GEMMs
-    /// (`PrefillRoutedExpertGEMM`) instead of the one-output-per-thread tile
-    /// kernels, which spike 7 measured at ~1.2 TFLOPS against the MPP QMM's ~4
-    /// on the dense projections of an M1 Max. The MPP QMM rounds weights to
-    /// half, so the output can change: judged by
-    /// `tools/prefill_surprisal_ab.sh` before it could become a default.
-    static let prefillRoutedMPP =
-        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_ROUTED_MPP"] == "1"
-
     /// Whether the prefill shared expert runs as GEMMs over the chunk (on either
     /// QMM), which also decides the size of its scratch.
-    static var prefillBatchedSharedExpert: Bool { prefillWideMPP || prefillSimdgroupQMM }
+    var prefillBatchedSharedExpert: Bool { prefillWideMPP || Self.prefillSimdgroupQMM }
 
     /// Which kernel each prefill projection family takes on this GPU, for the
     /// stats log. The MPP tensor-op path is optional: it may not compile on an
     /// older GPU, and every family it does not take falls back to the policy
     /// below it -- for `.q` that is one GEMV per token.
     static func prefillPathSummary(
-        model: Model, mpp: MPPPrefillInt4QMM, sharedBatched: Bool
+        model: Model, mpp: MPPPrefillInt4QMM, sharedBatched: Bool,
+        wideMPP: Bool, routedMPP: Bool
     ) -> String {
         let chunk = PrefillRuntimeConfig.maxChunkTokens
         func path(_ family: PrefillProjectionFamily, bits: Int) -> String {
@@ -1192,7 +1184,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             return prefillCoalescedRows ? "gemv-per-token(coalesced)" : "gemv-per-token"
         }
         let mppState = mpp.isAvailable ? "available" : "unavailable(\(mpp.unavailableSummary))"
-        let wide = prefillWideMPP && mpp.isAvailable ? "mpp" : "qmm"
+        let wide = wideMPP && mpp.isAvailable ? "mpp" : "qmm"
         let shared =
             sharedBatched ? (prefillSimdgroupQMM ? "batched-sg" : "batched-mpp") : "per-token"
         let fields: [String] = [
@@ -1205,10 +1197,12 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             "shared=\(shared)/\(model.ffnWeightBits)b",
             "coalesce=\(prefillCoalescedRows)",
             "q_qmm=\(PrefillProjectionDispatchPolicy.qUsesQMM)",
-            "mpp_wide=\(prefillWideMPP)",
+            "mpp_wide=\(wideMPP)",
             "sg_qmm=\(prefillSimdgroupQMM)",
-            "routed_mpp=\(prefillRoutedMPP)",
+            "routed_mpp=\(routedMPP)",
             "qsa_gqa=\(PrefillAttention.qsaGroupedQueryHeads)",
+            "qsa_mma=\(PrefillAttention.qsaMatrixUnits)",
+            "qsa_score_mma=\(QSAIndexer.prefillScoresOnMatrixUnits)",
             "split=\(prefillSplitTiming)",
         ]
         return fields.joined(separator: " ")

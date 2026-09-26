@@ -215,7 +215,8 @@ public func run(
             // loads; the family switch below is the fallback for rows that
             // leave the chunk to the front end.
             if let tabled = ModelProfile.resolve(identity: identity).prefillChunkTokens {
-                prefillChunkTokens = tabled
+                prefillChunkTokens = RuntimeConfiguration.profilePrefillChunk(
+                    tabled, forContext: args.maxContext)
                 break
             }
             switch model.config.family {

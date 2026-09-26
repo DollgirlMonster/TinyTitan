@@ -14,8 +14,11 @@
 # and ~4x the memory bandwidth but a similar SSD, and room for half the expert
 # corpus in RAM. The arms test whether that moves the balance:
 #
-#   base         the install's profile defaults (the grouped QSA kernel is now
-#                one of them)
+#   base         the install's profile defaults. On Qwen3.8 4-bit that is
+#                now spike 10's winner: chunk 16384, the MPP wide and routed
+#                switches, and the QSA kernels on the matrix units. The arms
+#                below pin their own env and chunk; an arm that sets a switch
+#                to 1 which the row already ships is the same run as base.
 #
 # Spike 4 (the default set, ~16K-token prompt): the chunk ceiling
 #   c8192        --prefill-chunk 8192: half the chunks, so half the sweeps of

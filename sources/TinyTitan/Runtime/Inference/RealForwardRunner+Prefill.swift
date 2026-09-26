@@ -227,7 +227,8 @@ extension RealForwardRunner {
         if let scratch = prefillScratch, scratch.layout == layout {
             return scratch
         }
-        let scratch = try PrefillChunkScratchBuffers.allocate(device: ctx.device, layout: layout)
+        let scratch = try PrefillChunkScratchBuffers.allocate(
+            device: ctx.device, layout: layout, batchedSharedExpert: prefillBatchedSharedExpert)
         prefillScratch = scratch
         return scratch
     }
@@ -658,7 +659,7 @@ extension RealForwardRunner {
         scratch: PrefillChunkScratchBuffers,
         tokenCount t: Int, hiddenSize D: Int
     ) throws {
-        if Self.prefillBatchedSharedExpert,
+        if prefillBatchedSharedExpert,
             try prefillSharedExpert.encodeBlockBatched(
                 commandBuffer: commandBuffer,
                 x: scratch.routedX, y: scratch.h1,
