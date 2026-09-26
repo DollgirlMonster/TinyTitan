@@ -19,26 +19,39 @@ struct RawCompletionCaptureTests {
         #expect(capturePositions([4], from: 0, promptCount: 16, chunkTokens: 0).isEmpty)
     }
 
-    @Test(arguments: [(0, 37, 4), (6, 50, 4), (0, 8_193, 4_096), (4_000, 30_000, 4_096)])
-    func aSplitPrefillRunsExactlyTheSpansOfOneCall(
-        start: Int, promptCount: Int, chunk: Int
-    ) {
+    struct SplitCase: Sendable, CustomTestStringConvertible {
+        let start: Int
+        let promptCount: Int
+        let chunk: Int
+        var testDescription: String { "start \(start), \(promptCount) tokens, chunk \(chunk)" }
+    }
+
+    @Test(arguments: [
+        SplitCase(start: 0, promptCount: 37, chunk: 4),
+        SplitCase(start: 6, promptCount: 50, chunk: 4),
+        SplitCase(start: 0, promptCount: 8_193, chunk: 4_096),
+        SplitCase(start: 4_000, promptCount: 30_000, chunk: 4_096),
+    ])
+    func aSplitPrefillRunsExactlyTheSpansOfOneCall(_ split: SplitCase) {
+        let start = split.start
+        let promptCount = split.promptCount
+        let chunk = split.chunk
         let single = PrefillChunkPlanner.spans(
             tokenCount: promptCount - start, startPosition: start, chunkTokens: chunk)
             .map { [$0.startPosition, $0.tokenCount] }
 
         let everyBoundary = Array(stride(from: start + chunk, to: promptCount, by: chunk))
-        var split: [[Int]] = []
+        var spans: [[Int]] = []
         var position = start
         for boundary in capturePositions(
             everyBoundary, from: start, promptCount: promptCount, chunkTokens: chunk)
             + [promptCount]
         {
-            split += PrefillChunkPlanner.spans(
+            spans += PrefillChunkPlanner.spans(
                 tokenCount: boundary - position, startPosition: position, chunkTokens: chunk)
                 .map { [$0.startPosition, $0.tokenCount] }
             position = boundary
         }
-        #expect(split == single)
+        #expect(spans == single)
     }
 }

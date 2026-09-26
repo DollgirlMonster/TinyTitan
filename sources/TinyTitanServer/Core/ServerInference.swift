@@ -330,6 +330,12 @@ private struct RunnerCounterSnapshot {
     let expertStreaming: ExpertStreamingStatistics
 }
 
+/// One mid-prefill checkpoint, held until the generation ends and it is banked.
+private struct FrontierCapture: Sendable {
+    let position: Int
+    let snapshot: InferenceStateSnapshot
+}
+
 /// Per-generation decode state that `runRawCompletion`'s progress closure
 /// mutates. Boxed so the closure captures a reference the compiler can send
 /// into the nonisolated call; Swift 6.4 rejects sending the captured mutable
@@ -348,7 +354,7 @@ private final class GenerationDecodeState: @unchecked Sendable {
     var decodingError: Error?
     var shouldStop = false
     /// Frontier checkpoints captured mid-prefill, banked after the generation.
-    var frontierCaptures: [(position: Int, snapshot: InferenceStateSnapshot)] = []
+    var frontierCaptures: [FrontierCapture] = []
 
     init(decoder: StructuredAssistantDecoder, output: AssistantOutput) {
         self.decoder = decoder
@@ -1493,6 +1499,15 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // Frontier checkpointing rides only the plain runner path.
         let captureBoundaries =
             activeProducer is StreamingMTPDecoder ? [] : resolved.captureBoundaries
+        // Typed up front: through a `cond ? nil : { ... }` the closure's
+        // parameter types are not inferred and the append is ambiguous.
+        let onCapture: (@Sendable (Int, InferenceStateSnapshot) -> Void)? =
+            captureBoundaries.isEmpty
+            ? nil
+            : { position, snapshot in
+                state.frontierCaptures.append(
+                    FrontierCapture(position: position, snapshot: snapshot))
+            }
         let progressGeneration = PrefillProgressMonitor.begin(
             total: activePromptIDs.count,
             cached: Self.resumePosition(activeStart))
@@ -1526,11 +1541,7 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             captureMaxBytes: min(
                 Self.frontierCheckpointMaxBytes,
                 promptStateStore?.maximumSnapshotBytes ?? 0),
-            onCapture: captureBoundaries.isEmpty
-                ? nil
-                : { @Sendable position, snapshot in
-                    state.frontierCaptures.append((position, snapshot))
-                },
+            onCapture: onCapture,
             // A watchdog stop is polled here, between tokens, alongside the
             // stop-string matcher's own flag.
             shouldStop: { @Sendable in state.shouldStop || watchdogs.wantsStop },
@@ -1560,9 +1571,9 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // state, so it stands however the rest of this turn goes.
         let captures = state.frontierCaptures
         state.frontierCaptures = []
-        for (position, snapshot) in captures {
+        for capture in captures {
             await persistFrontierCheckpoint(
-                tokens: Array(promptIDs.prefix(position)), snapshot: snapshot)
+                tokens: Array(promptIDs.prefix(capture.position)), snapshot: capture.snapshot)
         }
         emitGenerationDiagnostics(
             activeProducer: activeProducer,
