@@ -26,7 +26,9 @@
 # every raw log, results.tsv, and summary.txt. Nothing here downloads, converts
 # or re-installs a model, and nothing is purged or killed: a failed precondition
 # stops the script with the reason.
-set -euo pipefail
+set -Eeuo pipefail
+# Under -e a failed command ends the script; say where, rather than vanishing.
+trap 'echo "m1_spike: stopped at line $LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -208,9 +210,14 @@ fi
 # --- the prompt: fixed repository prose, ASCII only --------------------------
 prompt_file="$OUT/prompt.txt"
 if [ "$DRY_RUN" -eq 0 ]; then
+  # Filter to a whole file first, then cut it. Piping straight into `head -c`
+  # lets head exit early, the writer die of SIGPIPE, and pipefail end the
+  # script -- depending on timing, so it only fails some of the time.
   # shellcheck disable=SC2046 # the doc list is word-split on purpose
   cat $(ls "$ROOT"/docs/qwen38-*.md "$ROOT"/docs/adding-a-model.md | sort) \
-    | LC_ALL=C tr -cd '\11\12\15\40-\176' | head -c "$PROMPT_CHARS" >"$prompt_file"
+    | LC_ALL=C tr -cd '\11\12\15\40-\176' >"$prompt_file.full"
+  head -c "$PROMPT_CHARS" "$prompt_file.full" >"$prompt_file"
+  rm -f "$prompt_file.full"
 fi
 
 results="$OUT/results.tsv"
@@ -243,13 +250,13 @@ run_arm() {
   check_quiet_machine
   local swap_before swap_after
   swap_before="$(swap_used_mb)"
-  set +e
+  # A failed run is recorded, not fatal; `|| code=$?` keeps both -e and the
+  # ERR trap out of it.
+  code=0
   /usr/bin/time -l env ${envs[@]+"${envs[@]}"} "$CLI" \
     --model "$MODEL" --prompt "$(cat "$prompt_file")" \
     --max-new "$MAX_NEW" --temperature 0 --seed 1 --max-context 65536 \
-    ${extra[@]+"${extra[@]}"} >"$out" 2>"$log"
-  code=$?
-  set -e
+    ${extra[@]+"${extra[@]}"} >"$out" 2>"$log" || code=$?
   swap_after="$(swap_used_mb)"
 
   if grep -q 'trusted receipt invalid' "$log"; then
