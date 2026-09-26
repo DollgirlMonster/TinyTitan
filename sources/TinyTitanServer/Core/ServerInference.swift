@@ -1499,15 +1499,6 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
         // Frontier checkpointing rides only the plain runner path.
         let captureBoundaries =
             activeProducer is StreamingMTPDecoder ? [] : resolved.captureBoundaries
-        // Typed up front: through a `cond ? nil : { ... }` the closure's
-        // parameter types are not inferred and the append is ambiguous.
-        let onCapture: (@Sendable (Int, InferenceStateSnapshot) -> Void)? =
-            captureBoundaries.isEmpty
-            ? nil
-            : { position, snapshot in
-                state.frontierCaptures.append(
-                    FrontierCapture(position: position, snapshot: snapshot))
-            }
         let progressGeneration = PrefillProgressMonitor.begin(
             total: activePromptIDs.count,
             cached: Self.resumePosition(activeStart))
@@ -1541,7 +1532,13 @@ public actor ServerModelSession: ServerInferenceBackend, PromptTokenCounting, Pr
             captureMaxBytes: min(
                 Self.frontierCheckpointMaxBytes,
                 promptStateStore?.maximumSnapshotBytes ?? 0),
-            onCapture: onCapture,
+            // Always passed: with no boundaries `runRawCompletion` never calls
+            // it. (A `cond ? nil : { ... }` here types the literal before the
+            // annotation and loses `@Sendable`.)
+            onCapture: { @Sendable (position: Int, snapshot: InferenceStateSnapshot) in
+                state.frontierCaptures.append(
+                    FrontierCapture(position: position, snapshot: snapshot))
+            },
             // A watchdog stop is polled here, between tokens, alongside the
             // stop-string matcher's own flag.
             shouldStop: { @Sendable in state.shouldStop || watchdogs.wantsStop },
