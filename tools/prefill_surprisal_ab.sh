@@ -25,6 +25,8 @@ MODEL=""
 TEXT_CHARS=60000
 SCORE=512
 CHUNK=8192
+A_CHUNK=""
+B_CHUNK=""
 A_ENV=""
 B_ENV="TINYTITAN_PREFILL_MPP_WIDE=1"
 OUT=""
@@ -39,6 +41,9 @@ Options:
   --score <n>          continuation tokens to score (default 512; decode speed
                        sets the time: ~2 min at 4 tok/s)
   --chunk <n>          --prefill-chunk for both arms (default 8192)
+  --a-chunk <n>        --prefill-chunk for arm A only (default --chunk)
+  --b-chunk <n>        --prefill-chunk for arm B only (default --chunk), to
+                       judge a whole launch configuration against a reference
   --a-env "<K=V ...>"  environment for arm A (default: none, the baseline)
   --b-env "<K=V ...>"  environment for arm B (default TINYTITAN_PREFILL_MPP_WIDE=1)
   --out <dir>          results directory (default benchmark/surprisal/<stamp>)
@@ -56,6 +61,8 @@ while [ $# -gt 0 ]; do
     --text-chars) TEXT_CHARS="$2"; shift 2 ;;
     --score) SCORE="$2"; shift 2 ;;
     --chunk) CHUNK="$2"; shift 2 ;;
+    --a-chunk) A_CHUNK="$2"; shift 2 ;;
+    --b-chunk) B_CHUNK="$2"; shift 2 ;;
     --a-env) A_ENV="$2"; shift 2 ;;
     --b-env) B_ENV="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
@@ -70,8 +77,10 @@ case "$MODEL" in
   *) MODEL="$PWD/$MODEL" ;;
 esac
 MODEL="${MODEL%/}"
-case "$TEXT_CHARS$SCORE$CHUNK" in
-  *[!0-9]*) die "--text-chars, --score and --chunk take whole numbers" ;;
+A_CHUNK="${A_CHUNK:-$CHUNK}"
+B_CHUNK="${B_CHUNK:-$CHUNK}"
+case "$TEXT_CHARS$SCORE$A_CHUNK$B_CHUNK" in
+  *[!0-9]*) die "--text-chars, --score and the chunks take whole numbers" ;;
 esac
 
 [ "$(uname -s)" = "Darwin" ] || die "needs macOS on Apple Silicon"
@@ -97,21 +106,21 @@ head -c "$TEXT_CHARS" "$text.full" >"$text"
 rm -f "$text.full"
 
 run_arm() {
-  local name="$1" envs="$2" code=0
+  local name="$1" envs="$2" chunk="$3" code=0
   local -a pairs=()
   local pair
   for pair in $envs; do pairs+=("$pair"); done
-  echo "== arm $name: ${envs:-(no environment)} =="
+  echo "== arm $name: ${envs:-(no environment)}, chunk $chunk =="
   env ${pairs[@]+"${pairs[@]}"} "$CLI" --model "$MODEL" --prompt "$(cat "$text")" \
     --score "$SCORE" --score-out "$OUT/$name.nll" \
-    --prefill-chunk "$CHUNK" --max-context 65536 >"$OUT/$name.log" 2>&1 || code=$?
+    --prefill-chunk "$chunk" --max-context 65536 >"$OUT/$name.log" 2>&1 || code=$?
   [ "$code" -eq 0 ] || die "arm $name exited $code; see $OUT/$name.log"
   grep '^\[score' "$OUT/$name.log" || die "arm $name printed no score line; see $OUT/$name.log"
 }
 
-run_arm A "$A_ENV"
+run_arm A "$A_ENV" "$A_CHUNK"
 sleep 20
-run_arm B "$B_ENV"
+run_arm B "$B_ENV" "$B_CHUNK"
 
 hash_of() { sed -n 's/.*token_hash=\([0-9a-f]*\).*/\1/p' "$OUT/$1.log"; }
 [ "$(hash_of A)" = "$(hash_of B)" ] || die "the arms scored different tokens; not a comparison"
@@ -120,8 +129,8 @@ hash_of() { sed -n 's/.*token_hash=\([0-9a-f]*\).*/\1/p' "$OUT/$1.log"; }
   echo
   echo "model   $MODEL"
   echo "commit  $(git rev-parse --short HEAD)"
-  echo "A env   ${A_ENV:-(none)}"
-  echo "B env   ${B_ENV:-(none)}"
+  echo "A env   ${A_ENV:-(none)}, chunk $A_CHUNK"
+  echo "B env   ${B_ENV:-(none)}, chunk $B_CHUNK"
   paste "$OUT/A.nll" "$OUT/B.nll" | awk '
     { a += $1; b += $2; d = $2 - $1; s += d; ss += d * d; n++ }
     END {

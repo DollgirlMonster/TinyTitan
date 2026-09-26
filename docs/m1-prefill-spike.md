@@ -427,3 +427,37 @@ arm adding one:
 
 The weights stay on the external drive: the drive is only worth moving if it
 remains the bottleneck after these.
+
+## Spike 10 (commit 773381b, two rounds, 16,931-token prompt)
+
+| arm | prefill s (r1, r2) | tok/s | Gcycles | chunks | dense / routed phase s (r2) |
+| --- | --- | ---: | ---: | ---: | --- |
+| c8192widerouted | 213.8, 212.9 | 79.4 | 217 | 3 | 139.7 / 63.7 |
+| c8192fast | 219.5, 214.4 | 78.1 | 198-201 | 3 | 125.5 / 78.9 |
+| c16384fast | 189.5, 183.6 | 90.8 | 192 | 2 | 125.8 / 48.4 |
+| c8192attn | 180.4, 170.5 | 96.6 | 163 | 3 | 97.5 / 63.5 |
+| c16384attn | 156.6, 156.1 | 108.4 | 160 | 2 | 98.7 / 48.0 |
+
+- **Indexer on the matrix units** (`TINYTITAN_QSA_SCORE_MMA`):
+  `prefill_qsa_index` fell from 17.0 s to 1.3 s. The time did not go away at
+  8,192: the dense phase dropped ~14 s, but the routed phase rose by about as
+  much, because the expert prefetch no longer overlaps as much dense work and
+  the drive now shows. The output hash matches `c8192widerouted`.
+- **Chunk 16,384**: one routed sweep fewer, so the routed phase drops from
+  ~64-79 s to ~48 s, and GPU occupancy rises to 86%. It costs 0.6 GiB more RSS
+  and no swap.
+- **QSA attention on the matrix units** (`TINYTITAN_PREFILL_QSA_MMA`):
+  `prefill_attn_router` fell from 72 s to 45.5 s, a 27% cut in GPU work
+  overall. The output changes, as expected from rounding, and stays coherent.
+  Decode tok/s in these arms (4.2-4.4 against 3.7) follows from generating
+  different text, not from the switch: decode does not run the prefill kernel.
+
+`c16384attn` against spike 4's base (419-451 s): 2.8x. Against the original
+engine's estimated ~485 s: ~3.1x. What is left: GDN 45.7 s; attention layers
+45.6 s (projections, hyper-connections and attention); routed 30.3 s; shared
+expert 8.3 s; indexer 1.4 s. Of the routed phase's 48 s, about 10 s is the
+drive waiting beyond the routed and shared GPU work. The drive is not yet the
+last bottleneck, so the weights stay external.
+
+Surprisal judges the whole launch configuration against the no-switch
+reference (`tools/prefill_surprisal_ab.sh --b-chunk 16384`).
