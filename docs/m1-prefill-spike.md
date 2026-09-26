@@ -358,3 +358,18 @@ otherwise for the dense projections: `gdn_in_proj` + `gdn_out_proj` did
 - **the shared expert's scalar gate**: ~2 GFLOP of work, but 2 x 8,192 one-token
   encoders per layer-chunk, most of `shared_expert`'s ~11 s under MPP.
   `TINYTITAN_PREFILL_COALESCE` (bit-identical, spike 2) is now on by default.
+
+## Spike 8 (commit 8ad4c17, two rounds, 16,931-token prompt, on battery)
+
+| arm | prefill s (r1, r2) | tok/s | Gcycles | routed GPU s |
+| --- | --- | ---: | ---: | ---: |
+| c8192 (coalesced rows now default) | 292.2, 289.3 | 58.2 | 324 | 66.1 |
+| c8192wide | 239.4, 235.9 | 71.3 | 256 | 66.5 |
+| c8192widerouted | 227.4, 229.2 | 74.2 | 261 | 65.7 |
+
+Coalescing measured: `shared_expert` 29.3 -> 26.0 s, and 11.3 -> 8.6 s under
+MPP (spike 7 vs 8). The grouped routed GEMMs changed the output but not the
+routed GPU time: each expert's GEMM was its own encoder of ~60 threadgroups,
+51 of them in sequence per tile, under two threadgroups per core. They now
+go into one concurrent encoder per phase (commit 92481b7), and grouped tiles
+are timed as `prefill_routed_gemm`.
