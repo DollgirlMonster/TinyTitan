@@ -40,6 +40,14 @@ final class QSAIndexer {
     private let poolRangePSO: MTLComputePipelineState
     private let scorePSO: MTLComputePipelineState
     private let scoreRowsPSO: MTLComputePipelineState
+    private let scoreRowsMMAPSO: MTLComputePipelineState
+
+    /// Spike switch: score a prefill chunk's blocks on the simdgroup matrix
+    /// units (`qsa_block_scores_rows_mma`) instead of one thread per (query,
+    /// block). The scores differ by float rounding, which can move a block
+    /// across the budget cut, so it is judged by the surprisal A/B.
+    static let prefillScoresOnMatrixUnits =
+        ProcessInfo.processInfo.environment["TINYTITAN_QSA_SCORE_MMA"] == "1"
     /// Decode selection on the GPU; nil when the kernel is unavailable.
     private let selectPSO: MTLComputePipelineState?
     private let rms: RMSNorm
@@ -94,6 +102,7 @@ final class QSAIndexer {
         self.poolRangePSO = try context.pipeline("qsa_pool_blocks")
         self.scorePSO = try context.pipeline("qsa_block_scores")
         self.scoreRowsPSO = try context.pipeline("qsa_block_scores_rows")
+        self.scoreRowsMMAPSO = try context.pipeline("qsa_block_scores_rows_mma")
         self.selectPSO = try? context.pipeline("qsa_select_decode")
         self.rms = try RMSNorm(context: context)
         self.rope = try RoPE(context: context)
@@ -451,7 +460,8 @@ final class QSAIndexer {
         guard let enc = commandBuffer.makeComputeCommandEncoder() else {
             throw MetalError.commandEncoderFailed
         }
-        enc.setComputePipelineState(scoreRowsPSO)
+        let matrixUnits = Self.prefillScoresOnMatrixUnits && headDim % 32 == 0
+        enc.setComputePipelineState(matrixUnits ? scoreRowsMMAPSO : scoreRowsPSO)
         enc.setBuffer(queryRows, offset: 0, index: 0)
         enc.setBuffer(buffers.pooled, offset: 0, index: 1)
         enc.setBuffer(scoresBuf, offset: 0, index: 2)
@@ -463,10 +473,17 @@ final class QSAIndexer {
         enc.setBytes(&h, length: MemoryLayout<UInt32>.size, index: 4)
         enc.setBytes(&b, length: MemoryLayout<UInt32>.size, index: 5)
         enc.setBytes(&t, length: MemoryLayout<UInt32>.size, index: 6)
-        let w = min(scoreRowsPSO.maxTotalThreadsPerThreadgroup, 256)
-        enc.dispatchThreads(
-            MTLSize(width: blocks * tokens, height: 1, depth: 1),
-            threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
+        if matrixUnits {
+            // 32 queries x 32 blocks per threadgroup, 128 threads.
+            enc.dispatchThreadgroups(
+                MTLSize(width: (blocks + 31) / 32, height: (tokens + 31) / 32, depth: 1),
+                threadsPerThreadgroup: MTLSize(width: 128, height: 1, depth: 1))
+        } else {
+            let w = min(scoreRowsPSO.maxTotalThreadsPerThreadgroup, 256)
+            enc.dispatchThreads(
+                MTLSize(width: blocks * tokens, height: 1, depth: 1),
+                threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
+        }
         enc.endEncoding()
         lastScoredBlocks = blocks
     }
