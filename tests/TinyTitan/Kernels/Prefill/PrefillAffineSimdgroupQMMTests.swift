@@ -32,7 +32,7 @@ import Testing
         return made
     }
 
-    private struct Case: Sendable, CustomTestStringConvertible {
+    struct Case: Sendable, CustomTestStringConvertible {
         let t: Int, n: Int, k: Int, bits: Int
         var testDescription: String { "T\(t) N\(n) K\(k) \(bits)-bit" }
     }
