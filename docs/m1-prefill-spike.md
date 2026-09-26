@@ -154,3 +154,51 @@ ULP (max |diff| 0.000244 at values up to 0.503). The grouped kernel used 64-key
 tiles against the per-head kernel's 128, and the online softmax rescales at each
 tile boundary: the same sum, rounded at different points. The tile is now tied
 to `kPrefillQSATile`.
+
+## Spike 3 results (commit 195d317, three rounds, `--gpu-clock`)
+
+The grouped-kernel byte-equality tests pass on the M1 with the tile fix.
+
+| arm | prefill s (r1, r2, r3) | Gcycles (r1, r2, r3) | GPU work vs base | output |
+| --- | --- | --- | ---: | --- |
+| base | 228.1, 202.6, 202.0 | 164.5, 182.4, 176.2 | -- | reference (`0.1.0.`) |
+| mppwide | 184.3, 177.5, 174.8 | 140.7, 143.7, 150.9 | -16.8% | differs (empty reply) |
+| gqa | 179.9, 173.8, 172.9 | 139.3, 135.5, 150.6 | -18.7% | **same as base** |
+| wide (both) | 157.1, 151.6, 150.2 | 110.5, 108.5, 118.1 | -35.6% | differs (empty reply) |
+
+`gqa` is byte-identical and the largest single cut so far: `attn_core` went from
+54.2 s to 28.7 s. `mppwide` and `wide` differ in the same way every round: the
+prompt ends mid-sentence in repository prose ("... at tag"), base continues with
+`0.1.0.` and the wide arms end the turn at once. That is one close first-token
+decision flipping, the same way three times -- rounding, not noise -- and it is
+exactly what a quality loss would also look like, so `mppwide` stays off until
+`benchmark/quant_perplexity_ab.py` clears it. The kernel itself was re-read for
+a real defect: N edges are masked, accumulation is float, and it is built for
+the same weight width as the `prefillQMM` it replaces; the one numeric
+difference is each dequantized weight rounded to fp16 before the multiply.
+
+Where the GPU time goes now (`splitwide`, one round, s):
+
+| stage | s | spike 2 | note |
+| --- | ---: | ---: | --- |
+| `routed_tile` | 30.1 | 30.6 | now the top role |
+| `attn_core` | 28.7 | 54.2 | grouped kernel |
+| `gdn_in_proj` + `gdn_out_proj` | 8.6 | 8.4 | |
+| `gdn_scan` | 5.6 | 5.1 | |
+| routers (remainders) | 7.4 | 7.2 | |
+| `shared_expert` | 4.7 | 12.9 | batched MPP |
+| `qsa_index` | 3.9 | 4.3 | |
+| `hc_in` + `hc_out` | 3.4 | 17.5 | MPP |
+| `attn_qkv_proj` + `attn_o_proj` + `attn_rope_kv` | 2.9 | 2.9 | |
+| GPU busy of span | 95.6 of 134.2 | 141-146 of ~185 | 71% occupied |
+
+The host side (`wide`, round 2, `TURBO_FIELDFARE_PHASES`): per chunk,
+"route readback + GPU" 31.7 s / 38.4 s and "expert fetch + tiles" 25.2 s /
+24.0 s, with 432.5 / 411.5 distinct experts per layer. That is 57.5 + 54.7 GB
+of routed experts (active x 48 layers x 2,768,896 B) streamed in 49.2 s, about
+2.3 GB/s, against 30.6 s of routed-tile GPU work in the same phase. Read: the
+routed half of prefill is now bound by the external drive, not the GPU, and
+each extra chunk is one more near-full sweep of the expert corpus. The levers,
+in order: a chunk above 4,096 (one sweep for this prompt instead of two), a
+faster drive, and only then the routed-tile kernel. About 17 s of each prefill
+still precedes the first GPU command buffer.
