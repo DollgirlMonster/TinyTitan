@@ -169,6 +169,10 @@ record_machine() {
   echo "macOS       $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
   echo "swift       $swift_version"
   echo "model       $MODEL"
+  # Experts stream from the model's own drive, so where it sits bounds every
+  # result: an external Thunderbolt enclosure is a fraction of an internal SSD.
+  echo "model disk  $(diskutil info "$MODEL" 2>/dev/null \
+    | awk -F': *' '/Device Location|Protocol|Solid State/ { gsub(/^ +/, "", $1); printf "%s=%s  ", $1, $2 }')"
   echo "arms        ${arm_list[*]+"${arm_list[*]}"}"
   echo "rounds      $ROUNDS, prompt ${PROMPT_CHARS} chars, max-new $MAX_NEW, cooldown ${COOLDOWN}s"
 }
