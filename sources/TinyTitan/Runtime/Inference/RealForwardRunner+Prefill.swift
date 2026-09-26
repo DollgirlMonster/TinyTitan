@@ -1255,9 +1255,12 @@ extension RealForwardRunner {
                 }
             }
         }
+        // Committed, not awaited: the routed tiles' expert reads can start
+        // while the GPU runs the shared expert. Command buffers on one queue
+        // run in commit order -- the tiles below already rely on that for
+        // their own shared scratch -- and nothing before the tail reads h1, so
+        // the wait moves to just before the tail. Same kernels, same order.
         sharedCB.commit()
-        try waitForCompletion(sharedCB)
-        recordKernelGPU(role: "prefill_shared_expert", sharedCB)
 
         let metadata = try prefillGroupedMoE.makeStreamedMetadataBuffers(
             device: ctx.device,
@@ -1418,6 +1421,8 @@ extension RealForwardRunner {
         while !pendingTiles.isEmpty {
             try drainOldestPendingTile()
         }
+        try waitForCompletion(sharedCB)
+        recordKernelGPU(role: "prefill_shared_expert", sharedCB)
         prefillTileEnd = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         prefillTileNanos &+= prefillTileEnd - prefillRouteEnd
         guard let tailCB = ctx.queue.makeCommandBuffer() else {
