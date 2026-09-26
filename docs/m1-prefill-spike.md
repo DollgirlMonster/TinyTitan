@@ -461,3 +461,28 @@ last bottleneck, so the weights stay external.
 
 Surprisal judges the whole launch configuration against the no-switch
 reference (`tools/prefill_surprisal_ab.sh --b-chunk 16384`).
+
+## Surprisal: the spike 10 launch configuration (commit efad983)
+
+19,087 tokens of context, then 512 tokens teacher-forced (the token hashes
+match):
+
+| arm | chunk | mean NLL | perplexity |
+| --- | ---: | ---: | ---: |
+| A: no switches | 8,192 | 2.13440 | 8.4520 |
+| B: `MPP_WIDE ROUTED_MPP QSA_SCORE_MMA PREFILL_QSA_MMA` | 16,384 | 2.14580 | 8.5489 |
+
+B - A: mean dNLL +0.0114, se 0.0124, t +0.92 (perplexity +1.15%). No
+measurable change; the test resolves about +/-2.5% perplexity (2 se). The
+per-token movement is smaller than the MPP-only check: mean |dNLL| 0.160
+against 0.214, 38 tokens beyond 0.5 nats against 66, none beyond 2. 276 tokens
+went down and 236 went up.
+
+The two surprisal runs used different text: the default prose includes this
+document, which grew between them, so their A arms are not comparable (2.214
+against 2.134). `--text <earlier run>/text.txt` now pins the text.
+
+Launch configuration (108 tok/s prefill on the ~17K prompt):
+
+    TINYTITAN_PREFILL_MPP_WIDE=1 TINYTITAN_PREFILL_ROUTED_MPP=1 \
+    TINYTITAN_QSA_SCORE_MMA=1 TINYTITAN_PREFILL_QSA_MMA=1 ... --prefill-chunk 16384

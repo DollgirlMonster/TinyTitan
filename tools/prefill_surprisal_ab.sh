@@ -23,6 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODEL=""
 TEXT_CHARS=60000
+TEXT_FILE=""
 SCORE=512
 CHUNK=8192
 A_CHUNK=""
@@ -38,6 +39,10 @@ Options:
   --model <dir>        installed .gturbo model (required)
   --text-chars <n>     characters of repository prose to use (default 60000,
                        ~17K tokens; the last --score tokens are scored)
+  --text <file>        score this text instead (its first --text-chars
+                       characters). The default prose is this repository's
+                       docs, which change between commits, so pass an earlier
+                       run's text.txt to compare runs across commits
   --score <n>          continuation tokens to score (default 512; decode speed
                        sets the time: ~2 min at 4 tok/s)
   --chunk <n>          --prefill-chunk for both arms (default 8192)
@@ -59,6 +64,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --model) MODEL="$2"; shift 2 ;;
     --text-chars) TEXT_CHARS="$2"; shift 2 ;;
+    --text) TEXT_FILE="$2"; shift 2 ;;
     --score) SCORE="$2"; shift 2 ;;
     --chunk) CHUNK="$2"; shift 2 ;;
     --a-chunk) A_CHUNK="$2"; shift 2 ;;
@@ -77,6 +83,10 @@ case "$MODEL" in
   *) MODEL="$PWD/$MODEL" ;;
 esac
 MODEL="${MODEL%/}"
+case "$TEXT_FILE" in
+  "" | /*) ;;
+  *) TEXT_FILE="$PWD/$TEXT_FILE" ;;
+esac
 A_CHUNK="${A_CHUNK:-$CHUNK}"
 B_CHUNK="${B_CHUNK:-$CHUNK}"
 case "$TEXT_CHARS$SCORE$A_CHUNK$B_CHUNK" in
@@ -99,9 +109,14 @@ mkdir -p "$OUT"
 # The same prose m1_spike.sh uses, filtered to a file first and then cut (see
 # its note on SIGPIPE under pipefail).
 text="$OUT/text.txt"
-# shellcheck disable=SC2046 # the doc list is word-split on purpose
-cat $(ls "$ROOT"/docs/qwen38-*.md "$ROOT"/docs/adding-a-model.md "$ROOT"/docs/m1-prefill-spike.md | sort) \
-  | LC_ALL=C tr -cd '\11\12\15\40-\176' >"$text.full"
+if [ -n "$TEXT_FILE" ]; then
+  [ -f "$TEXT_FILE" ] || die "--text $TEXT_FILE is not a file"
+  LC_ALL=C tr -cd '\11\12\15\40-\176' <"$TEXT_FILE" >"$text.full"
+else
+  # shellcheck disable=SC2046 # the doc list is word-split on purpose
+  cat $(ls "$ROOT"/docs/qwen38-*.md "$ROOT"/docs/adding-a-model.md "$ROOT"/docs/m1-prefill-spike.md | sort) \
+    | LC_ALL=C tr -cd '\11\12\15\40-\176' >"$text.full"
+fi
 head -c "$TEXT_CHARS" "$text.full" >"$text"
 rm -f "$text.full"
 
