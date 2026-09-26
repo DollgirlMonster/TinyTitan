@@ -277,6 +277,11 @@ Either move it back to the path above, or re-issue the receipt in place:
   prefill_tok="$(echo "$footer" | sed -n 's/.*prefill=\([0-9]*\)tok.*/\1/p')"
   prefill_s="$(echo "$footer" | sed -n 's/.*prefill=[0-9]*tok\/\([0-9.]*\)s.*/\1/p')"
   decode_tps="$(echo "$footer" | sed -n 's/.*tok\/s=\([0-9.]*\).*/\1/p')"
+  # A rate over a handful of tokens is noise (one token over ~1 ms printed
+  # 993 tok/s), so decode is only reported past 16 generated tokens.
+  local new_tok
+  new_tok="$(echo "$footer" | sed -n 's/.* new=\([0-9]*\)tok.*/\1/p')"
+  if [ "${new_tok:-0}" -lt 16 ]; then decode_tps="n/a(${new_tok:-0}tok)"; fi
   prefill_tps="$(awk -v t="${prefill_tok:-0}" -v s="${prefill_s:-0}" 'BEGIN { if (s > 0) printf "%.1f", t / s; else print "" }')"
   occ="$(sed -n 's/.*(\([0-9]*\)% occupied).*/\1/p' "$log" | tail -1)"
   hit="$(sed -n 's/.*\[decode expert io\].*(\([0-9.]*\)% hit).*/\1/p' "$log" | tail -1)"
