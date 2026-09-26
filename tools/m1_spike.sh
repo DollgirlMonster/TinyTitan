@@ -14,15 +14,28 @@
 # and ~4x the memory bandwidth but a similar SSD, and room for half the expert
 # corpus in RAM. The arms test whether that moves the balance:
 #
-#   base         the install's profile defaults
+#   base         the install's profile defaults (the grouped QSA kernel is now
+#                one of them)
 #
-# Spike 3 (the default set): the scalar prefill GEMMs onto MPP
+# Spike 4 (the default set, ~16K-token prompt): the chunk ceiling
+#   c8192        --prefill-chunk 8192: half the chunks, so half the sweeps of
+#                the routed-expert corpus (~57 GB each on Qwen3.8 4-bit)
+#   c16384       --prefill-chunk 16384: the whole default prompt in one chunk
+#   wide16k      c16384 + TINYTITAN_PREFILL_MPP_WIDE=1
+#   pergqa       TINYTITAN_PREFILL_QSA_GQA=0: the per-head QSA kernel the grouped
+#                one replaced, for a before/after on this build
+# Chunking can change the output (the chunk boundaries move), so c8192/c16384
+# may legitimately differ from base; they are judged on speed and on staying
+# coherent, then on benchmark/quant_perplexity_ab.py before any default moves.
+#
+# Spike 3: the scalar prefill GEMMs onto MPP
 #   mppwide      TINYTITAN_PREFILL_MPP_WIDE=1: hyper-connection, QSA-indexer and
 #                PLE projections on the MPP tensor-op QMM, and the shared expert
 #                as three GEMMs over the chunk; may change the output
 #   gqa          TINYTITAN_PREFILL_QSA_GQA=1: the QSA attention kernel with one
 #                threadgroup per (token, KV head), each selected K/V row read
-#                once instead of once per query head; must read "same as base"
+#                once instead of once per query head; now the default, so this
+#                arm is a second base
 #   wide         mppwide + gqa
 #   all          combo + mppwide
 #   splitwide    split + mppwide + gqa (diagnostic, one round is enough)
@@ -60,10 +73,10 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 MODEL="$ROOT/models/qwen3.8-flash-next_125B_A6B_4Bit"
 ROUNDS=2
-PROMPT_CHARS=28000
+PROMPT_CHARS=56000
 MAX_NEW=64
 COOLDOWN=20
-ARMS="base mppwide gqa wide"
+ARMS="base c8192 c16384"
 SKIP_BUILD=0
 GPU_CLOCK=0
 SKIP_TESTS=0
@@ -78,10 +91,12 @@ usage() {
 Options:
   --model <dir>        installed .gturbo model (default models/qwen3.8-flash-next_125B_A6B_4Bit)
   --rounds <n>         interleaved rounds per arm (default 2)
-  --arms "<list>"      any of: base mppwide gqa wide splitwide all combo
+  --arms "<list>"      any of: base c8192 c16384 wide16k pergqa
+                       mppwide gqa wide splitwide all combo
                        coalesce qqmm hcfused qsagpu split
                        s128 s256 nobound s256nobound c2048
-  --prompt-chars <n>   prompt size in characters (default 28000, ~7-8K tokens)
+  --prompt-chars <n>   prompt size in characters (default 56000, ~16K tokens;
+                       spikes 1-3 used 28000, ~7.9K)
   --max-new <n>        generated tokens per run (default 64)
   --cooldown <s>       pause between runs (default 20)
   --out <dir>          results directory (default benchmark/m1-spike/<stamp>)
@@ -143,6 +158,10 @@ arm_spec() {
     nobound) echo "nobound|TINYTITAN_BOUNDED_IO=0|" ;;
     s256nobound) echo "s256nobound|TINYTITAN_BOUNDED_IO=0|--expert-cache-slots 256" ;;
     c2048) echo "c2048||--prefill-chunk 2048" ;;
+    c8192) echo "c8192||--prefill-chunk 8192" ;;
+    c16384) echo "c16384||--prefill-chunk 16384" ;;
+    wide16k) echo "wide16k|TINYTITAN_PREFILL_MPP_WIDE=1|--prefill-chunk 16384" ;;
+    pergqa) echo "pergqa|TINYTITAN_PREFILL_QSA_GQA=0|" ;;
     coalesce) echo "coalesce|TINYTITAN_PREFILL_COALESCE=1|" ;;
     qqmm) echo "qqmm|TINYTITAN_PREFILL_Q_QMM=1|" ;;
     hcfused) echo "hcfused|TINYTITAN_HC_FUSED=1|" ;;
@@ -493,8 +512,7 @@ fi
       print "How to read it:"
       print "  occ % on base well under 90 -> prefill is waiting on the SSD here, unlike the M3;"
       print "     s256 and a >4096 chunk are the levers to build on."
-      print "  c2048 much slower than base -> prefill cost tracks the chunk count;"
-      print "     an 8K/16K chunk (needs code: PrefillRuntimeConfig.maxChunkTokens) should pay."
+      print "  c2048 much slower than base -> prefill cost tracks the chunk count."
       print "  s256 faster with swap +0 -> run with --expert-cache-slots 256 (or --ram-budget) now."
       print "  nobound faster -> the page-cache trade pays on this machine (TINYTITAN_BOUNDED_IO=0)."
       print "  c2048 may legitimately differ in output (different chunking); the others should not."
@@ -508,7 +526,33 @@ fi
       print "     close is the bar, then benchmark/quant_perplexity_ab.py before a default."
       print "  gqa MUST read \"same as base\": it keeps the per-head arithmetic exactly."
       print "  Read GPU work (Gcycles) first; prefill seconds move with the clock."
+      print "Spike 4:"
+      print "  c8192/c16384 read the routed experts 2x/4x fewer times than base on a ~16K"
+      print "     prompt; the win is in prefill seconds and the \"expert fetch + tiles\""
+      print "     phase (r*-*.log), not in Gcycles. They may differ in output (chunking)."
+      print "  pergqa MUST read \"same as base\" and should be slower: the old kernel."
     }' "$results"
+  # The host-side split of each prefill (TURBO_FIELDFARE_PHASES, on in every
+  # arm): the chunk count, then the dense GPU half and the routed-expert half.
+  # A bigger chunk should shrink the expert half, which Gcycles cannot show.
+  echo
+  echo "Prefill phases per round (s): chunks / route readback + GPU / expert fetch + tiles"
+  for arm in ${arm_list[@]+"${arm_list[@]}"}; do
+    line=""
+    r=1
+    while [ "$r" -le "$ROUNDS" ]; do
+      log="$OUT/r$r-$arm.log"
+      if [ -f "$log" ]; then
+        line="$line  $(awk '
+          /^\[prefill phases over/ { c++ }
+          /route readback \+ GPU:/ { g += $5 }
+          /expert fetch \+ tiles:/ { e += $5 }
+          END { printf "%d / %.1f / %.1f", c, g / 1000, e / 1000 }' "$log")"
+      fi
+      r=$((r + 1))
+    done
+    printf "  %-12s%s\n" "$arm" "$line"
+  done
 } | tee "$OUT/summary.txt"
 
 echo

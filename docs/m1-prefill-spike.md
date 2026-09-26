@@ -202,3 +202,40 @@ each extra chunk is one more near-full sweep of the expert corpus. The levers,
 in order: a chunk above 4,096 (one sweep for this prompt instead of two), a
 faster drive, and only then the routed-tile kernel. About 17 s of each prefill
 still precedes the first GPU command buffer.
+
+## After spike 3: what changed, and spike 4
+
+- **The grouped QSA kernel is the default** (`TINYTITAN_PREFILL_QSA_GQA=0` restores
+  the per-head one). Its byte-equality test now also covers int4 and fp16 KV.
+- **The chunk ceiling is 16,384** (`--prefill-chunk 8192|16384`; the default stays
+  4,096 until spike 4 measures it). Everything a chunk sizes was already sized
+  from the configured chunk; the one new limit is the key selection, indexed
+  `row * visibleKeys + key` in 32 bits, so chunk x context may not pass 2^32 --
+  every native context takes 16K, the 512K/1M YaRN contexts cap it at 8K/4K,
+  and `RuntimeConfiguration.validate(maxContext:)` refuses the rest with the
+  largest chunk that fits. Qwen3.8's chunk scratch is 0.81 GiB at 4K and
+  3.22 GiB at 16K.
+- **The shared expert no longer blocks the expert reads.** Its command buffer
+  is committed and awaited only before the tail that reads it, so the host
+  starts the routed tiles' reads while the GPU runs it. Same kernels, same
+  queue order.
+- **Installer-made models now find their profile row.** The installer writes
+  `qwen3.8-flash-next-4bit`; the table is keyed `qwen3.8-flash-next`, so every
+  installed model ran on its family fallback (`family-default` in the log). On
+  Qwen3.8 that left the expert cache unwired through prefill, which the row
+  measured at 1.6-4.7 s per request on re-wire.
+
+Spike 4 (`tools/m1_spike.sh` defaults: ~16K-token prompt, arms `base c8192
+c16384`): 4, 2 and 1 chunks, so 4, 2 and 1 sweeps of the routed experts. The
+summary now splits each run into its host phases, where the saving should
+show: "expert fetch + tiles" is the half the chunk count multiplies.
+
+## Speedups so far, 7,879-token prompt
+
+| step | prefill s | tok/s | vs spike-1 base |
+| --- | ---: | ---: | ---: |
+| spike 1 base (commit 85e104a) | ~201 | 39 | -- |
+| + grouped QSA kernel (now default, same output) | ~173 | 45 | 1.16x |
+| + MPP for the remaining GEMMs (opt-in, output differs) | ~151 | 52 | 1.33x |
+
+Rounds 2-3 of spike 3; round 1 of base read the model cold.
