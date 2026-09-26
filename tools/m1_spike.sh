@@ -24,8 +24,9 @@
 #   wide16k      c16384 + TINYTITAN_PREFILL_MPP_WIDE=1
 #   pergqa       TINYTITAN_PREFILL_QSA_GQA=0: the per-head QSA kernel the grouped
 #                one replaced, for a before/after on this build
-#   c8192qsa     c8192 + TINYTITAN_QSA_GPU_SELECT=1: the QSA key selection on the
-#                GPU; on the CPU it grows with context (~68 s at 16K)
+#   c8192qsa     c8192 + TINYTITAN_QSA_GPU_SELECT=1. Decode only: the switch
+#                never reaches the prefill selection, so for prefill this is a
+#                second c8192 (spike 5 measured exactly that)
 #   c8192wide    c8192 + TINYTITAN_PREFILL_MPP_WIDE=1
 # Chunking can change the output (the chunk boundaries move), so c8192/c16384
 # may legitimately differ from base; they are judged on speed and on staying

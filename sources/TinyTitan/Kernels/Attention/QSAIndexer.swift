@@ -518,51 +518,115 @@ final class QSAIndexer {
         let counts = countBuf.contents().bindMemory(to: UInt32.self, capacity: tokens)
         let scores = scoresBuf.contents().bindMemory(
             to: Float.self, capacity: lastScoredBlocks * tokens)
-        for row in 0..<tokens {
-            let visible = startPosition + row + 1
-            let base = row * stride
-            memset(keep + base, 0, stride)
-            if visible <= selectionWidth {
-                memset(keep + base, 1, visible)
-                let out = indices + row * indexWidth
-                for key in 0..<visible { out[key] = UInt32(key) }
-                counts[row] = UInt32(visible)
-                continue
-            }
-            let completeCells = (visible / compressRatio) * compressRatio
-            for cell in completeCells..<visible { keep[base + cell] = 1 }
-            var remaining = selectionWidth - (visible - completeCells)
-            guard remaining > 0 else { continue }
-            let blocks = completeCells / compressRatio
-            let rowScores = scores + row * lastScoredBlocks
-            let ranked = (0..<blocks).sorted {
-                rowScores[$0] == rowScores[$1]
-                    ? $0 < $1 : rowScores[$0] > rowScores[$1]
-            }
-            for block in ranked {
-                if remaining <= 0 { break }
-                let take = min(compressRatio, remaining)
-                let cellBase = base + block * compressRatio
-                for offset in 0..<take { keep[cellBase + offset] = 1 }
-                remaining -= take
-            }
-            // Compact ascending. Scanning the row once here is O(visible) on
-            // the host and replaces the same scan done once per query *per
-            // head* on the GPU; ascending order also keeps the K/V reads
-            // sequential, which a score-ordered list would not.
-            var written = 0
-            let out = indices + row * indexWidth
-            for key in 0..<visible where keep[base + key] != 0 {
-                if written == indexWidth { break }
-                out[written] = UInt32(key)
-                written += 1
-            }
-            counts[row] = UInt32(written)
-        }
+        Self.selectPrefillRows(
+            PrefillSelectionGeometry(
+                startPosition: startPosition, tokens: tokens, stride: stride,
+                indexWidth: indexWidth, selectionWidth: selectionWidth,
+                compressRatio: compressRatio, scoredBlocks: lastScoredBlocks),
+            keep: keep, indices: indices, counts: counts, scores: scores)
         return QSASelection(
             mask: keepBuf, maskStride: stride,
             indices: indexBuf, indexStride: indexWidth,
             counts: countBuf)
+    }
+
+    /// One prefill chunk's selection shape, for `selectPrefillRows`.
+    struct PrefillSelectionGeometry: Sendable {
+        let startPosition: Int
+        let tokens: Int
+        /// Mask bytes per row: the chunk's last visible key count.
+        let stride: Int
+        let indexWidth: Int
+        let selectionWidth: Int
+        let compressRatio: Int
+        /// Scores per row in the scores buffer.
+        let scoredBlocks: Int
+    }
+
+    /// Every row of a prefill chunk's selection, rows in parallel.
+    ///
+    /// Each row is independent -- it reads its own scores and writes only its
+    /// own mask row, index row and count -- and the per-row work is a full
+    /// sort of the row's block scores, so a chunk at 8-16K context spent ~40 s
+    /// of a 16.9K-token prefill here on one core (M1 Max). `concurrent: false`
+    /// is the same work in row order, for the test that holds them equal.
+    static func selectPrefillRows(
+        _ g: PrefillSelectionGeometry,
+        keep: UnsafeMutablePointer<UInt8>,
+        indices: UnsafeMutablePointer<UInt32>,
+        counts: UnsafeMutablePointer<UInt32>,
+        scores: UnsafePointer<Float>,
+        concurrent: Bool = true
+    ) {
+        guard concurrent, g.tokens > 1 else {
+            for row in 0..<g.tokens {
+                selectPrefillRow(
+                    row, g, keep: keep, indices: indices, counts: counts, scores: scores)
+            }
+            return
+        }
+        // `concurrentPerform` returns only after every iteration has finished,
+        // so the buffers outlive the closure; rows write disjoint ranges.
+        nonisolated(unsafe) let keepRows = keep
+        nonisolated(unsafe) let indexRows = indices
+        nonisolated(unsafe) let countRows = counts
+        nonisolated(unsafe) let scoreRows = scores
+        DispatchQueue.concurrentPerform(iterations: g.tokens) { row in
+            selectPrefillRow(
+                row, g, keep: keepRows, indices: indexRows, counts: countRows,
+                scores: scoreRows)
+        }
+    }
+
+    /// One query row: its own ragged tail forced in, then complete blocks by
+    /// score (descending, lower index first on a tie) until the cell budget
+    /// runs out; inside the window, everything it can see.
+    private static func selectPrefillRow(
+        _ row: Int, _ g: PrefillSelectionGeometry,
+        keep: UnsafeMutablePointer<UInt8>,
+        indices: UnsafeMutablePointer<UInt32>,
+        counts: UnsafeMutablePointer<UInt32>,
+        scores: UnsafePointer<Float>
+    ) {
+        let visible = g.startPosition + row + 1
+        let base = row * g.stride
+        memset(keep + base, 0, g.stride)
+        if visible <= g.selectionWidth {
+            memset(keep + base, 1, visible)
+            let out = indices + row * g.indexWidth
+            for key in 0..<visible { out[key] = UInt32(key) }
+            counts[row] = UInt32(visible)
+            return
+        }
+        let completeCells = (visible / g.compressRatio) * g.compressRatio
+        for cell in completeCells..<visible { keep[base + cell] = 1 }
+        var remaining = g.selectionWidth - (visible - completeCells)
+        guard remaining > 0 else { return }
+        let blocks = completeCells / g.compressRatio
+        let rowScores = scores + row * g.scoredBlocks
+        let ranked = (0..<blocks).sorted {
+            rowScores[$0] == rowScores[$1]
+                ? $0 < $1 : rowScores[$0] > rowScores[$1]
+        }
+        for block in ranked {
+            if remaining <= 0 { break }
+            let take = min(g.compressRatio, remaining)
+            let cellBase = base + block * g.compressRatio
+            for offset in 0..<take { keep[cellBase + offset] = 1 }
+            remaining -= take
+        }
+        // Compact ascending. Scanning the row once here is O(visible) on
+        // the host and replaces the same scan done once per query *per
+        // head* on the GPU; ascending order also keeps the K/V reads
+        // sequential, which a score-ordered list would not.
+        var written = 0
+        let out = indices + row * g.indexWidth
+        for key in 0..<visible where keep[base + key] != 0 {
+            if written == g.indexWidth { break }
+            out[written] = UInt32(key)
+            written += 1
+        }
+        counts[row] = UInt32(written)
     }
 
     private func growQueryScratch(rows: Int) throws {

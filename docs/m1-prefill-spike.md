@@ -279,3 +279,32 @@ Where a 16.9K-token prefill goes at c16384 (round 2, 394 s):
 | shared expert, per-token path | ~28 | `TINYTITAN_PREFILL_MPP_WIDE=1` makes it ~10 |
 | drive stall in the routed phase | ~11 | |
 | PLE gather | ~69 | now concurrent |
+
+## Spike 5 (commit f761aae, two rounds, 16,931-token prompt)
+
+| arm | prefill s (r1, r2) | tok/s | vs base | output |
+| --- | --- | ---: | ---: | --- |
+| base | 388.6, 352.9 | 45.7 | -- | reference |
+| c8192 | 346.5, 333.4 | 49.8 | -8.3% | same as base |
+| c8192qsa | 332.0, 346.3 | 50.0 | -8.5% | same as base |
+| c8192wide | 280.4, 289.6 | 59.4 | -23.1% | differs (MPP) |
+
+**The PLE gather fix measured:** base 419-451 s in spike 4 -> 353-389 s, and the
+time outside the layer phases 69 s -> ~10 s, as predicted.
+
+**`TINYTITAN_QSA_GPU_SELECT` is decode-only** (`RealForwardRunner+Residual`
+reads it in the decode QSA path alone), so `c8192qsa` was a second `c8192` --
+which is what it measured. The spike-4 table's "~68 s of QSA selection" was also
+wrong in its size: it left out `prefill_qsa_index` (20-23 s of GPU).
+
+What is left in the dense phase: 213.6 s (c8192, r2) against 173.9 s of GPU
+(attention 79.7, GDN 71.4, QSA indexer 22.8), so **~40 s of host time**, the
+same at every chunk size and with or without MPP. Its size and growth match the
+prefill key selection: every query row sorts all of its block scores on one
+core, 12 layers x every token, O(rows x context log context). The rows are
+independent and now run in parallel (`QSAIndexer.selectPrefillRows`,
+byte-identical to row order by `QSAPrefillSelectionTests`); the next run says
+how much of the 40 s that was.
+
+Best measured so far on this prompt: `c8192wide`, 59.4 tok/s (output differs,
+MPP arithmetic); `c8192`, 49.8 tok/s with base's output.
