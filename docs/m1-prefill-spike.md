@@ -373,3 +373,20 @@ routed GPU time: each expert's GEMM was its own encoder of ~60 threadgroups,
 51 of them in sequence per tile, under two threadgroups per core. They now
 go into one concurrent encoder per phase (commit 92481b7), and grouped tiles
 are timed as `prefill_routed_gemm`.
+
+## Surprisal check: MPP wide + routed MPP (commit 8ad4c17)
+
+`tools/prefill_surprisal_ab.sh`, 18,652 tokens of context prefilled at chunk
+8,192, then 512 tokens teacher-forced (token hashes equal):
+
+| arm | mean NLL | perplexity |
+| --- | ---: | ---: |
+| A: no switches | 2.21386 | 9.1510 |
+| B: `TINYTITAN_PREFILL_MPP_WIDE=1 TINYTITAN_PREFILL_ROUTED_MPP=1` | 2.21293 | 9.1425 |
+
+B - A: mean dNLL -0.00093, se 0.01676, t -0.06 (perplexity -0.09%): no
+measurable change; at this length the test resolves about +/-3.4% perplexity
+(2 se). Individual tokens do move -- mean |dNLL| 0.21, 66 of 512 by more than
+0.5 nats -- in both directions, as expected when the prefill arithmetic shifts
+which keys the QSA selection keeps. Concurrent encoding (92481b7) leaves every
+value the same, so the verdict covers it.
