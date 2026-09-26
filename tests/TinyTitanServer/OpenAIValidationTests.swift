@@ -456,11 +456,20 @@ struct ServerArgumentTests {
             "--prefill-chunk", "4096",
         ])
         #expect(arguments.prefillChunkTokens == 4_096)
-        #expect(throws: ServerArgumentError.self) {
-            try ServerArguments.parse([
+        for chunk in [8_192, 16_384] {
+            let larger = try ServerArguments.parse([
                 "--model", "model.gturbo",
-                "--prefill-chunk", "8192",
+                "--prefill-chunk", String(chunk),
             ])
+            #expect(larger.prefillChunkTokens == chunk)
+        }
+        for refused in ["32768", "3000"] {
+            #expect(throws: ServerArgumentError.self) {
+                try ServerArguments.parse([
+                    "--model", "model.gturbo",
+                    "--prefill-chunk", refused,
+                ])
+            }
         }
     }
 

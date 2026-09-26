@@ -56,9 +56,14 @@ import TinyTitan
         ])
         #expect(automatic.prefillChunk == .auto)
 
-        #expect(throws: ArgsError.invalidValue(flag: "--prefill-chunk", value: "8192")) {
+        let larger = try Args.parse([
+            "--model", "m.gturbo", "--prompt", "hi", "--prefill-chunk", "16384",
+        ])
+        #expect(larger.prefillChunk == .fixed(16_384))
+
+        #expect(throws: ArgsError.invalidValue(flag: "--prefill-chunk", value: "32768")) {
             _ = try Args.parse([
-                "--model", "m.gturbo", "--prompt", "hi", "--prefill-chunk", "8192",
+                "--model", "m.gturbo", "--prompt", "hi", "--prefill-chunk", "32768",
             ])
         }
     }
