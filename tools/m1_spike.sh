@@ -368,7 +368,7 @@ Either move it back to the path above, or re-issue the receipt in place:
   gib="$(sed -n 's/.*\[decode expert io\].*hit) \([0-9.]*\) GiB.*/\1/p' "$log" | tail -1)"
   rss="$(awk '/maximum resident set size/ { printf "%.1f", $1 / 1073741824 }' "$log")"
   sha="$(shasum -a 256 "$out" | cut -c1-12)"
-  swap_delta="$(awk -v a="${swap_before:-0}" -v b="${swap_after:-0}" 'BEGIN { printf "%.0f", b - a }')"
+  swap_delta="$(awk -v a="${swap_before:-0}" -v b="${swap_after:-0}" 'BEGIN { printf "%+.0f", b - a }')"
   local busy_ms gpu_mhz="" gpu_res="" busy_s gcycles=""
   busy_ms="$(sed -n 's/.*busy \([0-9]*\) ms of.*/\1/p' "$log" | tail -1)"
   busy_s="$(awk -v b="${busy_ms:-0}" 'BEGIN { if (b > 0) printf "%.1f", b / 1000 }')"
@@ -384,7 +384,7 @@ Either move it back to the path above, or re-issue the receipt in place:
     "${decode_tps:--}" "${occ:--}" "${hit:--}" "${gib:--}" "${rss:--}" \
     "$swap_delta" "$sha" "$code" \
     "${gpu_mhz:--}" "${gpu_res:--}" "${busy_s:--}" "${gcycles:--}" >>"$results"
-  echo "   exit $code  ${footer:-no footer (see $log)}  occupancy ${occ:-?}%  rss ${rss:-?} GiB  swap +${swap_delta} MB"
+  echo "   exit $code  ${footer:-no footer (see $log)}  occupancy ${occ:-?}%  rss ${rss:-?} GiB  swap ${swap_delta} MB"
   if [ -n "$pm_pid" ]; then
     echo "   gpu ${gpu_mhz:-?} MHz at ${gpu_res:-?}% residency, busy ${busy_s:-?} s = ${gcycles:-?} Gcycles"
   fi
