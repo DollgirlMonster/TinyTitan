@@ -197,7 +197,8 @@ record_machine() {
   echo "model       $MODEL"
   # Experts stream from the model's own drive, so where it sits bounds every
   # result: an external Thunderbolt enclosure is a fraction of an internal SSD.
-  echo "model disk  $(diskutil info "$MODEL" 2>/dev/null \
+  # diskutil wants the volume, not a folder on it; df names the device.
+  echo "model disk  $(diskutil info "$(df "$MODEL" 2>/dev/null | awk 'NR == 2 { print $1 }')" 2>/dev/null \
     | awk -F': *' '/Device Location|Protocol|Solid State/ { gsub(/^ +/, "", $1); printf "%s=%s  ", $1, $2 }')"
   echo "arms        ${arm_list[*]+"${arm_list[*]}"}"
   echo "rounds      $ROUNDS, prompt ${PROMPT_CHARS} chars, max-new $MAX_NEW, cooldown ${COOLDOWN}s"
@@ -290,7 +291,8 @@ run_arm() {
   log="$OUT/r${round}-${arm}.log"
   out="$OUT/r${round}-${arm}.out"
 
-  local envs=(TINYTITAN_KERNEL_STATS=1 TINYTITAN_RUNNER_STATS=1)
+  # TURBO_FIELDFARE_PHASES adds the per-chunk host-time breakdown (stderr).
+  local envs=(TINYTITAN_KERNEL_STATS=1 TINYTITAN_RUNNER_STATS=1 TURBO_FIELDFARE_PHASES=1)
   local assignment
   for assignment in $env_part; do envs+=("$assignment"); done
   local extra=()

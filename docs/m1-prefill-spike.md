@@ -32,7 +32,7 @@ Read: expert cache and page cache do nothing for prefill here (each chunk touche
 nearly every expert), and prefill is mostly GPU compute. The chunk-count cost is
 real: going 4096 -> 2048 added ~8 s of GPU and ~19 s of non-GPU time.
 
-## Found in the code, measured by spike 2
+## Found in the code, then measured in spike 2
 
 - **One compute encoder per token.** The shared-expert scalar gate (and its
   sigmoid) runs one GEMV plus one elementwise dispatch per token, each in its own
@@ -64,3 +64,47 @@ real: going 4096 -> 2048 added ~8 s of GPU and ~19 s of non-GPU time.
   184 s on the GPU. On an M1 Max the GPU is larger and the ANE older, so it would
   lose by more.
 - **Bigger expert cache for prefill.** Spike 1 above.
+
+## Spike 2 (commit 83b019b, two rounds)
+
+Every arm produced the same output as base, `coalesce` included (it is
+bit-identical by construction and `GEMVRowsTests` says so), and so did
+`TINYTITAN_HC_FUSED=1` and `TINYTITAN_QSA_GPU_SELECT=1`, which were off only until
+that was shown. The M1 compiles the Metal 4 tensor-op QMM: every attention and
+GDN projection already takes it (`prefill paths: mpp_int4=available attn_q=mpp/4b
+gdn_in=mpp/4b kv=mpp/4b o=mpp/4b`), so the per-token q GEMV never runs here and
+`qqmm` is a second base.
+
+| arm | prefill s (r1, r2) | GPU busy s (r1, r2) |
+| --- | --- | --- |
+| base | 197.7, 205.7 | 141.8, 146.3 |
+| coalesce | 242.6, 206.3 | 183.9, 145.6 |
+| qqmm (= base) | 222.7, 199.5 | 170.7, 145.5 |
+| hcfused | 213.2, 209.2 | 158.6, 148.1 |
+| qsagpu | 199.3, 210.8 | 145.6, 142.6 |
+| combo | 195.0, 194.9 | 141.1, 141.8 |
+
+The spread is the clock, not the arms: an unchanged binary ran 12.6% apart, and
+in the slow runs every role -- including ones the flag never touches -- slowed
+together. `powermetrics` during prefill showed 93-98% GPU residency at
+1.10-1.22 GHz average, 23-57% of the time on the 972 MHz step. Nothing here is
+separable from that; `m1_spike.sh --gpu-clock` now reports busy x clock
+(Gcycles) so the next comparison is.
+
+Where the GPU time goes (`TINYTITAN_PREFILL_SPLIT=1`, mean of two rounds, s):
+
+| stage | s | share | note |
+| --- | ---: | ---: | --- |
+| `attn_core` (QSA sparse attention, 12 layers x 2 chunks) | 54.2 | 38% | one kernel, ~2.3 s per layer-chunk |
+| `routed_tile` | 30.6 | 21% | one-output-per-thread expert GEMV |
+| `hc_in` + `hc_out` (hyper-connections) | 17.5 | 12% | projections on the scalar `prefillQMM`, not MPP |
+| `shared_expert` | 12.9 | 9% | unchanged by coalescing: the MLP, not dispatch |
+| routers (`attn_router` + `gdn_router` remainders) | 7.2 | 5% | |
+| `gdn_in_proj` + `gdn_out_proj` | 8.4 | 6% | already MPP |
+| `gdn_scan` (conv, norms, delta rule, gated norm) | 5.1 | 4% | the sequential recurrence is *not* a hotspot |
+| `qsa_index` | 4.3 | 3% | |
+| `attn_qkv_proj` + `attn_o_proj` + `attn_rope_kv` | 2.9 | 2% | already MPP |
+
+Outside the GPU: ~55-60 s of each ~200 s prefill, of which ~15 s precedes the
+first kernel. `TURBO_FIELDFARE_PHASES` (now on stderr, and on in every spike
+arm) splits the host side per chunk.

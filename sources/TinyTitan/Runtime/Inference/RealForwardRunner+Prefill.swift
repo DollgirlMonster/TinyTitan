@@ -442,21 +442,19 @@ extension RealForwardRunner {
         }
 
         if prefillProfile {
+            // stderr, not stdout: stdout is the generated text, and a benchmark
+            // that hashes it to compare arms must not see timings in it.
             let prefillTotal = prefillRouteNanos + prefillTileNanos + prefillTailNanos
-            print("[prefill phases over \(t) tokens, \(prefillTotal / 1_000_000) ms total]")
-            print(
-                "  route readback + GPU: \(String(format: "%.1f", Double(prefillRouteNanos) / 1e6)) ms"
-            )
-            print(
-                "  expert fetch + tiles: \(String(format: "%.1f", Double(prefillTileNanos) / 1e6)) ms"
-            )
-            print(
-                "  tail + residual:      \(String(format: "%.1f", Double(prefillTailNanos) / 1e6)) ms"
-            )
+            let ms = { (n: UInt64) in String(format: "%.1f", Double(n) / 1e6) }
             let perLayer = Double(prefillActiveExperts) / Double(max(1, cfg.numLayers))
-            print(
-                "  active experts/layer: \(String(format: "%.2f", perLayer))"
-                    + " (topK=\(cfg.topKExperts), max possible \(t * cfg.topKExperts))")
+            let lines =
+                "[prefill phases over \(t) tokens, \(prefillTotal / 1_000_000) ms total]\n"
+                + "  route readback + GPU: \(ms(prefillRouteNanos)) ms\n"
+                + "  expert fetch + tiles: \(ms(prefillTileNanos)) ms\n"
+                + "  tail + residual:      \(ms(prefillTailNanos)) ms\n"
+                + "  active experts/layer: \(String(format: "%.2f", perLayer))"
+                + " (topK=\(cfg.topKExperts), max possible \(t * cfg.topKExperts))\n"
+            FileHandle.standardError.write(Data(lines.utf8))
         }
 
         if writeFinalHead, runEpilogue {
