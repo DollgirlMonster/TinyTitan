@@ -266,7 +266,7 @@ if [ "$SKIP_TESTS" -eq 0 ]; then
   else
     echo "== tests: the suites this branch touched, serial =="
     run swift test --no-parallel --filter \
-      'FrontierTracker|PrefillProgress|RawCompletionCapture|ServerPromptStateStore|ServerArgument|HTTPServer'
+      'FrontierTracker|PrefillProgress|RawCompletionCapture|ServerPromptStateStore|ServerArgument|HTTPServer|PrefillAttentionQSAGrouped|PrefillSharedExpertBatched|GEMVRows|PrefillChunkScratch|PrefillRuntimeConfig|RuntimeConfiguration|ModelProfile|ModelIdentity'
   fi
 fi
 
