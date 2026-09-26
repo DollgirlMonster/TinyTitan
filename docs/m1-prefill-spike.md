@@ -390,3 +390,18 @@ measurable change; at this length the test resolves about +/-3.4% perplexity
 0.5 nats -- in both directions, as expected when the prefill arithmetic shifts
 which keys the QSA selection keeps. Concurrent encoding (92481b7) leaves every
 value the same, so the verdict covers it.
+
+## Spike 9 (commit 4450911, two rounds, 16,931-token prompt)
+
+| arm | prefill s (r1, r2) | tok/s | Gcycles | routed GPU s |
+| --- | --- | ---: | ---: | ---: |
+| c8192wide | 243.1, 236.5 | 70.6 | 256 | 66.6 (tile kernels) |
+| c8192widerouted | 214.6, 213.8 | 79.1 | 218 | 34.9 (grouped GEMM, all 7,307 tiles) |
+
+With each tile's expert GEMMs in concurrent encoders the routed half runs at
+~2.3 TFLOPS, half its old time, -15% GPU work overall. The GPU is now idle
+~20% of the span again (80% occupied): "expert fetch + tiles" is 64.5 s
+against 43.4 s of routed and shared GPU, so the drive is back on the path.
+
+Against spike 4's base on this prompt (419-451 s, already with the grouped QSA
+kernel): 2.03x. Against the original engine's estimated ~485 s: ~2.3x.
