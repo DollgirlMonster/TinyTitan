@@ -85,6 +85,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# The script changes into the checkout before running anything, so a relative
+# --model has to be anchored to where it was typed. No symlink resolution: the
+# install receipt is bound to the exact path the model was installed at.
+case "$MODEL" in
+  /*) ;;
+  *) MODEL="$PWD/$MODEL" ;;
+esac
+MODEL="${MODEL%/}"
+
 case "$ROUNDS$PROMPT_CHARS$MAX_NEW$COOLDOWN" in
   *[!0-9]*) die "--rounds, --prompt-chars, --max-new and --cooldown take whole numbers" ;;
 esac
