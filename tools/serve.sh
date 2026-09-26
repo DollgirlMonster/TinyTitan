@@ -25,7 +25,7 @@ trap 'echo "serve: stopped at line $LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODEL="${TINYTITAN_MODEL:-}"
-PORT="${TINYTITAN_PORT:-8080}"
+PORT="${TINYTITAN_PORT:-8089}"
 IDLE=900
 CACHE_ROOT="${TINYTITAN_PROMPT_CACHE_ROOT:-$HOME/.tinytitan/prompt-cache}"
 DRY_RUN=0
@@ -36,7 +36,7 @@ usage() {
   cat <<'USAGE'
 Options:
   <install>            model directory (or TINYTITAN_MODEL)
-  --port <n>           default 8080 (TINYTITAN_PORT)
+  --port <n>           default 8089 (TINYTITAN_PORT)
   --idle <seconds>     release the model after this long idle (default 900;
                        0 keeps it loaded from the first request on)
   --dry-run            print the server command and start nothing
