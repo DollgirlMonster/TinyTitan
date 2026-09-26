@@ -74,7 +74,9 @@ extension PrefillGroupedRoutedMoETests {
         let maxDiff = zip(actual, expected).reduce(Float(0)) {
             max($0, abs(Float($1.0) - Float($1.1)))
         }
-        #expect(maxRef > 0.1, "the reference is too small to prove anything")
+        // The synthetic pool's weights are 0.001-0.03, so real outputs are
+        // ~0.01; this only guards against an all-zero reference.
+        #expect(maxRef > 1e-3, "the reference is too small to prove anything (max \(maxRef))")
         #expect(
             maxDiff <= 0.02 * maxRef,
             "weightBits=\(weightBits): max |diff| \(maxDiff) against max |ref| \(maxRef)")
