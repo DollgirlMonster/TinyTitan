@@ -68,6 +68,21 @@ import TinyTitan
         }
     }
 
+    @Test func scoreModeParsesAndNeedsACount() throws {
+        let scored = try Args.parse([
+            "--model", "m.gturbo", "--prompt", "hi", "--score", "512", "--score-out", "a.nll",
+        ])
+        #expect(scored.scoreTokens == 512)
+        #expect(scored.scoreOutput == "a.nll")
+        #expect(try Args.parse(["--model", "m.gturbo", "--prompt", "hi"]).scoreTokens == nil)
+        #expect(throws: ArgsError.invalidValue(flag: "--score", value: "0")) {
+            _ = try Args.parse(["--model", "m.gturbo", "--prompt", "hi", "--score", "0"])
+        }
+        #expect(throws: ArgsError.requiredMissing("--score")) {
+            _ = try Args.parse(["--model", "m.gturbo", "--prompt", "hi", "--score-out", "a.nll"])
+        }
+    }
+
     @Test func generationOptionsParseAndStopsRepeat() throws {
         let arguments = try Args.parse([
             "--model", "m.gturbo", "--prompt", "hi",
@@ -203,6 +218,7 @@ import TinyTitan
             "--seed", "--stop", "--quiet", "--help",
             "--rdadvise", "--expert-cache-slots", "--prefill-chunk", "--concise",
             "--kv-bits", "--rope-scaling", "--thinking", "--reasoning-effort",
+            "--score", "--score-out",
         ]
         let words = Args.usage.split { $0.isWhitespace || $0 == "(" || $0 == ")" }
         let options = Set(words.map(String.init).filter { $0.hasPrefix("--") })

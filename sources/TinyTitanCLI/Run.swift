@@ -180,7 +180,9 @@ public func run(
         let loadRuntime = try RuntimeConfiguration(
             expertCacheSlots: resolvedSlots,
             rdadvisePolicy: RDAdvicePolicyMode.parse(args.rdadvise),
-            forceLogitsHead: !config.isPureGreedy,
+            // Scoring reads the whole distribution, which the fused greedy
+            // head never writes.
+            forceLogitsHead: !config.isPureGreedy || args.scoreTokens != nil,
             decodeExpertExecution: try RuntimeDecodeExpertExecution.environmentValue(),
             expertIOSynchronization: try RuntimeExpertIOSynchronization.environmentValue(),
             expertIOSubmission: try RuntimeExpertIOSubmission.environmentValue())
@@ -275,6 +277,12 @@ public func run(
             context: context,
             vocab: model.config.vocabSize,
             logitSoftcap: Float(model.config.finalLogitSoftcap))
+        if let scored = args.scoreTokens {
+            return try await runScore(
+                args: args, scored: scored, promptIds: promptIds, runner: runner,
+                scratch: scratch, prefillConfig: runtime.prefillConfig,
+                softcap: Float(model.config.finalLogitSoftcap), stdout: stdout, stderr: stderr)
+        }
         let stats = try await runRawCompletion(
             producer: runner,
             tokenizer: tokenizer,
@@ -366,4 +374,38 @@ public func run(
 private func errored(_ stderr: FileHandle, _ message: String, _ code: Int32) -> RunResult {
     stderr.write(Data("error: \(message)\n".utf8))
     return RunResult(exitCode: code)
+}
+
+/// `--score n`: prefill all but the prompt's last `n` tokens, then teacher-force
+/// those `n` and report their surprisal. Run twice over one text -- once per
+/// prefill path -- and compare the per-token files position by position.
+private func runScore(
+    args: Args, scored: Int, promptIds: [Int32], runner: RealForwardRunner,
+    scratch: RawCompletionScratch, prefillConfig: PrefillRuntimeConfig,
+    softcap: Float, stdout: FileHandle, stderr: FileHandle
+) async throws -> RunResult {
+    guard promptIds.count > scored else {
+        return errored(
+            stderr, "--score \(scored) needs a longer prompt (\(promptIds.count) tokens)", 2)
+    }
+    let context = Array(promptIds.dropLast(scored))
+    let continuation = Array(promptIds.suffix(scored))
+    let started = Date()
+    let result = try await scoreContinuation(
+        producer: runner, context: context, continuation: continuation,
+        prefillConfig: prefillConfig, scratch: scratch, logitSoftcap: softcap)
+    let seconds = Date().timeIntervalSince(started)
+    stdout.write(
+        Data(
+            String(
+                format:
+                    "[score context=%d scored=%d token_hash=%016llx mean_nll=%.6f perplexity=%.4f seconds=%.1f]\n",
+                result.contextTokens, result.nlls.count, result.tokenHash,
+                result.meanNLL, result.perplexity, seconds
+            ).utf8))
+    if let path = args.scoreOutput {
+        let lines = result.nlls.map { String(format: "%.8f", $0) }.joined(separator: "\n")
+        try Data((lines + "\n").utf8).write(to: URL(fileURLWithPath: path))
+    }
+    return RunResult(exitCode: 0)
 }
