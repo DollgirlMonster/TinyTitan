@@ -1297,6 +1297,9 @@ extension RealForwardRunner {
             let commandBuffer: MTLCommandBuffer
             let fetch: PrefillStreamedTileFetchResult
             let argumentBuffer: PrefillStreamedTileArgumentBuffer
+            /// Ran as grouped MPP GEMMs rather than the tile kernels; timed
+            /// under its own role so a spike shows how many tiles took it.
+            let groupedGEMM: Bool
         }
         var pendingTiles: [PendingPrefillTile] = []
         var tileLifetime = PrefillStreamedTileSlotLifetime()
@@ -1312,7 +1315,7 @@ extension RealForwardRunner {
                 do {
                     try waitForCompletion(pending.commandBuffer)
                     recordKernelGPU(
-                        role: "prefill_routed_tile",
+                        role: pending.groupedGEMM ? "prefill_routed_gemm" : "prefill_routed_tile",
                         pending.commandBuffer)
                 } catch {
                     // Rethrown after the fetched blobs are released.
@@ -1451,7 +1454,8 @@ extension RealForwardRunner {
                     tileIndex: tileIndex,
                     commandBuffer: tileCB,
                     fetch: fetch,
-                    argumentBuffer: argumentBuffer))
+                    argumentBuffer: argumentBuffer,
+                    groupedGEMM: tookGroupedGEMM))
             while pendingTiles.count > schedulerConfig.maxPendingDepth {
                 try drainOldestPendingTile()
             }

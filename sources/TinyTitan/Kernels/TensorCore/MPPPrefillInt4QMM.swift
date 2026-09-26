@@ -76,7 +76,8 @@ final class MPPPrefillInt4QMM {
         m: Int,
         n: Int,
         k: Int,
-        required: Bool = false
+        required: Bool = false,
+        into existing: MTLComputeCommandEncoder? = nil
     ) throws -> Path {
         // `k` must be a whole number of K tiles. The kernel's A operand declares a
         // *static* `tileK` extent and the MPP operation trusts the operand's
@@ -118,7 +119,9 @@ final class MPPPrefillInt4QMM {
             }
             return .unavailable
         }
-        guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
+        // `existing` lets a caller put several independent GEMMs in one
+        // concurrent encoder (they then run side by side); the caller ends it.
+        guard let encoder = existing ?? commandBuffer.makeComputeCommandEncoder() else {
             if required { throw MetalError.commandEncoderFailed }
             return .unavailable
         }
@@ -144,7 +147,7 @@ final class MPPPrefillInt4QMM {
                 width: pipeline.threadExecutionWidth * 4,
                 height: 1,
                 depth: 1))
-        encoder.endEncoding()
+        if existing == nil { encoder.endEncoding() }
         return .affineThreadgroupF16
     }
 

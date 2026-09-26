@@ -97,23 +97,34 @@ final class PrefillRoutedExpertGEMM {
             sortedPairs: sortedPairs, tile: tile, d: d, last: UInt32(hiddenStrideElements))
 
         let half = MemoryLayout<Float16>.stride
-        for group in groups where group.pairCount > 0 {
-            guard let index = binding.expertIDs.firstIndex(of: Int(group.expert)) else {
-                throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding(
-                    "expert \(group.expert) of the tile has no binding")
+        // Every expert's gate and up GEMMs are independent -- disjoint rows in,
+        // disjoint rows out -- and each alone is ~60 threadgroups, too few to
+        // fill the GPU. One concurrent encoder lets them all run side by side;
+        // spike 8 measured them serialized, one encoder each, no faster than the
+        // tile kernels.
+        guard let gateUp = commandBuffer.makeComputeCommandEncoder(dispatchType: .concurrent)
+        else { throw MetalError.commandEncoderFailed }
+        // Scoped so the encoder ends here on every path: one left open when a
+        // projection throws traps when the command buffer is released, and the
+        // next encoder cannot be made while it is open.
+        do {
+            defer { gateUp.endEncoding() }
+            for group in groups where group.pairCount > 0 {
+                let view = try Self.view(for: group, in: binding)
+                let base = Int(view.offset)
+                let row = Int(group.pairStart - tile.pairStart)
+                let count = Int(group.pairCount)
+                try project(
+                    commandBuffer, gateUp, view.buffer, base,
+                    offsets.gateWOff, offsets.gateSOff, offsets.gateBOff,
+                    x: rowsIn, xOffset: row * d * half, y: gateOut, yOffset: row * f * half,
+                    m: count, n: f, k: d)
+                try project(
+                    commandBuffer, gateUp, view.buffer, base,
+                    offsets.upWOff, offsets.upSOff, offsets.upBOff,
+                    x: rowsIn, xOffset: row * d * half, y: upOut, yOffset: row * f * half,
+                    m: count, n: f, k: d)
             }
-            let view = binding.views[index]
-            let base = Int(view.offset)
-            let row = Int(group.pairStart - tile.pairStart)
-            let count = Int(group.pairCount)
-            try project(
-                commandBuffer, view.buffer, base, offsets.gateWOff, offsets.gateSOff, offsets.gateBOff,
-                x: rowsIn, xOffset: row * d * half, y: gateOut, yOffset: row * f * half,
-                m: count, n: f, k: d)
-            try project(
-                commandBuffer, view.buffer, base, offsets.upWOff, offsets.upSOff, offsets.upBOff,
-                x: rowsIn, xOffset: row * d * half, y: upOut, yOffset: row * f * half,
-                m: count, n: f, k: d)
         }
 
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
@@ -132,18 +143,19 @@ final class PrefillRoutedExpertGEMM {
                 width: min(activation.maxTotalThreadsPerThreadgroup, 256), height: 1, depth: 1))
         encoder.endEncoding()
 
-        for group in groups where group.pairCount > 0 {
-            guard let index = binding.expertIDs.firstIndex(of: Int(group.expert)) else {
-                throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding(
-                    "expert \(group.expert) of the tile has no binding")
+        guard let down = commandBuffer.makeComputeCommandEncoder(dispatchType: .concurrent)
+        else { throw MetalError.commandEncoderFailed }
+        do {
+            defer { down.endEncoding() }
+            for group in groups where group.pairCount > 0 {
+                let view = try Self.view(for: group, in: binding)
+                let row = Int(group.pairStart - tile.pairStart)
+                try project(
+                    commandBuffer, down, view.buffer, Int(view.offset),
+                    offsets.downWOff, offsets.downSOff, offsets.downBOff,
+                    x: activated, xOffset: row * f * half, y: rowsOut, yOffset: row * d * half,
+                    m: Int(group.pairCount), n: d, k: f)
             }
-            let view = binding.views[index]
-            let row = Int(group.pairStart - tile.pairStart)
-            try project(
-                commandBuffer, view.buffer, Int(view.offset),
-                offsets.downWOff, offsets.downSOff, offsets.downBOff,
-                x: activated, xOffset: row * f * half, y: rowsOut, yOffset: row * d * half,
-                m: Int(group.pairCount), n: d, k: f)
         }
         try encodeRows(
             commandBuffer, scatter, source: rowsOut, destination: routePartials,
@@ -151,10 +163,21 @@ final class PrefillRoutedExpertGEMM {
         return true
     }
 
-    /// One expert projection. `accepts` has already checked what the QMM
-    /// checks, so a refusal here is an inconsistency, not a fallback.
+    private static func view(
+        for group: PrefillMoEGroup, in binding: PrefillStreamedTileBinding
+    ) throws -> TensorView {
+        guard let index = binding.expertIDs.firstIndex(of: Int(group.expert)) else {
+            throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding(
+                "expert \(group.expert) of the tile has no binding")
+        }
+        return binding.views[index]
+    }
+
+    /// One expert projection into `encoder`. `accepts` has already checked what
+    /// the QMM checks, so a refusal here is an inconsistency, not a fallback.
     private func project(
-        _ cb: MTLCommandBuffer, _ blob: MTLBuffer, _ base: Int,
+        _ cb: MTLCommandBuffer, _ encoder: MTLComputeCommandEncoder,
+        _ blob: MTLBuffer, _ base: Int,
         _ weightsOff: UInt32, _ scalesOff: UInt32, _ biasesOff: UInt32,
         x: MTLBuffer, xOffset: Int, y: MTLBuffer, yOffset: Int,
         m: Int, n: Int, k: Int
@@ -165,7 +188,7 @@ final class PrefillRoutedExpertGEMM {
             scales: blob, scalesOffset: base + Int(scalesOff),
             biases: blob, biasesOffset: base + Int(biasesOff),
             x: x, xOffset: xOffset, y: y, yOffset: yOffset,
-            m: m, n: n, k: k, required: true)
+            m: m, n: n, k: k, required: true, into: encoder)
         guard path == .affineThreadgroupF16 else {
             throw PrefillGroupedRoutedMoEError.invalidStreamedTileBinding(
                 "the MPP QMM refused an expert projection it had accepted")
