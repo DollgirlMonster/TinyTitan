@@ -813,6 +813,18 @@ extension RealForwardRunner {
         x: MTLBuffer, y: MTLBuffer, yOffset: Int = 0,
         tokens: Int, rows: Int, columns: Int
     ) throws {
+        if let simdgroup = prefillSimdgroupQMMKernel,
+            simdgroup.accepts(bits: model.attentionWeightBits, k: columns)
+        {
+            try simdgroup.encode(
+                commandBuffer: commandBuffer,
+                weights: weights, weightsOffset: weightsOffset,
+                scales: scales, scalesOffset: scalesOffset,
+                biases: biases, biasesOffset: biasesOffset,
+                x: x, y: y, yOffset: yOffset,
+                t: tokens, n: rows, k: columns, bits: model.attentionWeightBits)
+            return
+        }
         if Self.prefillWideMPP, let mpp = prefillMPPAffineInt4,
             try mpp.encode(
                 commandBuffer: commandBuffer,

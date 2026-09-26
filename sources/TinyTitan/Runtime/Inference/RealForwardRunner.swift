@@ -303,6 +303,8 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     let prefillRMS: PrefillRMSNorm
     let prefillQMM: PrefillInt4QMM
     let prefillMPPAffineInt4: MPPPrefillInt4QMM?
+    /// The simdgroup-matrix QMM, built only when `prefillSimdgroupQMM` asks.
+    let prefillSimdgroupQMMKernel: PrefillAffineSimdgroupQMM?
     let prefillQKVEpilogue: PrefillQKVEpilogue
     let prefillAttention: PrefillAttention
     let prefillRouter: PrefillRouter
@@ -691,6 +693,8 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             context: context,
             weightBits: model.attentionWeightBits)
         self.prefillMPPAffineInt4 = prefillMPP
+        self.prefillSimdgroupQMMKernel =
+            Self.prefillSimdgroupQMM ? try PrefillAffineSimdgroupQMM(context: context) : nil
         self.prefillQKVEpilogue = try PrefillQKVEpilogue(
             context: context,
             yarn: yarnParameters)
@@ -702,7 +706,8 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             context: context,
             weightBits: model.ffnWeightBits,
             siluActivation: silu,
-            batchedMPP: Self.prefillWideMPP)
+            batchedMPP: Self.prefillWideMPP,
+            batchedSimdgroup: Self.prefillSimdgroupQMM)
         self.prefillSharedExpert = sharedExpert
         if ProcessInfo.processInfo.environment["TINYTITAN_RUNNER_STATS"] != nil
             || ProcessInfo.processInfo.environment["TINYTITAN_KERNEL_STATS"] != nil
@@ -1134,6 +1139,19 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
     static let prefillWideMPP =
         ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_MPP_WIDE"] == "1"
 
+    /// Spike switch: every batched prefill projection that would take the MPP
+    /// tensor-op QMM or the scalar `prefillQMM` takes the simdgroup-matrix QMM
+    /// instead (`PrefillAffineSimdgroupQMM`). Measured on an M1 Max, the MPP
+    /// path runs these GEMMs at ~1 TFLOPS of a ~10 TFLOPS GPU. It sums in a
+    /// different order from both, so it is judged by
+    /// `tools/prefill_surprisal_ab.sh` before it could become a default.
+    static let prefillSimdgroupQMM =
+        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_SG_QMM"] == "1"
+
+    /// Whether the prefill shared expert runs as GEMMs over the chunk (on either
+    /// QMM), which also decides the size of its scratch.
+    static var prefillBatchedSharedExpert: Bool { prefillWideMPP || prefillSimdgroupQMM }
+
     /// Which kernel each prefill projection family takes on this GPU, for the
     /// stats log. The MPP tensor-op path is optional: it may not compile on an
     /// older GPU, and every family it does not take falls back to the policy
@@ -1154,7 +1172,8 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
         }
         let mppState = mpp.isAvailable ? "available" : "unavailable(\(mpp.unavailableSummary))"
         let wide = prefillWideMPP && mpp.isAvailable ? "mpp" : "qmm"
-        let shared = sharedBatched ? "batched-mpp" : "per-token"
+        let shared =
+            sharedBatched ? (prefillSimdgroupQMM ? "batched-sg" : "batched-mpp") : "per-token"
         let fields: [String] = [
             "prefill paths: mpp_int4=\(mppState)",
             "attn_q=\(path(.q, bits: model.qoProjectionWeightBits))/\(model.qoProjectionWeightBits)b",
@@ -1166,6 +1185,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             "coalesce=\(prefillCoalescedRows)",
             "q_qmm=\(PrefillProjectionDispatchPolicy.qUsesQMM)",
             "mpp_wide=\(prefillWideMPP)",
+            "sg_qmm=\(prefillSimdgroupQMM)",
             "qsa_gqa=\(PrefillAttention.qsaGroupedQueryHeads)",
             "split=\(prefillSplitTiming)",
         ]

@@ -61,8 +61,25 @@ private let mppAvailableForSharedExpert: Bool = {
     @Test(.enabled(if: mppAvailableForSharedExpert, "Requires runtime MPP TensorOps support"))
     func batchedBlockTracksThePerTokenPath() throws {
         let ctx = try MetalContext()
-        let block = try PrefillSharedExpert(
-            context: ctx, weightBits: 4, siluActivation: true, batchedMPP: true)
+        try Self.tracksThePerTokenPath(
+            ctx,
+            try PrefillSharedExpert(
+                context: ctx, weightBits: 4, siluActivation: true, batchedMPP: true))
+    }
+
+    /// The same block on the simdgroup-matrix QMM (`TINYTITAN_PREFILL_SG_QMM`),
+    /// which every Apple GPU has, so no capability gate.
+    @Test func simdgroupBatchedBlockTracksThePerTokenPath() throws {
+        let ctx = try MetalContext()
+        try Self.tracksThePerTokenPath(
+            ctx,
+            try PrefillSharedExpert(
+                context: ctx, weightBits: 4, siluActivation: true, batchedSimdgroup: true))
+    }
+
+    private static func tracksThePerTokenPath(
+        _ ctx: MetalContext, _ block: PrefillSharedExpert
+    ) throws {
         #expect(block.batchedAvailable)
         let (d, intermediate, tokens) = (256, 128, 40)
         var rng = LCG(state: 23)

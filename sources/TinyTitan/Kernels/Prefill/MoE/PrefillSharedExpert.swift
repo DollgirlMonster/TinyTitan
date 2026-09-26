@@ -7,14 +7,20 @@ final class PrefillSharedExpert {
     /// elementwise activation, down as a third GEMM. Without it the block runs
     /// the decode path once per token through a one-row scratch, so every
     /// token's four dispatches wait on the previous token's.
-    private let batched: (mpp: MPPPrefillInt4QMM, activation: MTLComputePipelineState)?
+    private let batched: (gemm: BatchedGEMM, activation: MTLComputePipelineState)?
+
+    /// Which QMM serves the three GEMMs.
+    private enum BatchedGEMM {
+        case mpp(MPPPrefillInt4QMM)
+        case simdgroup(PrefillAffineSimdgroupQMM, bits: Int)
+    }
 
     /// Whether `encodeBlockBatched` can take a chunk at all on this GPU.
     var batchedAvailable: Bool { batched != nil }
 
     init(
         context: MetalContext, weightBits: Int = 8, siluActivation: Bool = false,
-        batchedMPP: Bool = false
+        batchedMPP: Bool = false, batchedSimdgroup: Bool = false
     ) throws {
         self.shared = try SharedExpertRuntime(
             context: context,
@@ -22,12 +28,16 @@ final class PrefillSharedExpert {
             siluActivation: siluActivation)
         // MPP serves the 4- and 8-bit affine layouts (its init traps on any
         // other width), and is optional on older GPUs.
-        if batchedMPP, [4, 8].contains(weightBits) {
+        let activation = siluActivation ? "silu_mul_fp16" : "gelu_mul_fp16"
+        if batchedSimdgroup, [4, 8].contains(weightBits) {
+            self.batched = (
+                BatchedGEMM.simdgroup(try PrefillAffineSimdgroupQMM(context: context), bits: weightBits),
+                try context.pipeline(activation)
+            )
+        } else if batchedMPP, [4, 8].contains(weightBits) {
             let mpp = MPPPrefillInt4QMM(context: context, weightBits: weightBits)
             self.batched =
-                mpp.isAvailable
-                ? (mpp, try context.pipeline(siluActivation ? "silu_mul_fp16" : "gelu_mul_fp16"))
-                : nil
+                mpp.isAvailable ? (BatchedGEMM.mpp(mpp), try context.pipeline(activation)) : nil
         } else {
             self.batched = nil
         }
@@ -61,14 +71,28 @@ final class PrefillSharedExpert {
             _ p: SharedExpertInt8Proj, _ input: MTLBuffer, _ inputOffset: Int,
             _ output: MTLBuffer, _ outputOffset: Int, rows: Int, columns: Int
         ) throws -> Bool {
-            try batched.mpp.encode(
-                commandBuffer: cb,
-                weights: p.weights, weightsOffset: p.weightsOffset,
-                scales: p.scales, scalesOffset: p.scalesOffset,
-                biases: p.biases, biasesOffset: p.biasesOffset,
-                x: input, xOffset: inputOffset,
-                y: output, yOffset: outputOffset,
-                m: queryCount, n: rows, k: columns) == .affineThreadgroupF16
+            switch batched.gemm {
+            case .mpp(let mpp):
+                return try mpp.encode(
+                    commandBuffer: cb,
+                    weights: p.weights, weightsOffset: p.weightsOffset,
+                    scales: p.scales, scalesOffset: p.scalesOffset,
+                    biases: p.biases, biasesOffset: p.biasesOffset,
+                    x: input, xOffset: inputOffset,
+                    y: output, yOffset: outputOffset,
+                    m: queryCount, n: rows, k: columns) == .affineThreadgroupF16
+            case .simdgroup(let qmm, let bits):
+                guard qmm.accepts(bits: bits, k: columns) else { return false }
+                try qmm.encode(
+                    commandBuffer: cb,
+                    weights: p.weights, weightsOffset: p.weightsOffset,
+                    scales: p.scales, scalesOffset: p.scalesOffset,
+                    biases: p.biases, biasesOffset: p.biasesOffset,
+                    x: input, xOffset: inputOffset,
+                    y: output, yOffset: outputOffset,
+                    t: queryCount, n: rows, k: columns, bits: bits)
+                return true
+            }
         }
         guard try project(gate, x, xOffset, scratchGate, 0, rows: intermediate, columns: d),
             try project(up, x, xOffset, scratchUp, 0, rows: intermediate, columns: d)

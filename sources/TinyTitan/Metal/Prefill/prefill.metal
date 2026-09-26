@@ -1,4 +1,5 @@
 #include <metal_stdlib>
+#include <metal_simdgroup_matrix>
 using namespace metal;
 
 #if defined(__HAVE_TENSOR__)
@@ -598,6 +599,110 @@ kernel void prefill_dequant_affine_qmm_f16_block(
         }
     }
     Y[t * N + n] = half(acc);
+}
+
+// ---- Affine QMM on the simdgroup matrix units -----------------------------
+//
+// `prefill_dequant_affine_qmm_f16_block` computes one output per thread with a
+// scalar K loop, and the MPP tensor-op path, though it compiles on an M1, runs
+// there at a few percent of the GPU's peak. This is the plain Apple-GPU form:
+// a 32 x 32 output tile per threadgroup, four simdgroups each owning a 16 x 16
+// corner as 2 x 2 blocks of 8 x 8, and per 32-wide K step the activations and
+// the dequantized weights staged in threadgroup memory as float. Weights are
+// dequantized in float and never rounded to half, so against the scalar kernel
+// the only difference is the order of the float sums.
+constant constexpr uint kPrefillSGQmmBM = 32u;
+constant constexpr uint kPrefillSGQmmBN = 32u;
+constant constexpr uint kPrefillSGQmmBK = 32u;
+constant constexpr uint kPrefillSGQmmThreads = 128u;
+
+kernel void prefill_affine_qmm_simdgroup(
+    device const uint8_t* W      [[buffer(0)]],
+    device const bfloat*  scales [[buffer(1)]],
+    device const bfloat*  biases [[buffer(2)]],
+    device const half*    X      [[buffer(3)]],
+    device half*          Y      [[buffer(4)]],
+    constant uint&        T      [[buffer(5)]],
+    constant uint&        N      [[buffer(6)]],
+    constant uint&        K      [[buffer(7)]],
+    uint2                 tgid   [[threadgroup_position_in_grid]],
+    uint                  lid    [[thread_index_in_threadgroup]],
+    uint                  sg     [[simdgroup_index_in_threadgroup]]
+) {
+    // [row][k] for both operands; the output tile is staged back through xs,
+    // which is exactly BM x BN because BK == BN.
+    threadgroup float xs[kPrefillSGQmmBM * kPrefillSGQmmBK];
+    threadgroup float ws[kPrefillSGQmmBN * kPrefillSGQmmBK];
+
+    const uint m0 = tgid.y * kPrefillSGQmmBM;
+    const uint n0 = tgid.x * kPrefillSGQmmBN;
+    const uint sm = (sg >> 1u) * 16u;
+    const uint sn = (sg & 1u) * 16u;
+
+    const uint groups = K / kPrefillGroupSize;
+    const uint bits = prefill_affine_bits();
+    const uint row_bytes = K * bits / 8u;
+
+    simdgroup_float8x8 acc00 = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+    simdgroup_float8x8 acc01 = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+    simdgroup_float8x8 acc10 = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+    simdgroup_float8x8 acc11 = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+
+    for (uint k0 = 0u; k0 < K; k0 += kPrefillSGQmmBK) {
+        // BK divides the 64-wide quantization group, so a tile row has one
+        // scale and one bias.
+        const uint g = k0 / kPrefillGroupSize;
+        for (uint i = lid; i < kPrefillSGQmmBM * kPrefillSGQmmBK; i += kPrefillSGQmmThreads) {
+            const uint r = i / kPrefillSGQmmBK;
+            const uint c = i % kPrefillSGQmmBK;
+            const uint t = m0 + r;
+            xs[i] = t < T ? float(X[t * K + k0 + c]) : 0.0f;
+        }
+        for (uint i = lid; i < kPrefillSGQmmBN * kPrefillSGQmmBK; i += kPrefillSGQmmThreads) {
+            const uint r = i / kPrefillSGQmmBK;
+            const uint c = i % kPrefillSGQmmBK;
+            const uint n = n0 + r;
+            float w = 0.0f;
+            if (n < N) {
+                const uint q = prefill_affine_value(W + n * row_bytes, k0 + c, bits);
+                w = fma(float(q), float(scales[n * groups + g]), float(biases[n * groups + g]));
+            }
+            ws[i] = w;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint kk = 0u; kk < kPrefillSGQmmBK; kk += 8u) {
+            simdgroup_float8x8 a0;
+            simdgroup_float8x8 a1;
+            simdgroup_float8x8 b0;
+            simdgroup_float8x8 b1;
+            simdgroup_load(a0, xs + (sm + 0u) * kPrefillSGQmmBK + kk, kPrefillSGQmmBK);
+            simdgroup_load(a1, xs + (sm + 8u) * kPrefillSGQmmBK + kk, kPrefillSGQmmBK);
+            // B[k][n] = W[n][k]: the weight rows, loaded transposed.
+            simdgroup_load(
+                b0, ws + (sn + 0u) * kPrefillSGQmmBK + kk, kPrefillSGQmmBK, ulong2(0, 0), true);
+            simdgroup_load(
+                b1, ws + (sn + 8u) * kPrefillSGQmmBK + kk, kPrefillSGQmmBK, ulong2(0, 0), true);
+            simdgroup_multiply_accumulate(acc00, a0, b0, acc00);
+            simdgroup_multiply_accumulate(acc01, a0, b1, acc01);
+            simdgroup_multiply_accumulate(acc10, a1, b0, acc10);
+            simdgroup_multiply_accumulate(acc11, a1, b1, acc11);
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    simdgroup_store(acc00, xs + (sm + 0u) * kPrefillSGQmmBN + sn + 0u, kPrefillSGQmmBN);
+    simdgroup_store(acc01, xs + (sm + 0u) * kPrefillSGQmmBN + sn + 8u, kPrefillSGQmmBN);
+    simdgroup_store(acc10, xs + (sm + 8u) * kPrefillSGQmmBN + sn + 0u, kPrefillSGQmmBN);
+    simdgroup_store(acc11, xs + (sm + 8u) * kPrefillSGQmmBN + sn + 8u, kPrefillSGQmmBN);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint i = lid; i < kPrefillSGQmmBM * kPrefillSGQmmBN; i += kPrefillSGQmmThreads) {
+        const uint t = m0 + i / kPrefillSGQmmBN;
+        const uint n = n0 + i % kPrefillSGQmmBN;
+        if (t < T && n < N) {
+            Y[t * N + n] = half(xs[i]);
+        }
+    }
 }
 
 static inline void prefill_rope_apply_neox_pair(

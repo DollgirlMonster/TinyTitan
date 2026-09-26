@@ -199,7 +199,7 @@ struct PrefillChunkScratchBuffers {
         // The batched shared expert needs a row per token; the per-token path
         // reuses one row, so the default allocation stays one row.
         let sharedScratchElements =
-            RealForwardRunner.prefillWideMPP
+            RealForwardRunner.prefillBatchedSharedExpert
             ? layout.sharedExpertBatchElements : layout.sharedExpertScratchElements
 
         return PrefillChunkScratchBuffers(

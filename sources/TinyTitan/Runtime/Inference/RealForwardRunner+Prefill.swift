@@ -512,6 +512,25 @@ extension RealForwardRunner {
         }
     }
 
+    /// The simdgroup-matrix QMM, when switched on, takes every projection
+    /// family and both widths ahead of the MPP path (see
+    /// `prefillSimdgroupQMM`). False when it is off or cannot take the shape.
+    func encodeSimdgroupProjection(
+        commandBuffer: MTLCommandBuffer, weightBits: Int, weights: TensorView,
+        x: MTLBuffer, y: MTLBuffer, rows: Int, columns: Int, tokenCount: Int
+    ) throws -> Bool {
+        guard let simdgroup = prefillSimdgroupQMMKernel,
+            simdgroup.accepts(bits: weightBits, k: columns)
+        else { return false }
+        try simdgroup.encode(
+            commandBuffer: commandBuffer,
+            weights: weights.buffer, weightsOffset: Int(weights.offset),
+            scales: weights.buffer, scalesOffset: Int(weights.scaleOffset),
+            biases: weights.buffer, biasesOffset: Int(weights.biasOffset),
+            x: x, y: y, t: tokenCount, n: rows, k: columns, bits: weightBits)
+        return true
+    }
+
     /// `weightBits` is the *role's* width, not the attention slot's: the dense
     /// Qwen 3.5 installs keep k/v at 8 bits with q/o at 4, and the int4-only
     /// batched paths below would read an 8-bit tensor as packed nibbles.
@@ -542,6 +561,13 @@ extension RealForwardRunner {
                 x: x, y: y, tokenCount: tokenCount,
                 xStrideElements: xStrideElements, yStrideElements: yStrideElements,
                 m: UInt32(rows), n: UInt32(columns))
+            return
+        }
+        if tokenCount >= 32, xStrideElements == columns, yStrideElements == rows,
+            try encodeSimdgroupProjection(
+                commandBuffer: commandBuffer, weightBits: weightBits, weights: weights,
+                x: x, y: y, rows: rows, columns: columns, tokenCount: tokenCount)
+        {
             return
         }
         if tokenCount >= 32, weightBits == 4,
@@ -632,7 +658,7 @@ extension RealForwardRunner {
         scratch: PrefillChunkScratchBuffers,
         tokenCount t: Int, hiddenSize D: Int
     ) throws {
-        if Self.prefillWideMPP,
+        if Self.prefillBatchedSharedExpert,
             try prefillSharedExpert.encodeBlockBatched(
                 commandBuffer: commandBuffer,
                 x: scratch.routedX, y: scratch.h1,
