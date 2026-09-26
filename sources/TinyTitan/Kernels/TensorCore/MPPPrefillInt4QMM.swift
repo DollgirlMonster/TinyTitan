@@ -55,6 +55,12 @@ final class MPPPrefillInt4QMM {
         pipeline != nil
     }
 
+    /// Why the pipeline is missing, first line only, for a one-line log.
+    var unavailableSummary: String {
+        let line = unavailableReason.split(separator: "\n").first.map(String.init) ?? ""
+        return line.isEmpty ? "no reason recorded" : String(line.prefix(120))
+    }
+
     /// `required: true` makes an unavailable path a thrown error instead of a
     /// silent `.unavailable` fallback — use it when the caller explicitly
     /// requests the MPP path. Auto-selected callers keep `required: false`

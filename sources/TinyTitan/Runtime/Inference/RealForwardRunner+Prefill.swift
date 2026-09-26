@@ -539,18 +539,11 @@ extension RealForwardRunner {
         // The batching lost here is cheap: every promoted family is among the
         // smallest tensors in the model, which is why they were chosen.
         if weights.dtype == 1 {
-            for row in 0..<tokenCount {
-                try encodeRoleGEMV(
-                    commandBuffer: commandBuffer,
-                    projection: weights,
-                    weightBits: weightBits,
-                    x: x,
-                    xOffset: row * xStrideElements * MemoryLayout<Float16>.stride,
-                    y: y,
-                    yOffset: row * yStrideElements * MemoryLayout<Float16>.stride,
-                    m: UInt32(rows),
-                    n: UInt32(columns))
-            }
+            try encodeRoleGEMVPerToken(
+                commandBuffer: commandBuffer, projection: weights, weightBits: weightBits,
+                x: x, y: y, tokenCount: tokenCount,
+                xStrideElements: xStrideElements, yStrideElements: yStrideElements,
+                m: UInt32(rows), n: UInt32(columns))
             return
         }
         if tokenCount >= 32, weightBits == 4,
@@ -626,17 +619,63 @@ extension RealForwardRunner {
                 k: columns)
             return
         }
+        try encodeRoleGEMVPerToken(
+            commandBuffer: commandBuffer, projection: weights, weightBits: weightBits,
+            x: x, y: y, tokenCount: tokenCount,
+            xStrideElements: xStrideElements, yStrideElements: yStrideElements,
+            m: UInt32(rows), n: UInt32(columns))
+    }
+
+    /// With `prefillSplitTiming`, end the command buffer here and time what it
+    /// holds under `role`; the layer continues in a fresh one. A no-op
+    /// otherwise, so the default schedule is untouched.
+    func prefillSplitPoint(_ cb: inout MTLCommandBuffer, role: String) throws {
+        guard Self.prefillSplitTiming else { return }
+        cb.commit()
+        try waitForCompletion(cb)
+        recordKernelGPU(role: role, cb)
+        guard let next = ctx.queue.makeCommandBuffer() else {
+            throw ModelError.residentBufferWrapFailed
+        }
+        cb = next
+    }
+
+    /// One GEMV per token of the chunk: the fallback for a projection no
+    /// batched kernel serves. With `prefillCoalescedRows` the tokens share one
+    /// compute encoder instead of opening one each; the kernel, arguments and
+    /// grid per token are unchanged, so the result is too.
+    func encodeRoleGEMVPerToken(
+        commandBuffer: MTLCommandBuffer,
+        projection: TensorView,
+        weightBits: Int,
+        x: MTLBuffer, y: MTLBuffer,
+        tokenCount: Int,
+        xStrideElements: Int, yStrideElements: Int,
+        m: UInt32, n: UInt32
+    ) throws {
+        let halfBytes = MemoryLayout<Float16>.stride
+        if Self.prefillCoalescedRows {
+            try encodeRoleGEMVRows(
+                commandBuffer: commandBuffer, projection: projection, weightBits: weightBits,
+                x: x, y: y,
+                run: GEMVRows(
+                    xOffset: 0, xRowStride: xStrideElements * halfBytes,
+                    yOffset: 0, yRowStride: yStrideElements * halfBytes,
+                    count: tokenCount),
+                m: m, n: n)
+            return
+        }
         for row in 0..<tokenCount {
             try encodeRoleGEMV(
                 commandBuffer: commandBuffer,
-                projection: weights,
+                projection: projection,
                 weightBits: weightBits,
                 x: x,
-                xOffset: row * xStrideElements * MemoryLayout<Float16>.stride,
+                xOffset: row * xStrideElements * halfBytes,
                 y: y,
-                yOffset: row * yStrideElements * MemoryLayout<Float16>.stride,
-                m: UInt32(rows),
-                n: UInt32(columns))
+                yOffset: row * yStrideElements * halfBytes,
+                m: m,
+                n: n)
         }
     }
 
@@ -1164,24 +1203,44 @@ extension RealForwardRunner {
             // per chunk row.
             let gateView = try requireTensorView(sharedProj.scalarGate, "shared-expert scalar gate")
             let halfBytes = MemoryLayout<Float16>.stride
-            for row in 0..<t {
-                try encodeScalarGate(
+            if Self.prefillCoalescedRows {
+                // The same per-row gate GEMV and per-element sigmoid, in two
+                // encoders for the whole chunk instead of two per token.
+                try encodeScalarGateRows(
                     commandBuffer: sharedCB,
                     view: gateView,
                     x: scratch.routedX,
-                    xOffset: row * D * halfBytes,
                     y: scratch.sharedScalarGate,
-                    yOffset: row * halfBytes,
+                    run: GEMVRows(
+                        xOffset: 0, xRowStride: D * halfBytes,
+                        yOffset: 0, yRowStride: halfBytes,
+                        count: t),
                     n: UInt32(D))
-            }
-            for row in 0..<t {
-                try requireElementwise().encodeSigmoidScalarMul(
+                try requireElementwise().encodeSigmoidRowsMul(
                     commandBuffer: sharedCB,
                     y: scratch.h1,
-                    yOffset: row * D * halfBytes,
                     gate: scratch.sharedScalarGate,
-                    gateOffset: row * halfBytes,
-                    count: D)
+                    width: D, rows: t)
+            } else {
+                for row in 0..<t {
+                    try encodeScalarGate(
+                        commandBuffer: sharedCB,
+                        view: gateView,
+                        x: scratch.routedX,
+                        xOffset: row * D * halfBytes,
+                        y: scratch.sharedScalarGate,
+                        yOffset: row * halfBytes,
+                        n: UInt32(D))
+                }
+                for row in 0..<t {
+                    try requireElementwise().encodeSigmoidScalarMul(
+                        commandBuffer: sharedCB,
+                        y: scratch.h1,
+                        yOffset: row * D * halfBytes,
+                        gate: scratch.sharedScalarGate,
+                        gateOffset: row * halfBytes,
+                        count: D)
+                }
             }
         }
         sharedCB.commit()
@@ -1465,6 +1524,7 @@ extension RealForwardRunner {
             out: scratch.normed,
             sublayer: .attention, layer: L,
             tokens: t, eps: eps)
+        try prefillSplitPoint(&cb, role: "prefill_split_hc_in")
         // The indexer caches a key for every prefilled token, in or out
         // of the dense-exact window: decode crossing the boundary later
         // must not find holes behind it.
@@ -1474,7 +1534,7 @@ extension RealForwardRunner {
             tokens: t, eps: eps)
         if isLinear {
             try encodeLinearAttentionPrefill(
-                cb: cb, layer: L, views: views, scratch: scratch,
+                cb: &cb, layer: L, views: views, scratch: scratch,
                 tokenCount: t, hiddenSize: D,
                 snapshotGDNAfterFirstToken: snapshotGDNAfterFirstToken,
                 useTwoRowProjection: useTwoRowProjection,
@@ -1490,7 +1550,7 @@ extension RealForwardRunner {
                 selection: qsaSelection)
         } else {
             try encodeFullAttentionPrefill(
-                cb: cb, layer: L, views: views, scratch: scratch,
+                cb: &cb, layer: L, views: views, scratch: scratch,
                 tokenCount: t, hiddenSize: D, startPosition: startPosition,
                 isFull: isFull, headDim: headDim, numKVHeads: numKVHeads,
                 qDim: qDim, kvDim: kvDim, rmsEps: eps,
@@ -1514,6 +1574,7 @@ extension RealForwardRunner {
             out: scratch.routedX,
             sublayer: .mlp, layer: L,
             tokens: t, eps: eps)
+        try prefillSplitPoint(&cb, role: "prefill_split_hc_out")
         if pairRoutedMoE, t == 2 {
             try await encodeRoutedMoEVerifyPair(
                 cb: &cb, layer: L, views: views, scratch: scratch,

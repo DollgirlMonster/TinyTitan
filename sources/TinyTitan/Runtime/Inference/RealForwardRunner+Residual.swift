@@ -794,4 +794,32 @@ extension RealForwardRunner {
                 m: 1, n: n)
         }
     }
+
+    /// `encodeScalarGate` for a run of rows in one encoder (see `GEMVRows`).
+    func encodeScalarGateRows(
+        commandBuffer: MTLCommandBuffer,
+        view: TensorView,
+        x: MTLBuffer, y: MTLBuffer, run: GEMVRows,
+        n: UInt32
+    ) throws {
+        if view.dtype == 1 {
+            try requireBF16ScalarGate().encodeRows(
+                commandBuffer: commandBuffer,
+                weights: view.buffer,
+                weightsOffset: Int(view.offset),
+                x: x, y: y, rows: run,
+                m: 1, n: n)
+        } else {
+            try requireInt8ScalarGate().encodeRows(
+                commandBuffer: commandBuffer,
+                weights: view.buffer,
+                weightsOffset: Int(view.offset),
+                scales: view.buffer,
+                scalesOffset: Int(view.scaleOffset),
+                biases: view.buffer,
+                biasesOffset: Int(view.biasOffset),
+                x: x, y: y, rows: run,
+                m: 1, n: n)
+        }
+    }
 }

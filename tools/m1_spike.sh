@@ -15,6 +15,19 @@
 # corpus in RAM. The arms test whether that moves the balance:
 #
 #   base         the install's profile defaults
+#
+# Spike 2 (the default set): per-token dispatch and switches already in the tree
+#   coalesce     TINYTITAN_PREFILL_COALESCE=1: one encoder per per-token loop;
+#                must be bit-identical to base (output "same as base")
+#   qqmm         TINYTITAN_PREFILL_Q_QMM=1: batched QMM for q-family projections;
+#                may change the output
+#   hcfused      TINYTITAN_HC_FUSED=1: fused hyper-connection gates
+#   qsagpu       TINYTITAN_QSA_GPU_SELECT=1: QSA key selection on the GPU
+#   combo        coalesce + hcfused + qsagpu
+#   split        TINYTITAN_PREFILL_SPLIT=1: diagnostic; times each layer stage
+#                (prefill_split_* roles). Its wall clock is not comparable.
+#
+# Spike 1 (settled on an M1 Max 64 GB, kept for other machines)
 #   s128, s256   more routed-expert cache (256 slots ~ 34 GiB, half the corpus)
 #   nobound      TINYTITAN_BOUNDED_IO=0: let the page cache hold experts too
 #   s256nobound  both
@@ -38,7 +51,7 @@ ROUNDS=2
 PROMPT_CHARS=28000
 MAX_NEW=64
 COOLDOWN=20
-ARMS="base s128 s256 nobound s256nobound c2048"
+ARMS="base coalesce qqmm hcfused qsagpu combo split"
 SKIP_BUILD=0
 SKIP_TESTS=0
 FULL_TESTS=0
@@ -47,12 +60,13 @@ MIN_FREE_PCT=20
 OUT=""
 
 usage() {
-  sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,/^set -/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
   cat <<'USAGE'
 Options:
   --model <dir>        installed .gturbo model (default models/qwen3.8-flash-next_125B_A6B_4Bit)
   --rounds <n>         interleaved rounds per arm (default 2)
-  --arms "<list>"      subset of: base s128 s256 nobound s256nobound c2048
+  --arms "<list>"      any of: base coalesce qqmm hcfused qsagpu combo split
+                       s128 s256 nobound s256nobound c2048
   --prompt-chars <n>   prompt size in characters (default 28000, ~7-8K tokens)
   --max-new <n>        generated tokens per run (default 64)
   --cooldown <s>       pause between runs (default 20)
@@ -110,13 +124,19 @@ arm_spec() {
     nobound) echo "nobound|TINYTITAN_BOUNDED_IO=0|" ;;
     s256nobound) echo "s256nobound|TINYTITAN_BOUNDED_IO=0|--expert-cache-slots 256" ;;
     c2048) echo "c2048||--prefill-chunk 2048" ;;
+    coalesce) echo "coalesce|TINYTITAN_PREFILL_COALESCE=1|" ;;
+    qqmm) echo "qqmm|TINYTITAN_PREFILL_Q_QMM=1|" ;;
+    hcfused) echo "hcfused|TINYTITAN_HC_FUSED=1|" ;;
+    qsagpu) echo "qsagpu|TINYTITAN_QSA_GPU_SELECT=1|" ;;
+    combo) echo "combo|TINYTITAN_PREFILL_COALESCE=1 TINYTITAN_HC_FUSED=1 TINYTITAN_QSA_GPU_SELECT=1|" ;;
+    split) echo "split|TINYTITAN_PREFILL_SPLIT=1|" ;;
     *) return 1 ;;
   esac
 }
 
 arm_list=()
 for arm in $ARMS; do
-  arm_spec "$arm" >/dev/null || die "unknown arm '$arm' (base s128 s256 nobound s256nobound c2048)"
+  arm_spec "$arm" >/dev/null || die "unknown arm '$arm' (see --help for the list)"
   arm_list+=("$arm")
 done
 [ "${#arm_list[@]}" -gt 0 ] || die "--arms is empty"
@@ -241,7 +261,8 @@ run_arm() {
   out="$OUT/r${round}-${arm}.out"
 
   local envs=(TINYTITAN_KERNEL_STATS=1 TINYTITAN_RUNNER_STATS=1)
-  if [ -n "$env_part" ]; then envs+=("$env_part"); fi
+  local assignment
+  for assignment in $env_part; do envs+=("$assignment"); done
   local extra=()
   # shellcheck disable=SC2206 # arm arguments are simple words
   if [ -n "$args_part" ]; then extra=($args_part); fi
@@ -384,6 +405,11 @@ fi
       print "  s256 faster with swap +0 -> run with --expert-cache-slots 256 (or --ram-budget) now."
       print "  nobound faster -> the page-cache trade pays on this machine (TINYTITAN_BOUNDED_IO=0)."
       print "  c2048 may legitimately differ in output (different chunking); the others should not."
+      print "Spike 2:"
+      print "  coalesce MUST read \"same as base\"; if it does not, that is a bug, not a trade."
+      print "  qqmm/hcfused/qsagpu may differ; a faster arm that differs needs a quality check"
+      print "     (benchmark/quant_perplexity_ab.py) before it becomes a default."
+      print "  split is a diagnostic: read its prefill_split_* roles in r*-split.log, not its time."
     }' "$results"
 } | tee "$OUT/summary.txt"
 

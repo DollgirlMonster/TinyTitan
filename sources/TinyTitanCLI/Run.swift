@@ -298,7 +298,7 @@ public func run(
             let summary = runner.kernelGPUTimingSummary()
             let occupancy = runner.kernelGPUOccupancy()
             var lines = "\n[gpu by role over \(stats.newTokens) tokens]\n"
-            for entry in summary.prefix(14) {
+            for entry in summary.prefix(24) {
                 lines += String(
                     format: "  %@ %8.1f ms  x%d\n",
                     entry.role.padding(toLength: 24, withPad: " ", startingAt: 0),
