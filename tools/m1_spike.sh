@@ -24,6 +24,9 @@
 #   wide16k      c16384 + TINYTITAN_PREFILL_MPP_WIDE=1
 #   pergqa       TINYTITAN_PREFILL_QSA_GQA=0: the per-head QSA kernel the grouped
 #                one replaced, for a before/after on this build
+#   c8192qsa     c8192 + TINYTITAN_QSA_GPU_SELECT=1: the QSA key selection on the
+#                GPU; on the CPU it grows with context (~68 s at 16K)
+#   c8192wide    c8192 + TINYTITAN_PREFILL_MPP_WIDE=1
 # Chunking can change the output (the chunk boundaries move), so c8192/c16384
 # may legitimately differ from base; they are judged on speed and on staying
 # coherent, then on benchmark/quant_perplexity_ab.py before any default moves.
@@ -91,7 +94,7 @@ usage() {
 Options:
   --model <dir>        installed .gturbo model (default models/qwen3.8-flash-next_125B_A6B_4Bit)
   --rounds <n>         interleaved rounds per arm (default 2)
-  --arms "<list>"      any of: base c8192 c16384 wide16k pergqa
+  --arms "<list>"      any of: base c8192 c16384 c8192qsa c8192wide wide16k pergqa
                        mppwide gqa wide splitwide all combo
                        coalesce qqmm hcfused qsagpu split
                        s128 s256 nobound s256nobound c2048
@@ -162,6 +165,8 @@ arm_spec() {
     c16384) echo "c16384||--prefill-chunk 16384" ;;
     wide16k) echo "wide16k|TINYTITAN_PREFILL_MPP_WIDE=1|--prefill-chunk 16384" ;;
     pergqa) echo "pergqa|TINYTITAN_PREFILL_QSA_GQA=0|" ;;
+    c8192qsa) echo "c8192qsa|TINYTITAN_QSA_GPU_SELECT=1|--prefill-chunk 8192" ;;
+    c8192wide) echo "c8192wide|TINYTITAN_PREFILL_MPP_WIDE=1|--prefill-chunk 8192" ;;
     coalesce) echo "coalesce|TINYTITAN_PREFILL_COALESCE=1|" ;;
     qqmm) echo "qqmm|TINYTITAN_PREFILL_Q_QMM=1|" ;;
     hcfused) echo "hcfused|TINYTITAN_HC_FUSED=1|" ;;
