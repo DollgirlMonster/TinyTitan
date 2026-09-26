@@ -1166,6 +1166,7 @@ public final class RealForwardRunner: ChunkedPrefillRunner, ContextWindowReporti
             "coalesce=\(prefillCoalescedRows)",
             "q_qmm=\(PrefillProjectionDispatchPolicy.qUsesQMM)",
             "mpp_wide=\(prefillWideMPP)",
+            "qsa_gqa=\(PrefillAttention.qsaGroupedQueryHeads)",
             "split=\(prefillSplitTiming)",
         ]
         return fields.joined(separator: " ")

@@ -71,6 +71,18 @@ final class PrefillAttention {
     private let context: MetalContext
     private let psoCausalTiled: MTLComputePipelineState
     private let psoCausalQSATiled: MTLComputePipelineState?
+    /// `attention_prefill_causal_qsa_gqa`: the QSA kernel with one threadgroup
+    /// per (token, KV head) serving all of that KV head's query heads, so each
+    /// selected K/V row is read once rather than once per query head.
+    private let psoCausalQSAGQA: MTLComputePipelineState?
+
+    /// Spike switch for the grouped QSA kernel. Its per-head arithmetic is the
+    /// per-head kernel's, so the output is meant to be identical; off until a
+    /// run on real hardware shows that and the speed.
+    static let qsaGroupedQueryHeads =
+        ProcessInfo.processInfo.environment["TINYTITAN_PREFILL_QSA_GQA"] == "1"
+    static let qsaGQAMaxGroup = 16
+    static let qsaGQAMaxHeadDim = 256
     /// One byte, bound whenever no selection is in play; `useKeep` is what
     /// actually turns the mask off.
     private let emptyKeepMask: MTLBuffer
@@ -87,6 +99,9 @@ final class PrefillAttention {
         self.psoCausalQSATiled =
             (try? context.pipeline(
                 "attention_prefill_causal_qsa_tiled"))
+        self.psoCausalQSAGQA =
+            (try? context.pipeline(
+                "attention_prefill_causal_qsa_gqa"))
         // Four bytes, not one: the kernels declare `keepIdx`/`keepIndices` as
         // `device const uint*`, and Metal's own validation aborts a binding
         // whose length is shorter than the argument it is bound to ("space for
@@ -131,52 +146,14 @@ final class PrefillAttention {
         keepIndices: MTLBuffer? = nil,
         keepIndexStride: Int = 0,
         keepCounts: MTLBuffer? = nil,
-        path: RuntimePrefillAttentionPath = .causalTiled
+        path: RuntimePrefillAttentionPath = .causalTiled,
+        groupedQueryHeads: Bool = PrefillAttention.qsaGroupedQueryHeads
     ) throws {
         validate(params)
 
-        let requestsTensorOps =
-            path == .fullTensorOps2DPreferred
-            || path == .fullTensorOps2DValidityV2
-        // The pinned model uses 512/16/2 only for full attention; its
-        // sliding-window layers use 256/16/8. A future model that reuses this
-        // shape for sliding attention must add a full-visibility check here.
-        let tensorOpsShape =
-            requestsTensorOps
-            && params.kvBits == 16
-            && kvRingCapacity == 0
-            && params.headDim == 512
-            && params.numQHeads == 16
-            && params.numKVHeads == 2
-            && params.scale == 1.0
-        let tensorOpsPipeline = tensorOpsShape ? psoFullTensorOps2DValidityV2 : nil
-        let useTensorOps = tensorOpsPipeline != nil
-        let pipeline: MTLComputePipelineState
-        if let tensorOpsPipeline {
-            pipeline = tensorOpsPipeline
-        } else if tensorOpsShape && path == .fullTensorOps2DValidityV2 {
-            // K7: the caller explicitly requested the TensorOps path — fail
-            // loudly with the recorded reason instead of crashing or silently
-            // running a different kernel. Only auto-selected paths fall back.
-            throw PrefillAttentionError.tensorOpsUnavailable(
-                reason: tensorOpsUnavailableReason.isEmpty
-                    ? "TensorOps pipeline failed to compile"
-                    : tensorOpsUnavailableReason)
-        } else {
-            // Explicit mode also falls back for incompatible shapes. Benchmark
-            // fixtures must use 512/16/2 to prove that TensorOps ran.
-            // The tiled QSA kernel is only better when there is a selection
-            // to iterate: with none, `iterations` is the whole visible range
-            // and its per-tile bookkeeping buys nothing.
-            let wantQSATiled =
-                keepMask != nil
-                && ProcessInfo.processInfo.environment["TINYTITAN_QSA_TILED"] != "0"
-            if wantQSATiled, let qsa = psoCausalQSATiled, kvRingCapacity == 0 {
-                pipeline = qsa
-            } else {
-                pipeline = causalTiledPipeline(kvRingCapacity: kvRingCapacity)
-            }
-        }
+        let (pipeline, useTensorOps, usesGroupedQSA) = try selectPipeline(
+            params: params, kvRingCapacity: kvRingCapacity, keepMask: keepMask,
+            path: path, groupedQueryHeads: groupedQueryHeads)
         let headDim = Int(params.headDim)
         let threadWidth = max(1, pipeline.threadExecutionWidth)
         let threadCount =
@@ -231,12 +208,94 @@ final class PrefillAttention {
                 depth: 1)
             : MTLSize(
                 width: Int(params.queryCount),
-                height: Int(params.numQHeads),
+                // The grouped kernel covers a KV head's query heads per group.
+                height: Int(usesGroupedQSA ? params.numKVHeads : params.numQHeads),
                 depth: 1)
         enc.dispatchThreadgroups(
             groups,
             threadsPerThreadgroup: MTLSize(width: threadCount, height: 1, depth: 1))
         enc.endEncoding()
+    }
+
+    /// Which kernel serves this call: TensorOps for the one shape it covers,
+    /// the grouped or per-head QSA kernel when a selection is in play, else the
+    /// plain tiled kernel.
+    private func selectPipeline(
+        params: PrefillAttentionParams,
+        kvRingCapacity: UInt32,
+        keepMask: MTLBuffer?,
+        path: RuntimePrefillAttentionPath,
+        groupedQueryHeads: Bool
+    ) throws -> (pipeline: MTLComputePipelineState, tensorOps: Bool, groupedQSA: Bool) {
+        let requestsTensorOps =
+            path == .fullTensorOps2DPreferred
+            || path == .fullTensorOps2DValidityV2
+        // The pinned model uses 512/16/2 only for full attention; its
+        // sliding-window layers use 256/16/8. A future model that reuses this
+        // shape for sliding attention must add a full-visibility check here.
+        let tensorOpsShape =
+            requestsTensorOps
+            && params.kvBits == 16
+            && kvRingCapacity == 0
+            && params.headDim == 512
+            && params.numQHeads == 16
+            && params.numKVHeads == 2
+            && params.scale == 1.0
+        let tensorOpsPipeline = tensorOpsShape ? psoFullTensorOps2DValidityV2 : nil
+        let useTensorOps = tensorOpsPipeline != nil
+        let pipeline: MTLComputePipelineState
+        var usesGroupedQSA = false
+        if let tensorOpsPipeline {
+            pipeline = tensorOpsPipeline
+        } else if tensorOpsShape && path == .fullTensorOps2DValidityV2 {
+            // K7: the caller explicitly requested the TensorOps path — fail
+            // loudly with the recorded reason instead of crashing or silently
+            // running a different kernel. Only auto-selected paths fall back.
+            throw PrefillAttentionError.tensorOpsUnavailable(
+                reason: tensorOpsUnavailableReason.isEmpty
+                    ? "TensorOps pipeline failed to compile"
+                    : tensorOpsUnavailableReason)
+        } else {
+            // Explicit mode also falls back for incompatible shapes. Benchmark
+            // fixtures must use 512/16/2 to prove that TensorOps ran.
+            // The tiled QSA kernel is only better when there is a selection
+            // to iterate: with none, `iterations` is the whole visible range
+            // and its per-tile bookkeeping buys nothing.
+            let wantQSATiled =
+                keepMask != nil
+                && ProcessInfo.processInfo.environment["TINYTITAN_QSA_TILED"] != "0"
+            if wantQSATiled, kvRingCapacity == 0,
+                let gqa = groupedQSAPipeline(params: params, requested: groupedQueryHeads)
+            {
+                pipeline = gqa
+                usesGroupedQSA = true
+            } else if wantQSATiled, let qsa = psoCausalQSATiled, kvRingCapacity == 0 {
+                pipeline = qsa
+            } else {
+                pipeline = causalTiledPipeline(kvRingCapacity: kvRingCapacity)
+            }
+        }
+        return (pipeline, useTensorOps, usesGroupedQSA)
+    }
+
+    /// The grouped QSA pipeline when it was asked for, compiled, and fits this
+    /// shape: at most `qsaGQAMaxGroup` query heads per KV head (its per-head
+    /// state is sized for that), a head no wider than `qsaGQAMaxHeadDim`, and a
+    /// threadgroup of at least one thread per query head.
+    private func groupedQSAPipeline(
+        params: PrefillAttentionParams, requested: Bool
+    ) -> MTLComputePipelineState? {
+        guard requested, let gqa = psoCausalQSAGQA,
+            params.numKVHeads > 0, params.numQHeads % params.numKVHeads == 0
+        else { return nil }
+        let group = Int(params.numQHeads / params.numKVHeads)
+        let headDim = Int(params.headDim)
+        let width = max(1, gqa.threadExecutionWidth)
+        let threads = roundUp(max(width, headDim), toMultipleOf: width)
+        guard group <= Self.qsaGQAMaxGroup, headDim <= Self.qsaGQAMaxHeadDim,
+            threads >= group, threads <= gqa.maxTotalThreadsPerThreadgroup
+        else { return nil }
+        return gqa
     }
 
     private func validate(_ params: PrefillAttentionParams) {

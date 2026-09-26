@@ -132,3 +132,19 @@ Two findings from reading the code behind spike 2's split:
   output (12 x keys by keys x 256) are matrix-unit shapes. That is the next
   kernel; the Apple10 tensor-ops attention path cannot help here, because a
   selection is present for every 4,096-token chunk and forces the tiled kernel.
+
+### The grouped QSA kernel (`TINYTITAN_PREFILL_QSA_GQA=1`)
+
+`attention_prefill_causal_qsa_gqa` runs one threadgroup per (token, KV head) for
+all of its query heads (12 for Qwen3.8, at most 16, head dim at most 256). It
+loads the G query rows once, computes each (head, key) score with the same
+`prefill_qsa_dot` in phase A (G x 64 dots per tile over 256 threads, where the
+per-head kernel left half its threads idle), keeps each head's running max and
+sum in threadgroup memory updated by one thread per head in key order, writes
+each weight once, and in phase D loads every V element once and feeds it to the
+G accumulators a thread owns. Per head, every value goes through the same
+expression in the same order as `attention_prefill_causal_qsa_tiled`, so the
+output is meant to be byte-identical: `PrefillAttentionQSAGroupedTests` checks
+that on Qwen3.8's shape (24/2 heads, dim 256, int8 KV) for the compacted and the
+mask selection. K/V traffic per selected key falls 12x; the matrix units are not
+used yet -- the next step if this kernel is still the top role.
